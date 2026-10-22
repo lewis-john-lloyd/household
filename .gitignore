@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+
+# Household data never enters this repo. Notebooks hold real output, so they stay in Drive.
+*.ipynb
+*.csv
+*.xlsx
+*.xls
+*.pdf
+*.ofx
+*.qfx
+!tests/fixtures/**

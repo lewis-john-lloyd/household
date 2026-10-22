@@ -1,0 +1,8 @@
+Category,Date,Transaction, Cost , Notes
+ food , 2001-Jan-05 , GROCER ONE , $ 42.10 ,
+food,2001-01-17,GROCER TWO,"$ 1,057.39",
+food,"Jan 30, 2001",GROCER ONE,$ 7.00,
+fuel,36925,PUMP STATION,$ 30.00,
+fuel,36925,PUMP STATION,$ 30.00,
+food,2001-Feb-02,GROCER ONE,($ 5.00),refund
+,,,,

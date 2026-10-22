@@ -1,0 +1,123 @@
+"""Sheet I/O against an in-memory fake of the gspread objects used."""
+
+import pandas as pd
+import pytest
+
+from household import schema, sheets
+
+
+class FakeWorksheet:
+    _next_id = 1
+
+    def __init__(self, title, rows=None):
+        self.title = title
+        self.rows = rows or []
+        self.id = FakeWorksheet._next_id
+        FakeWorksheet._next_id += 1
+
+    def update(self, values, range_name="A1", **_):
+        assert range_name == "A1"
+        self.rows = [list(r) for r in values] + self.rows[len(values):]
+
+    def freeze(self, rows):
+        pass
+
+    def get_values(self, **_):
+        return [list(r) for r in self.rows]
+
+    get_all_values = get_values
+
+    def append_rows(self, values, **_):
+        self.rows += [list(r) for r in values]
+
+    def clear(self):
+        self.rows = []
+
+    def resize(self, rows=None, cols=None):
+        pass
+
+
+class FakeSpreadsheet:
+    def __init__(self, title):
+        self.title = title
+        self.tabs = {"Sheet1": FakeWorksheet("Sheet1")}
+        self.batch_updates = []
+
+    def worksheets(self):
+        return list(self.tabs.values())
+
+    def worksheet(self, name):
+        return self.tabs[name]
+
+    def add_worksheet(self, title, rows, cols):
+        self.tabs[title] = FakeWorksheet(title)
+        return self.tabs[title]
+
+    def del_worksheet(self, ws):
+        del self.tabs[ws.title]
+
+    def batch_update(self, body):
+        self.batch_updates.append(body)
+
+    def values_batch_get(self, ranges):
+        out = []
+        for r in ranges:
+            name = r.split("'")[1]
+            rows = self.tabs[name].rows
+            out.append({"values": rows[:1]} if rows else {})
+        return {"valueRanges": out}
+
+
+TXNS = schema.table(schema.LEDGER, "transactions")
+
+
+def test_ensure_tables_creates_headers_validation_and_drops_default():
+    ledger = FakeSpreadsheet("ledger")
+    created = sheets.ensure_tables(ledger, schema.LEDGER)
+    assert created == [t.name for t in schema.LEDGER]
+    assert "Sheet1" not in ledger.tabs
+    assert ledger.tabs["transactions"].rows == [list(TXNS.columns)]
+    assert ledger.batch_updates  # dropdowns for enumerated columns
+
+
+def test_ensure_tables_is_idempotent_and_never_touches_data():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.tabs["transactions"].rows.append(["id1"] + [""] * (len(TXNS.columns) - 1))
+    assert sheets.ensure_tables(ledger, schema.LEDGER) == []
+    assert len(ledger.tabs["transactions"].rows) == 2
+
+
+def test_header_drift_is_an_error():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.tabs["transactions"].rows[0][3] = "amt"
+    with pytest.raises(sheets.SchemaMismatch):
+        sheets.ensure_tables(ledger, schema.LEDGER)
+
+
+def test_append_then_read_round_trip():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    df = pd.DataFrame([{c: "" for c in TXNS.columns} | {"txn_id": "a", "amount": -1.5}])
+    assert sheets.append_rows(ledger, TXNS, df) == 1
+    back = sheets.read_table(ledger, TXNS)
+    assert back.loc[0, "txn_id"] == "a" and back.loc[0, "amount"] == -1.5
+
+
+def test_replace_table_refuses_the_ledger():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    with pytest.raises(PermissionError):
+        sheets.replace_table(ledger, TXNS, pd.DataFrame(columns=list(TXNS.columns)))
+
+
+def test_replace_table_rewrites_reports():
+    reports = FakeSpreadsheet("reports")
+    sheets.ensure_tables(reports, schema.REPORTS)
+    t = schema.table(schema.REPORTS, "run_log")
+    sheets.replace_table(reports, t, pd.DataFrame([{"run_id": "r1", "computed_at": "x",
+                                                    "stage": "compute", "detail": "d"}]))
+    sheets.replace_table(reports, t, pd.DataFrame([{"run_id": "r2", "computed_at": "x",
+                                                    "stage": "compute", "detail": "d"}]))
+    assert reports.tabs["run_log"].rows == [list(t.columns), ["r2", "x", "compute", "d"]]

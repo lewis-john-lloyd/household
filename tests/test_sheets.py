@@ -58,6 +58,19 @@ class FakeSpreadsheet:
 
     def batch_update(self, body):
         self.batch_updates.append(body)
+        replies = []
+        for request in body["requests"]:
+            if "addSheet" in request:
+                ws = self.add_worksheet(request["addSheet"]["properties"]["title"], 0, 0)
+                replies.append({"addSheet": {"properties": {"sheetId": ws.id}}})
+            else:
+                replies.append({})
+        return {"replies": replies}
+
+    def values_batch_update(self, body):
+        for item in body["data"]:
+            name = item["range"].split("'")[1]
+            self.tabs[name].rows = [list(r) for r in item["values"]]
 
     def values_batch_get(self, ranges):
         out = []
@@ -77,7 +90,8 @@ def test_ensure_tables_creates_headers_validation_and_drops_default():
     assert created == [t.name for t in schema.LEDGER]
     assert "Sheet1" not in ledger.tabs
     assert ledger.tabs["transactions"].rows == [list(TXNS.columns)]
-    assert ledger.batch_updates  # dropdowns for enumerated columns
+    assert len(ledger.batch_updates) == 2  # one to add every tab, one for every dropdown
+    assert any("setDataValidation" in r for r in ledger.batch_updates[1]["requests"])
 
 
 def test_ensure_tables_is_idempotent_and_never_touches_data():

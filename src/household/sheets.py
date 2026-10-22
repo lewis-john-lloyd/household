@@ -37,32 +37,38 @@ def ensure_tables(spreadsheet, tables):
             if tuple(header) != t.columns:
                 raise SchemaMismatch(
                     f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
-    created = []
-    for t in tables:
-        if t.name in existing:
-            continue
-        ws = spreadsheet.add_worksheet(title=t.name, rows=1000, cols=len(t.columns))
-        ws.update(values=[list(t.columns)], range_name="A1")
-        ws.freeze(rows=1)
-        _add_validation(spreadsheet, ws, t)
-        created.append(t.name)
+    missing = [t for t in tables if t.name not in existing]
+    if missing:
+        _create_tables(spreadsheet, missing)
     _drop_default_sheet(spreadsheet, existing, tables)
-    return created
+    return [t.name for t in missing]
 
 
-def _add_validation(spreadsheet, ws, t):
-    requests = []
-    for column, values in t.enums.items():
-        index = t.columns.index(column)
-        requests.append({"setDataValidation": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1,
-                      "startColumnIndex": index, "endColumnIndex": index + 1},
-            "rule": {"condition": {"type": "ONE_OF_LIST",
-                                   "values": [{"userEnteredValue": v} for v in values]},
-                     "strict": True, "showCustomUi": True},
-        }})
-    if requests:
-        spreadsheet.batch_update({"requests": requests})
+def _create_tables(spreadsheet, tables):
+    """Three API calls regardless of table count: add tabs, write headers, add dropdowns."""
+    reply = spreadsheet.batch_update({"requests": [
+        {"addSheet": {"properties": {"title": t.name, "gridProperties": {
+            "rowCount": 1000, "columnCount": len(t.columns), "frozenRowCount": 1}}}}
+        for t in tables]})
+    sheet_ids = [r["addSheet"]["properties"]["sheetId"] for r in reply["replies"]]
+    spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": [
+        {"range": f"'{t.name}'!A1", "values": [list(t.columns)]} for t in tables]})
+    validations = [_validation(sheet_id, t, column, values)
+                   for sheet_id, t in zip(sheet_ids, tables)
+                   for column, values in t.enums.items()]
+    if validations:
+        spreadsheet.batch_update({"requests": validations})
+
+
+def _validation(sheet_id, t, column, values):
+    index = t.columns.index(column)
+    return {"setDataValidation": {
+        "range": {"sheetId": sheet_id, "startRowIndex": 1,
+                  "startColumnIndex": index, "endColumnIndex": index + 1},
+        "rule": {"condition": {"type": "ONE_OF_LIST",
+                               "values": [{"userEnteredValue": v} for v in values]},
+                 "strict": True, "showCustomUi": True},
+    }}
 
 
 def _drop_default_sheet(spreadsheet, existing, tables):

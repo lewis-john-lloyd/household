@@ -37,10 +37,13 @@ def snapshot_ledger(ledger, drive, root_folder_id, run_id):
     backups = find_or_create_folder(drive, "backups", root_folder_id)
     target = find_or_create_folder(drive, run_id, backups)
     manifest = {"run_id": run_id, "tables": {}}
-    for ws in ledger.worksheets():
-        text = to_csv(ws.get_values(value_render_option="UNFORMATTED_VALUE"))
-        upload_text(drive, f"{ws.title}.csv", target, text)
-        manifest["tables"][ws.title] = {
+    titles = [ws.title for ws in ledger.worksheets()]
+    result = ledger.values_batch_get([f"'{t}'" for t in titles],
+                                     params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    for title, value_range in zip(titles, result.get("valueRanges", [])):
+        text = to_csv(value_range.get("values", []))
+        upload_text(drive, f"{title}.csv", target, text)
+        manifest["tables"][title] = {
             "rows": max(text.count("\n") - 1, 0),
             "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         }

@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: leak-guard
+        name: leak guard
+        entry: python tools/leak_guard.py
+        language: system
+        pass_filenames: true

@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, compute, inbox, ingest, legacy, schema, sheets, tax, withholding
+from . import (backup, compute, inbox, ingest, legacy, projection, schema, sheets, tax,
+               withholding)
 
 
 def new_run_id(now=None):
@@ -109,6 +110,27 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         unexplained = int(backtest["explanation"].str.startswith("unexplained").sum())
         result["withholding_unexplained"] = unexplained
         _say(log, f"withholding_backtest: {len(backtest)} stubs, {unexplained} unexplained")
+
+        year = int(stubs["pay_date"].astype(str).max()[:4])
+        sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))
+        if year in tax.taxdata.PARAMS:
+            lines, notes = projection.project(year, stubs, sales, facts)
+            lines["year"], lines["run_id"] = year, run_id
+            sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)
+            for note in notes:
+                _say(log, f"projection {year}: {note}")
+            for row in lines.to_dict("records"):
+                verdict = "refund" if row["owe_or_refund"] < 0 else "owe"
+                _say(log, f"projection {year}, {row['scenario']}: {verdict} "
+                          f"{abs(row['owe_or_refund']):,.0f} (tax {row['total_tax']:,.0f}, "
+                          f"paid {row['withheld']:,.0f})")
+            plans = projection.elections(year, stubs)
+            plans["run_id"] = run_id
+            sheets.replace_table(reports, schema.table(schema.REPORTS, "elections"), plans)
+            for row in plans[plans["status"] != "at limit"].to_dict("records"):
+                _say(log, f"elections {year}: {row['person']} {row['plan']}: {row['status']} "
+                          f"({row['gap']:+,.2f})")
+            result["projection"] = dict(zip(lines["scenario"], lines["owe_or_refund"]))
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)

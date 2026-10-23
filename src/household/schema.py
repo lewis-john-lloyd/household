@@ -71,6 +71,10 @@ REPORTS = (
     Table("tax_check", ("year", "line", "filed", "computed", "diff", "match", "run_id")),
     Table("withholding_backtest", ("pay_date", "person", "employer", "stub_id", "kind", "base",
                                    "withheld", "expected", "residual", "explanation", "run_id")),
+    Table("projection", ("year", "scenario", "agi", "deduction", "taxable", "total_tax", "withheld",
+                         "owe_or_refund", "safe_harbor", "safe_harbor_met", "run_id")),
+    Table("elections", ("year", "person", "employer", "plan", "projected", "limit", "gap", "status",
+                        "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

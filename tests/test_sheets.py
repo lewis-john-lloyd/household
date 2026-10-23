@@ -72,12 +72,12 @@ class FakeSpreadsheet:
             name = item["range"].split("'")[1]
             self.tabs[name].rows = [list(r) for r in item["values"]] + self.tabs[name].rows[1:]
 
-    def values_batch_get(self, ranges):
+    def values_batch_get(self, ranges, params=None):
         out = []
         for r in ranges:
             name = r.split("'")[1]
-            rows = self.tabs[name].rows
-            out.append({"values": rows[:2]} if rows else {})
+            rows = self.tabs[name].rows if "!" not in r else self.tabs[name].rows[:2]
+            out.append({"values": [list(x) for x in rows]} if rows else {})
         return {"valueRanges": out}
 
 

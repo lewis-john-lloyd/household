@@ -106,3 +106,45 @@ def test_corrections_supersede_latest_wins(legacy_df):
 def test_schema_tables_are_well_formed():
     for t in schema.LEDGER + schema.REPORTS:
         assert len(set(t.columns)) == len(t.columns), t.name
+
+
+def _txns(rows, doc):
+    records = pd.DataFrame(rows, columns=["date", "amount", "payee_raw"])
+    return ingest.records_to_transactions(records, "card", "csv", doc_id=doc, recorded_at="t")
+
+
+COFFEE = ("2001-03-02", -4.5, "CAFE ONE")
+
+
+def test_overlapping_files_keep_true_repeats_and_drop_shared_rows():
+    jan = _txns([("2001-03-01", -20.0, "GROCER"), COFFEE, COFFEE], "doc1")
+    feb = _txns([COFFEE, COFFEE, ("2001-03-03", -9.0, "BOOKS")], "doc2")
+    ledger = jan
+    added = ingest.new_rows(feb, ledger["txn_id"])
+    assert list(added["payee_raw"]) == ["BOOKS"]  # both coffees already there
+    third = _txns([COFFEE, COFFEE, COFFEE], "doc3")
+    assert len(ingest.new_rows(third, pd.concat([jan, added])["txn_id"])) == 1  # a real third
+
+
+def test_possible_duplicates_pairs_pending_and_posted_across_files():
+    a = _txns([("2001-03-01", -42.0, "HARDWARE STORE #12"), ("2001-03-05", -3.0, "PARKING")], "doc1")
+    b = _txns([("2001-03-03", -42.0, "HARDWARE STORE 12 MADISON"), ("2001-03-20", -3.0, "PARKING")], "doc2")
+    found = compute.possible_duplicates(pd.concat([a, b]))
+    assert len(found) == 1 and found.loc[0, "amount"] == -42.0
+    assert {found.loc[0, "doc_a"], found.loc[0, "doc_b"]} == {"doc1", "doc2"}
+    key = found.loc[0, "txn_a"] + "|" + found.loc[0, "txn_b"]
+    assert compute.possible_duplicates(pd.concat([a, b]), dismissed={key}).empty
+
+
+def test_same_file_repeats_are_not_flagged():
+    assert compute.possible_duplicates(_txns([COFFEE, COFFEE], "doc1")).empty
+
+
+def test_void_correction_removes_and_restores(legacy_df):
+    txns = ingest.legacy_to_transactions(legacy_df, recorded_at="t")
+    first = txns["txn_id"].iloc[0]
+    void = pd.DataFrame([{"txn_id": first, "field": "void", "value": "TRUE", "recorded_at": "1"}])
+    assert first not in set(compute.effective_transactions(txns, void)["txn_id"])
+    undo = pd.concat([void, pd.DataFrame([{"txn_id": first, "field": "void", "value": "FALSE",
+                                           "recorded_at": "2"}])])
+    assert first in set(compute.effective_transactions(txns, undo)["txn_id"])

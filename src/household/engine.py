@@ -59,11 +59,20 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
     txns = sheets.read_table(ledger, schema.table(schema.LEDGER, "transactions"))
     corrections = sheets.read_table(ledger, schema.table(schema.LEDGER, "txn_corrections"))
-    actuals = compute.monthly_actuals(compute.effective_transactions(txns, corrections))
+    effective = compute.effective_transactions(txns, corrections)
+    actuals = compute.monthly_actuals(effective)
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
 
-    result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals)}
+    decisions = sheets.read_table(ledger, schema.table(schema.LEDGER, "proposal_decisions"))
+    dismissed = decisions.loc[(decisions["kind"] == "duplicate")
+                              & (decisions["decision"] == "reject"), "proposal_key"]
+    dupes = compute.possible_duplicates(effective, dismissed=set(dismissed))
+    dupes["run_id"] = run_id
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "possible_duplicates"), dupes)
+
+    result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
+              "possible_duplicates": len(dupes)}
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)

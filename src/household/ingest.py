@@ -15,7 +15,14 @@ TRANSACTIONS = schema.table(schema.LEDGER, "transactions")
 
 
 def assign_txn_ids(df):
-    """Hash account, date, amount and payee, plus an occurrence index so identical rows stay distinct."""
+    """Hash account, date, amount and payee, plus an occurrence index so identical rows stay distinct.
+
+    The occurrence index counts identical rows within one batch (one file). Two
+    files that overlap give the same ids for the days they share, so the second
+    adds only what the first lacked: two identical coffees on a day in both files
+    stay two, and a third file showing three that day adds one. Exports cover
+    whole days, which is what makes this exact.
+    """
     df = df.copy()
     key = (df["account_id"].astype(str) + "|" + df["date"].astype(str) + "|"
            + df["amount"].map(lambda a: f"{a:.2f}") + "|" + df["payee_raw"].astype(str))
@@ -39,6 +46,25 @@ def legacy_to_transactions(legacy, recorded_at=None):
         "source": "legacy",
         "era": "legacy",
         "doc_id": "",
+        "recorded_at": recorded_at,
+    })
+    return assign_txn_ids(df)
+
+
+def records_to_transactions(records, account_id, source, doc_id="", recorded_at=None):
+    """Parsed records (date, amount, payee_raw[, note]) from one file to ledger transactions."""
+    recorded_at = recorded_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    df = pd.DataFrame({
+        "date": records["date"].astype(str),
+        "account_id": account_id,
+        "amount": records["amount"].astype(float).round(2),
+        "payee_raw": records["payee_raw"].astype(str).str.strip(),
+        "category": "",
+        "one_off": "FALSE",
+        "note": records["note"] if "note" in records else "",
+        "source": source,
+        "era": "ledger",
+        "doc_id": doc_id,
         "recorded_at": recorded_at,
     })
     return assign_txn_ids(df)

@@ -138,3 +138,27 @@ def test_failed_self_check_leaves_file_and_writes_nothing(setup):
     assert summary["status"] == "failed" and "self-checks" in summary["reason"]
     assert rows(ledger, "paystubs").empty and rows(ledger, "source_documents").empty
     assert drive.names_in(box) == ["stub.txt"]
+
+
+def test_redownload_with_different_bytes_is_already_present(setup):
+    drive, ledger, box, record = setup
+    drop(drive, box, "schwab_equity.csv")
+    inbox.process(ledger, drive, "root")
+    same_rows = (FIXTURES / "schwab_equity.csv").read_text() + "\n"  # different bytes, same data
+    drive.add("export_again.csv", box, "text/csv", same_rows.encode())
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "already_present"
+    assert summary["overlaps"] == ["schwab_equity.csv"]
+    assert len(rows(ledger, "source_documents")) == 1
+
+
+def test_partial_overlap_names_the_earlier_file(setup):
+    drive, ledger, box, record = setup
+    drop(drive, box, "schwab_equity.csv")
+    inbox.process(ledger, drive, "root")
+    extra = ('"03/29/2001","Deposit","XYZ","RS","4","","","","","","","","","","","","","","","","","","","","",""\n'
+             '"","","","","","","","","12/01/2000","G1","03/25/2001","$90.00","","","","","","","","","","","","","",""\n')  # leak-guard: allow (synthetic)
+    newer = (FIXTURES / "schwab_equity.csv").read_text() + extra
+    drive.add("export2.csv", box, "text/csv", newer.encode())
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "ingested" and summary["overlaps"] == ["schwab_equity.csv"]

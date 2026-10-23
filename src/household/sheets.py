@@ -49,6 +49,11 @@ def ensure_tables(spreadsheet, tables):
             migrate.append((t, existing[t.name], len(header)))
     if migrate:
         _migrate_empty_tables(spreadsheet, migrate)
+    refresh = [_validation(existing[t.name].id, t, column, values)
+               for t in present if t not in [m[0] for m in migrate]
+               for column, values in t.enums.items()]
+    if refresh:  # keeps dropdowns in step with the schema; one call
+        spreadsheet.batch_update({"requests": refresh})
     missing = [t for t in tables if t.name not in existing]
     if missing:
         _create_tables(spreadsheet, missing)

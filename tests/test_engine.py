@@ -66,12 +66,13 @@ def test_ingest_then_compute_then_rerun(session):
     drop(session, "pay_statement.pdf", "application/pdf")  # real PDF through pypdf
     drop(session, "schwab_equity.csv", "text/csv")
     drop(session, "accounts_seed.csv", "text/csv")
+    drop(session, "return_facts.csv", "text/csv")
 
     first = engine.ingest_inbox(session, session.root, run_id="run-1")
-    assert first["counts"] == {"ingested": 3}
+    assert first["counts"] == {"ingested": 4}
     assert {"backup", "parse", "write ledger"} <= set(first["seconds"])
     ledger = session.sheets.files["ledger"]
-    assert len(rows(ledger, "paystubs")) == 18 and len(rows(ledger, "source_documents")) == 3
+    assert len(rows(ledger, "paystubs")) == 18 and len(rows(ledger, "source_documents")) == 4
     backups = [f["name"] for f in session._drive.items.values()]
     assert "ledger_run-1.zip" in backups
 
@@ -80,6 +81,8 @@ def test_ingest_then_compute_then_rerun(session):
     computed = engine.compute_all(session, session.root, "legacy-key", legacy_year=2001,
                                   run_id="run-2")
     assert computed["mismatches"] == 0 and computed["possible_duplicates"] == 0
+    assert computed["tax_check_mismatches"] == 0
+    assert computed["withholding_unexplained"] == 0  # the synthetic stub is from 2001: no tables
 
     actuals = explore.monthly_actuals(session, session.root)
     assert actuals["spend"].dtype == float and len(actuals) == computed["rows"]

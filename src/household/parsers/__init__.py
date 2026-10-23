@@ -3,10 +3,11 @@
 Order matters only when two formats could both match; the most specific goes first.
 """
 
-from . import accounts_seed, documents, earnings_statement, pay_statement, schwab_equity
+from . import (accounts_seed, documents, earnings_statement, pay_statement, return_facts,
+               schwab_equity)
 from .common import ParseError, Result
 
-PARSERS = (accounts_seed, schwab_equity, pay_statement, earnings_statement, documents)
+PARSERS = (accounts_seed, return_facts, schwab_equity, pay_statement, earnings_statement, documents)
 
 
 def identify(text):

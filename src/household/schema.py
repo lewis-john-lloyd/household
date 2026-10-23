@@ -41,6 +41,8 @@ LEDGER = (
     Table("allocation_targets", ("effective", "node", "parent", "weight")),
     Table("parameters", ("year", "jurisdiction", "key", "value", "source")),
     Table("tax_brackets", ("year", "jurisdiction", "filing_status", "floor", "rate")),
+    Table("return_facts", ("year", "kind", "key", "person", "value", "source_doc", "note", "doc_id"),
+          {"kind": ("input", "filed", "estimate")}),
     Table("comp_events", ("effective", "person", "employer", "salary", "band", "fte")),
     Table("paystubs", ("pay_date", "period_start", "period_end", "person", "employer",
                        "stub_id", "line_item", "kind", "amount", "ytd_amount", "doc_id"),
@@ -66,6 +68,9 @@ REPORTS = (
     Table("run_log", ("run_id", "computed_at", "stage", "detail")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),
+    Table("tax_check", ("year", "line", "filed", "computed", "diff", "match", "run_id")),
+    Table("withholding_backtest", ("pay_date", "person", "employer", "stub_id", "kind", "base",
+                                   "withheld", "expected", "residual", "explanation", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

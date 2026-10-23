@@ -1,0 +1,3 @@
+account_id,institution,owner,type,tax_treatment,opened,closed,last4,expected_docs,max_gap_days
+bills,Example Bank,joint,checking,none,,,,monthly_statement,45
+card,Example Card,joint,credit_card,none,,,,monthly_statement,45

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, compute, ingest, legacy, schema, sheets
+from . import backup, compute, inbox, ingest, legacy, schema, sheets
 
 
 def new_run_id(now=None):
@@ -36,6 +36,19 @@ def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
     incoming = ingest.legacy_to_transactions(legacy.parse_data_rows(rows))
     appended, skipped = ingest.append_transactions(ledger, incoming)
     return {"run_id": run_id, "read": len(incoming), "appended": appended, "skipped": skipped}
+
+
+def ingest_inbox(session, folder_id, run_id=None):
+    """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py)."""
+    run_id = run_id or new_run_id()
+    ledger, _, _ = bootstrap(session, folder_id)
+    drive = session.drive()
+    backup.snapshot_ledger(ledger, drive, folder_id, run_id)
+    files = inbox.process(ledger, drive, folder_id)
+    counts = {}
+    for f in files:
+        counts[f["status"]] = counts.get(f["status"], 0) + 1
+    return {"run_id": run_id, "files": files, "counts": counts}
 
 
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None):

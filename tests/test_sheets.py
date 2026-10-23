@@ -70,14 +70,14 @@ class FakeSpreadsheet:
     def values_batch_update(self, body):
         for item in body["data"]:
             name = item["range"].split("'")[1]
-            self.tabs[name].rows = [list(r) for r in item["values"]]
+            self.tabs[name].rows = [list(r) for r in item["values"]] + self.tabs[name].rows[1:]
 
     def values_batch_get(self, ranges):
         out = []
         for r in ranges:
             name = r.split("'")[1]
             rows = self.tabs[name].rows
-            out.append({"values": rows[:1]} if rows else {})
+            out.append({"values": rows[:2]} if rows else {})
         return {"valueRanges": out}
 
 
@@ -106,6 +106,7 @@ def test_header_drift_is_an_error():
     ledger = FakeSpreadsheet("ledger")
     sheets.ensure_tables(ledger, schema.LEDGER)
     ledger.tabs["transactions"].rows[0][3] = "amt"
+    ledger.tabs["transactions"].rows.append(["id1"] + [""] * (len(TXNS.columns) - 1))
     with pytest.raises(sheets.SchemaMismatch):
         sheets.ensure_tables(ledger, schema.LEDGER)
 
@@ -135,3 +136,20 @@ def test_replace_table_rewrites_reports():
     sheets.replace_table(reports, t, pd.DataFrame([{"run_id": "r2", "computed_at": "x",
                                                     "stage": "compute", "detail": "d"}]))
     assert reports.tabs["run_log"].rows == [list(t.columns), ["r2", "x", "compute", "d"]]
+
+
+def test_empty_table_with_old_header_is_migrated():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.tabs["equity_sales"].rows = [["lot_id", "sale_date", "shares", "proceeds", "doc_id"]]
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    sales = schema.table(schema.LEDGER, "equity_sales")
+    assert ledger.tabs["equity_sales"].rows[0] == list(sales.columns)
+
+
+def test_table_with_data_and_old_header_is_an_error():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.tabs["equity_sales"].rows = [["lot_id", "sale_date"], ["x", "y"]]
+    with pytest.raises(sheets.SchemaMismatch):
+        sheets.ensure_tables(ledger, schema.LEDGER)

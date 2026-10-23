@@ -1,0 +1,20 @@
+                                                                                                             Direct Deposit Advice
+                                                                                                             Check Date
+                                                                                                             January 19, 2001
+ Pat Example                                                                                                                                 Earnings Statement
+ Employee ID                             Fed Taxable Income           1,900.00    Check Date        January 19, 2001
+                                         Fed Filing Status                   M    Period Beginning  December 31, 2000          Net Pay                  1,522.50
+                                                                                  Period Ending     January 13, 2001
+ Earnings          Rate            Hours      Amount                        YTD          Deductions                                    Amount                     YTD
+ 401k Match                                                              300.00          401k                                          105.00                  600.00
+ Regular         40.000            50.00    2,000.00                   6,000.00          Group Term Life Calc                            5.00                   15.00
+ Bonus                                                                 1,000.00          Phone Stipend                                 -20.00                  -60.00
+ GROUP TE                           0.00        5.00                      15.00          Deductions                                     90.00                  555.00
+ Gross Earnings                    50.00    2,005.00                   7,015.00          Direct Deposits
+ Taxes                                                    Amount            YTD
+ FITW                                                     200.00         600.00          PTO
+ MED                                                       29.08         101.72          PTO
+ SS                                                       124.31         434.93          PTO
+ XX                                                        39.11         120.00          PTO
+ Taxes                                                    392.50       1,256.65          PTO
+ Example Employer, LLC | 1 Example Way | FEIN: XX-XXXXXXX

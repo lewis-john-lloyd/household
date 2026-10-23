@@ -6,3 +6,8 @@ repos:
         entry: python tools/leak_guard.py
         language: system
         pass_filenames: true
+      - id: import-guard
+        name: import guard
+        entry: python tools/import_guard.py
+        language: system
+        pass_filenames: false

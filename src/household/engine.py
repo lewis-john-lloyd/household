@@ -4,6 +4,7 @@ Stores are found by name inside the household folder, so a notebook needs only
 the folder ID (and, for migration, the legacy workbook ID).
 """
 
+import time
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -43,12 +44,14 @@ def ingest_inbox(session, folder_id, run_id=None):
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
     drive = session.drive()
+    started = time.perf_counter()
     backup.snapshot_ledger(ledger, drive, folder_id, run_id)
-    files = inbox.process(ledger, drive, folder_id)
+    timing = {"backup": round(time.perf_counter() - started, 2)}
+    files = inbox.process(ledger, drive, folder_id, timing=timing)
     counts = {}
     for f in files:
         counts[f["status"]] = counts.get(f["status"], 0) + 1
-    return {"run_id": run_id, "files": files, "counts": counts}
+    return {"run_id": run_id, "files": files, "counts": counts, "seconds": timing}
 
 
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None):

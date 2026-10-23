@@ -16,7 +16,7 @@ from pathlib import Path
 
 ALLOWED = {
     # standard library, pure computation and in-memory I/O
-    "csv", "dataclasses", "datetime", "hashlib", "io", "json", "logging", "re",
+    "csv", "dataclasses", "datetime", "hashlib", "io", "json", "logging", "re", "time",
     # data handling
     "pandas", "pypdf",
     # Google: Sheets, Drive and Colab sign-in

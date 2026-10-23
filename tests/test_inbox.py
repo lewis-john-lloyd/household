@@ -195,3 +195,41 @@ def test_tables_are_read_once_per_run(setup, monkeypatch):
     monkeypatch.setattr(sheets, "read_table", lambda s, t: reads.append(t.name) or real(s, t))
     inbox.process(ledger, drive, "root")
     assert reads.count("paystubs") == 1 and reads.count("source_documents") == 1
+
+
+def test_one_append_per_table_however_many_files(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    for name in ("pay_statement.txt", "earnings_statement.txt", "schwab_equity.csv", "accounts_seed.csv"):
+        drop(drive, box, name)
+    calls = []
+    real = sheets.append_rows
+    monkeypatch.setattr(sheets, "append_rows", lambda s, t, df: calls.append(t.name) or real(s, t, df))
+    timing = {}
+    inbox.process(ledger, drive, "root", timing=timing)
+    assert sorted(calls) == ["accounts", "equity_sales", "equity_vests", "paystubs", "source_documents"]
+    assert calls[-1] == "source_documents"
+    assert {"download", "parse", "write ledger", "file in Drive"} <= set(timing)
+
+
+def test_overlapping_files_in_one_run_add_rows_once(setup):
+    drive, ledger, box, record = setup
+    drop(drive, box, "schwab_equity.csv")
+    copy = (FIXTURES / "schwab_equity.csv").read_text() + "\n"
+    drive.add("again.csv", box, "text/csv", copy.encode())
+    statuses = sorted(s["status"] for s in inbox.process(ledger, drive, "root"))
+    assert statuses == ["already_present", "ingested"]
+    assert len(rows(ledger, "equity_vests")) == 2
+
+
+def test_registered_file_left_in_inbox_is_filed_next_run(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    drop(drive, box, "pay_statement.txt")
+    monkeypatch.setattr(inbox, "move", lambda *a: (_ for _ in ()).throw(TimeoutError("timed out")))
+    [first] = inbox.process(ledger, drive, "root")
+    assert first["status"] == "error" and "not moved" in first["reason"]
+    monkeypatch.undo()
+    monkeypatch.setattr(inbox, "download", lambda d, fid: d.content[fid])
+    [second] = inbox.process(ledger, drive, "root")
+    assert second["status"] == "ingested" and second["appended"] == {}
+    assert drive.names_in(box) == [] and any(n.startswith("paystub_alex") for n in drive.names_in(record))
+    assert len(rows(ledger, "paystubs")) == 18 and len(rows(ledger, "source_documents")) == 1

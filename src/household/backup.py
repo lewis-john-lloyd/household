@@ -6,16 +6,17 @@ import io
 import json
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
+RETRIES = 5  # Google's client retries timeouts, dropped connections and 5xx with backoff
 
 
 def find_or_create_folder(drive, name, parent_id):
     query = (f"name = '{name}' and '{parent_id}' in parents and mimeType = '{FOLDER_MIME}' "
              "and trashed = false")
-    found = drive.files().list(q=query, fields="files(id)").execute().get("files", [])
+    found = drive.files().list(q=query, fields="files(id)").execute(num_retries=RETRIES).get("files", [])
     if found:
         return found[0]["id"]
     body = {"name": name, "mimeType": FOLDER_MIME, "parents": [parent_id]}
-    return drive.files().create(body=body, fields="id").execute()["id"]
+    return drive.files().create(body=body, fields="id").execute(num_retries=RETRIES)["id"]
 
 
 def upload_text(drive, name, parent_id, text, mime="text/csv"):
@@ -23,7 +24,7 @@ def upload_text(drive, name, parent_id, text, mime="text/csv"):
 
     media = MediaIoBaseUpload(io.BytesIO(text.encode("utf-8")), mimetype=mime)
     body = {"name": name, "parents": [parent_id]}
-    return drive.files().create(body=body, media_body=media, fields="id").execute()["id"]
+    return drive.files().create(body=body, media_body=media, fields="id").execute(num_retries=RETRIES)["id"]
 
 
 def to_csv(rows):

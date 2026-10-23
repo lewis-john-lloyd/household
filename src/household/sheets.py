@@ -26,22 +26,52 @@ def open_or_create(client, title, folder_id):
 
 
 def ensure_tables(spreadsheet, tables):
-    """Create missing tabs with headers and validation; check existing headers. Never edits data."""
+    """Create missing tabs with headers and validation; check existing headers. Never edits data.
+
+    A tab whose header differs from the schema is an error, unless the tab has no
+    data rows yet: then its header is rewritten, which is how a table that has
+    never held data picks up a schema change.
+    """
     existing = {ws.title: ws for ws in spreadsheet.worksheets()}
     present = [t for t in tables if t.name in existing]
+    migrate = []
     if present:  # one batched read for every header, to stay well inside the Sheets quota
-        ranges = [f"'{t.name}'!1:1" for t in present]
+        ranges = [f"'{t.name}'!1:2" for t in present]
         result = spreadsheet.values_batch_get(ranges)
         for t, value_range in zip(present, result.get("valueRanges", [])):
-            header = (value_range.get("values") or [[]])[0]
-            if tuple(header) != t.columns:
+            values = value_range.get("values") or [[]]
+            header = values[0]
+            if tuple(header) == t.columns:
+                continue
+            if len(values) > 1 and any(str(c).strip() for c in values[1]):
                 raise SchemaMismatch(
                     f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
+            migrate.append((t, existing[t.name], len(header)))
+    if migrate:
+        _migrate_empty_tables(spreadsheet, migrate)
     missing = [t for t in tables if t.name not in existing]
     if missing:
         _create_tables(spreadsheet, missing)
     _drop_default_sheet(spreadsheet, existing, tables)
     return [t.name for t in missing]
+
+
+def _migrate_empty_tables(spreadsheet, migrate):
+    """Rewrite the header of tables that hold no data; two API calls (three with dropdowns)."""
+    spreadsheet.batch_update({"requests": [
+        {"updateSheetProperties": {
+            "properties": {"sheetId": ws.id, "gridProperties": {
+                "columnCount": max(len(t.columns), old_width), "frozenRowCount": 1}},
+            "fields": "gridProperties.columnCount,gridProperties.frozenRowCount"}}
+        for t, ws, old_width in migrate]})
+    spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": [
+        {"range": f"'{t.name}'!A1",
+         "values": [list(t.columns) + [""] * max(0, old_width - len(t.columns))]}
+        for t, ws, old_width in migrate]})
+    validations = [_validation(ws.id, t, column, values)
+                   for t, ws, _ in migrate for column, values in t.enums.items()]
+    if validations:
+        spreadsheet.batch_update({"requests": validations})
 
 
 def _create_tables(spreadsheet, tables):

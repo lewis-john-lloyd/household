@@ -11,6 +11,10 @@ The package holds logic only. All data lives in the owner's Google Drive. Notebo
 - Notebooks are never committed; they hold real output.
 - `tools/leak_guard.py` enforces this in CI and as a pre-commit hook. A deliberate exception is marked on its line with `leak-guard: allow`.
 
+## Inbox
+
+Files dropped in the Drive `inbox` folder are identified, checked and filed by `engine.ingest_inbox`: pay stubs in two layouts, the Schwab equity export, the accounts seed, and tax returns and W-4s (filed for the record, no rows). Every parser checks the document against its own printed totals; a file that fails stays in the inbox with the reason, and nothing is written. See `src/household/inbox.py`.
+
 ## Development
 
 ```

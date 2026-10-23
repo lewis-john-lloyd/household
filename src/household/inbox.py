@@ -6,7 +6,10 @@ For every file in household_finances/inbox:
   3. Parse it. A parser's self-checks must pass, or the file stays in the inbox
      with the reason, and nothing is written.
   4. Append its rows, skipping any whose key is already in the ledger, so an
-     overlapping export or a re-run adds nothing twice.
+     overlapping export or a re-run adds nothing twice. The summary names the
+     earlier documents a partial overlap shared rows with. A file whose rows are
+     all already present (a re-download of the same data, different bytes) is
+     treated as a duplicate.
   5. Register it in source_documents, then move it to record_store under a
      name that says what it is.
 
@@ -61,16 +64,24 @@ def to_text(name, mime, data):
         return ""
 
 
+def _key(df, keys):
+    return df[keys].astype(str).apply(
+        lambda c: c.str.replace(r"\.0+$", "", regex=True)).agg("|".join, axis=1)
+
+
 def fresh_rows(incoming, existing, keys):
     """Rows of incoming whose key columns do not match any existing row."""
     if incoming.empty or existing.empty:
         return incoming
+    return incoming[~_key(incoming, keys).isin(set(_key(existing, keys)))]
 
-    def key(df):
-        return df[keys].astype(str).apply(
-            lambda c: c.str.replace(r"\.0+$", "", regex=True)).agg("|".join, axis=1)
 
-    return incoming[~key(incoming).isin(set(key(existing)))]
+def overlapping_docs(incoming, existing, keys):
+    """doc_ids of existing rows that incoming repeats."""
+    if incoming.empty or existing.empty or "doc_id" not in existing:
+        return set()
+    hit = _key(existing, keys).isin(set(_key(incoming, keys)))
+    return set(existing.loc[hit, "doc_id"].astype(str)) - {""}
 
 
 def canonical_name(result, sha, original):
@@ -83,7 +94,9 @@ def process(ledger, drive, folder_id, now=None):
     received_at = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
     inbox = backup.find_or_create_folder(drive, "inbox", folder_id)
     record = backup.find_or_create_folder(drive, "record_store", folder_id)
-    known = set(sheets.read_table(ledger, DOCS)["sha256"])
+    registered = sheets.read_table(ledger, DOCS)
+    known = set(registered["sha256"])
+    names = dict(zip(registered["doc_id"], registered["original_name"]))
     tables = {t.name: t for t in schema.LEDGER}
     summaries = []
 
@@ -109,7 +122,7 @@ def process(ledger, drive, folder_id, now=None):
             continue
 
         doc_id = sha[:16]
-        written = {}
+        staged, overlaps = {}, set()
         for name, rows in result.tables.items():
             if rows.empty:
                 continue
@@ -117,9 +130,20 @@ def process(ledger, drive, folder_id, now=None):
             if "doc_id" in tables[name].columns:
                 rows["doc_id"] = doc_id
             existing = sheets.read_table(ledger, tables[name])
-            new = fresh_rows(rows, existing, result.keys[name])
+            staged[name] = (rows, fresh_rows(rows, existing, result.keys[name]))
+            overlaps |= overlapping_docs(rows, existing, result.keys[name])
+        if staged and all(new.empty for _, new in staged.values()):
+            duplicates = backup.find_or_create_folder(drive, "duplicates", record)
+            move(drive, f["id"], inbox, duplicates, f["name"])
+            summary.update(status="already_present", parser=result.parser,
+                           overlaps=sorted(names.get(d, d) for d in overlaps))
+            continue
+        written = {}
+        for name, (rows, new) in staged.items():
             written[name] = sheets.append_rows(ledger, tables[name], new)
             summary.setdefault("skipped", {})[name] = len(rows) - len(new)
+        if overlaps:
+            summary["overlaps"] = sorted(names.get(d, d) for d in overlaps)
 
         new_name = canonical_name(result, sha, f["name"])
         sheets.append_rows(ledger, DOCS, pd.DataFrame([{
@@ -130,6 +154,7 @@ def process(ledger, drive, folder_id, now=None):
             "precedence": "",
         }]))
         known.add(sha)
+        names[doc_id] = f["name"]
         move(drive, f["id"], inbox, record, new_name)
         summary.update(status="ingested", parser=result.parser, filed_as=new_name,
                        appended=written, notes=result.notes)

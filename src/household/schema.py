@@ -31,7 +31,7 @@ LEDGER = (
           {"source": ("legacy", "csv", "pdf", "feed", "hand"),
            "one_off": ("TRUE", "FALSE")}),
     Table("txn_corrections", ("txn_id", "field", "value", "recorded_at", "reason", "source"),
-          {"field": ("category", "one_off", "note", "split")}),
+          {"field": ("category", "one_off", "note", "split", "void")}),
     Table("balances", ("as_of", "account_id", "balance", "doc_id")),
     Table("categories", ("category", "group", "priority"),
           {"priority": ("high", "medium", "low")}),
@@ -66,6 +66,8 @@ REPORTS = (
     Table("run_log", ("run_id", "computed_at", "stage", "detail")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),
+    Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
+                                  "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )
 
 

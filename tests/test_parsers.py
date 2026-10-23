@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from household.parsers import ParseError, accounts_seed, documents, identify
+from household.parsers import ParseError, accounts_seed, documents, identify, tax_law
 from household.parsers import earnings_statement, pay_statement, schwab_equity
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -134,3 +134,30 @@ def test_unparsed_stub_format_is_filed_for_the_record():
     text_ = "Earnings  Statement\nPeriod  Beginning:  01/01/2001\nPay  date:   01/19/2001\nAdvice  number:  0001"
     r = documents.parse(text_)
     assert identify(text_) is documents and (r.kind, r.label) == ("paystub_unparsed", "paystub_unparsed_2001-01-19")
+
+
+@pytest.mark.parametrize("text_, label, year", [
+    ("Employers must use Form W-4, Employee's Withholding Certificate.\n"
+     "Publication 15-T (2001)   Catalog Number 32112B\n", "publication-15-t-2001", "2001"),
+    ("Form 1040 U.S. Individual Income Tax Return\n Instructions for Form 1040 (2001)  Catalog Number 24811V",
+     "instructions-for-form-1040-2001", "2001"),
+    ("2001 Instructions for Schedule A\nInstructions for Schedule A (Form 1040) (2001) Catalog Number 1",
+     "instructions-for-schedule-a-2001", "2001"),
+    ("Part III\nAd min is tra tiv e , Pr oc ed ur al, a nd M is c ell an eo us\nRev. Proc. 2001- 7\n",
+     "rev-proc-2001-7", ""),
+    ("2002 Amounts Relating to Retirement Plans\n N otice 2001- 80\n Section 415 of the Internal Revenue "
+     "Code provides", "notice-2001-80", ""),
+    ("PUBLIC LAW 101\u201321\u2014JULY 4, 2001\n An Act", "public-law-101-21", ""),
+])
+def test_tax_law_sources_are_identified_before_other_recognizers(text_, label, year):
+    assert identify(text_) is tax_law
+    r = tax_law.parse(text_)
+    assert (r.kind, r.label, r.tables) == ("tax_law", label, {})
+    assert r.covers_from == (f"{year}-01-01" if year else "")
+
+
+def test_household_documents_that_mention_the_law_are_not_tax_law():
+    return_text = ("Form 1040 U.S. Individual Income Tax Return 2001\n"
+                   "See Notice 2001-80 and Rev. Proc. 2001-7 for limits under the Internal Revenue Code.")
+    assert identify(return_text) is documents
+    assert identify("Form W-4  Employee's Withholding Certificate  2001\nPublication 15-T") is documents

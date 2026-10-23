@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, compute, inbox, ingest, legacy, projection, schema, sheets, tax,
+from . import (backup, compute, inbox, ingest, legacy, projection, schema, sheets, tax, taxsources,
                withholding)
 
 
@@ -101,6 +101,15 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         result["tax_check_mismatches"] = int((~check["match"]).sum())
         _say(log, f"tax_check: {len(check)} filed lines, {result['tax_check_mismatches']} off by more "
                   "than 1 dollar")
+
+    documents = sheets.read_table(ledger, schema.table(schema.LEDGER, "source_documents"))
+    sources = taxsources.report(documents)
+    sources["run_id"] = run_id
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_sources"), sources)
+    unfiled = int((sources["record"] == "not in record store").sum())
+    result["tax_sources_unfiled"] = unfiled
+    _say(log, f"tax_sources: {len(sources)} cited values, {unfiled} whose source PDF is not in the "
+              "record store")
 
     stubs = sheets.read_table(ledger, schema.table(schema.LEDGER, "paystubs"))
     if not stubs.empty:

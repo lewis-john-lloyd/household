@@ -75,6 +75,7 @@ REPORTS = (
                          "owe_or_refund", "safe_harbor", "safe_harbor_met", "run_id")),
     Table("elections", ("year", "person", "employer", "plan", "projected", "limit", "gap", "status",
                         "run_id")),
+    Table("tax_sources", ("year", "item", "value", "document", "page", "quote", "record", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

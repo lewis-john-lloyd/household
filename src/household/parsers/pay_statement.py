@@ -128,6 +128,8 @@ def parse(text):
             summary["Current"], summary["YTD"])],
         columns=df.columns)
     rows = pd.concat([df, memo], ignore_index=True)
+    stub = re.search(r"Document\s+(\d+)", text)
+    rows.insert(0, "stub_id", stub.group(1) if stub else "")
     rows.insert(0, "employer", employer)
     rows.insert(0, "person", person)
     rows.insert(0, "period_end", period_end)
@@ -136,4 +138,4 @@ def parse(text):
     return Result(kind="paystub", parser=NAME, label=f"paystub_{person}_{pay_date}",
                   covers_from=period_start, covers_to=period_end,
                   tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer"]})
+                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]})

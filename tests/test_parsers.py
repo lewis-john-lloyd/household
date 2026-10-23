@@ -97,3 +97,18 @@ def test_documents_recognized_without_rows():
     assert (r.kind, r.label, r.tables) == ("tax_return", "tax_return_2001", {})
     w4 = identify("Form W-4  Employee's Withholding Certificate  2001")
     assert w4 is documents and documents.parse("Form W-4 Withholding Certificate 2001").label == "w4_2001"
+
+
+def test_stub_ids_distinguish_two_stubs_on_one_date():
+    a = pay_statement.parse(text("pay_statement.txt")).tables["paystubs"]
+    b = earnings_statement.parse(text("earnings_statement.txt")).tables["paystubs"]
+    assert set(a["stub_id"]) == {"4242"} and set(b["stub_id"]) == {"77"}
+
+
+def test_earnings_statement_accepts_an_unlabeled_deductions_total():
+    lines = text("earnings_statement.txt").splitlines()
+    i = next(k for k, l in enumerate(lines) if "GROUP TE" in l)
+    at = lines[i].index("Deductions", 30)
+    lines[i] = lines[i][:at] + " " * len("Deductions") + lines[i][at + len("Deductions"):]
+    r = earnings_statement.parse("\n".join(lines))
+    assert r.tables["paystubs"].set_index("line_item").loc["Deductions", "amount"] == 90

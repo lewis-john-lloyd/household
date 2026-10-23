@@ -2,6 +2,7 @@
                                                                                                                                                                                                                                       Period Start Date   01/04/2001
  Acme Corp                                                                                                                                                                                                                            Period End Date     01/17/2001
  1 Example Way                                                                                                                                                                                                                        Pay Date            01/19/2001
+                                                                                                                                                                                                                                      Document            4242
                                                                                                                                                                                                                                       Net Pay             $2,607.50
 Pay Details
 Alex Example                          Employee Number      000123

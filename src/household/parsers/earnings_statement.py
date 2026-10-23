@@ -88,7 +88,13 @@ def parse(text):
             else:
                 kind = "employer" if name in EMPLOYER else "income"
                 items.append((name, kind, cols.get(2, 0.0), cols.get(3, 0.0)))
-        if not ded_done and rt and not rt[0].numeric:
+        if not ded_done and rt and rt[0].numeric and any(k != "income" and k != "employer"
+                                                          for _, k, _, _ in items):
+            # Some stubs (bonus checks) print the deductions total with no label.
+            cols = {nearest(t, ded_edges): t.value for t in rt if t.numeric}
+            deductions_total = (cols.get(0, 0.0), cols.get(1, 0.0))
+            ded_done = True
+        elif not ded_done and rt and not rt[0].numeric:
             name = rt[0].text
             cols = {nearest(t, ded_edges): t.value for t in rt[1:] if t.numeric}
             if name == "Deductions":
@@ -98,21 +104,23 @@ def parse(text):
                 kind = "pre_tax" if name in PRE_TAX else "post_tax"
                 items.append((name, kind, cols.get(0, 0.0), cols.get(1, 0.0)))
 
-    tax_head = next((k for k in range(i - 1, len(lines))
+    tax_head = next((k for k in range(head + 1, len(lines))
                      if lines[k].strip().startswith("Taxes") and "Amount" in lines[k]), None)
     if tax_head is None:
         raise ParseError(f"{NAME}: no taxes header")
+    tax_line = lines[tax_head]
+    tax_edges = [tax_line.find("Amount") + 6, tax_line.find("YTD") + 3]
     for line in lines[tax_head + 1:]:
         toks = [t for t in tokens(line) if t.start < ded_col - 2]
         if not toks or toks[0].numeric:
             continue
-        nums = [t.value for t in toks[1:] if t.numeric]
-        if len(nums) != 2:
+        cols = {nearest(t, tax_edges): t.value for t in toks[1:] if t.numeric}
+        if not cols:
             continue
         if toks[0].text == "Taxes":
-            taxes_total = tuple(nums)
+            taxes_total = (cols.get(0, 0.0), cols.get(1, 0.0))
             break
-        items.append((toks[0].text, "tax", nums[0], nums[1]))
+        items.append((toks[0].text, "tax", cols.get(0, 0.0), cols.get(1, 0.0)))
 
     if gross is None or deductions_total is None or taxes_total is None:
         raise ParseError(f"{NAME}: missing a total row")
@@ -141,10 +149,11 @@ def parse(text):
         ("Net Pay", "memo", net, 0.0),
     ], columns=df.columns)
     rows = pd.concat([df, memo], ignore_index=True)
-    for col, value in (("employer", employer), ("person", person), ("period_end", period_end),
+    stub = re.search(r"Voucher Number\s{2,}(\d+)", text)
+    for col, value in (("stub_id", stub.group(1) if stub else ""), ("employer", employer), ("person", person), ("period_end", period_end),
                        ("period_start", period_start), ("pay_date", pay_date)):
         rows.insert(0, col, value)
     return Result(kind="paystub", parser=NAME, label=f"paystub_{person}_{pay_date}",
                   covers_from=period_start, covers_to=period_end,
                   tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer"]})
+                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]})

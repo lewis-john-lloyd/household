@@ -2,7 +2,7 @@
                                                                                                              Check Date
                                                                                                              January 19, 2001
  Pat Example                                                                                                                                 Earnings Statement
- Employee ID                             Fed Taxable Income           1,900.00    Check Date        January 19, 2001
+ Employee ID                             Fed Taxable Income           1,900.00    Check Date        January 19, 2001           Voucher Number                 77
                                          Fed Filing Status                   M    Period Beginning  December 31, 2000          Net Pay                  1,522.50
                                                                                   Period Ending     January 13, 2001
  Earnings          Rate            Hours      Amount                        YTD          Deductions                                    Amount                     YTD

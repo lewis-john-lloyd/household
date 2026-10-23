@@ -43,7 +43,7 @@ LEDGER = (
     Table("tax_brackets", ("year", "jurisdiction", "filing_status", "floor", "rate")),
     Table("comp_events", ("effective", "person", "employer", "salary", "band", "fte")),
     Table("paystubs", ("pay_date", "period_start", "period_end", "person", "employer",
-                       "line_item", "kind", "amount", "ytd_amount", "doc_id"),
+                       "stub_id", "line_item", "kind", "amount", "ytd_amount", "doc_id"),
           {"kind": ("income", "pre_tax", "tax", "post_tax", "employer", "memo")}),
     Table("equity_vests", ("vest_date", "grant_id", "award_date", "net_shares", "fmv",
                            "deposit_date", "doc_id")),

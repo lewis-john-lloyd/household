@@ -38,19 +38,46 @@ class FakeFiles:
                                              body.get("mimeType", "text/csv"), b"")})
 
     def update(self, fileId, addParents, removeParents, body, fields):
-        f = self.drive.items[fileId]
-        assert f["parent"] == removeParents
-        f.update(parent=addParents, name=body["name"])
-        return Request({"id": fileId})
+        drive = self.drive
+
+        class Move:  # like Drive, nothing happens until execute
+            def execute(self, num_retries=0):
+                f = drive.items[fileId]
+                assert f["parent"] == removeParents
+                f.update(parent=addParents, name=body["name"])
+                return {"id": fileId}
+
+        return Move()
+
+
+class FakeBatch:
+    """Runs each added request in order and reports to the callback, like Drive's batch."""
+
+    def __init__(self, callback, drive):
+        self.callback, self.drive, self.requests = callback, drive, []
+
+    def add(self, request, request_id):
+        self.requests.append((request_id, request))
+
+    def execute(self):
+        self.drive.batches += 1
+        for request_id, request in self.requests:
+            try:
+                self.callback(request_id, request.execute(), None)
+            except Exception as e:
+                self.callback(request_id, None, e)
 
 
 class FakeDrive:
     def __init__(self):
-        self.items, self.content, self._n = {}, {}, 0
+        self.items, self.content, self._n, self.batches = {}, {}, 0, 0
         self._files = FakeFiles(self)
 
     def files(self):
         return self._files
+
+    def new_batch_http_request(self, callback):
+        return FakeBatch(callback, self)
 
     def add(self, name, parent, mime, data):
         self._n += 1
@@ -224,7 +251,8 @@ def test_overlapping_files_in_one_run_add_rows_once(setup):
 def test_registered_file_left_in_inbox_is_filed_next_run(setup, monkeypatch):
     drive, ledger, box, record = setup
     drop(drive, box, "pay_statement.txt")
-    monkeypatch.setattr(inbox, "move", lambda *a: (_ for _ in ()).throw(TimeoutError("timed out")))
+    monkeypatch.setattr(inbox, "move_all",
+                        lambda d, moves: {m[0]: TimeoutError("timed out") for m in moves})
     [first] = inbox.process(ledger, drive, "root")
     assert first["status"] == "error" and "not moved" in first["reason"]
     monkeypatch.undo()
@@ -233,3 +261,29 @@ def test_registered_file_left_in_inbox_is_filed_next_run(setup, monkeypatch):
     assert second["status"] == "ingested" and second["appended"] == {}
     assert drive.names_in(box) == [] and any(n.startswith("paystub_alex") for n in drive.names_in(record))
     assert len(rows(ledger, "paystubs")) == 18 and len(rows(ledger, "source_documents")) == 1
+
+
+def test_files_are_moved_in_one_batch(setup):
+    drive, ledger, box, record = setup
+    for name in ("pay_statement.txt", "earnings_statement.txt", "schwab_equity.csv", "accounts_seed.csv"):
+        drop(drive, box, name)
+    inbox.process(ledger, drive, "root")
+    assert drive.batches == 1 and drive.names_in(box) == []
+
+
+def test_a_move_the_batch_rejects_is_retried_alone(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    drop(drive, box, "pay_statement.txt")
+    drop(drive, box, "accounts_seed.csv")
+    real = FakeBatch.execute
+
+    def first_fails(self):
+        request_id, request = self.requests[0]
+        self.requests[0] = (request_id, type("Boom", (), {"execute": lambda s: (_ for _ in ()).throw(
+            TimeoutError("timed out"))})())
+        real(self)
+
+    monkeypatch.setattr(FakeBatch, "execute", first_fails)
+    out = inbox.process(ledger, drive, "root")
+    assert [s["status"] for s in out] == ["ingested", "ingested"], out
+    assert drive.names_in(box) == []

@@ -73,7 +73,7 @@ def test_ingest_then_compute_then_rerun(session):
     ledger = session.sheets.files["ledger"]
     assert len(rows(ledger, "paystubs")) == 18 and len(rows(ledger, "source_documents")) == 3
     backups = [f["name"] for f in session._drive.items.values()]
-    assert "run-1" in backups and "manifest.json" in backups
+    assert "ledger_run-1.zip" in backups
 
     legacy = engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")
     assert legacy["appended"] == legacy["read"] == 6

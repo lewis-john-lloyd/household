@@ -133,13 +133,27 @@ class _Clock:
         self.seconds[stage] = round(self.seconds.get(stage, 0.0) + time.perf_counter() - started, 2)
 
 
-def process(ledger, drive, folder_id, now=None, timing=None):
+def _quiet(_):
+    pass
+
+
+def _describe(summary):
+    if summary["status"] in ("ingested", "already_present"):
+        rows = ", ".join(f"{n} {t}" for t, n in summary.get("appended", {}).items() if n)
+        detail = f'{summary.get("parser", "")}{": " + rows if rows else ""}'
+        return f"{detail} -> {summary.get('filed_as', 'duplicates')}"
+    return summary.get("reason", "")
+
+
+def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     """Ingest every file in the inbox. Returns one summary dict per file.
 
     A file that hits an unexpected error (a network timeout, say) is reported
     with status "error" and left in the inbox; the run carries on, and the next
-    run picks it up. Pass a dict as timing to receive seconds spent per stage.
+    run picks it up. Pass a dict as timing to receive seconds spent per stage,
+    and a callable as log (print, say) to see progress line by line.
     """
+    log = log or _quiet
     clock = _Clock()
     received_at = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
     inbox = backup.find_or_create_folder(drive, "inbox", folder_id)
@@ -152,19 +166,32 @@ def process(ledger, drive, folder_id, now=None, timing=None):
     names = dict(zip(registered["doc_id"], registered["original_name"]))
     summaries, moves = [], []
 
-    for f in list_files(drive, inbox):
+    files = list_files(drive, inbox)
+    log(f"inbox: {len(files)} files")
+    for i, f in enumerate(files, start=1):
         summary = {"file": f["name"], "status": None}
         summaries.append(summary)
+        started = time.perf_counter()
         try:
             move_to = _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock)
             if move_to:
                 moves.append((f, summary, move_to))
         except Exception as e:  # keep going; the file stays in the inbox for the next run
             summary.update(status="error", reason=f"{type(e).__name__}: {e}")
+        log(f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
+            f"({time.perf_counter() - started:.1f}s)")
 
+    pending = {name: len(ledger_tables.pending[name])
+               for name in sorted(ledger_tables.pending, key=lambda n: n == "source_documents")}
+    if pending:
+        log("writing to ledger: " + ", ".join(f"{n} rows to {t}" for t, n in pending.items()))
     started = time.perf_counter()
     ledger_tables.flush()
     clock.add("write ledger", started)
+    if pending:
+        log(f"written ({time.perf_counter() - started:.1f}s)")
+    if moves:
+        log(f"filing {len(moves)} files in Drive")
 
     started = time.perf_counter()
     duplicates = None
@@ -178,6 +205,8 @@ def process(ledger, drive, folder_id, now=None, timing=None):
         except Exception as e:  # registered but not moved: the next run files it
             summary.update(status="error", reason=f"not moved: {type(e).__name__}: {e}")
     clock.add("file in Drive", started)
+    if moves:
+        log(f"filed ({time.perf_counter() - started:.1f}s)")
     if timing is not None:
         timing.update(clock.seconds)
     return summaries

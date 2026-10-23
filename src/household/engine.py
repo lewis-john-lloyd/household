@@ -39,24 +39,36 @@ def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
     return {"run_id": run_id, "read": len(incoming), "appended": appended, "skipped": skipped}
 
 
-def ingest_inbox(session, folder_id, run_id=None):
-    """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py)."""
+def _say(log, message):
+    if log:
+        log(message)
+
+
+def ingest_inbox(session, folder_id, run_id=None, log=print):
+    """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py).
+
+    Progress goes to log (print by default; None for silence).
+    """
     run_id = run_id or new_run_id()
+    _say(log, f"run {run_id}: opening the ledger")
     ledger, _, _ = bootstrap(session, folder_id)
     drive = session.drive()
+    _say(log, "backing up every ledger tab")
     started = time.perf_counter()
-    backup.snapshot_ledger(ledger, drive, folder_id, run_id)
+    manifest = backup.snapshot_ledger(ledger, drive, folder_id, run_id)
     timing = {"backup": round(time.perf_counter() - started, 2)}
-    files = inbox.process(ledger, drive, folder_id, timing=timing)
+    _say(log, f"backup: {len(manifest['tables'])} tabs to backups/{run_id} ({timing['backup']:.1f}s)")
+    files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
     counts = {}
     for f in files:
         counts[f["status"]] = counts.get(f["status"], 0) + 1
     return {"run_id": run_id, "files": files, "counts": counts, "seconds": timing}
 
 
-def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None):
+def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
+    _say(log, f"run {run_id}: reading the ledger")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger, reports, _ = bootstrap(session, folder_id)
 
@@ -66,6 +78,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     actuals = compute.monthly_actuals(effective)
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
+    _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
 
     decisions = sheets.read_table(ledger, schema.table(schema.LEDGER, "proposal_decisions"))
     dismissed = decisions.loc[(decisions["kind"] == "duplicate")
@@ -73,6 +86,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     dupes = compute.possible_duplicates(effective, dismissed=set(dismissed))
     dupes["run_id"] = run_id
     sheets.replace_table(reports, schema.table(schema.REPORTS, "possible_duplicates"), dupes)
+    _say(log, f"possible_duplicates: {len(dupes)}")
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
               "possible_duplicates": len(dupes)}
@@ -84,6 +98,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         check["run_id"] = run_id
         sheets.replace_table(reports, schema.table(schema.REPORTS, "legacy_check"), check)
         result.update({"checked": len(check), "mismatches": int((~check["match"]).sum())})
+        _say(log, f"legacy check {legacy_year}: {result['mismatches']} mismatches of {len(check)}")
 
     log = pd.DataFrame([{"run_id": run_id, "computed_at": computed_at, "stage": "compute",
                          "detail": str(result)}])

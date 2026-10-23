@@ -87,3 +87,18 @@ def test_ingest_then_compute_then_rerun(session):
     again = engine.ingest_inbox(session, session.root, run_id="run-3")
     assert again["files"] == [] and again["counts"] == {}
     assert len(rows(ledger, "paystubs")) == 18
+
+
+def test_progress_is_logged_line_by_line(session):
+    drop(session, "pay_statement.pdf", "application/pdf")
+    session._drive.add("notes.txt", session.box, "text/plain", b"nothing")
+    lines = []
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=lines.append)
+    text = "\n".join(lines)
+    assert "backup:" in text and "inbox: 2 files" in text
+    assert any(l.startswith("[1/2] ") or l.startswith("[2/2] ") for l in lines)
+    assert "unrecognized" in text and "writing to ledger: 18 rows to paystubs" in text
+    assert "filed (" in text
+    quiet = []
+    engine.ingest_inbox(session, session.root, run_id="run-2", log=None)
+    assert quiet == []

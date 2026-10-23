@@ -7,7 +7,7 @@ class FakeRequest:
     def __init__(self, result):
         self.result = result
 
-    def execute(self):
+    def execute(self, num_retries=0):
         return self.result
 
 

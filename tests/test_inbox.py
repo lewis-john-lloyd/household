@@ -16,7 +16,7 @@ class Request:
     def __init__(self, result):
         self.result = result
 
-    def execute(self):
+    def execute(self, num_retries=0):
         return self.result
 
 
@@ -162,3 +162,36 @@ def test_partial_overlap_names_the_earlier_file(setup):
     drive.add("export2.csv", box, "text/csv", newer.encode())
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["status"] == "ingested" and summary["overlaps"] == ["schwab_equity.csv"]
+
+
+def test_network_error_on_one_file_does_not_stop_the_run(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    bad = drop(drive, box, "pay_statement.txt")
+    drop(drive, box, "accounts_seed.csv")
+
+    def flaky(d, fid):
+        if fid == bad:
+            raise TimeoutError("The read operation timed out")
+        return d.content[fid]
+
+    monkeypatch.setattr(inbox, "download", flaky)
+    out = {s["file"]: s for s in inbox.process(ledger, drive, "root")}
+    assert out["pay_statement.txt"]["status"] == "error"
+    assert "TimeoutError" in out["pay_statement.txt"]["reason"]
+    assert out["accounts_seed.csv"]["status"] == "ingested"
+    assert drive.names_in(box) == ["pay_statement.txt"]  # left for the next run
+
+    monkeypatch.setattr(inbox, "download", lambda d, fid: d.content[fid])
+    [again] = inbox.process(ledger, drive, "root")
+    assert again["status"] == "ingested" and again["appended"] == {"paystubs": 18}
+
+
+def test_tables_are_read_once_per_run(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    for name in ("pay_statement.txt", "earnings_statement.txt"):
+        drop(drive, box, name)
+    reads = []
+    real = sheets.read_table
+    monkeypatch.setattr(sheets, "read_table", lambda s, t: reads.append(t.name) or real(s, t))
+    inbox.process(ledger, drive, "root")
+    assert reads.count("paystubs") == 1 and reads.count("source_documents") == 1

@@ -1,4 +1,6 @@
-"""Documents filed for the record with no rows to extract: tax returns and W-4s.
+"""Documents filed for the record with no rows to extract: tax returns, W-4s, and pay
+stubs from formats not worth a parser (a closed employer's ADP advices, whose PDF
+text drops the punctuation from every number).
 
 Their few needed facts are entered by hand, tagged with the document's doc_id.
 Long documents are identified from their first pages, so the markers include
@@ -23,7 +25,14 @@ def _kind(text):
         return "tax_return"
     if "W-4" in text and "Withholding Certificate" in text:
         return "w4"
+    if re.search(r"Advice\s+number", text) and re.search(r"Period\s+Beginning", text):
+        return "paystub_unparsed"
     return None
+
+
+def _pay_date(text):
+    m = re.search(r"Pay\s+date:\s+(\d\d)/(\d\d)/(\d{4})", text, re.IGNORECASE)
+    return f"{m.group(3)}-{m.group(1)}-{m.group(2)}" if m else ""
 
 
 def _year(kind, text):
@@ -37,6 +46,10 @@ def _year(kind, text):
 
 def parse(text):
     kind = _kind(text)
+    if kind == "paystub_unparsed":
+        day = _pay_date(text)
+        return Result(kind=kind, parser=NAME, label=f"{kind}_{day}" if day else kind,
+                      covers_from=day, covers_to=day)
     year = _year(kind, text)
     return Result(kind=kind, parser=NAME, label=f"{kind}_{year}" if year else kind,
                   covers_from=f"{year}-01-01" if year else "",

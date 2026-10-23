@@ -6,8 +6,18 @@ Every stub is checked against its own summary before anything is written:
 line items must add to the printed totals, gross minus taxes minus deductions
 must equal net, and gross minus pre-tax deductions must equal FIT taxable wages.
 The last check is what catches a deduction filed under the wrong kind.
+
+These checks are strict for the period's figures. Year-to-date figures are
+checked too, but a mismatch there is reported rather than fatal: on days with
+two stubs (an RSU vest beside another payment) payroll prints line-item YTDs
+that leave out the sibling stub, while the summary includes it.
+
+A check history (one stub per page) parses into every stub it holds. Stubs
+are identified by their document number; vest stubs print none, so they get
+an id derived from their own figures, which is stable across downloads.
 """
 
+import hashlib
 import re
 
 import pandas as pd
@@ -15,6 +25,7 @@ import pandas as pd
 from .common import ParseError, Result, nearest, require, tokens, us_date
 
 NAME = "pay_statement"
+ALL_PAGES = True  # check histories run to many pages
 
 # Deductions taken before federal income tax. Anything else is post-tax; the
 # FIT taxable wages check fails loudly if a new pre-tax line appears.
@@ -52,7 +63,32 @@ def _header_edges(line, labels):
     return edges
 
 
+def _stubs(text):
+    """Split text into one chunk per stub, each starting at its "Pay Statement" title."""
+    lines = text.splitlines()
+    starts = [i for i, l in enumerate(lines) if "Pay Statement" in l]
+    if not starts:
+        raise ParseError(f"{NAME}: no title")
+    bounds = starts + [len(lines)]
+    return ["\n".join(lines[a:b]) for a, b in zip(bounds, bounds[1:])]
+
+
 def parse(text):
+    stubs = [_parse_one(chunk) for chunk in _stubs(text)]
+    rows = pd.concat([r for r, _ in stubs], ignore_index=True)
+    notes = [n for _, ns in stubs for n in ns]
+    person = rows["person"].iloc[0]
+    dates = sorted(rows["pay_date"].unique())
+    label = (f"paystub_{person}_{dates[0]}" if len(stubs) == 1
+             else f"paystubs_{person}_{dates[0]}_{dates[-1]}")
+    return Result(kind="paystub", parser=NAME, label=label,
+                  covers_from=rows["period_start"].min(), covers_to=rows["period_end"].max(),
+                  tables={"paystubs": rows},
+                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]},
+                  notes=notes)
+
+
+def _parse_one(text):
     lines = text.splitlines()
     pay_date = _field(text, "Pay Date")
     period_start = _field(text, "Period Start Date")
@@ -110,17 +146,25 @@ def parse(text):
         raise ParseError(f"{NAME}: unreadable pay summary")
 
     df = pd.DataFrame(items, columns=["line_item", "kind", "amount", "ytd_amount"])
+    notes = []
     for col, period in (("amount", "Current"), ("ytd_amount", "YTD")):
         gross, fit, taxes, deductions, net = summary[period]
         by_kind = df.groupby("kind")[col].sum()
         income, pre = by_kind.get("income", 0.0), by_kind.get("pre_tax", 0.0)
-        require([
+        checks = [
             (f"{period} earnings", gross, income),
             (f"{period} taxes", taxes, by_kind.get("tax", 0.0)),
             (f"{period} deductions", deductions, pre + by_kind.get("post_tax", 0.0)),
             (f"{period} net", net, gross - taxes - deductions),
             (f"{period} FIT taxable", fit, gross - pre),
-        ], f"{NAME} {pay_date}")
+        ]
+        if period == "Current":
+            require(checks, f"{NAME} {pay_date}")
+        else:
+            try:
+                require(checks, f"{NAME} {pay_date}")
+            except ParseError as e:
+                notes.append(str(e).replace("failed self-checks", "YTD differs from its lines"))
 
     memo = pd.DataFrame(
         [(label, "memo", c, y) for label, c, y in zip(
@@ -129,13 +173,15 @@ def parse(text):
         columns=df.columns)
     rows = pd.concat([df, memo], ignore_index=True)
     stub = re.search(r"Document\s+(\d+)", text)
-    rows.insert(0, "stub_id", stub.group(1) if stub else "")
+    if stub:
+        stub_id = stub.group(1)
+    else:
+        figures = "|".join(f"{v:.2f}" for v in summary["Current"] + summary["YTD"])
+        stub_id = "s" + hashlib.sha256(f"{pay_date}|{figures}".encode()).hexdigest()[:10]
+    rows.insert(0, "stub_id", stub_id)
     rows.insert(0, "employer", employer)
     rows.insert(0, "person", person)
     rows.insert(0, "period_end", period_end)
     rows.insert(0, "period_start", period_start)
     rows.insert(0, "pay_date", pay_date)
-    return Result(kind="paystub", parser=NAME, label=f"paystub_{person}_{pay_date}",
-                  covers_from=period_start, covers_to=period_end,
-                  tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]})
+    return rows, notes

@@ -132,7 +132,7 @@ def test_overlapping_export_adds_only_new_rows(setup):
 
 def test_failed_self_check_leaves_file_and_writes_nothing(setup):
     drive, ledger, box, record = setup
-    broken = (FIXTURES / "pay_statement.txt").read_text().replace("$100.00", "$900.00", 1)  # leak-guard: allow (synthetic)
+    broken = (FIXTURES / "pay_statement.txt").read_text().replace("$4,000.00", "$4,100.00", 1)  # leak-guard: allow (synthetic)
     drive.add("stub.txt", box, "text/plain", broken.encode())
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["status"] == "failed" and "self-checks" in summary["reason"]

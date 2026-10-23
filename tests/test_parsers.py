@@ -40,7 +40,7 @@ def test_pay_statement_lines_and_kinds():
 
 
 def test_pay_statement_rejects_a_misread_number():
-    broken = text("pay_statement.txt").replace("$100.00", "$900.00", 1)  # Medical current; leak-guard: allow (synthetic)
+    broken = text("pay_statement.txt").replace("$4,000.00", "$4,100.00", 1)  # Regular Pay current; leak-guard: allow (synthetic)
     with pytest.raises(ParseError, match="self-checks"):
         pay_statement.parse(broken)
 
@@ -112,3 +112,25 @@ def test_earnings_statement_accepts_an_unlabeled_deductions_total():
     lines[i] = lines[i][:at] + " " * len("Deductions") + lines[i][at + len("Deductions"):]
     r = earnings_statement.parse("\n".join(lines))
     assert r.tables["paystubs"].set_index("line_item").loc["Deductions", "amount"] == 90
+
+
+def test_pay_statement_ytd_mismatch_is_a_note_not_a_failure():
+    r = pay_statement.parse(text("pay_statement.txt").replace("$40,000.00", "$40,100.00", 1))  # leak-guard: allow (synthetic)
+    assert any("YTD" in n for n in r.notes)
+
+
+def test_check_history_parses_every_stub_and_ids_unnumbered_ones():
+    one = text("pay_statement.txt")
+    second = one.replace("01/19/2001", "01/20/2001").replace("Document", "Doc ument")
+    r = pay_statement.parse(one + "\n" + second)
+    stubs = r.tables["paystubs"].groupby(["pay_date", "stub_id"]).size()
+    assert len(stubs) == 2 and r.label == "paystubs_alex_2001-01-19_2001-01-20"
+    unnumbered = [s for _, s in stubs.index if s != "4242"]
+    assert unnumbered[0].startswith("s") and pay_statement.parse(second).tables[
+        "paystubs"]["stub_id"].iloc[0] == unnumbered[0]  # stable across documents
+
+
+def test_unparsed_stub_format_is_filed_for_the_record():
+    text_ = "Earnings  Statement\nPeriod  Beginning:  01/01/2001\nPay  date:   01/19/2001\nAdvice  number:  0001"
+    r = documents.parse(text_)
+    assert identify(text_) is documents and (r.kind, r.label) == ("paystub_unparsed", "paystub_unparsed_2001-01-19")

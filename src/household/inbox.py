@@ -54,10 +54,14 @@ def move(drive, file_id, from_id, to_id, name):
                          body={"name": name}, fields="id").execute()
 
 
-def to_text(name, mime, data):
-    if mime == PDF or name.lower().endswith(".pdf"):
+def is_pdf(name, mime):
+    return mime == PDF or name.lower().endswith(".pdf")
+
+
+def to_text(name, mime, data, all_pages=False):
+    if is_pdf(name, mime):
         logging.getLogger("pypdf").setLevel(logging.ERROR)
-        return pdftext.extract(data)
+        return pdftext.extract(data, max_pages=None if all_pages else pdftext.MAX_PAGES)
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -115,6 +119,8 @@ def process(ledger, drive, folder_id, now=None):
         if parser is None:
             summary["status"] = "unrecognized"
             continue
+        if getattr(parser, "ALL_PAGES", False) and is_pdf(f["name"], f.get("mimeType", "")):
+            text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
         try:
             result = parser.parse(text)
         except ParseError as e:

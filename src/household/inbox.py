@@ -54,9 +54,46 @@ def download(drive, file_id):
     return buffer.getvalue()
 
 
+def _move_request(drive, file_id, from_id, to_id, name):
+    return drive.files().update(fileId=file_id, addParents=to_id, removeParents=from_id,
+                                body={"name": name}, fields="id")
+
+
 def move(drive, file_id, from_id, to_id, name):
-    drive.files().update(fileId=file_id, addParents=to_id, removeParents=from_id,
-                         body={"name": name}, fields="id").execute(num_retries=RETRIES)
+    _move_request(drive, file_id, from_id, to_id, name).execute(num_retries=RETRIES)
+
+
+BATCH_LIMIT = 100  # Drive accepts up to 100 calls in one batch request
+
+
+def move_all(drive, moves):
+    """Move files in batched requests; anything a batch fails on is retried one by one.
+
+    moves is a list of (file_id, from_id, to_id, name). Returns {file_id: error}
+    for moves that still failed.
+    """
+    failed = {}
+    for start in range(0, len(moves), BATCH_LIMIT):
+        chunk = moves[start:start + BATCH_LIMIT]
+        retry = []
+
+        def collect(request_id, response, exception, chunk=chunk, retry=retry):
+            if exception is not None:
+                retry.append(chunk[int(request_id)])
+
+        try:
+            batch = drive.new_batch_http_request(callback=collect)
+            for i, m in enumerate(chunk):
+                batch.add(_move_request(drive, *m), request_id=str(i))
+            batch.execute()
+        except Exception:  # the whole batch failed to send; fall back to single calls
+            retry = list(chunk)
+        for m in retry:
+            try:
+                move(drive, *m)
+            except Exception as e:
+                failed[m[0]] = e
+    return failed
 
 
 def is_pdf(name, mime):
@@ -98,6 +135,13 @@ def canonical_name(result, sha, original):
     return f"{result.label}_{sha[:8]}.{extension}"
 
 
+def _concat(existing, rows):
+    """Append rows, without pandas warning about concatenating an empty frame."""
+    if existing is None or existing.empty:
+        return rows.reset_index(drop=True)
+    return pd.concat([existing, rows], ignore_index=True)
+
+
 class _Tables:
     """Ledger tables read once per run; staged rows are visible to later files at once."""
 
@@ -114,9 +158,8 @@ class _Tables:
         if rows.empty:
             return
         rows = rows[list(self.spec[name].columns)]
-        self.cache[name] = pd.concat([self.read(name), rows], ignore_index=True)
-        self.pending[name] = pd.concat([self.pending.get(name, rows.iloc[:0]), rows],
-                                       ignore_index=True)
+        self.cache[name] = _concat(self.read(name), rows)
+        self.pending[name] = _concat(self.pending.get(name), rows)
 
     def flush(self):
         """Write staged rows: one append per table, source_documents last."""
@@ -194,15 +237,14 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
         log(f"filing {len(moves)} files in Drive")
 
     started = time.perf_counter()
-    duplicates = None
-    for f, summary, (where, name) in moves:
-        try:
-            if where == "duplicates":
-                duplicates = duplicates or backup.find_or_create_folder(drive, "duplicates", record)
-                move(drive, f["id"], inbox, duplicates, name)
-            else:
-                move(drive, f["id"], inbox, record, name)
-        except Exception as e:  # registered but not moved: the next run files it
+    targets = {"record_store": record}
+    if any(where == "duplicates" for _, _, (where, _) in moves):
+        targets["duplicates"] = backup.find_or_create_folder(drive, "duplicates", record)
+    failed = move_all(drive, [(f["id"], inbox, targets[where], name)
+                              for f, _, (where, name) in moves])
+    for f, summary, _ in moves:  # registered but not moved: the next run files it
+        if f["id"] in failed:
+            e = failed[f["id"]]
             summary.update(status="error", reason=f"not moved: {type(e).__name__}: {e}")
     clock.add("file in Drive", started)
     if moves:

@@ -57,7 +57,8 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     started = time.perf_counter()
     manifest = backup.snapshot_ledger(ledger, drive, folder_id, run_id)
     timing = {"backup": round(time.perf_counter() - started, 2)}
-    _say(log, f"backup: {len(manifest['tables'])} tabs to backups/{run_id} ({timing['backup']:.1f}s)")
+    _say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip "
+              f"({timing['backup']:.1f}s)")
     files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
     counts = {}
     for f in files:

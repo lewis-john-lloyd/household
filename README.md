@@ -21,7 +21,7 @@ It runs in Colab under the owner's Google sign-in, so its reach is limited by co
 
 ## Inbox
 
-Files dropped in the Drive `inbox` folder are identified, checked and filed by `engine.ingest_inbox`: pay stubs in two layouts, the Schwab equity export, the accounts seed, and tax returns and W-4s (filed for the record, no rows). Every parser checks the document against its own printed totals; a file that fails stays in the inbox with the reason, and nothing is written. Re-sent files, and re-downloads whose rows are all already present, go to `record_store/duplicates`; a partially overlapping export adds only its new rows and names the earlier file it overlapped. Compute lists likely double entries (same account and amount, a few days apart, from different files) in the `possible_duplicates` report; a `void` correction takes a confirmed one off the books. See `src/household/inbox.py` and `compute.possible_duplicates`.
+Files dropped in the Drive `inbox` folder are identified, checked and filed by `engine.ingest_inbox`: pay stubs in two layouts, the Schwab equity export, the accounts seed, tax returns and W-4s (filed for the record, no rows), and the IRS publications, revenue procedures, notices and public laws the tax code cites (filed under stable names such as `publication-15-t-2026`, no rows). Every parser checks the document against its own printed totals; a file that fails stays in the inbox with the reason, and nothing is written. Re-sent files, and re-downloads whose rows are all already present, go to `record_store/duplicates`; a partially overlapping export adds only its new rows and names the earlier file it overlapped. Compute lists likely double entries (same account and amount, a few days apart, from different files) in the `possible_duplicates` report; a `void` correction takes a confirmed one off the books. See `src/household/inbox.py` and `compute.possible_duplicates`.
 
 ## Development
 
@@ -32,6 +32,18 @@ python tools/leak_guard.py
 ```
 
 Optional local hook: `pip install pre-commit && pre-commit install`.
+
+## Tax law
+
+Brackets, limits and withholding tables live in `src/household/taxdata.py`. Every value cites the page of a source document that states it (`CITATIONS`), and each source is pinned by the SHA-256 of the PDF it was checked against (`DOCUMENTS`). The `tax_sources` report lists every value with its citation and a link to the PDF in the record store.
+
+A release that changes tax law (each January) adds the new year's values and citations, then checks them against the PDFs:
+
+```
+python tools/verify_tax_law.py <folder of source PDFs>
+```
+
+It checks that each quote is on its cited page and states the value the code uses, that every bracket threshold appears, and that every row of Pub 15-T's annual married-filing-jointly table equals the brackets shifted by the table floor. It exits nonzero on any failure, missing document, or uncited value.
 
 ## Releases
 

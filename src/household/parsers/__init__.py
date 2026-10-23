@@ -1,13 +1,14 @@
 """Document parsers. Each module has sniff(text) and parse(text) -> Result.
 
 Order matters only when two formats could both match; the most specific goes first.
+Tax law sources go first of all: they quote the phrases other recognizers look for.
 """
 
 from . import (accounts_seed, documents, earnings_statement, pay_statement, return_facts,
-               schwab_equity)
+               schwab_equity, tax_law)
 from .common import ParseError, Result
 
-PARSERS = (accounts_seed, return_facts, schwab_equity, pay_statement, earnings_statement, documents)
+PARSERS = (tax_law, accounts_seed, return_facts, schwab_equity, pay_statement, earnings_statement, documents)
 
 
 def identify(text):

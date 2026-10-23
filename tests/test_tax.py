@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from household import tax, taxdata
+from household import tax, taxdata, taxsources
 
 
 def test_bracket_tax_at_thresholds():
@@ -71,4 +71,45 @@ def test_every_year_has_complete_law():
     keys = set(taxdata.PARAMS[2025])
     for year in taxdata.PARAMS:
         assert set(taxdata.PARAMS[year]) == keys and year in taxdata.MFJ_BRACKETS
-        assert year in taxdata.SOURCES
+
+
+def test_every_cited_document_is_pinned_and_every_value_is_covered():
+    for year, item, document, page, quote in taxsources.citations():
+        assert document in taxdata.DOCUMENTS and page >= 1 and quote
+    assert taxsources.uncovered() == []
+
+
+def test_citation_check_catches_a_wrong_value_page_or_table(monkeypatch):
+    floor = taxdata.params(2026)["withholding_mfj_table_floor"]
+    table = " ".join(f"{t + floor:,} 1 {tax.bracket_tax(t, 2026):,.2f} {r * 100:g}% {t + floor:,}"
+                     for t, r in taxdata.brackets(2026))
+    page = f"0 {floor:,} 0.00 0% 0 " + table
+    monkeypatch.setattr(taxdata, "CITATIONS", {
+        (2026, "hsa_family"): ("doc-a", 1, "family coverage is 8,750"),
+        (2026, "withholding_mfj_table_floor"): ("doc-b", 1, f"0 {floor:,} 0.00 0%")})
+    monkeypatch.setattr(taxdata, "METHODS", {})
+    dollar = "$"  # sources print dollar signs; quotes are written without them
+    pages = {"doc-a": [f"the   family coverage is {dollar}8,750."], "doc-b": [page]}
+    assert taxsources.check(pages)["ok"].all()
+
+    monkeypatch.setitem(taxdata.PARAMS[2026], "hsa_family", 8_751)
+    result = taxsources.check(pages).set_index("item")
+    assert "does not state" in result.loc["hsa_family", "detail"]
+    monkeypatch.setitem(taxdata.PARAMS[2026], "hsa_family", 8_750)
+
+    pages["doc-b"] = [page.replace("24%", "25%")]
+    assert "table rows differ" in taxsources.check(pages).set_index("item").loc[
+        "withholding_mfj_table_floor", "detail"]
+    assert taxsources.check({"doc-a": ["blank"]}).set_index("item").loc["hsa_family", "detail"] == \
+        "quote not on page"
+
+
+def test_tax_sources_report_links_filed_documents():
+    title, sha = taxdata.DOCUMENTS["rev-proc-2025-19"]
+    docs = pd.DataFrame([{"sha256": sha + "0" * 48, "drive_link": "link-to-pdf"}])
+    report = taxsources.report(docs)
+    hsa = report[(report["year"] == 2026) & (report["item"] == "hsa_family")].iloc[0]
+    assert (hsa["value"], hsa["document"], hsa["record"]) == (8_750, title, "link-to-pdf")
+    assert (report["record"] == "no source on file").sum() == len(taxdata.UNCITED)
+    assert set(report.loc[report["document"] != title, "record"]) <= {
+        "not in record store", "no source on file"}

@@ -1,0 +1,6 @@
+year,kind,key,person,value,source_doc,note
+2025,input,wages,alex,60000,doc-a,W-2 box 1
+2025,input,wages,pat,40000,doc-b,W-2 box 1
+2025,input,federal_withheld,,8000,doc-a,W-2 box 2 total
+2025,filed,24,,7743,doc-r,total tax
+2025,filed,37,,-257,doc-r,refund shown as negative

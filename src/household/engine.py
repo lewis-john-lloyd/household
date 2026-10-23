@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, compute, inbox, ingest, legacy, schema, sheets
+from . import backup, compute, inbox, ingest, legacy, schema, sheets, tax, withholding
 
 
 def new_run_id(now=None):
@@ -91,6 +91,24 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
               "possible_duplicates": len(dupes)}
+
+    facts = sheets.read_table(ledger, schema.table(schema.LEDGER, "return_facts"))
+    if not facts.empty:
+        check = tax.check_against_return(facts)
+        check["run_id"] = run_id
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_check"), check)
+        result["tax_check_mismatches"] = int((~check["match"]).sum())
+        _say(log, f"tax_check: {len(check)} filed lines, {result['tax_check_mismatches']} off by more "
+                  "than 1 dollar")
+
+    stubs = sheets.read_table(ledger, schema.table(schema.LEDGER, "paystubs"))
+    if not stubs.empty:
+        backtest = withholding.backtest(stubs)
+        backtest["run_id"] = run_id
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "withholding_backtest"), backtest)
+        unexplained = int(backtest["explanation"].str.startswith("unexplained").sum())
+        result["withholding_unexplained"] = unexplained
+        _say(log, f"withholding_backtest: {len(backtest)} stubs, {unexplained} unexplained")
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)

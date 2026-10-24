@@ -5,7 +5,11 @@ the quote must be on the cited page, and the quote must say the value the code
 uses. Two citations check more than a quote: "brackets" requires every
 threshold on the page, and "withholding_mfj_table_floor" requires every row of
 Pub 15-T's annual married-filing-jointly table to equal the year's brackets
-shifted up by the floor, which is the identity withholding.py relies on.
+shifted up by the floor, which is the identity withholding.py relies on. Wisconsin prints no rate schedule or
+standard deduction formula, so those are proved the same way: every row of the
+Form 1 tax table, standard deduction table and homeowner's school property tax
+credit table must come out of wisconsin.py, as must the worksheet's and Pub
+W-166's printed amounts.
 
 report() is the Reports view of the same citations, with a link to each source
 PDF in the record store, so a number in a report can be traced to the page
@@ -16,7 +20,7 @@ import re
 
 import pandas as pd
 
-from . import tax, taxdata
+from . import tax, taxdata, wisconsin
 
 CHECK_COLUMNS = ["year", "item", "document", "page", "quote", "ok", "detail"]
 REPORT_COLUMNS = ["year", "item", "value", "document", "page", "quote", "record"]
@@ -44,12 +48,14 @@ def _spellings(value):
 
 def _says_value(year, item, quote):
     """None when the quote states the value the code uses (or there is no single value to state)."""
-    if item == "brackets" or year is None:
+    if year is None or item not in taxdata.params(year):
         return None
     value = taxdata.params(year)[item]
     if value in (0, False) or value is True:  # an effective date, not a number
         return None
     spellings = _spellings(value)
+    if item in taxdata.TABLE_CHECKED and not any(s in quote for s in spellings):
+        return None  # proved by the table check instead
     if spellings and not any(s in quote for s in spellings):
         return f"quote does not state {value!r}"
     return None
@@ -65,7 +71,69 @@ def _table_rows(year, floor):
     return rows
 
 
-def _extra_checks(year, item, page_text):
+def _numbers(line):
+    """The integers on a table line, or None if the line holds anything else."""
+    tokens = line.split()
+    if not tokens or not all(re.fullmatch(r"\d{1,3}(?:,\d{3})*", t) for t in tokens):
+        return None
+    return [int(t.replace(",", "")) for t in tokens]
+
+
+def _table(pages, first, last, width, columns):
+    """(at least, less than, values...) rows from table lines with this many numbers."""
+    out = []
+    for text in pages[first - 1:last]:
+        for line in text.splitlines():
+            nums = _numbers(line)
+            if nums and len(nums) == columns and 0 < nums[1] - nums[0] <= width:
+                out.append(nums)
+    return out
+
+
+def _table_result(rows, expected, minimum, what):
+    if len(rows) < minimum:
+        return f"only {len(rows)} {what} rows found"
+    bad = [r for r in rows if expected(r) != r[-1] if r]
+    return f"{len(bad)} of {len(rows)} {what} rows differ, first {bad[0]}" if bad else None
+
+
+def _wisconsin_checks(year, item, pages, page, text):
+    if item == "wi_brackets":
+        # The worksheet taxes income of 100,000 or more as rate x income - subtraction, one row
+        # per bracket in reach; each subtraction amount and row boundary must be printed.
+        steps = taxdata.wi_brackets(year)
+        printed = []
+        for i, (start, rate) in enumerate(steps):
+            top = steps[i + 1][0] if i + 1 < len(steps) else float("inf")
+            if top > wisconsin.TABLE_LIMIT:
+                printed.append(f"{rate * start - wisconsin.bracket_tax(start, year):,.2f}")
+                if start > wisconsin.TABLE_LIMIT:
+                    printed.append(f"{start:,}")
+        missing = [p for p in printed if p not in text]
+        if missing:
+            return f"worksheet amounts not on page: {', '.join(missing)}"
+        rows = [r[:2] + [r[3]] for r in _table(pages, 1, len(pages), 100, 5)]  # MFJ is the 2nd tax column
+        return _table_result(rows, lambda r: wisconsin.tax(r[0], year), 900, "tax table")
+    if item == "wi_withholding_brackets":
+        steps = taxdata.wi_withholding_brackets()
+        amounts = [f"{wisconsin._schedule(start, steps):,.2f}" for start, _ in steps[1:]]
+        missing = [a for a in amounts if a not in text]
+        missing += [f"{t:,}" for t, _ in steps[1:] if f"{t:,}" not in text]
+        return f"withholding schedule amounts not on page: {', '.join(missing)}" if missing else None
+    if item.startswith("wi_standard_deduction"):
+        rows = [r[:2] + [r[3]] for r in _table(pages, page, page + 2, 500, 6)]  # MFJ is the 2nd column
+        return _table_result(rows, lambda r: wisconsin.standard_deduction(r[0], year), 250,
+                             "standard deduction table")
+    if item.startswith("wi_school_property_credit"):
+        rows = _table(pages, page, page, 25, 3)
+        return _table_result(rows, lambda r: wisconsin.school_property_credit(r[0], year), 50,
+                             "homeowner's credit table")
+    return None
+
+
+def _extra_checks(year, item, page_text, pages=None, page=None):
+    if item.startswith("wi_") and pages is not None:
+        return _wisconsin_checks(year, item, pages, page, page_text)
     if item == "brackets":
         missing = [f"{t:,}" for t, _ in taxdata.brackets(year)[1:] if f"{t:,}" not in page_text]
         return f"thresholds not on page: {', '.join(missing)}" if missing else None
@@ -97,7 +165,8 @@ def check(pages_by_document):
             text = normalize(pages[page - 1])
             if normalize(quote) not in text:
                 problems.append("quote not on page")
-            problems += [p for p in (_says_value(year, item, quote), _extra_checks(year, item, text)) if p]
+            problems += [p for p in (_says_value(year, item, quote),
+                                     _extra_checks(year, item, text, pages, page)) if p]
         rows.append({"year": "" if year is None else year, "item": item, "document": document,
                      "page": page, "quote": quote,
                      "ok": not problems, "detail": "; ".join(problems)})
@@ -110,7 +179,7 @@ def uncovered():
     for year in sorted(taxdata.PARAMS):
         if year in taxdata.UNCITED:
             continue
-        for item in ["brackets", *taxdata.PARAMS[year]]:
+        for item in ["brackets", "wi_brackets", "wi_withholding_brackets", *taxdata.PARAMS[year]]:
             if (year, item) not in taxdata.CITATIONS and (year, item) not in taxdata.UNCITED:
                 out.append((year, item))
     return out
@@ -125,13 +194,13 @@ def report(source_documents):
     rows = []
     for year, item, document, page, quote in citations():
         title, sha = taxdata.DOCUMENTS[document]
-        value = "" if year is None or item == "brackets" else taxdata.params(year)[item]
+        value = "" if year is None else taxdata.params(year).get(item, "")
         rows.append({"year": "" if year is None else year, "item": item, "value": value,
                      "document": title, "page": page, "quote": quote,
                      "record": links.get(sha) or "not in record store"})
     for key, reason in taxdata.UNCITED.items():
         year, item = (key, "all") if isinstance(key, int) else key
-        value = "" if item == "all" else taxdata.params(year)[item]
+        value = "" if item == "all" else taxdata.params(year).get(item, "")
         rows.append({"year": year, "item": item, "value": value, "document": "", "page": "",
                      "quote": reason, "record": "no source on file"})
     return pd.DataFrame(rows, columns=REPORT_COLUMNS)

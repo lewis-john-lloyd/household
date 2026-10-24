@@ -148,6 +148,10 @@ def test_unparsed_stub_format_is_filed_for_the_record():
     ("2002 Amounts Relating to Retirement Plans\n N otice 2001- 80\n Section 415 of the Internal Revenue "
      "Code provides", "notice-2001-80", ""),
     ("PUBLIC LAW 101\u201321\u2014JULY 4, 2001\n An Act", "public-law-101-21", ""),
+    ("revenue.wi.gov\nWisconsin Income Tax   1\nForm 1 Instructions   2001\nNew in 2001",
+     "wi-form-1-instructions-2001", "2001"),
+    ("Wisconsin Income Tax\nForm 1NPR Instructions 2001", "wi-form-1npr-instructions-2001", "2001"),
+    ("Withholding Tax\nGuide\nPublication W-166 (1/01)", "wi-publication-w-166-2001-01", "2001"),
 ])
 def test_tax_law_sources_are_identified_before_other_recognizers(text_, label, year):
     assert identify(text_) is tax_law
@@ -161,3 +165,5 @@ def test_household_documents_that_mention_the_law_are_not_tax_law():
                    "See Notice 2001-80 and Rev. Proc. 2001-7 for limits under the Internal Revenue Code.")
     assert identify(return_text) is documents
     assert identify("Form W-4  Employee's Withholding Certificate  2001\nPublication 15-T") is documents
+    wi_return = "Wisconsin income tax  2001 1NPR  Nonresident & part-year resident  Form 1NPR"
+    assert identify("Form 1040 U.S. Individual Income Tax Return 2001\n" + wi_return) is documents

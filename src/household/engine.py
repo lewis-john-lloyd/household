@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from . import (backup, compute, inbox, ingest, legacy, projection, schema, sheets, tax, taxsources,
-               withholding)
+               wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -120,6 +120,15 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         result["withholding_unexplained"] = unexplained
         _say(log, f"withholding_backtest: {len(backtest)} stubs, {unexplained} unexplained")
 
+        wi = wisconsin.backtest(stubs)
+        wi["run_id"] = run_id
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "wi_withholding_backtest"), wi)
+        wi_unexplained = wi[wi["explanation"].str.startswith("unexplained")]
+        result["wi_withholding_unexplained"] = len(wi_unexplained)
+        _say(log, f"wi_withholding_backtest: {len(wi)} stubs, {len(wi_unexplained)} unexplained")
+        for row in wi_unexplained.to_dict("records"):
+            _say(log, f"  {row['pay_date']} {row['person']}: {row['explanation']}")
+
         year = int(stubs["pay_date"].astype(str).max()[:4])
         sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))
         if year in tax.taxdata.PARAMS:
@@ -133,6 +142,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                 _say(log, f"projection {year}, {row['scenario']}: {verdict} "
                           f"{abs(row['owe_or_refund']):,.0f} (tax {row['total_tax']:,.0f}, "
                           f"paid {row['withheld']:,.0f})")
+            wi_row = lines.iloc[0]
+            wi_verdict = "refund" if wi_row["wi_owe_or_refund"] < 0 else "owe"
+            _say(log, f"projection {year}, Wisconsin: {wi_verdict} "
+                      f"{abs(wi_row['wi_owe_or_refund']):,.0f} (tax {wi_row['wi_tax']:,.0f}, "
+                      f"paid {wi_row['wi_withheld']:,.0f})")
+            result["wi_projection"] = int(wi_row["wi_owe_or_refund"])
             plans = projection.elections(year, stubs)
             plans["run_id"] = run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "elections"), plans)

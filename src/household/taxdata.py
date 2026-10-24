@@ -24,6 +24,20 @@ MFJ_BRACKETS = {
     2026: (0, 24_800, 100_800, 211_400, 403_550, 512_450, 768_700),
 }
 
+# Wisconsin, married filing jointly: taxable income at which each rate in WI_RATES begins.
+# The 2025 instructions print no rate schedule; these reproduce every row of the tax table
+# and the subtraction amounts of the tax computation worksheet (taxsources checks both).
+WI_RATES = (0.035, 0.044, 0.053, 0.0765)
+WI_BRACKETS_MFJ = {
+    2025: (0, 19_580, 67_300, 431_060),
+    2026: (0, 19_580, 67_300, 431_060),  # 2025 amounts until 2026's are published
+}
+
+# Wisconsin withholding: annual net wage at which each rate begins (Pub W-166), and the same
+# bands of annual gross salary choose the flat rate on supplemental pay.
+WI_WITHHOLDING_RATES = (0.0354, 0.0465, 0.053, 0.0765)
+WI_WITHHOLDING_BRACKETS = (0, 12_760, 25_520, 280_950)
+
 PARAMS = {
     2024: {
         "standard_deduction_mfj": 29_200,
@@ -52,6 +66,24 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 16_300,
+        # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
+        "wi_wh_exemption": 400,
+        "wi_wh_married_deduction": 9_461,
+        "wi_wh_married_phase_start": 25_727,
+        "wi_wh_married_phase_rate": 0.20,
+        "wi_wh_single_deduction": 6_702,
+        "wi_wh_single_phase_start": 17_780,
+        "wi_wh_single_phase_rate": 0.12,
+        # Wisconsin income tax, married filing jointly
+        "wi_exemption": None,
+        "wi_standard_deduction_mfj": None,
+        "wi_standard_deduction_phase_start_mfj": None,
+        "wi_standard_deduction_phase_rate_mfj": None,
+        "wi_itemized_credit_rate": None,
+        "wi_married_couple_rate": None,
+        "wi_married_couple_max_earned": None,
+        "wi_school_property_credit_rate": None,
+        "wi_school_property_credit_max": None,
     },
     2025: {
         "standard_deduction_mfj": 31_500,
@@ -80,6 +112,24 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 17_100,
+        # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
+        "wi_wh_exemption": 400,
+        "wi_wh_married_deduction": 9_461,
+        "wi_wh_married_phase_start": 25_727,
+        "wi_wh_married_phase_rate": 0.20,
+        "wi_wh_single_deduction": 6_702,
+        "wi_wh_single_phase_start": 17_780,
+        "wi_wh_single_phase_rate": 0.12,
+        # Wisconsin income tax, married filing jointly
+        "wi_exemption": 700,
+        "wi_standard_deduction_mfj": 25_110,
+        "wi_standard_deduction_phase_start_mfj": 28_210,
+        "wi_standard_deduction_phase_rate_mfj": 0.19778,
+        "wi_itemized_credit_rate": 0.05,
+        "wi_married_couple_rate": 0.03,
+        "wi_married_couple_max_earned": 16_000,
+        "wi_school_property_credit_rate": 0.12,
+        "wi_school_property_credit_max": 300,
     },
     2026: {
         "standard_deduction_mfj": 32_200,
@@ -108,6 +158,24 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 19_300,
+        # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
+        "wi_wh_exemption": 400,
+        "wi_wh_married_deduction": 9_461,
+        "wi_wh_married_phase_start": 25_727,
+        "wi_wh_married_phase_rate": 0.20,
+        "wi_wh_single_deduction": 6_702,
+        "wi_wh_single_phase_start": 17_780,
+        "wi_wh_single_phase_rate": 0.12,
+        # Wisconsin income tax: 2025 amounts until the 2026 indexed amounts are published
+        "wi_exemption": 700,
+        "wi_standard_deduction_mfj": 25_110,
+        "wi_standard_deduction_phase_start_mfj": 28_210,
+        "wi_standard_deduction_phase_rate_mfj": 0.19778,
+        "wi_itemized_credit_rate": 0.05,
+        "wi_married_couple_rate": 0.03,
+        "wi_married_couple_max_earned": 16_000,
+        "wi_school_property_credit_rate": 0.12,
+        "wi_school_property_credit_max": 300,
     },
 }
 
@@ -131,6 +199,10 @@ DOCUMENTS = {
     "instructions-for-schedule-a-2025": ("Instructions for Schedule A (2025)", "b0999b12d9dc4b13"),
     "instructions-for-form-8959-2025": ("Instructions for Form 8959 (2025)", "1d223be73b4bac95"),
     "instructions-for-form-8960-2025": ("Instructions for Form 8960 (2025)", "b10fbb23ff4a053d"),
+    "wi-form-1-instructions-2025": ("Wisconsin Form 1 Instructions (2025)", "dd7e88901ac4ec56"),
+    "wi-form-1npr-instructions-2025": ("Wisconsin Form 1NPR Instructions (2025)",
+                                       "ec79685479ed59e7"),  # leak-guard: allow (hash of a public PDF)
+    "wi-publication-w-166-2026-01": ("Wisconsin Publication W-166 (1/26)", "c400ce62d7a945f1"),
 }
 
 # (year, item) -> (document, page, quote). Pages are PDF pages (1 = first), as a
@@ -139,6 +211,8 @@ DOCUMENTS = {
 # printed. "brackets" checks every threshold; "withholding_mfj_table_floor" checks
 # every row of Pub 15-T's annual MFJ table against the brackets shifted by it.
 _LAW = "public-law-119-21"
+_W166 = "wi-publication-w-166-2026-01"
+_WI1 = "wi-form-1-instructions-2025"
 _BOTH = {  # cited the same way for 2025 and 2026
     "salt_floor": (_LAW, 99, "less than 10,000"),
     "salt_phase_rate": (_LAW, 99, "reduced by 30 percent of the excess"),
@@ -153,6 +227,15 @@ _BOTH = {  # cited the same way for 2025 and 2026
     "supplemental_flat_rate": ("publication-15-2026", 2, "remains 22%"),
     "supplemental_mandatory_rate": ("publication-15-2026", 2, "(37% if"),
     "supplemental_mandatory_over": ("publication-15-2026", 2, "exceed 1 million"),
+    # Wisconsin withholding: W-166 (1/26) says its method has applied since January 1, 2022.
+    "wi_withholding_brackets": (_W166, 26, "14,582.83 + 7.65% of excess over 280,950"),
+    "wi_wh_exemption": (_W166, 26, "exemptions claimed by 400"),
+    "wi_wh_married_deduction": (_W166, 26, "less than 25,727, deduction amount = 9,461"),
+    "wi_wh_married_phase_start": (_W166, 26, "9,461 \u2013 0.20 (Annual gross earnings \u2013 25,727)"),
+    "wi_wh_married_phase_rate": (_W166, 26, "subtracting from 9,461, 20% of annual gross earnings"),
+    "wi_wh_single_deduction": (_W166, 26, "less than 17,780, deduction amount = 6,702"),
+    "wi_wh_single_phase_start": (_W166, 26, "6,702 \u2013 0.12 (Annual gross earnings \u2013 17,780)"),
+    "wi_wh_single_phase_rate": (_W166, 26, "subtracting from 6,702, 12% of annual gross earnings"),
 }
 CITATIONS = {
     **{(2025, k): v for k, v in _BOTH.items()},
@@ -189,6 +272,20 @@ CITATIONS = {
     (2026, "dependent_care_fsa_mfj"): (_LAW, 144, "inserting \u2018\u20187,500"),
     (2026, "withholding_line_1g_mfj"): ("publication-15-t-2026", 6, "12,900 if the employee"),
     (2026, "withholding_mfj_table_floor"): ("publication-15-t-2026", 12, "0 19,300 0.00 0%"),
+    (2025, "wi_brackets"): (_WI1, 44, "less than 431,060"),
+    (2025, "wi_exemption"): (_WI1, 15, "(700 or 250)"),
+    (2025, "wi_standard_deduction_mfj"): (_WI1, 35, "0 13,390 13,560 25,110"),
+    (2025, "wi_standard_deduction_phase_start_mfj"): (_WI1, 35, "2025 Standard Deduction Table"),
+    (2025, "wi_standard_deduction_phase_rate_mfj"): (_WI1, 35, "2025 Standard Deduction Table"),
+    (2025, "wi_school_property_credit_rate"): (_WI1, 20, "Homeowner\u2019s School Property Tax Credit Table"),
+    (2025, "wi_school_property_credit_max"): (_WI1, 20, "can\u2019t be more than 300"),
+}
+
+# Items whose value is not printed as such but is proved by reproducing a printed table.
+TABLE_CHECKED = {
+    "brackets", "withholding_mfj_table_floor", "wi_brackets", "wi_withholding_brackets",
+    "wi_standard_deduction_phase_start_mfj", "wi_standard_deduction_phase_rate_mfj",
+    "wi_school_property_credit_rate",
 }
 
 # Rules the code implements (not single numbers), with where each is written down.
@@ -207,6 +304,15 @@ UNCITED = {
           "every 2024 pay stub reproduces under these values in the withholding backtest",
     (2025, "ss_wage_base"): "SSA's 2025 announcement (not on file); the filed 2025 return's excess Social "
                             "Security credit reproduces only with this wage base",
+    **{(2025, k): "printed on Form 1 Schedules 1 and 2 (2025 Form 1 not yet on file); the filed 2025 "
+                  "return's Schedules 1 and 2 use it"
+       for k in ("wi_itemized_credit_rate", "wi_married_couple_rate", "wi_married_couple_max_earned")},
+    **{(2026, k): "Wisconsin publishes 2026 indexed amounts with the 2026 Form 1 instructions (about "
+                  "December 2026); the 2025 amount is used until then"
+       for k in ("wi_brackets", "wi_exemption", "wi_standard_deduction_mfj",
+                 "wi_standard_deduction_phase_start_mfj", "wi_standard_deduction_phase_rate_mfj",
+                 "wi_itemized_credit_rate", "wi_married_couple_rate", "wi_married_couple_max_earned",
+                 "wi_school_property_credit_rate", "wi_school_property_credit_max")},
 }
 
 
@@ -225,3 +331,13 @@ def brackets(year):
     if year not in MFJ_BRACKETS:
         raise KeyError(f"no brackets for {year}")
     return tuple(zip(MFJ_BRACKETS[year], RATES))
+
+
+def wi_brackets(year):
+    if year not in WI_BRACKETS_MFJ:
+        raise KeyError(f"no Wisconsin brackets for {year}")
+    return tuple(zip(WI_BRACKETS_MFJ[year], WI_RATES))
+
+
+def wi_withholding_brackets():
+    return tuple(zip(WI_WITHHOLDING_BRACKETS, WI_WITHHOLDING_RATES))

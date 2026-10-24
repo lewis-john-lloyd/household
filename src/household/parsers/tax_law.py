@@ -1,5 +1,6 @@
 """Public tax law sources: IRS publications and form instructions, revenue procedures,
-notices, and public laws. Filed for the record with no rows to extract.
+notices, public laws, and Wisconsin's income tax instructions and withholding guide.
+Filed for the record with no rows to extract.
 
 These are the documents taxdata.CITATIONS points at, so each gets a stable label
 (for example "publication-15-t-2026" or "rev-proc-2025-32") that names it in the
@@ -23,6 +24,8 @@ INSTRUCTIONS = re.compile(r"Instructionsfor(Form|Schedule)([0-9A-Z-]+?)(?:\(Form
 REV_PROC = re.compile(r"Rev\.Proc\.(20\d\d)-(\d+)")
 NOTICE = re.compile(r"Notice(20\d\d)-(\d+)")
 PUBLIC_LAW = re.compile(r"PUBLICLAW(\d+)[\u2013-](\d+)\u2014")
+WI_INSTRUCTIONS = re.compile(r"WisconsinIncomeTax.{0,40}?Form(1|1NPR)Instructions(20\d\d)")
+WI_W166 = re.compile(r"PublicationW-166\((\d{1,2})/(\d\d)\)")
 IRB_HEADER = "Administrative,Procedural,andMiscellaneous"
 TITLE_WINDOW = 1200  # characters (without whitespace) in which a title must appear
 TITLE_LINES = 40
@@ -40,6 +43,16 @@ def _identify(text):
         what, number, year = m.groups()
         return (f"instructions-for-{what.lower()}-{number.lower()}-{year}",
                 f"Instructions for {what} {number} ({year})", year)
+    m = WI_INSTRUCTIONS.search(tight[:TITLE_WINDOW])
+    if m:
+        form, year = m.groups()
+        return (f"wi-form-{form.lower()}-instructions-{year}",
+                f"Wisconsin Form {form} Instructions ({year})", year)
+    m = WI_W166.search(tight[:TITLE_WINDOW])
+    if m:
+        month, yy = int(m.group(1)), m.group(2)
+        return (f"wi-publication-w-166-20{yy}-{month:02d}", f"Wisconsin Publication W-166 ({m.group(1)}/{yy})",
+                f"20{yy}")
     m = PUBLIC_LAW.search(tight[:TITLE_WINDOW])
     if m:
         return f"public-law-{m.group(1)}-{m.group(2)}", f"Public Law {m.group(1)}-{m.group(2)}", ""

@@ -10,6 +10,7 @@ itemized deductions with the SALT cap and its phase-down, the 0.5% charitable
 floor and the 2/37 limitation where the year has them; Additional Medicare Tax
 (Form 8959); net investment income tax (Form 8960, with state income tax
 allocated by the investment share of AGI); excess Social Security withholding.
+Wisconsin lines (wisconsin.py) are added when a year's facts include Wisconsin inputs.
 Not covered: AMT (zero at these incomes with these deductions; reported as an
 assumption), self-employment, foreign tax, education and child credits (phased
 out at these incomes).
@@ -113,31 +114,47 @@ def safe_harbor(prior_year_total_tax, prior_agi):
 FILED_LINES = ("11a", "12e", "15", "16", "s2_11", "s2_12", "23", "24", "25c", "31", "33", "37")
 
 
+PER_PERSON = ("ss_withheld", "employers", "wi_earned_income")  # kept per person, not added up
+
+
 def inputs_from_facts(facts, year, kinds=("input",)):
     """Build federal_return inputs for one year from return_facts rows."""
     rows = facts[(facts["year"].astype(str) == str(year)) & facts["kind"].isin(kinds)]
     inputs, by_person = {}, {}
     for r in rows.to_dict("records"):
         value = float(r["value"])
-        if r["key"] in ("ss_withheld", "employers"):
+        if r["key"] in PER_PERSON:
             by_person.setdefault(r["person"], {})[r["key"]] = value
         else:
             inputs[r["key"]] = inputs.get(r["key"], 0.0) + value  # per-person inputs add up
     inputs["ss_withheld_by_person"] = [(p.get("ss_withheld", 0), p.get("employers", 1))
-                                       for p in by_person.values()]
+                                       for p in by_person.values() if "ss_withheld" in p]
+    earned = [(person, p["wi_earned_income"]) for person, p in by_person.items() if "wi_earned_income" in p]
+    if earned:
+        inputs["wi_earned_income_by_person"] = earned
     return inputs
+
+
+def has_wisconsin(inputs):
+    return any(k.startswith("wi_") for k in inputs)
 
 
 def check_against_return(facts):
     """Recompute every year that has filed lines and compare line by line."""
     out = []
+    from . import wisconsin  # wisconsin imports this module
+
     for year in sorted(facts.loc[facts["kind"] == "filed", "year"].astype(int).unique()):
-        computed = federal_return(inputs_from_facts(facts, year), year)
+        inputs = inputs_from_facts(facts, year)
+        computed = federal_return(inputs, year)
+        if has_wisconsin(inputs):
+            computed.update(wisconsin.wisconsin_return({**inputs, "federal_agi": computed["11a"]}, year))
         filed = facts[(facts["year"].astype(int) == year) & (facts["kind"] == "filed")]
         for r in filed.to_dict("records"):
             value = float(r["value"])
             got = computed.get(r["key"])
-            diff = None if got is None else got - value
+            diff = None if got is None else round(got - value, 4)
+            tolerance = 0.00005 if r["key"] in wisconsin.RATIO_LINES else 1
             out.append({"year": year, "line": r["key"], "filed": value, "computed": got,
-                        "diff": diff, "match": diff is not None and abs(diff) <= 1})
+                        "diff": diff, "match": diff is not None and abs(diff) <= tolerance})
     return pd.DataFrame(out, columns=["year", "line", "filed", "computed", "diff", "match"])

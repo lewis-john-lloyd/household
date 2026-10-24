@@ -1,4 +1,4 @@
-"""This year's federal tax, projected from pay stubs, equity sales and household estimates.
+"""This year's federal and Wisconsin tax, projected from pay stubs, equity sales and estimates.
 
 Year to date comes from the latest stub of each employer. The rest of the year
 is projected from what the stubs show is recurring:
@@ -10,7 +10,14 @@ is projected from what the stubs show is recurring:
     stub shows (see withholding.py), unless a scenario replaces it;
   - recurring supplemental pay (monthly RSU vests: supplemental days in the last
     90 days worth over 1,000) at its recent average, withheld at the latest
-    supplemental rate.
+    supplemental rate;
+  - Wisconsin withholding on each regular paycheck under the WT-4 settings the
+    Wisconsin backtest decoded from the latest one, and on each vest at its flat
+    percentage (wisconsin.py).
+
+Wisconsin tax uses Form 1 with the year's Wisconsin estimates (subtractions,
+exemptions); itemized deduction and property tax inputs fall back to the federal
+estimates.
 
 Elections (401(k), HSA, dependent-care FSA) are projected the same way and
 compared with the year's limits.
@@ -20,7 +27,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import tax, taxdata, withholding
+from . import tax, taxdata, wisconsin, withholding
 
 PAY_INTERVAL = timedelta(days=14)
 FULL_YEAR_PAYCHECKS = 26
@@ -96,10 +103,14 @@ def _add_medicare(out, wages, year):
     out["medicare_wages"] += wages
 
 
-def employer_position(rows, backtest, year, overrides):
+def employer_position(rows, backtest, year, overrides, wi_backtest=None):
     """Year to date and the rest of the year for one person at one employer."""
     rows = rows[rows["pay_date"].astype(str).str[:4] == str(year)]
     bt = backtest[backtest["pay_date"].str[:4] == str(year)]
+    wi_bt = (wi_backtest if wi_backtest is not None else wisconsin.backtest(rows))
+    wi_bt = wi_bt[wi_bt["pay_date"].str[:4] == str(year)]
+    wi_regular = wi_bt[(wi_bt["kind"] == "regular") & wi_bt["settings"].notna()].sort_values("pay_date")
+    wi_settings = wi_regular.iloc[-1]["settings"] if len(wi_regular) else None
     regular = bt[bt["kind"] == "regular"].sort_values("pay_date")
     # Taxable wages to date = gross to date less pre-tax deductions to date (not every stub
     # prints a year-to-date taxable figure).
@@ -107,6 +118,7 @@ def employer_position(rows, backtest, year, overrides):
            "federal_withheld": _ytd(rows, "tax", list(withholding.FIT_LINES)),
            "medicare_withheld": _ytd(rows, "tax", contains=MEDICARE),
            "state_withheld": _ytd(rows, "tax", contains=_is("state income", "wi")),
+           "wi_withheld": _ytd(rows, "tax", list(wisconsin.WI_LINES)),
            "elective": _ytd(rows, "pre_tax", contains=ELECTIVE),
            "after_tax": _ytd(rows, "post_tax", contains=AFTER_TAX),
            "employer_401k": _ytd(rows, "employer", contains=_is("401k")),
@@ -139,7 +151,12 @@ def employer_position(rows, backtest, year, overrides):
             out["employer_401k"] += _current(stub, "employer", contains=_is("401k"))
             out["hsa"] += _current(stub, "pre_tax", contains=HSA_EMPLOYEE)
             out["dependent_care"] += _current(stub, "pre_tax", contains=DEPENDENT_CARE)
-        out["state_withheld"] += _current(stub, "tax", contains=_is("state income", "wi"))
+        state = _current(stub, "tax", contains=_is("state income", "wi"))
+        if wi_settings is not None:
+            wi = wisconsin.regular_withholding(wages - gtl, 26, year, *wi_settings)
+            out["wi_withheld"] += wi
+            state += wi - _current(stub, "tax", list(wisconsin.WI_LINES))
+        out["state_withheld"] += state
     out["paychecks_left"] = len(dates)
     if len(dates) + done > FULL_YEAR_PAYCHECKS:
         out["notes"].append(f"{len(dates) + done} paychecks this year; the 27th carries no deductions")
@@ -156,6 +173,10 @@ def employer_position(rows, backtest, year, overrides):
                              float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
         out["wages"] += amount * months_left
         out["federal_withheld"] += amount * months_left * rate
+        if wi_settings is not None:
+            wi = amount * months_left * wisconsin.flat_rate(amount, 26)
+            out["wi_withheld"] += wi
+            out["state_withheld"] += wi
         for _ in range(months_left):
             _add_medicare(out, amount, year)
         out["vests_left"] = months_left
@@ -173,11 +194,13 @@ SCENARIOS = {
 def positions(paystubs, year, overrides=None):
     """employer_position for every person and employer with stubs this year."""
     backtest = withholding.backtest(paystubs)
+    wi_backtest = wisconsin.backtest(paystubs)
     year_rows = paystubs[paystubs["pay_date"].astype(str).str[:4] == str(year)]
     out = {}
     for (person, employer), rows in year_rows.groupby(["person", "employer"]):
-        bt = backtest[(backtest["person"] == person) & (backtest["employer"] == employer)]
-        out[(person, employer)] = employer_position(rows, bt, year, overrides or {})
+        mine = lambda b: b[(b["person"] == person) & (b["employer"] == employer)]  # noqa: E731
+        out[(person, employer)] = employer_position(rows, mine(backtest), year, overrides or {},
+                                                    mine(wi_backtest))
     return out
 
 
@@ -189,6 +212,11 @@ def inputs_for(year, paystubs, sales, facts, overrides=None):
     term = sales["term"] if not sales.empty else pd.Series(dtype=str)
     i = tax.inputs_from_facts(facts, year, kinds=("estimate",)) if not facts.empty else {}
     i.pop("ss_withheld_by_person", None)
+    earned = {}
+    for (person, _), p in pos.items():
+        earned[person] = earned.get(person, 0.0) + p["wages"]
+    i["wi_earned_income_by_person"] = sorted(earned.items())
+    i["wi_withheld"] = sum(p["wi_withheld"] for p in pos.values())
     i.update({
         "wages": sum(p["wages"] for p in pos.values()),
         "federal_withheld": sum(p["federal_withheld"] for p in pos.values()),
@@ -213,13 +241,24 @@ def project(year, paystubs, sales, facts):
     for name, overrides in SCENARIOS.items():
         i, pos = inputs_for(year, paystubs, sales, facts, overrides)
         r = tax.federal_return(i, year)
+        w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
         if name == "as is":
             notes = [f"{p}/{e}: {n}" for (p, e), v in pos.items() for n in v["notes"]]
+            notes += _wisconsin_notes(year)
         rows.append({"scenario": name, "agi": r["11a"], "deduction": r["12e"], "taxable": r["15"],
                      "total_tax": r["24"], "withheld": r["33"], "owe_or_refund": r["37"],
                      "safe_harbor": harbor,
-                     "safe_harbor_met": None if harbor is None else r["25a"] + r["25c"] >= harbor})
+                     "safe_harbor_met": None if harbor is None else r["25a"] + r["25c"] >= harbor,
+                     "wi_taxable": w["wi_taxable"], "wi_tax": w["wi_net_tax"],
+                     "wi_withheld": w["wi_withheld"], "wi_owe_or_refund": w["wi_owe_or_refund"]})
     return pd.DataFrame(rows), notes
+
+
+def _wisconsin_notes(year):
+    stale = sorted(key[1] for key in taxdata.UNCITED
+                   if isinstance(key, tuple) and key[0] == year and key[1].startswith("wi_"))
+    return [f"Wisconsin {year}: {len(stale)} amounts are the prior year's until {year}'s are published"] \
+        if stale else []
 
 
 def elections(year, paystubs):

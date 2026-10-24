@@ -35,7 +35,7 @@ Optional local hook: `pip install pre-commit && pre-commit install`.
 
 ## Tax law
 
-Brackets, limits and withholding tables live in `src/household/taxdata.py`. Every value cites the page of a source document that states it (`CITATIONS`), and each source is pinned by the SHA-256 of the PDF it was checked against (`DOCUMENTS`). The `tax_sources` report lists every value with its citation and a link to the PDF in the record store.
+Federal and Wisconsin brackets, limits and withholding tables live in `src/household/taxdata.py`; the Wisconsin return (Form 1 and part-year Form 1NPR) and Pub W-166 withholding are in `src/household/wisconsin.py`. Every value cites the page of a source document that states it (`CITATIONS`), and each source is pinned by the SHA-256 of the PDF it was checked against (`DOCUMENTS`). The `tax_sources` report lists every value with its citation and a link to the PDF in the record store.
 
 A release that changes tax law (each January) adds the new year's values and citations, then checks them against the PDFs:
 
@@ -43,7 +43,7 @@ A release that changes tax law (each January) adds the new year's values and cit
 python tools/verify_tax_law.py <folder of source PDFs>
 ```
 
-It checks that each quote is on its cited page and states the value the code uses, that every bracket threshold appears, and that every row of Pub 15-T's annual married-filing-jointly table equals the brackets shifted by the table floor. It exits nonzero on any failure, missing document, or uncited value.
+It checks that each quote is on its cited page and states the value the code uses, that every bracket threshold appears, and that every row of Pub 15-T's annual married-filing-jointly table equals the brackets shifted by the table floor. Wisconsin prints no rate schedule or standard deduction formula, so those are proved by reproducing every row of the Form 1 tax table, standard deduction table and homeowner's credit table, and the amounts printed in the tax computation worksheet and Pub W-166. It exits nonzero on any failure, missing document, or uncited value.
 
 ## Releases
 

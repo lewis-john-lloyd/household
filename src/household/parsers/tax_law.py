@@ -26,6 +26,10 @@ NOTICE = re.compile(r"Notice(20\d\d)-(\d+)")
 PUBLIC_LAW = re.compile(r"PUBLICLAW(\d+)[\u2013-](\d+)\u2014")
 WI_INSTRUCTIONS = re.compile(r"WisconsinIncomeTax.{0,40}?Form(1|1NPR)Instructions(20\d\d)")
 WI_W166 = re.compile(r"PublicationW-166\((\d{1,2})/(\d\d)\)")
+WI_FORM = re.compile(r"^Wisconsin(20\d\d)(1|1NPR)incometax")
+# A filed return carries a social security number and dollar amounts; the blank form has neither.
+# (Amounts need four or more digits: the blank form cites statutes such as "sec. 157.06".)
+FILLED = re.compile(r"\b\d{9}\b|\b\d{3}-\d{2}-\d{4}\b|\b\d{4,}\.\d\d\b|\b\d{1,3}(?:,\d{3})+\.\d\d\b")
 IRB_HEADER = "Administrative,Procedural,andMiscellaneous"
 TITLE_WINDOW = 1200  # characters (without whitespace) in which a title must appear
 TITLE_LINES = 40
@@ -53,6 +57,10 @@ def _identify(text):
         month, yy = int(m.group(1)), m.group(2)
         return (f"wi-publication-w-166-20{yy}-{month:02d}", f"Wisconsin Publication W-166 ({m.group(1)}/{yy})",
                 f"20{yy}")
+    m = WI_FORM.search(tight)
+    if m and not FILLED.search(text):
+        year, form = m.groups()
+        return (f"wi-form-{form.lower()}-{year}", f"Wisconsin Form {form} ({year}, blank)", year)
     m = PUBLIC_LAW.search(tight[:TITLE_WINDOW])
     if m:
         return f"public-law-{m.group(1)}-{m.group(2)}", f"Public Law {m.group(1)}-{m.group(2)}", ""

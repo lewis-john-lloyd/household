@@ -203,6 +203,7 @@ DOCUMENTS = {
     "wi-form-1npr-instructions-2025": ("Wisconsin Form 1NPR Instructions (2025)",
                                        "ec79685479ed59e7"),  # leak-guard: allow (hash of a public PDF)
     "wi-publication-w-166-2026-01": ("Wisconsin Publication W-166 (1/26)", "c400ce62d7a945f1"),
+    "wi-form-1-2025": ("Wisconsin Form 1 (2025, blank)", "428a8c3bab9cdfc8"),
 }
 
 # (year, item) -> (document, page, quote). Pages are PDF pages (1 = first), as a
@@ -279,6 +280,9 @@ CITATIONS = {
     (2025, "wi_standard_deduction_phase_rate_mfj"): (_WI1, 35, "2025 Standard Deduction Table"),
     (2025, "wi_school_property_credit_rate"): (_WI1, 20, "Homeowner\u2019s School Property Tax Credit Table"),
     (2025, "wi_school_property_credit_max"): (_WI1, 20, "can\u2019t be more than 300"),
+    (2025, "wi_itemized_credit_rate"): ("wi-form-1-2025", 4, "Rate of credit is .05 (5%)"),
+    (2025, "wi_married_couple_rate"): ("wi-form-1-2025", 4, "Rate of credit is .03 (3%)"),
+    (2025, "wi_married_couple_max_earned"): ("wi-form-1-2025", 4, "If more than 16,000, fill in 16,000"),
 }
 
 # Items whose value is not printed as such but is proved by reproducing a printed table.
@@ -304,9 +308,6 @@ UNCITED = {
           "every 2024 pay stub reproduces under these values in the withholding backtest",
     (2025, "ss_wage_base"): "SSA's 2025 announcement (not on file); the filed 2025 return's excess Social "
                             "Security credit reproduces only with this wage base",
-    **{(2025, k): "printed on Form 1 Schedules 1 and 2 (2025 Form 1 not yet on file); the filed 2025 "
-                  "return's Schedules 1 and 2 use it"
-       for k in ("wi_itemized_credit_rate", "wi_married_couple_rate", "wi_married_couple_max_earned")},
     **{(2026, k): "Wisconsin publishes 2026 indexed amounts with the 2026 Form 1 instructions (about "
                   "December 2026); the 2025 amount is used until then"
        for k in ("wi_brackets", "wi_exemption", "wi_standard_deduction_mfj",

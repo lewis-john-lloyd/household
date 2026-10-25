@@ -197,12 +197,13 @@ def describe(base, periods, year, married, exemptions, additional):
     return "WT-4: " + ", ".join(parts)
 
 
-def backtest(paystubs):
+def backtest(paystubs, explained=None):
     """Expected vs actual Wisconsin withholding for every stub that shows a Wisconsin line.
 
     Regular pay is decoded into WT-4 settings (marital status, exemptions, additional
     amount); expected is withholding under those settings. Supplemental pay must
-    match the flat percentage of its band.
+    match the flat percentage of its band. explained maps stub_id to a person's
+    explanation for a stub the rules don't account for (withholding.explained_by_people).
     """
     cols = ["pay_date", "person", "employer", "stub_id", "kind", "base", "withheld", "expected",
             "residual", "explanation", "settings"]
@@ -253,4 +254,6 @@ def backtest(paystubs):
         expected = regular_withholding(row["base"], row["periods"], row["year"], *d)
         row.update(expected=expected, residual=round(row["withheld"] - expected, 2), settings=d,
                    explanation=describe(row["base"], row["periods"], row["year"], *d))
-    return pd.DataFrame(out, columns=cols + ["periods", "year"])[cols]
+    df = pd.DataFrame(out, columns=cols + ["periods", "year"])[cols]
+    withholding._apply_explained(df, explained)
+    return df

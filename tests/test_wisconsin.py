@@ -121,3 +121,32 @@ def test_projection_adds_wisconsin_withholding_for_paychecks_and_vests():
     assert (pos["paychecks_left"], pos["vests_left"]) == (5, 2)
     expected = 2 * regular + 3 * vest + 5 * regular + 2 * 0.0765 * 20_000
     assert pos["wi_withheld"] == pytest.approx(expected, abs=0.05)
+    lower = projection.positions(pd.DataFrame(rows), 2026, {"stock_price": 0.8})[("alex", "Acme")]
+    assert lower["wages"] == pytest.approx(pos["wages"] - 2 * 0.2 * 20_000)
+    assert lower["wi_withheld"] == pytest.approx(pos["wi_withheld"] - 2 * 0.0765 * 0.2 * 20_000, abs=0.05)
+
+
+def test_people_can_explain_a_residual_the_rules_cannot():
+    decisions = pd.DataFrame([
+        {"proposal_key": "wi:4", "kind": "withholding", "decided_at": "", "decision": "approve",
+         "note": "lived in another state, employer here"},
+        {"proposal_key": "wi:9", "kind": "withholding", "decided_at": "", "decision": "reject", "note": "x"},
+        {"proposal_key": "federal:4", "kind": "withholding", "decided_at": "", "decision": "approve",
+         "note": "y"}])
+    explained = withholding.explained_by_people(decisions, "wi")
+    assert explained == {"4": "lived in another state, employer here"}
+    regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 4)
+    rows = stub("2026-01-16", "1", 4_000, regular) + stub("2026-02-13", "4", 4_000, 99.0)
+    bt = wisconsin.backtest(pd.DataFrame(rows), explained).set_index("stub_id")
+    assert bt.loc["4", "explanation"] == "explained by you: lived in another state, employer here"
+    assert bt.loc["4", "residual"] != 0  # the number stays visible
+
+
+def test_break_even_extra_withholding_uses_the_longest_paycheck_run_and_floors_at_zero():
+    pos = {("a", "X"): {"paychecks_left": 5, "extra_withholding": 1_000.0},
+           ("b", "Y"): {"paychecks_left": 2, "extra_withholding": 0.0}}
+    assert projection.break_even_extra(pos, 2_500) == 1_500  # owe 2,500: 500 more on each of 5
+    assert projection.break_even_extra(pos, -2_500) == 500
+    assert projection.break_even_extra(pos, -9_000) == 0
+    none_left = {("a", "X"): {"paychecks_left": 0, "extra_withholding": 0.0}}
+    assert projection.break_even_extra(none_left, 1) is None

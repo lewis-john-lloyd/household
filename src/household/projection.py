@@ -9,8 +9,8 @@ is projected from what the stubs show is recurring:
   - withholding on each by the Pub 15-T method plus the W-4 adjustment the latest
     stub shows (see withholding.py), unless a scenario replaces it;
   - recurring supplemental pay (monthly RSU vests: supplemental days in the last
-    90 days worth over 1,000) at its recent average, withheld at the latest
-    supplemental rate;
+    90 days worth over 1,000) at its recent average, scaled by the scenario's
+    stock price change, withheld at the latest supplemental rate;
   - Wisconsin withholding on each regular paycheck under the WT-4 settings the
     Wisconsin backtest decoded from the latest one, and on each vest at its flat
     percentage (wisconsin.py).
@@ -18,6 +18,10 @@ is projected from what the stubs show is recurring:
 Wisconsin tax uses Form 1 with the year's Wisconsin estimates (subtractions,
 exemptions); itemized deduction and property tax inputs fall back to the federal
 estimates.
+
+Each scenario also reports the extra withholding per remaining paycheck (W-4
+Step 4(c)) that would bring the federal balance to zero, on the paychecks of the
+person and employer with the most paychecks left.
 
 Elections (401(k), HSA, dependent-care FSA) are projected the same way and
 compared with the year's limits.
@@ -124,7 +128,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
            "employer_401k": _ytd(rows, "employer", contains=_is("401k")),
            "hsa": _ytd(rows, "pre_tax", contains=HSA_EMPLOYEE) + _ytd(rows, "pre_tax", contains=HSA_EMPLOYER),
            "dependent_care": _ytd(rows, "pre_tax", contains=DEPENDENT_CARE),
-           "paychecks_left": 0, "vests_left": 0, "notes": []}
+           "paychecks_left": 0, "vests_left": 0, "extra_withholding": 0.0, "notes": []}
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
     if regular.empty:
         return out
@@ -136,6 +140,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
     taxable = _current(stub, "memo", list(withholding.TAXABLE_MEMOS))
     gtl = _current(stub, "income", contains=withholding._is_group_term_life)
     adjustment = overrides.get("step4c", last["residual"])
+    out["extra_withholding"] = float(adjustment)
     medicare_base = _current(stub, "tax", contains=MEDICARE) / _medicare_rate(out["medicare_wages"], year)
     dates = remaining_pay_dates(last["pay_date"], year)
     done = len(regular["pay_date"].unique())
@@ -168,7 +173,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
     vest_days = by_day[by_day > 1_000]
     if len(vest_days) >= 2:
         months_left = 12 - int(vest_days.index.max()[5:7])
-        amount = float(vest_days.mean())
+        amount = float(vest_days.mean()) * overrides.get("stock_price", 1.0)
         rate = overrides.get("supplemental_rate",
                              float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
         out["wages"] += amount * months_left
@@ -188,7 +193,22 @@ SCENARIOS = {
     "as is": {},
     "no extra withholding": {"step4c": 0.0},
     "no extra, 22% on vests": {"step4c": 0.0, "supplemental_rate": 0.22},
+    "stock 20% lower": {"stock_price": 0.8},
+    "stock 20% higher": {"stock_price": 1.2},
 }
+
+
+def break_even_extra(pos, owe):
+    """Per-paycheck extra withholding that brings the federal balance to zero, or None.
+
+    The change goes on the paychecks of the person and employer with the most left;
+    it cannot go below zero.
+    """
+    left = [v for v in pos.values() if v["paychecks_left"]]
+    if not left:
+        return None
+    v = max(left, key=lambda p: p["paychecks_left"])
+    return round(max(v["extra_withholding"] + owe / v["paychecks_left"], 0.0), 2)
 
 
 def positions(paystubs, year, overrides=None):
@@ -249,6 +269,7 @@ def project(year, paystubs, sales, facts):
                      "total_tax": r["24"], "withheld": r["33"], "owe_or_refund": r["37"],
                      "safe_harbor": harbor,
                      "safe_harbor_met": None if harbor is None else r["25a"] + r["25c"] >= harbor,
+                     "extra_to_break_even": break_even_extra(pos, r["37"]),
                      "wi_taxable": w["wi_taxable"], "wi_tax": w["wi_net_tax"],
                      "wi_withheld": w["wi_withheld"], "wi_owe_or_refund": w["wi_owe_or_refund"]})
     return pd.DataFrame(rows), notes

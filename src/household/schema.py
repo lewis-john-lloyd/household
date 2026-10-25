@@ -28,7 +28,7 @@ LEDGER = (
            "tax_treatment": ("taxable", "pre_tax", "roth", "hsa", "education", "none")}),
     Table("transactions", ("txn_id", "date", "account_id", "amount", "payee_raw", "category",
                            "one_off", "note", "source", "era", "doc_id", "recorded_at"),
-          {"source": ("legacy", "csv", "pdf", "feed", "hand"),
+          {"source": ("legacy", "csv", "ofx", "pdf", "feed", "hand"),
            "one_off": ("TRUE", "FALSE")}),
     Table("txn_corrections", ("txn_id", "field", "value", "recorded_at", "reason", "source"),
           {"field": ("category", "one_off", "note", "split", "void")}),

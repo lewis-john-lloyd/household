@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, compute, inbox, ingest, legacy, projection, schema, sheets, tax, taxsources,
-               wisconsin, withholding)
+from . import (backup, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets,
+               tax, taxsources, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -132,6 +132,13 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                   f"{wi_by_you} explained by you")
         for row in wi_unexplained.to_dict("records"):
             _say(log, f"  {row['pay_date']} {row['person']}: {row['explanation']}")
+
+        pa = pennsylvania.backtest(stubs)
+        pa["run_id"] = run_id
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "pa_withholding_backtest"), pa)
+        pa_unexplained = int(pa["explanation"].str.startswith("unexplained").sum())
+        result["pa_withholding_unexplained"] = pa_unexplained
+        _say(log, f"pa_withholding_backtest: {len(pa)} stubs, {pa_unexplained} unexplained")
 
         year = int(stubs["pay_date"].astype(str).max()[:4])
         sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))

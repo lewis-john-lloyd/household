@@ -73,6 +73,8 @@ REPORTS = (
                                    "withheld", "expected", "residual", "explanation", "run_id")),
     Table("wi_withholding_backtest", ("pay_date", "person", "employer", "stub_id", "kind", "base",
                                       "withheld", "expected", "residual", "explanation", "run_id")),
+    Table("pa_withholding_backtest", ("pay_date", "person", "employer", "stub_id", "kind", "base",
+                                      "withheld", "expected", "residual", "explanation", "run_id")),
     Table("projection", ("year", "scenario", "agi", "deduction", "taxable", "total_tax", "withheld",
                          "owe_or_refund", "safe_harbor", "safe_harbor_met", "extra_to_break_even",
                          "wi_taxable", "wi_tax",

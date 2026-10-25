@@ -66,6 +66,8 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 16_300,
+        # Pennsylvania: one flat rate on taxable income and on withholding
+        "pa_rate": 0.0307,
         # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
         "wi_wh_exemption": 400,
         "wi_wh_married_deduction": 9_461,
@@ -112,6 +114,8 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 17_100,
+        # Pennsylvania: one flat rate on taxable income and on withholding
+        "pa_rate": 0.0307,
         # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
         "wi_wh_exemption": 400,
         "wi_wh_married_deduction": 9_461,
@@ -158,6 +162,8 @@ PARAMS = {
         "supplemental_mandatory_over": 1_000_000,
         "withholding_line_1g_mfj": 12_900,
         "withholding_mfj_table_floor": 19_300,
+        # Pennsylvania: one flat rate on taxable income and on withholding
+        "pa_rate": 0.0307,
         # Wisconsin withholding (Pub W-166 alternate method, unchanged since 2022)
         "wi_wh_exemption": 400,
         "wi_wh_married_deduction": 9_461,
@@ -204,6 +210,10 @@ DOCUMENTS = {
                                        "ec79685479ed59e7"),  # leak-guard: allow (hash of a public PDF)
     "wi-publication-w-166-2026-01": ("Wisconsin Publication W-166 (1/26)", "c400ce62d7a945f1"),
     "wi-form-1-2025": ("Wisconsin Form 1 (2025, blank)", "428a8c3bab9cdfc8"),
+    "pa-40-instructions-2025": ("Pennsylvania PA-40 Instructions (2025)", "e8996504a4302a65"),
+    "pa-40-2025": ("Pennsylvania PA-40 (2025, blank)", "fcd7648601f3ce5a"),
+    "pa-schedule-g-l-2024-03": ("Pennsylvania Schedule G-L (03-24)", "b30072eb0bacf5c2"),
+    "pa-rev-415-2023-01": ("Pennsylvania REV-415 (01-23)", "e64161ea109692f7"),
 }
 
 # (year, item) -> (document, page, quote). Pages are PDF pages (1 = first), as a
@@ -280,6 +290,9 @@ CITATIONS = {
     (2025, "wi_standard_deduction_phase_rate_mfj"): (_WI1, 35, "2025 Standard Deduction Table"),
     (2025, "wi_school_property_credit_rate"): (_WI1, 20, "Homeowner\u2019s School Property Tax Credit Table"),
     (2025, "wi_school_property_credit_max"): (_WI1, 20, "can\u2019t be more than 300"),
+    (2025, "pa_rate"): ("pa-40-instructions-2025", 1,
+                        "The state income tax rate for 2025 is 3.07 percent (0.0307)"),
+    (2026, "pa_rate"): ("pa-rev-415-2023-01", 13, "by the current per - centage rate, 3.07%"),
     (2025, "wi_itemized_credit_rate"): ("wi-form-1-2025", 4, "Rate of credit is .05 (5%)"),
     (2025, "wi_married_couple_rate"): ("wi-form-1-2025", 4, "Rate of credit is .03 (3%)"),
     (2025, "wi_married_couple_max_earned"): ("wi-form-1-2025", 4, "If more than 16,000, fill in 16,000"),
@@ -300,6 +313,15 @@ METHODS = {
     "tax: qualified dividends and capital gain tax worksheet": (
         "instructions-for-form-1040-2025", 37, "Qualified Dividends and Capital Gain Tax Worksheet"),
     "safe harbor: 110% of prior-year tax above 150,000 AGI": ("publication-505-2026", 21, "110%"),
+    "wi withholding: flat percentages on supplemental pay": (_W166, 25, "Approved Flat Percentages"),
+    "pa: tax is the flat rate on adjusted taxable income (PA-40 line 12)": (
+        "pa-40-2025", 2, "PA Tax Liability. Multiply Line 11 by 3.07 percent (0.0307)"),
+    "pa: 401(k) deferrals are compensation": (
+        "pa-rev-415-2023-01", 8, "Payments by employers into pension plans, 401(k) plans"),
+    "pa: health benefit plans and group-term life are not compensation": (
+        "pa-rev-415-2023-01", 7, "most group-term life insurance"),
+    "pa: Schedule G-L resident credit, ratio to six decimal places": (
+        "pa-schedule-g-l-2024-03", 1, "Enter the result here (calculate to six decimal places)"),
 }
 
 # Values with no source document on file, and why they are trusted anyway.

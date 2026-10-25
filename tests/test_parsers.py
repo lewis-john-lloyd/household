@@ -154,6 +154,13 @@ def test_unparsed_stub_format_is_filed_for_the_record():
     ("Withholding Tax\nGuide\nPublication W-166 (1/01)", "wi-publication-w-166-2001-01", "2001"),
     ("Wisconsin  2001  1  income tax\nYour legal last name   Legal first name\n .00  .00\n"
      "according to sec. 157.06, Wis. Stats.", "wi-form-1-2001", "2001"),
+    ("2001 INSTRUCTIONS BOOKLET NO FORMS INCLUDED PA-40 IN 04-01\nTAX RATE The state income tax rate "
+     "for 2001 is 3.07 percent", "pa-40-instructions-2001", "2001"),
+    ("PA-40\nPennsylvania Income Tax Return PA-40 (EX) MOD 04-01 (FI)\nPA Department of "
+     "Revenue 2001", "pa-40-2001", "2001"),
+    ("(EX) MOD 03-01 (FI) PA SCHEDULE G-L PA-40/PA-41 G-L", "pa-schedule-g-l-2001-03", ""),
+    ("EMPLOYER WITHHOLDING INFORMATION GUIDE\nPENNSYLVANIA PERSONAL INCOME TAX\nREV-415 (SU) 01-01",
+     "pa-rev-415-2001-01", ""),
 ])
 def test_tax_law_sources_are_identified_before_other_recognizers(text_, label, year):
     assert identify(text_) is tax_law
@@ -171,3 +178,5 @@ def test_household_documents_that_mention_the_law_are_not_tax_law():
     assert identify("Form 1040 U.S. Individual Income Tax Return 2001\n" + wi_return) is documents
     filled = "Wisconsin  2001  1  income tax\nYour legal last name\nDOE  JANE   000-00-0000\n1 Wages  54321.00"
     assert not tax_law.sniff(filled)
+    filed_gl = "(EX) MOD 03-01 (FI) PA SCHEDULE G-L\nJANE DOE  000-00-0000\n2c 17433  1234.00"
+    assert not tax_law.sniff(filed_gl)

@@ -1,5 +1,6 @@
 """Public tax law sources: IRS publications and form instructions, revenue procedures,
-notices, public laws, and Wisconsin's income tax instructions and withholding guide.
+notices, public laws, Wisconsin's and Pennsylvania's income tax instructions, blank
+forms and withholding guides.
 Filed for the record with no rows to extract.
 
 These are the documents taxdata.CITATIONS points at, so each gets a stable label
@@ -30,6 +31,10 @@ WI_FORM = re.compile(r"^Wisconsin(20\d\d)(1|1NPR)incometax")
 # A filed return carries a social security number and dollar amounts; the blank form has neither.
 # (Amounts need four or more digits: the blank form cites statutes such as "sec. 157.06".)
 FILLED = re.compile(r"\b\d{9}\b|\b\d{3}-\d{2}-\d{4}\b|\b\d{4,}\.\d\d\b|\b\d{1,3}(?:,\d{3})+\.\d\d\b")
+PA_INSTRUCTIONS = re.compile(r"INSTRUCTIONSBOOKLET.{0,40}?PA-40IN\d\d-\d\d.{0,200}?taxratefor(20\d\d)is")
+PA_FORM = re.compile(r"PennsylvaniaIncomeTaxReturnPA-40\(EX\)MOD\d\d-\d\d\(FI\)PADepartmentofRevenue(20\d\d)")
+PA_GL = re.compile(r"\(EX\)MOD(\d\d)-(\d\d)\(FI\)PASCHEDULEG-L")
+PA_REV = re.compile(r"(REV-\d+)\(\w+\)(\d\d)-(\d\d)")
 IRB_HEADER = "Administrative,Procedural,andMiscellaneous"
 TITLE_WINDOW = 1200  # characters (without whitespace) in which a title must appear
 TITLE_LINES = 40
@@ -55,12 +60,28 @@ def _identify(text):
     m = WI_W166.search(tight[:TITLE_WINDOW])
     if m:
         month, yy = int(m.group(1)), m.group(2)
-        return (f"wi-publication-w-166-20{yy}-{month:02d}", f"Wisconsin Publication W-166 ({m.group(1)}/{yy})",
-                f"20{yy}")
+        return (f"wi-publication-w-166-20{yy}-{month:02d}",
+                f"Wisconsin Publication W-166 ({m.group(1)}/{yy})", f"20{yy}")
     m = WI_FORM.search(tight)
     if m and not FILLED.search(text):
         year, form = m.groups()
         return (f"wi-form-{form.lower()}-{year}", f"Wisconsin Form {form} ({year}, blank)", year)
+    blank = not FILLED.search(text)
+    m = PA_INSTRUCTIONS.search(tight[:TITLE_WINDOW])
+    if m:
+        year = m.group(1)
+        return f"pa-40-instructions-{year}", f"Pennsylvania PA-40 Instructions ({year})", year
+    m = PA_FORM.search(tight[:TITLE_WINDOW])
+    if m and blank:
+        return f"pa-40-{m.group(1)}", f"Pennsylvania PA-40 ({m.group(1)}, blank)", m.group(1)
+    m = PA_GL.search(tight[:TITLE_WINDOW])
+    if m and blank:
+        month, yy = m.groups()
+        return (f"pa-schedule-g-l-20{yy}-{month}", f"Pennsylvania Schedule G-L ({month}-{yy})", "")
+    m = PA_REV.search(tight[:TITLE_WINDOW])
+    if m and "PENNSYLVANIA" in tight[:TITLE_WINDOW].upper():
+        form, month, yy = m.groups()
+        return (f"pa-{form.lower()}-20{yy}-{month}", f"Pennsylvania {form} ({month}-{yy})", "")
     m = PUBLIC_LAW.search(tight[:TITLE_WINDOW])
     if m:
         return f"public-law-{m.group(1)}-{m.group(2)}", f"Public Law {m.group(1)}-{m.group(2)}", ""

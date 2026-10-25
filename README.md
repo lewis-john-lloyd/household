@@ -35,7 +35,7 @@ Optional local hook: `pip install pre-commit && pre-commit install`.
 
 ## Tax law
 
-Federal and Wisconsin brackets, limits and withholding tables live in `src/household/taxdata.py`; the Wisconsin return (Form 1 and part-year Form 1NPR) and Pub W-166 withholding are in `src/household/wisconsin.py`. Every value cites the page of a source document that states it (`CITATIONS`), and each source is pinned by the SHA-256 of the PDF it was checked against (`DOCUMENTS`). The `tax_sources` report lists every value with its citation and a link to the PDF in the record store.
+Federal, Wisconsin and Pennsylvania rates, limits and withholding tables live in `src/household/taxdata.py`; the Wisconsin return (Form 1 and part-year Form 1NPR) and Pub W-166 withholding are in `src/household/wisconsin.py`. Pennsylvania (PA-40, Schedule G-L and flat-rate withholding) is in `src/household/pennsylvania.py`. Every value cites the page of a source document that states it (`CITATIONS`), and each source is pinned by the SHA-256 of the PDF it was checked against (`DOCUMENTS`). The `tax_sources` report lists every value with its citation and a link to the PDF in the record store.
 
 A release that changes tax law (each January) adds the new year's values and citations, then checks them against the PDFs:
 

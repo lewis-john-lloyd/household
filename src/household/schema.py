@@ -33,6 +33,10 @@ LEDGER = (
     Table("txn_corrections", ("txn_id", "field", "value", "recorded_at", "reason", "source"),
           {"field": ("category", "one_off", "note", "split", "void")}),
     Table("balances", ("as_of", "account_id", "balance", "doc_id")),
+    # who a payment service says a payment went to or came from, for naming the bank or card
+    # line it funded ("PAYPAL *XYZ" on a card is a payment to a named merchant for an item)
+    Table("payment_details", ("detail_id", "date", "amount", "service", "kind", "counterparty", "memo",
+                              "doc_id")),
     Table("categories", ("category", "group", "priority"),
           {"priority": ("high", "medium", "low")}),
     Table("payee_rules", ("pattern", "category", "precedence", "effective")),

@@ -190,3 +190,35 @@ def test_xml_entities_and_amex_account_ids():
     assert r.account_hint == "1042"
     amex = pd.DataFrame([{"account_id": "amex", "type": "credit_card", "last4": "31042"}])
     assert ingest.resolve_account(r.account_hint, "amex.qfx", amex)["account_id"] == "amex"
+
+
+CASH = chr(36)  # QIF split amounts start with a dollar sign
+PAYPAL = ("!Type:Cash\r\nD01/05/2001\r\nT-26.50\r\nLPreApproved Payment Bill User Payment\r\n"
+          f"SPreApproved Payment Bill User Payment\r\n{CASH}-26.50\r\nSFee\r\n{CASH}0.00\r\nCX\r\nPA Newspaper\r\n^\r\n"
+          "!Type:Cash\r\nD01/05/2001\r\nT26.50\r\nLGeneral Card Deposit\r\nCX\r\nP\r\n^\r\n"
+          "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLGeneral Authorization\r\nCX\r\nPA Store\r\n^\r\n"
+          "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLExpress Checkout Payment\r\nCX\r\nMA desk\r\nPA Store\r\n^\r\n"
+          "!Type:Cash\r\nD01/07/2001\r\nT75.00\r\nLMobile Payment\r\nCX\r\nPA Friend\r\n^\r\n")
+
+
+def test_paypal_keeps_payments_with_a_counterparty_and_drops_funding_and_holds():
+    from household.parsers import paypal_qif
+    assert identify(PAYPAL) is paypal_qif
+    r = paypal_qif.parse(PAYPAL)
+    d = r.tables["payment_details"]
+    assert list(d["amount"]) == [-26.5, -1040.0, 75.0]
+    assert list(d["counterparty"]) == ["A Newspaper", "A Store", "A Friend"]
+    assert d["memo"][1] == "A desk" and d["detail_id"].nunique() == 3
+    assert "transactions" not in r.tables  # PayPal names payments; it is not an account
+    with pytest.raises(ParseError, match="unknown PayPal type"):
+        paypal_qif.parse(PAYPAL.replace("LMobile Payment", "LSomething New"))
+
+
+def test_inbox_files_paypal_details(setup):  # noqa: F811
+    drive, ledger, box, record = setup
+    drive.add("paypal_2001.QIF", box, "application/octet-stream", PAYPAL.encode())
+    [s] = inbox.process(ledger, drive, "root")
+    assert s["appended"] == {"payment_details": 3}
+    drive.add("paypal_again.QIF", box, "application/octet-stream", PAYPAL.encode() + b"\r\n")
+    [again] = inbox.process(ledger, drive, "root")
+    assert again["status"] == "already_present"

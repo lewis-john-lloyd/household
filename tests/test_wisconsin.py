@@ -150,3 +150,13 @@ def test_break_even_extra_withholding_uses_the_longest_paycheck_run_and_floors_a
     assert projection.break_even_extra(pos, -9_000) == 0
     none_left = {("a", "X"): {"paychecks_left": 0, "extra_withholding": 0.0}}
     assert projection.break_even_extra(none_left, 1) is None
+
+
+def test_other_state_tax_withheld_is_credited_against_wisconsin():
+    regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 4)
+    rows = stub("2026-01-16", "1", 4_000, regular) + stub("2026-01-30", "2", 4_000, round(regular - 120.0, 2))
+    rows += [{**rows[-1], "line_item": "PA", "kind": "tax", "amount": 120.0, "ytd_amount": 120.0},
+             {**rows[-1], "line_item": "SS", "kind": "tax", "amount": 248.0, "ytd_amount": 248.0}]
+    bt = wisconsin.backtest(pd.DataFrame(rows)).set_index("stub_id")
+    assert bt.loc["2", "explanation"] == "WT-4: 4 exemptions, less PA income tax withheld (120.00)"
+    assert bt.loc["2", "residual"] == 0

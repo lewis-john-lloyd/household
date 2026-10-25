@@ -19,7 +19,10 @@ Withholding follows Pub W-166's alternate method: annualized wages less a slidin
 deduction and 400 per exemption, taxed on the withholding schedule. Supplemental
 pay paid on its own is withheld at the flat percentage for its annual gross salary
 band; employers seen so far place the payment in a band by annualizing the
-payment itself (amount x pay periods), which is what the backtest checks.
+payment itself (amount x pay periods), which is what the backtest checks. When a
+paycheck also withholds another state's income tax (an employee working from
+another state), payroll credits it: Wisconsin withholding is the W-166 amount less
+the other state's tax withheld, never below zero.
 
 Not covered: the additional child and dependent care credit (zero when the
 dependent care FSA covers the federal expense limit), the earned income and
@@ -34,6 +37,8 @@ from .tax import whole
 TABLE_LIMIT = 100_000
 LOW_ROWS = ((0, 20), (20, 40), (40, 100))  # then the table's rows are 100 wide
 WI_LINES = ("WI State Income Tax", "WI")
+STATES = frozenset("""AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT
+NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WY""".split())
 CENT = withholding.CENT
 RATIO_LINES = ("wi1npr_32",)  # compared to four decimal places
 
@@ -174,16 +179,45 @@ def stub_withholding(rows):
     return pd.to_numeric(wi["amount"], errors="coerce").fillna(0.0).groupby(wi["stub_id"].astype(str)).sum()
 
 
-def _decode(base, periods, year, withheld, prefer=()):
-    """(married, exemptions, additional) reproducing withheld, or None."""
+def _other_state(name):
+    """The state code of another state's income tax line ("PA", "PA State Income Tax"), else None."""
+    code = name.removesuffix(" State Income Tax").strip()
+    return code if code in STATES and code != "WI" else None
+
+
+def other_state_withholding(rows):
+    """{stub_id: (state codes, amount)} of other states' income tax withheld on each stub."""
+    taxes = rows[rows["kind"] == "tax"]
+    codes = taxes["line_item"].astype(str).map(_other_state)
+    taxes = taxes[codes.notna()]
+    amounts = pd.to_numeric(taxes["amount"], errors="coerce").fillna(0.0)
+    out = {}
+    keys = [taxes["stub_id"].astype(str), codes[codes.notna()]]
+    for (stub_id, code), amount in amounts.groupby(keys).sum().items():
+        if amount:
+            states, total = out.get(stub_id, ((), 0.0))
+            out[stub_id] = (states + (code,), round(total + amount, 2))
+    return out
+
+
+def _decode(base, periods, year, withheld, prefer=(), credit=0.0):
+    """((married, exemptions, additional), credited) reproducing withheld, or None.
+
+    credited is True when the match needs another state's tax withheld (credit) taken off.
+    """
     tried = list(prefer) + [(m, e) for e in range(11) for m in (True, False) if (m, e) not in prefer]
     for married, exemptions in tried:
         if abs(regular_withholding(base, periods, year, married, exemptions) - withheld) < CENT:
-            return married, exemptions, 0
+            return (married, exemptions, 0), False
     for married, exemptions in tried:
         extra = withheld - regular_withholding(base, periods, year, married, exemptions)
         if extra > CENT and abs(extra - round(extra)) < withholding.DECODE_TOLERANCE:
-            return married, exemptions, int(round(extra))
+            return (married, exemptions, int(round(extra))), False
+    if credit:
+        for married, exemptions in tried:
+            due = max(regular_withholding(base, periods, year, married, exemptions) - credit, 0.0)
+            if abs(due - withheld) < CENT:
+                return (married, exemptions, 0), True
     return None
 
 
@@ -211,6 +245,7 @@ def backtest(paystubs, explained=None):
         return pd.DataFrame(columns=cols)
     withheld = stub_withholding(paystubs)
     rows = paystubs[paystubs["stub_id"].astype(str).isin(set(withheld.index))]
+    other = other_state_withholding(rows)
     if rows.empty:
         return pd.DataFrame(columns=cols)
     stubs = withholding.stub_summary(rows).to_dict("records")
@@ -238,11 +273,12 @@ def backtest(paystubs, explained=None):
     prefer = {}
     for row in pending:
         d = _decode(row["base"], row["periods"], row["year"], row["withheld"])
-        if d and d[2] == 0:
-            prefer.setdefault(row["person"], []).append(d[:2])
+        if d and d[0][2] == 0:
+            prefer.setdefault(row["person"], []).append(d[0][:2])
     for row in pending:
+        states, credit = other.get(str(row["stub_id"]), ((), 0.0))
         d = _decode(row["base"], row["periods"], row["year"], row["withheld"],
-                    prefer=list(dict.fromkeys(prefer.get(row["person"], []))))
+                    prefer=list(dict.fromkeys(prefer.get(row["person"], []))), credit=credit)
         if d is None:  # compare with the person's usual settings, else married with none
             married, exemptions = (prefer.get(row["person"]) or [(True, 0)])[-1]
             expected = regular_withholding(row["base"], row["periods"], row["year"], married, exemptions)
@@ -251,9 +287,14 @@ def backtest(paystubs, explained=None):
                                    + describe(row["base"], row["periods"], row["year"], married,
                                               exemptions, 0))
             continue
-        expected = regular_withholding(row["base"], row["periods"], row["year"], *d)
-        row.update(expected=expected, residual=round(row["withheld"] - expected, 2), settings=d,
-                   explanation=describe(row["base"], row["periods"], row["year"], *d))
+        settings, credited = d
+        expected = regular_withholding(row["base"], row["periods"], row["year"], *settings)
+        explanation = describe(row["base"], row["periods"], row["year"], *settings)
+        if credited:
+            expected = round(max(expected - credit, 0.0), 2)
+            explanation += f", less {'/'.join(states)} income tax withheld ({credit:,.2f})"
+        row.update(expected=expected, residual=round(row["withheld"] - expected, 2), settings=settings,
+                   explanation=explanation)
     df = pd.DataFrame(out, columns=cols + ["periods", "year"])[cols]
     withholding._apply_explained(df, explained)
     return df

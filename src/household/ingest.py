@@ -88,7 +88,7 @@ def append_transactions(ledger, incoming):
 
 def _last4(value):
     v = re.sub(r"\.0+$", "", str(value).strip())  # a Sheet may hand back 713.0 for "0713"
-    return v.zfill(4) if v.isdigit() else v
+    return (v.zfill(4) if v.isdigit() else v)[-4:]  # Amex shows five digits; four decide
 
 
 def _named(word, file_name):
@@ -132,7 +132,7 @@ def resolve_account(hint, file_name, accounts):
 def finish_bank_rows(result, file_name, accounts, recorded_at):
     """Fill in a bank download's account and txn_ids (in place on result).
 
-    A FITID becomes the txn_id hashed with the account; a file without ids gets
+    The bank's own id (FITID, reference number) becomes the txn_id hashed with the account; a file without ids gets
     assign_txn_ids. A card download that shows charges as positive is flipped.
     """
     account = resolve_account(result.account_hint, file_name, accounts)
@@ -148,9 +148,9 @@ def finish_bank_rows(result, file_name, accounts, recorded_at):
             txns["amount"] = -txns["amount"]
             result.notes.append("card amounts flipped: charges are money out")
         txns["recorded_at"] = recorded_at
-        fitid = txns["txn_id"].astype(str).str.startswith("fitid:")
-        if fitid.all():
-            txns["txn_id"] = [hashlib.sha256(f"{account_id}|{t[6:]}".encode()).hexdigest()[:16]
+        bank_id = txns["txn_id"].astype(str).str.match(r"(fitid|ref):")
+        if bank_id.all():  # the bank's own id (OFX FITID, a reference number), with the account
+            txns["txn_id"] = [hashlib.sha256(f"{account_id}|{t.split(':', 1)[1]}".encode()).hexdigest()[:16]
                               for t in txns["txn_id"]]
         else:
             txns = assign_txn_ids(txns)

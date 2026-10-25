@@ -161,3 +161,32 @@ def test_inbox_files_downloads_by_account_and_adds_overlaps_once(setup):  # noqa
     assert len(txns) == 6 and set(txns["account_id"]) == {"bills", "usaa_card"}
     docs = rows(ledger, "source_documents").set_index("original_name")
     assert docs.loc["usaa_card.csv", "account_id"] == "usaa_card"
+
+
+BOA = ("Posted Date,Reference Number,Payee,Address,Amount\r\n"
+       '01/05/2001,REF003,"CARD PAYMENT","",68.15\r\n'
+       '12/29/2000,REF002,"STREAMING*ONE  example.com/billCA","example.com/bill CA ",-31.79\r\n'
+       '12/27/2000,REF001,"STREAMING TWO","",-36.36\r\n')
+
+
+def test_boa_statement_keys_on_reference_and_takes_last_four_from_the_name():
+    from household.parsers import boa_csv
+    assert identify(BOA) is boa_csv
+    accounts = pd.concat([ACCOUNTS, pd.DataFrame([{"account_id": "boa", "type": "credit_card",
+                                                   "last4": "8906"}])])
+    r = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_8906.csv", accounts, "now")
+    t = r.tables["transactions"]
+    assert list(t["amount"]) == [68.15, -31.79, -36.36]  # signed as in the ledger already
+    assert t["payee_raw"][1] == "STREAMING*ONE example.com/billCA" and r.account_id == "boa"
+    again = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_8906 (1).csv", accounts, "now")
+    assert list(again.tables["transactions"]["txn_id"]) == list(t["txn_id"])
+
+
+def test_xml_entities_and_amex_account_ids():
+    text = xml_card(CARD).replace("GROCER</NAME>", "SALT &amp; PEPPER</NAME>", 1).replace(
+        "<ACCTID>0042</ACCTID></CCACCTFROM>", "<ACCTID>TOKEN9|31042</ACCTID></CCACCTFROM>")
+    r = ofx.parse(text)
+    assert r.tables["transactions"]["payee_raw"][0] == "SALT & PEPPER"
+    assert r.account_hint == "1042"
+    amex = pd.DataFrame([{"account_id": "amex", "type": "credit_card", "last4": "31042"}])
+    assert ingest.resolve_account(r.account_hint, "amex.qfx", amex)["account_id"] == "amex"

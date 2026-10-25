@@ -33,6 +33,20 @@ NAME = "ofx"
 KIND = "bank_statement"
 TAG = re.compile(r"<(/?)([A-Za-z0-9.]+)>([^<]*)")
 STATEMENTS = ("STMTRS", "CCSTMTRS")
+ENTITIES = {"amp": "&", "lt": "<", "gt": ">", "quot": '"', "apos": "'", "nbsp": " "}
+ENTITY = re.compile(r"&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);")
+
+
+def unescape(text):
+    """XML character references ("SALT &amp; PEPPER"); unknown names are left as they are."""
+    def one(m):
+        name = m.group(1)
+        if name.startswith("#x"):
+            return chr(int(name[2:], 16))
+        if name.startswith("#"):
+            return chr(int(name[1:]))
+        return ENTITIES.get(name.lower(), m.group(0))
+    return ENTITY.sub(one, text)
 ACCOUNT = ("BANKACCTFROM", "CCACCTFROM")
 
 
@@ -48,7 +62,7 @@ def read(text):
     root = {}
     stack = [("", root)]
     for m in TAG.finditer(body_text):
-        closing, tag, body = m.group(1), m.group(2).upper(), m.group(3).strip()
+        closing, tag, body = m.group(1), m.group(2).upper(), unescape(m.group(3)).strip()
         if closing:
             names = [name for name, _ in stack]
             if tag in names:  # closes an aggregate (a leaf's closing tag in XML is ignored)
@@ -111,7 +125,7 @@ def parse(text):
     account = next((first(st, a, "ACCTID") for a in ACCOUNT if st.get(a)), "")
     if not account:
         raise ParseError(f"{NAME}: no account id")
-    last4 = re.sub(r"\W", "", account)[-4:]
+    last4 = re.sub(r"\W", "", account.split("|")[-1])[-4:]  # Amex: "<token>|<card digits>"
 
     rows = []
     for t in find(st, "STMTTRN"):

@@ -113,19 +113,23 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
     stubs = sheets.read_table(ledger, schema.table(schema.LEDGER, "paystubs"))
     if not stubs.empty:
-        backtest = withholding.backtest(stubs)
+        backtest = withholding.backtest(stubs, withholding.explained_by_people(decisions, "federal"))
         backtest["run_id"] = run_id
         sheets.replace_table(reports, schema.table(schema.REPORTS, "withholding_backtest"), backtest)
         unexplained = int(backtest["explanation"].str.startswith("unexplained").sum())
+        by_you = int(backtest["explanation"].str.startswith("explained by you").sum())
         result["withholding_unexplained"] = unexplained
-        _say(log, f"withholding_backtest: {len(backtest)} stubs, {unexplained} unexplained")
+        _say(log, f"withholding_backtest: {len(backtest)} stubs, {unexplained} unexplained, "
+                  f"{by_you} explained by you")
 
-        wi = wisconsin.backtest(stubs)
+        wi = wisconsin.backtest(stubs, withholding.explained_by_people(decisions, "wi"))
         wi["run_id"] = run_id
         sheets.replace_table(reports, schema.table(schema.REPORTS, "wi_withholding_backtest"), wi)
         wi_unexplained = wi[wi["explanation"].str.startswith("unexplained")]
         result["wi_withholding_unexplained"] = len(wi_unexplained)
-        _say(log, f"wi_withholding_backtest: {len(wi)} stubs, {len(wi_unexplained)} unexplained")
+        wi_by_you = int(wi["explanation"].str.startswith("explained by you").sum())
+        _say(log, f"wi_withholding_backtest: {len(wi)} stubs, {len(wi_unexplained)} unexplained, "
+                  f"{wi_by_you} explained by you")
         for row in wi_unexplained.to_dict("records"):
             _say(log, f"  {row['pay_date']} {row['person']}: {row['explanation']}")
 
@@ -139,9 +143,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                 _say(log, f"projection {year}: {note}")
             for row in lines.to_dict("records"):
                 verdict = "refund" if row["owe_or_refund"] < 0 else "owe"
+                even = row["extra_to_break_even"]
                 _say(log, f"projection {year}, {row['scenario']}: {verdict} "
                           f"{abs(row['owe_or_refund']):,.0f} (tax {row['total_tax']:,.0f}, "
-                          f"paid {row['withheld']:,.0f})")
+                          f"paid {row['withheld']:,.0f})"
+                          + ("" if even is None or pd.isna(even) else
+                             f"; extra withholding to break even {even:,.0f} a paycheck"))
             wi_row = lines.iloc[0]
             wi_verdict = "refund" if wi_row["wi_owe_or_refund"] < 0 else "owe"
             _say(log, f"projection {year}, Wisconsin: {wi_verdict} "

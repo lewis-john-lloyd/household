@@ -63,8 +63,35 @@ def stub_summary(rows):
     return pd.DataFrame(out)
 
 
-def backtest(paystubs):
-    """Expected vs actual federal withholding for every stub; returns one row per stub."""
+def explained_by_people(decisions, prefix):
+    """{stub_id: note} for withholding residuals a person has explained.
+
+    A proposal_decisions row with kind "withholding", decision "approve" and key
+    "<prefix>:<stub_id>" (prefix "federal" or "wi") explains that stub; its note
+    becomes the explanation.
+    """
+    if decisions is None or decisions.empty:
+        return {}
+    rows = decisions[(decisions["kind"] == "withholding") & (decisions["decision"] == "approve")]
+    out = {}
+    for key, note in zip(rows["proposal_key"].astype(str), rows["note"].astype(str)):
+        if key.startswith(prefix + ":"):
+            out[key[len(prefix) + 1:]] = note
+    return out
+
+
+def _apply_explained(df, explained):
+    for i in df.index[df["explanation"].astype(str).str.startswith("unexplained")]:
+        note = (explained or {}).get(str(df.at[i, "stub_id"]))
+        if note:
+            df.at[i, "explanation"] = f"explained by you: {note}"
+
+
+def backtest(paystubs, explained=None):
+    """Expected vs actual federal withholding for every stub; returns one row per stub.
+
+    explained maps stub_id to a person's explanation for a residual the rules
+    don't account for (see explained_by_people)."""
     cols = ["pay_date", "person", "employer", "stub_id", "kind", "base", "withheld", "expected",
             "residual", "explanation"]
     internal = ["period_start", "period_end"]
@@ -93,6 +120,7 @@ def backtest(paystubs):
         rows.append(row)
     df = pd.DataFrame(rows, columns=cols + internal)
     _explain_regular(df)
+    _apply_explained(df, explained)
     return df[cols]
 
 

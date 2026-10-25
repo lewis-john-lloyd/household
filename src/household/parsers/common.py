@@ -64,6 +64,12 @@ class Result:
     tables maps a ledger table name to new rows (without doc_id); keys gives the
     columns that identify a row, so re-ingesting an overlapping document appends
     nothing twice.
+
+    A bank download names its account loosely: account_hint is the last four
+    characters of the account number when the file has one, and the inbox
+    matches it (or else the file name) to the accounts table, then fills in
+    account_id and the txn_ids. card_charges_positive says the file shows a
+    card's charges as positive amounts, the opposite of the ledger.
     """
     kind: str
     parser: str
@@ -71,6 +77,8 @@ class Result:
     covers_from: str = ""
     covers_to: str = ""
     account_id: str = ""
+    account_hint: str = ""
+    card_charges_positive: bool = False
     tables: dict = field(default_factory=dict)
     keys: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)

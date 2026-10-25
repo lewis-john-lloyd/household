@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, pdftext, schema, sheets
+from . import backup, ingest, pdftext, schema, sheets
 from .backup import RETRIES
 from .parsers import ParseError, identify
 
@@ -106,6 +106,10 @@ def to_text(name, mime, data, all_pages=False):
         return pdftext.extract(data, max_pages=None if all_pages else pdftext.MAX_PAGES)
     try:
         return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    try:  # OFX 1.x downloads declare CHARSET:1252
+        return data.decode("cp1252")
     except UnicodeDecodeError:
         return ""
 
@@ -281,6 +285,8 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
         text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
     try:
         result = parser.parse(text)
+        if "transactions" in result.tables:  # a bank download: find its account
+            ingest.finish_bank_rows(result, f["name"], ledger_tables.read("accounts"), received_at)
     except ParseError as e:
         summary.update(status="failed", reason=str(e))
         return None

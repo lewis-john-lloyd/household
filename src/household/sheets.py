@@ -30,7 +30,9 @@ def ensure_tables(spreadsheet, tables):
 
     A tab whose header differs from the schema is an error, unless the tab has no
     data rows yet: then its header is rewritten, which is how a table that has
-    never held data picks up a schema change.
+    never held data picks up a schema change. On the Reports spreadsheet every
+    table is derived and rebuilt each run, so a changed header clears that tab
+    and takes the new one; ledger data is never cleared.
     """
     existing = {ws.title: ws for ws in spreadsheet.worksheets()}
     present = [t for t in tables if t.name in existing]
@@ -44,8 +46,10 @@ def ensure_tables(spreadsheet, tables):
             if tuple(header) == t.columns:
                 continue
             if len(values) > 1 and any(str(c).strip() for c in values[1]):
-                raise SchemaMismatch(
-                    f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
+                if spreadsheet.title != REPORTS_TITLE:
+                    raise SchemaMismatch(
+                        f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
+                existing[t.name].clear()  # derived rows; this run rebuilds them
             migrate.append((t, existing[t.name], len(header)))
     if migrate:
         _migrate_empty_tables(spreadsheet, migrate)

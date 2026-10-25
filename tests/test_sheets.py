@@ -153,3 +153,21 @@ def test_table_with_data_and_old_header_is_an_error():
     ledger.tabs["equity_sales"].rows = [["lot_id", "sale_date"], ["x", "y"]]
     with pytest.raises(sheets.SchemaMismatch):
         sheets.ensure_tables(ledger, schema.LEDGER)
+
+
+def test_a_reports_table_with_rows_takes_a_new_header_but_the_ledger_never_does():
+    reports = FakeSpreadsheet(sheets.REPORTS_TITLE)
+    old = schema.Table("projection", ("year", "scenario", "run_id"))
+    sheets.ensure_tables(reports, (old,))
+    sheets.replace_table(reports, old, pd.DataFrame([{"year": 2026, "scenario": "as is", "run_id": "r"}]))
+    new = schema.Table("projection", ("year", "scenario", "extra", "run_id"))
+    sheets.ensure_tables(reports, (new,))
+    values = reports.worksheet("projection").get_values()
+    assert values[0][:4] == ["year", "scenario", "extra", "run_id"]
+    assert not any(any(str(c).strip() for c in row) for row in values[1:])
+
+    ledger = FakeSpreadsheet(sheets.LEDGER_TITLE)
+    sheets.ensure_tables(ledger, (old,))
+    sheets.append_rows(ledger, old, pd.DataFrame([{"year": 2026, "scenario": "as is", "run_id": "r"}]))
+    with pytest.raises(sheets.SchemaMismatch):
+        sheets.ensure_tables(ledger, (new,))

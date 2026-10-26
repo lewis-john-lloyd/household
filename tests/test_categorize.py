@@ -152,12 +152,12 @@ def test_harvest_turns_answers_into_ledger_rows():
 
 def test_answers_settle_the_queue_on_the_next_run():
     rows = history() + [txn(1, "2025-08-01", "WILLOW ST CO-OP", -50.0), txn(2, "2025-08-20", "FUNDS TRANSFER DB", -9.0)]
-    first = categorize.queue(categorize.categorize(frame(rows), unpaired={"t2"}))
+    first = categorize.queue(categorize.categorize(frame(rows), unpaired={"t2"}, unpaired_guess="partner"))
     first["answer"] = ["food", "y"]
     made, fixed, _ = categorize.harvest(first, {"food", "partner"})
     df = frame(rows)
     df.loc[df["txn_id"] == "t2", "category"] = fixed["value"].iloc[0]  # what effective_transactions does
-    out = categorize.categorize(df, decisions=made, unpaired={"t2"})
+    out = categorize.categorize(df, decisions=made, unpaired={"t2"}, unpaired_guess="partner")
     assert categorize.queue(out).empty
     assert by_id(out).loc["t1", "decided_by"] == "your decision"
 

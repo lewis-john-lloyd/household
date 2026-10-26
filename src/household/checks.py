@@ -5,6 +5,8 @@ coverage       one row per bank or card account that sends monthly statements
                checking, savings or credit_card): the newest date the ledger has
                for it, from a transaction, a balance or a download's covers_to,
                and "due" once that is more than max_gap_days old (45 when blank).
+               An account whose expected_docs is when_used (open but unused)
+               is listed and never due.
                Then one row per explanation download (PayPal, Amazon, Venmo,
                Apple, Google): the last date its exports cover and how many
                lines are waiting for the next one; "due" when any are.
@@ -22,6 +24,7 @@ import pandas as pd
 
 SPENDING_TYPES = ("checking", "savings", "credit_card")
 DEFAULT_GAP = 45
+WHEN_USED = "when_used"  # an open card kept unused: listed, never due
 SERVICES = ("paypal", "amazon", "venmo", "apple", "google")
 TOLERANCE = 0.005
 
@@ -34,7 +37,7 @@ def _gap(value):
 def coverage(accounts, transactions, balances, documents, categorized, explained_coverage, today):
     today = pd.Timestamp(today or date.today())
     rows = []
-    live = accounts[(accounts["expected_docs"] == "monthly_statement")
+    live = accounts[accounts["expected_docs"].isin(["monthly_statement", WHEN_USED])
                     & accounts["type"].isin(SPENDING_TYPES)
                     & (accounts["closed"].astype(str).str.strip() == "")]
     for a in live.to_dict("records"):
@@ -48,6 +51,8 @@ def coverage(accounts, transactions, balances, documents, categorized, explained
         gap = _gap(a.get("max_gap_days", ""))
         age = (today - pd.Timestamp(newest)).days if newest else None
         status = "never downloaded" if not newest else "due" if age > gap else "ok"
+        if a["expected_docs"] == WHEN_USED and status != "ok":
+            status = "download when used"
         rows.append({"source": acct, "kind": "account", "newest": newest, "age_days": "" if age is None else age,
                      "due_after_days": gap, "waiting_lines": "", "status": status})
     waiting = categorized[categorized["status"] == "waiting"]["decided_by"].value_counts()

@@ -11,6 +11,7 @@ ACCOUNTS = pd.DataFrame([
     {"account_id": "old", "type": "checking", "expected_docs": "monthly_statement", "closed": "2025-01-01",
      "max_gap_days": ""},
     {"account_id": "theirs", "type": "checking", "expected_docs": "none", "closed": "", "max_gap_days": ""},
+    {"account_id": "spare", "type": "credit_card", "expected_docs": "when_used", "closed": "", "max_gap_days": ""},
     {"account_id": "broker", "type": "brokerage", "expected_docs": "quarterly_statement", "closed": "",
      "max_gap_days": "100"},
 ])
@@ -29,7 +30,8 @@ def test_coverage_lists_what_is_due():
                                      decided_by="waiting for venmo")])
     out = checks.coverage(ACCOUNTS, txns, balances, docs, categorized, {"paypal": ("2025-01-01", "2026-10-01")},
                           "2026-10-26").set_index("source")
-    assert list(out.index) == ["checking", "card", "new", "paypal", "amazon", "venmo", "apple", "google"]
+    assert list(out.index) == ["checking", "card", "new", "spare", "paypal", "amazon", "venmo", "apple", "google"]
+    assert out.loc["spare", "status"] == "download when used"
     assert out.loc["checking", "status"] == "ok"
     assert (out.loc["card", "newest"], out.loc["card", "status"]) == ("2026-08-15", "due")  # 72 days > 45
     assert out.loc["new", "status"] == "never downloaded"

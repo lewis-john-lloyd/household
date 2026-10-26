@@ -95,6 +95,21 @@ def monthly_actuals(transactions):
 TOTAL = "TOTAL"
 
 
+def legacy_rows(transactions):
+    """The ledger rows the legacy check compares, and the legacy rows it leaves out.
+
+    The check asks whether ingest copied the old books faithfully, so it reads
+    legacy rows as they were ingested: no corrections, no aliases, and nothing
+    from a bank download (downloads reach past where the old books stopped).
+    A legacy row the old books never categorized is in no category row of the
+    old rollup, so it is in none of its totals either; it is left out and
+    returned separately, to be categorized in review like any other.
+    """
+    legacy = transactions[transactions["era"] == "legacy"]
+    blank = legacy["category"].astype(str).str.strip() == ""
+    return legacy[~blank], legacy[blank]
+
+
 def compare_to_legacy(computed, legacy_rollup, tolerance=0.005):
     """Join computed monthly spend to the legacy rollup; returns rows with legacy, computed, diff.
 

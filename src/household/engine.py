@@ -85,7 +85,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
     _say(log, f"transfers: {len(paired)} pairs between your accounts, {len(lonely)} transfer lines "
               "with no partner")
-    legacy_actuals = compute.monthly_actuals(effective)  # old category names, for the legacy check
+    legacy_checked, legacy_blank = compute.legacy_rows(txns)
+    legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
     aliases = sheets.read_table(ledger, schema.table(schema.LEDGER, "category_aliases"))
     effective = compute.apply_aliases(effective, aliases)
     actuals = compute.monthly_actuals(effective)
@@ -190,6 +191,11 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, "legacy_check"), check)
         result.update({"checked": len(check), "mismatches": int((~check["match"]).sum())})
         _say(log, f"legacy check {legacy_year}: {result['mismatches']} mismatches of {len(check)}")
+        blank = legacy_blank[legacy_blank["date"].astype(str).str.startswith(str(legacy_year))]
+        result["legacy_uncategorized"] = len(blank)
+        for row in blank.to_dict("records"):
+            _say(log, f"  not in the old rollup (no category): {row['date']} {row['payee_raw']} "
+                      f"{-float(row['amount']):.2f}")
 
     log = pd.DataFrame([{"run_id": run_id, "computed_at": computed_at, "stage": "compute",
                          "detail": str(result)}])

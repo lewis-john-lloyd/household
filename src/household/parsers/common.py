@@ -70,6 +70,11 @@ class Result:
     matches it (or else the file name) to the accounts table, then fills in
     account_id and the txn_ids. card_charges_positive says the file shows a
     card's charges as positive amounts, the opposite of the ledger.
+
+    record, when not None, is a trimmed copy of the document (an export full of
+    addresses and other things the household has no use for): the inbox files
+    it in record_store instead of the original and moves the original to the
+    trash. An empty record files nothing.
     """
     kind: str
     parser: str
@@ -82,6 +87,7 @@ class Result:
     tables: dict = field(default_factory=dict)
     keys: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
+    record: object = None  # text to file in place of the original, which then goes to the trash
 
     def frame(self, name):
         return self.tables.get(name, pd.DataFrame())

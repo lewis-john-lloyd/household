@@ -37,6 +37,10 @@ LEDGER = (
     # line it funded ("PAYPAL *XYZ" on a card is a payment to a named merchant for an item)
     Table("payment_details", ("detail_id", "date", "amount", "service", "kind", "counterparty", "memo",
                               "doc_id")),
+    # what an Amazon order history export says was bought (or refunded), trimmed to what matching needs
+    Table("order_items", ("item_id", "service", "order_id", "kind", "order_date", "date", "amount", "card",
+                          "department", "item", "website", "doc_id"),
+          {"kind": ("item", "refund")}),
     Table("categories", ("category", "group", "priority"),
           {"priority": ("high", "medium", "low")}),
     # old category names (the 2017 to 2024 books) and the category each now counts as
@@ -100,8 +104,8 @@ REPORTS = (
                         "payee_b", "amount", "kind", "run_id"),
           {"kind": ("transfer", "card_payment", "reversal")}),
     Table("transfers_unmatched", ("txn_id", "date", "account_id", "amount", "payee_raw", "run_id")),
-    Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "key", "category",
-                          "decided_by", "confidence", "status", "run_id")),
+    Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key",
+                          "category", "splits", "decided_by", "confidence", "status", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

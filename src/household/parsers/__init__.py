@@ -4,12 +4,12 @@ Order matters only when two formats could both match; the most specific goes fir
 Tax law sources go first of all: they quote the phrases other recognizers look for.
 """
 
-from . import (boa_csv, documents, earnings_statement, ofx, pay_statement, paypal_qif, return_facts,
+from . import (amazon, boa_csv, documents, earnings_statement, ofx, pay_statement, paypal_qif, return_facts,
                schwab_equity, seed, tax_law, usaa_csv)
 from .common import ParseError, Result
 
-PARSERS = (tax_law, seed, return_facts, schwab_equity, ofx, usaa_csv, boa_csv, paypal_qif, pay_statement,
-           earnings_statement, documents)
+PARSERS = (tax_law, seed, return_facts, schwab_equity, ofx, usaa_csv, boa_csv, paypal_qif, amazon,
+           pay_statement, earnings_statement, documents)
 
 
 def identify(text):

@@ -34,15 +34,19 @@ class FakeFiles:
         return Request({"files": [dict(f) for f in found]})
 
     def create(self, body, fields, media_body=None):
+        data = media_body.getbytes(0, media_body.size()) if media_body is not None else b""
         return Request({"id": self.drive.add(body["name"], body["parents"][0],
-                                             body.get("mimeType", "text/csv"), b"")})
+                                             body.get("mimeType", "text/csv"), data)})
 
-    def update(self, fileId, addParents, removeParents, body, fields):
+    def update(self, fileId, body, fields, addParents=None, removeParents=None):
         drive = self.drive
 
         class Move:  # like Drive, nothing happens until execute
             def execute(self, num_retries=0):
                 f = drive.items[fileId]
+                if body.get("trashed"):
+                    f.update(parent="trash")
+                    return {"id": fileId}
                 assert f["parent"] == removeParents
                 f.update(parent=addParents, name=body["name"])
                 return {"id": fileId}

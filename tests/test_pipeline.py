@@ -81,14 +81,17 @@ def test_compare_reports_a_mismatch(legacy_df):
     assert list(bad["diff"]) == [pytest.approx(-42.10)] * 2
 
 
-def test_uncategorized_spend_shows_only_in_the_total(legacy_df):
-    df = legacy_df.copy()
-    df.loc[0, "category"] = ""
-    check = compute.compare_to_legacy(
-        compute.monthly_actuals(ingest.legacy_to_transactions(df, recorded_at="t")),
-        legacy.parse_rollup_rows(rows("legacy_rollup.csv")))
-    bad = check[~check["match"]]
-    assert set(bad["category"]) == {"", "food"}  # TOTAL still matches
+def test_legacy_check_reads_legacy_rows_as_ingested(legacy_df):
+    txns = ingest.legacy_to_transactions(legacy_df, recorded_at="t")
+    month = txns["date"].iloc[0][:7]
+    bank = txns.iloc[:1].assign(txn_id="bank1", era="ledger", account_id="checking", category="")
+    blank = txns.iloc[:1].assign(txn_id="blank1", category="", payee_raw="NEVER CATEGORIZED")
+    checked, left_out = compute.legacy_rows(pd.concat([txns, bank, blank], ignore_index=True))
+    assert list(left_out["txn_id"]) == ["blank1"]
+    check = compute.compare_to_legacy(compute.monthly_actuals(checked),
+                                      legacy.parse_rollup_rows(rows("legacy_rollup.csv")))
+    assert check["match"].all(), check
+    assert month in set(check["month"])
 
 
 def test_corrections_supersede_latest_wins(legacy_df):

@@ -35,6 +35,10 @@ Every transaction gets a category and a record of what decided it (`categorize.p
 
 Everything else lands in the ledger's `review` tab, one row per merchant (`key`, the payee with store numbers, places and processor prefixes stripped) or per line. Type a category in `answer`, or `y` to take the guess, and run ingest: the answers are stored (`proposal_decisions` for a merchant, `txn_corrections` for a line) and the tab is rewritten with what is still open. A merchant answer covers every line whose key starts with that key, past and future; shorten the key before answering to widen it (`AMAZON MKTPL` to `AMAZON`). `engine.review` turns answers around without touching the inbox.
 
+## The monthly checklist
+
+Compute writes three reports for the monthly routine (`checks.py`, `recurring.py`). `coverage` lists each bank and card account that sends monthly statements with the newest date the ledger has for it, and marks it due after `max_gap_days` (45 when blank); then each explanation download with the last date it covers and how many lines wait for the next one. Set an account's `expected_docs` to `none` (or fill `closed`) to take it off the list. `balance_check` turns each stored balance into the balance the ledger implies before its first transaction; every snapshot of an account must imply the same one, so a later download that disagrees points at missing or doubled transactions. `recurring` lists payees charged at a steady cadence for a steady amount, marking the ones that changed price or stopped.
+
 ## Development
 
 ```

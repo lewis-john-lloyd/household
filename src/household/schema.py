@@ -86,6 +86,10 @@ REPORTS = (
     Table("elections", ("year", "person", "employer", "plan", "projected", "limit", "gap", "status",
                         "run_id")),
     Table("tax_sources", ("year", "item", "value", "document", "page", "quote", "record", "run_id")),
+    Table("transfers", ("txn_a", "date_a", "account_a", "payee_a", "txn_b", "date_b", "account_b",
+                        "payee_b", "amount", "kind", "run_id"),
+          {"kind": ("transfer", "card_payment", "reversal")}),
+    Table("transfers_unmatched", ("txn_id", "date", "account_id", "amount", "payee_raw", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

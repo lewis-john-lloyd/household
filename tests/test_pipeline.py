@@ -128,7 +128,7 @@ def test_overlapping_files_keep_true_repeats_and_drop_shared_rows():
 
 def test_possible_duplicates_pairs_pending_and_posted_across_files():
     a = _txns([("2001-03-01", -42.0, "HARDWARE STORE #12"), ("2001-03-05", -3.0, "PARKING")], "doc1")
-    b = _txns([("2001-03-03", -42.0, "HARDWARE STORE 12 MADISON"), ("2001-03-20", -3.0, "PARKING")], "doc2")
+    b = _txns([("2001-03-03", -42.0, "HARDWARE STORE 12 SPRINGFIELD"), ("2001-03-20", -3.0, "PARKING")], "doc2")
     found = compute.possible_duplicates(pd.concat([a, b]))
     assert len(found) == 1 and found.loc[0, "amount"] == -42.0
     assert {found.loc[0, "doc_a"], found.loc[0, "doc_b"]} == {"doc1", "doc2"}

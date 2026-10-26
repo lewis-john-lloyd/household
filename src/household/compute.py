@@ -28,6 +28,17 @@ def effective_transactions(transactions, corrections=None):
     return df.reset_index(drop=True)
 
 
+TRANSFER = "transfer"
+
+
+def mark_transfers(transactions, ids):
+    """Give paired transfer lines the category "transfer", unless a person already categorized them."""
+    df = transactions.copy()
+    hit = df["txn_id"].isin(ids) & (df["category"].astype(str).str.strip() == "")
+    df.loc[hit, "category"] = TRANSFER
+    return df
+
+
 def _payee_key(payee):
     words = re.sub(r"[^A-Z ]", " ", str(payee).upper()).split()
     return words[0] if words else ""

@@ -39,6 +39,16 @@ def mark_transfers(transactions, ids):
     return df
 
 
+def apply_aliases(transactions, aliases):
+    """Rename old categories to the categories they now count as (category_aliases)."""
+    df = transactions.copy()
+    if aliases is None or aliases.empty:
+        return df
+    names = dict(zip(aliases["alias"].astype(str).str.strip(), aliases["category"].astype(str).str.strip()))
+    df["category"] = df["category"].map(lambda c: names.get(str(c).strip(), c))
+    return df
+
+
 def _payee_key(payee):
     words = re.sub(r"[^A-Z ]", " ", str(payee).upper()).split()
     return words[0] if words else ""

@@ -85,6 +85,9 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
     _say(log, f"transfers: {len(paired)} pairs between your accounts, {len(lonely)} transfer lines "
               "with no partner")
+    legacy_actuals = compute.monthly_actuals(effective)  # old category names, for the legacy check
+    aliases = sheets.read_table(ledger, schema.table(schema.LEDGER, "category_aliases"))
+    effective = compute.apply_aliases(effective, aliases)
     actuals = compute.monthly_actuals(effective)
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
@@ -181,7 +184,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)
-        year_actuals = actuals[actuals["month"].str.startswith(str(legacy_year))]
+        year_actuals = legacy_actuals[legacy_actuals["month"].str.startswith(str(legacy_year))]
         check = compute.compare_to_legacy(year_actuals, legacy.parse_rollup_rows(rows))
         check["run_id"] = run_id
         sheets.replace_table(reports, schema.table(schema.REPORTS, "legacy_check"), check)

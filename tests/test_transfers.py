@@ -50,3 +50,10 @@ def test_paired_lines_become_transfers_unless_already_categorized():
     ids = transfers.paired_ids(transfers.pairs(t, ACCOUNTS))
     marked = compute.mark_transfers(t, ids).set_index("txn_id")["category"]
     assert marked["t0"] == "transfer" and marked["t1"] == "gift" and marked["t6"] == ""
+
+
+def test_aliases_rename_old_categories_and_leave_the_rest():
+    t = txns([("2001-01-02", "chk", -5.0, "A", "meat"), ("2001-01-03", "chk", -6.0, "B", "food"),
+              ("2001-01-04", "chk", -7.0, "C", "")])
+    aliases = pd.DataFrame([{"alias": "meat", "category": "food", "note": ""}])
+    assert list(compute.apply_aliases(t, aliases)["category"]) == ["food", "food", ""]

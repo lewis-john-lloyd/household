@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from household.parsers import ParseError, accounts_seed, documents, identify, tax_law
+from household.parsers import ParseError, documents, identify, seed, tax_law
 from household.parsers import earnings_statement, pay_statement, schwab_equity
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -16,7 +16,7 @@ def text(name):
 
 @pytest.mark.parametrize("name, parser", [
     ("pay_statement.txt", pay_statement), ("earnings_statement.txt", earnings_statement),
-    ("schwab_equity.csv", schwab_equity), ("accounts_seed.csv", accounts_seed),
+    ("schwab_equity.csv", schwab_equity), ("accounts_seed.csv", seed),
 ])
 def test_each_fixture_is_identified_by_its_parser(name, parser):
     assert identify(text(name)) is parser
@@ -86,10 +86,10 @@ def test_schwab_sale_must_match_its_lots():
 
 
 def test_accounts_seed_validates_enums():
-    r = accounts_seed.parse(text("accounts_seed.csv"))
+    r = seed.parse(text("accounts_seed.csv"))
     assert list(r.tables["accounts"]["account_id"]) == ["bills", "card"]
     with pytest.raises(ParseError, match="type"):
-        accounts_seed.parse(text("accounts_seed.csv").replace("credit_card", "plastic"))
+        seed.parse(text("accounts_seed.csv").replace("credit_card", "plastic"))
 
 
 def test_documents_recognized_without_rows():
@@ -180,3 +180,16 @@ def test_household_documents_that_mention_the_law_are_not_tax_law():
     assert not tax_law.sniff(filled)
     filed_gl = "(EX) MOD 03-01 (FI) PA SCHEDULE G-L\nJANE DOE  000-00-0000\n2c 17433  1234.00"
     assert not tax_law.sniff(filed_gl)
+
+
+def test_seeds_for_categories_and_aliases():
+    cats = "category,group,priority\nfood,food,high\ntransfer,transfer,\n"
+    assert identify(cats) is seed
+    r = seed.parse(cats)
+    assert list(r.tables["categories"]["category"]) == ["food", "transfer"] and r.keys == {"categories": ["category"]}
+    with pytest.raises(ParseError, match="priority"):
+        seed.parse(cats.replace("high", "urgent"))
+    aliases = "alias,category,note\nmeat,food,\nrav4,car_payment,loan\n"
+    assert seed.parse(aliases).tables["category_aliases"]["category"].tolist() == ["food", "car_payment"]
+    with pytest.raises(ParseError, match="no category"):
+        seed.parse(aliases + "old,,\n")

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, categorize, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
+from . import (backup, categorize, compute, explain, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
                taxsources, transfers, wisconsin, withholding)
 
 
@@ -89,13 +89,18 @@ def _books(ledger):
     effective = compute.apply_aliases(effective, _read(ledger, "category_aliases"))
     return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
             "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
-            "categories": _read(ledger, "categories"), "parameters": _read(ledger, "parameters")}
+            "categories": _read(ledger, "categories"), "parameters": _read(ledger, "parameters"),
+            "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items")}
 
 
 def _categorized(books):
     guess = categorize.household_parameter(books["parameters"], categorize.UNPAIRED_PARAMETER)
-    return categorize.categorize(books["effective"], books["rules"], books["decisions"],
-                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess)
+    effective = books["effective"]
+    cards = {ingest._last4(c) for c in books["accounts"]["last4"] if str(c).strip()}
+    explained = explain.explain(effective[effective["era"] != "legacy"], books["details"], books["items"], cards)
+    return categorize.categorize(effective, books["rules"], books["decisions"],
+                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,
+                                 explanations=explained)
 
 
 def review(session, folder_id, log=print, now=None):
@@ -151,13 +156,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
 
     categorized = _categorized(books)
-    effective = effective.assign(category=categorized["category"].values)
     recent = categorized[categorized["era"] != "legacy"]
     sheets.replace_table(reports, schema.table(schema.REPORTS, "categorized"), recent.assign(run_id=run_id))
     counts = categorize.summary(categorized)
     _say(log, f"categories since {categorize.REVIEW_FROM}: decided {counts['decided']}; "
               f"{counts['open_lines']} lines open in review; waiting {counts['waiting']}")
-    actuals = compute.monthly_actuals(effective)
+    actuals = compute.monthly_actuals(categorize.actual_rows(categorized))
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")

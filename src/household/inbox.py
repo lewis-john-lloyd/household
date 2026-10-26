@@ -12,7 +12,10 @@ A run has three phases.
      registering the documents in source_documents. Batching keeps a run to a
      handful of Sheets writes however many files there are.
   3. File: move each ingested file to record_store under a name that says what
-     it is, and duplicates to record_store/duplicates.
+     it is, and duplicates to record_store/duplicates. An export that a parser
+     trims (Amazon's: a zip of addresses, tracking numbers and order history)
+     is filed as the trimmed copy, and the original goes to Drive's trash,
+     where it can be recovered for 30 days; sent again, it goes straight there.
 
 The order makes an interrupted run safe to repeat: rows are recognized by key,
 and a registered file still sitting in the inbox (its move failed) is filed on
@@ -23,6 +26,7 @@ import hashlib
 import io
 import logging
 import time
+import zipfile
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -30,6 +34,7 @@ import pandas as pd
 from . import backup, ingest, pdftext, schema, sheets
 from .backup import RETRIES
 from .parsers import ParseError, identify
+from .parsers import amazon
 
 PDF = "application/pdf"
 DOCS = schema.table(schema.LEDGER, "source_documents")
@@ -94,6 +99,39 @@ def move_all(drive, moves):
             except Exception as e:
                 failed[m[0]] = e
     return failed
+
+
+def trash(drive, file_id):
+    drive.files().update(fileId=file_id, body={"trashed": True}, fields="id").execute(num_retries=RETRIES)
+
+
+def is_zip(data):
+    return data[:4] == b"PK\x03\x04"
+
+
+ZIP_PARSERS = {amazon.NAME: amazon}  # parsers that read their files out of an export zip
+
+
+def parse_zip(data):
+    """The result for an export zip: every member a zip-reading parser recognizes, combined.
+
+    Returns None when no member is recognized (the zip stays in the inbox).
+    """
+    found = {}
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        for member in sorted(z.namelist()):
+            if not member.lower().endswith(".csv"):
+                continue
+            text = to_text(member, "text/csv", z.read(member))
+            parser = identify(text)
+            if parser is not None and parser.NAME in ZIP_PARSERS:
+                found.setdefault(parser.NAME, []).append(parser.parse(text))
+    if len(found) != 1:
+        if found:
+            raise ParseError(f"zip holds exports of several services: {sorted(found)}")
+        return None
+    name, results = next(iter(found.items()))
+    return ZIP_PARSERS[name].combine(results)
 
 
 def is_pdf(name, mime):
@@ -210,6 +248,7 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     registered = ledger_tables.read("source_documents")
     clock.add("read ledger", started)
     by_sha = dict(zip(registered["sha256"], registered["drive_link"]))
+    trimmed = set(registered.loc[registered["parser"].isin(list(ZIP_PARSERS)), "sha256"])
     names = dict(zip(registered["doc_id"], registered["original_name"]))
     summaries, moves = [], []
 
@@ -220,7 +259,8 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
         summaries.append(summary)
         started = time.perf_counter()
         try:
-            move_to = _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock)
+            move_to = _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock,
+                                record, trimmed)
             if move_to:
                 moves.append((f, summary, move_to))
         except Exception as e:  # keep going; the file stays in the inbox for the next run
@@ -245,7 +285,13 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     if any(where == "duplicates" for _, _, (where, _) in moves):
         targets["duplicates"] = backup.find_or_create_folder(drive, "duplicates", record)
     failed = move_all(drive, [(f["id"], inbox, targets[where], name)
-                              for f, _, (where, name) in moves])
+                              for f, _, (where, name) in moves if where != "trash"])
+    for f, _, (where, _) in moves:
+        if where == "trash":
+            try:
+                trash(drive, f["id"])
+            except Exception as e:
+                failed[f["id"]] = e
     for f, summary, _ in moves:  # registered but not moved: the next run files it
         if f["id"] in failed:
             e = failed[f["id"]]
@@ -262,29 +308,36 @@ def _link(file_id):
     return f"https://drive.google.com/file/d/{file_id}"  # leak-guard: allow (template, no ID)
 
 
-def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock):
-    """Phase 1 for one file: returns (folder, name) to move it to, or None to leave it."""
+def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock, record=None,
+              trimmed=None):
+    """Phase 1 for one file: returns (folder, name) to move it to ("trash" too), or None to leave it."""
     tables = ledger_tables.spec
     started = time.perf_counter()
     data = download(drive, f["id"])
     clock.add("download", started)
     sha = hashlib.sha256(data).hexdigest()
     unfiled = sha in by_sha and by_sha[sha] == _link(f["id"])  # registered, move had failed
+    trimmed = set() if trimmed is None else trimmed
     if sha in by_sha and not unfiled:
         summary["status"] = "duplicate"
-        return ("duplicates", f["name"])
+        return ("trash" if sha in trimmed else "duplicates", f["name"])
 
     started = time.perf_counter()
-    text = to_text(f["name"], f.get("mimeType", ""), data)
-    parser = identify(text)
-    if parser is None:
-        clock.add("parse", started)
-        summary["status"] = "unrecognized"
-        return None
-    if getattr(parser, "ALL_PAGES", False) and is_pdf(f["name"], f.get("mimeType", "")):
-        text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
     try:
-        result = parser.parse(text)
+        if is_zip(data):
+            result = parse_zip(data)
+            if result is None:
+                summary["status"] = "unrecognized"
+                return None
+        else:
+            text = to_text(f["name"], f.get("mimeType", ""), data)
+            parser = identify(text)
+            if parser is None:
+                summary["status"] = "unrecognized"
+                return None
+            if getattr(parser, "ALL_PAGES", False) and is_pdf(f["name"], f.get("mimeType", "")):
+                text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
+            result = parser.parse(text)
         if "transactions" in result.tables:  # a bank download: find its account
             ingest.finish_bank_rows(result, f["name"], ledger_tables.read("accounts"), received_at)
     except ParseError as e:
@@ -293,6 +346,8 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
     finally:
         clock.add("parse", started)
     new_name = canonical_name(result, sha, f["name"])
+    if result.record is not None:
+        new_name = new_name.rsplit(".", 1)[0] + ".csv"
     if unfiled:
         summary.update(status="ingested", parser=result.parser, filed_as=new_name,
                        appended={}, notes=["registered on an earlier run; filed now"])
@@ -312,7 +367,10 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
     if staged and all(new.empty for _, new in staged.values()):
         summary.update(status="already_present", parser=result.parser,
                        overlaps=sorted(names.get(d, d) for d in overlaps))
-        return ("duplicates", f["name"])
+        return ("trash" if result.record is not None else "duplicates", f["name"])
+    link = _link(f["id"])
+    if result.record is not None:  # file the trimmed copy now; the original goes to the trash
+        link = _link(backup.upload_text(drive, new_name, record, result.record)) if result.record else ""
 
     appended = {}
     for name, (rows, new) in staged.items():
@@ -323,12 +381,15 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
         summary["overlaps"] = sorted(names.get(d, d) for d in overlaps)
     ledger_tables.stage("source_documents", pd.DataFrame([{
         "doc_id": doc_id, "kind": result.kind, "sha256": sha, "original_name": f["name"],
-        "drive_link": _link(f["id"]), "account_id": result.account_id,
+        "drive_link": link, "account_id": result.account_id,
         "covers_from": result.covers_from, "covers_to": result.covers_to,
         "parser": result.parser, "received_at": received_at, "precedence": "",
     }]))
-    by_sha[sha] = _link(f["id"])
+    by_sha[sha] = link
     names[doc_id] = f["name"]
     summary.update(status="ingested", parser=result.parser, filed_as=new_name,
                    appended=appended, notes=result.notes)
+    if result.record is not None:
+        trimmed.add(sha)
+        return ("trash", new_name)
     return ("record_store", new_name)

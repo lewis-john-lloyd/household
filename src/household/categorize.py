@@ -86,7 +86,7 @@ def payee_key(text):
     s = str(text).upper().strip()
     for _ in range(2):
         s = PREFIX.sub("", s)
-    s = re.sub(r"\S*\d\S*", " ", s)
+    s = re.sub(r"\S*\d\S*", " ", s.replace("*", " "))
     s = re.sub(r"[^A-Z& ]", " ", s)
     words = s.split()
     if len(words) > 2 and STATE.fullmatch(words[-1]):
@@ -164,7 +164,8 @@ def payee_decisions(decisions):
 # --- model --------------------------------------------------------------------------------------
 
 def _features(df):
-    words = df["payee_raw"].astype(str).map(lambda s: " ".join(re.sub(r"[^A-Z& ]", " ", s.upper()).split()))
+    text = df["payee_text"] if "payee_text" in df else df["payee_raw"]
+    words = text.astype(str).map(lambda s: " ".join(re.sub(r"[^A-Z& ]", " ", s.upper()).split()))
     amount = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     size = np.floor(np.log2(amount.abs() + 1)).astype(int).astype(str)
     sign = np.where(amount < 0, "OUT", "IN")
@@ -220,6 +221,10 @@ def _bank_hint(note):
     return BANK_HINTS.get(parts[-1].strip().lower(), "") if len(parts) > 1 else ""
 
 
+def _covers(span, date):
+    return bool(span) and span[0] <= date <= span[1]
+
+
 def _waiting(payee):
     upper = str(payee).upper()
     return next((service for service, pattern in WAITING if pattern.search(upper)), "")
@@ -234,33 +239,41 @@ def household_parameter(parameters, key, default=""):
 
 
 def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpaired_guess="",
-               review_from=REVIEW_FROM):
+               explanations=None, review_from=REVIEW_FROM):
     """Every transaction with category, decided_by, confidence, status and, when open, how it is asked.
 
     transactions are effective (corrections applied), transfer pairs marked and
     old category names aliased. unpaired: txn_ids of transfer lines with no
     partner; unpaired_guess: the category guessed for one that sends money out.
-    status is decided, open (asked in review) or waiting (for an
-    explanation download); category is the decision or, failing one, the best
-    guess, so totals are whole while the queue is open.
+    explanations: what explain.explain matched (a payee named by PayPal, an
+    Amazon split, each service's coverage). status is decided, open (asked in
+    review) or waiting (for an explanation download); category is the decision
+    or, failing one, the best guess, so totals are whole while the queue is
+    open; splits lists an explained line's parts ("household -20.00; food -5.50").
     """
     df = transactions.copy().reset_index(drop=True)
     df["category"] = df["category"].astype(str).str.strip()
-    df["key"] = df["payee_raw"].map(payee_key)
     df["date"] = df["date"].astype(str).str[:10]
+    explanations = explanations or {}
+    named, split, covered = (explanations.get("payee", {}), explanations.get("split", {}),
+                             explanations.get("coverage", {}))
+    df["payee_text"] = [named.get(t, p) for t, p in zip(df["txn_id"], df["payee_raw"].astype(str))]
+    df["key"] = df["payee_text"].map(payee_key)
     unpaired = set(unpaired)
     rules, answered = _rules(payee_rules), payee_decisions(decisions)
     answered_index = _by_first_word(answered)
 
-    out = []  # one dict per row: category, source, confidence, status, ask, guess
-    for r in df[["txn_id", "date", "payee_raw", "amount", "era", "category", "key"]].itertuples(index=False):
+    out = []  # one dict per row: category, source, confidence, status, ask, guess, splits
+    for r in df[["txn_id", "date", "payee_raw", "payee_text", "amount", "era", "category", "key"]].itertuples(
+            index=False):
         if r.category:
             source = ("old books" if r.era == "legacy" else
                       "transfer pair" if r.category == "transfer" else "you")
             out.append({"category": r.category, "decided_by": source, "status": "decided"})
             continue
         payee = str(r.payee_raw)
-        rule = rule_for(payee, r.date, rules)
+        rule = rule_for(payee if r.payee_text == payee else f"{payee} {r.payee_text}", r.date, rules)
+        service = _waiting(payee)
         if rule and not rule["ask"]:
             out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
         elif rule:  # guess from the rule, ask about this line
@@ -268,15 +281,20 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         elif r.txn_id in unpaired:
             guess = unpaired_guess if float(r.amount) < 0 else "transfer"
             out.append({"guess": guess, "decided_by": "transfer with no partner", "ask": "line"})
+        elif r.txn_id in split:
+            parts = split[r.txn_id]
+            biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
+            out.append({"category": biggest, "decided_by": service or "explained", "status": "decided",
+                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
         elif (hit := _longest_prefix(r.key, answered_index)) is not None:
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
-        elif service := _waiting(payee):
+        elif service and r.txn_id not in named and not _covers(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
         else:
             out.append({"ask": "payee"})
-    state = pd.DataFrame(out, index=df.index).reindex(
-        columns=["category", "decided_by", "confidence", "status", "ask", "guess"])
-    text = ["category", "decided_by", "status", "ask", "guess"]
+    columns = ["category", "decided_by", "confidence", "status", "ask", "guess", "splits"]
+    state = pd.DataFrame(out, index=df.index).reindex(columns=columns)
+    text = [c for c in columns if c != "confidence"]
     state[text] = state[text].fillna("").astype(str)
     state["confidence"] = pd.to_numeric(state["confidence"])
     df = df.drop(columns=["category"]).join(state)
@@ -427,3 +445,16 @@ def summary(categorized, review_from=REVIEW_FROM):
     waiting = recent[recent["status"] == "waiting"]["decided_by"].value_counts().to_dict()
     open_ = recent[recent["status"] == "open"]
     return {"decided": decided, "waiting": waiting, "open_lines": len(open_)}
+
+
+def actual_rows(categorized):
+    """One row per category per transaction: a split line becomes one row per part."""
+    whole = categorized[categorized["splits"] == ""]
+    parts = []
+    for r in categorized[categorized["splits"] != ""].to_dict("records"):
+        for piece in r["splits"].split("; "):
+            category, amount = piece.rsplit(" ", 1)
+            parts.append({**r, "category": category, "amount": float(amount)})
+    if not parts:
+        return whole
+    return pd.concat([whole, pd.DataFrame(parts)], ignore_index=True)

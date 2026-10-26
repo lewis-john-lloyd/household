@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, categorize, compute, explain, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
-               taxsources, transfers, wisconsin, withholding)
+from . import (backup, categorize, checks, compute, explain, inbox, ingest, legacy, pennsylvania, projection,
+               recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -98,6 +98,7 @@ def _categorized(books):
     effective = books["effective"]
     cards = {ingest._last4(c) for c in books["accounts"]["last4"] if str(c).strip()}
     explained = explain.explain(effective[effective["era"] != "legacy"], books["details"], books["items"], cards)
+    books["coverage"] = explained["coverage"]
     return categorize.categorize(effective, books["rules"], books["decisions"],
                                  unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,
                                  explanations=explained)
@@ -166,6 +167,24 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
 
+    today = computed_at[:10]
+    due = checks.coverage(books["accounts"], effective, _read(ledger, "balances"),
+                          _read(ledger, "source_documents"), categorized, books["coverage"], today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "coverage"), due.assign(run_id=run_id))
+    to_get = due[due["status"].isin(["due", "never downloaded"])]
+    _say(log, f"coverage: {len(to_get)} downloads due" + (": " + ", ".join(to_get["source"]) if len(to_get) else ""))
+    balanced = checks.balance_check(_read(ledger, "balances"), effective)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "balance_check"), balanced.assign(run_id=run_id))
+    off = balanced[balanced["status"].str.startswith("off")]
+    _say(log, f"balance_check: {len(balanced)} balances, {len(off)} that disagree with the ledger")
+    for row in off.to_dict("records"):
+        _say(log, f"  {row['account_id']} {row['as_of']}: {row['status']}")
+    subscriptions = recurring.discover(categorized, today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
+    _say(log, f"recurring: {len(subscriptions)} recurring charges, "
+              f"{int((subscriptions['status'] == 'price changed').sum())} changed price, "
+              f"{int((subscriptions['status'] == 'stopped').sum())} stopped")
+
     decisions = books["decisions"]
     dismissed = decisions.loc[(decisions["kind"] == "duplicate")
                               & (decisions["decision"] == "reject"), "proposal_key"]
@@ -175,7 +194,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"possible_duplicates: {len(dupes)}")
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
-              "review_open_lines": counts["open_lines"],
+              "review_open_lines": counts["open_lines"], "downloads_due": len(to_get),
+              "balances_off": len(off),
               "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
               "transfers_unmatched": len(lonely)}
 

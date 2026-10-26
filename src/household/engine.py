@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
+from . import (backup, categorize, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
                taxsources, transfers, wisconsin, withholding)
 
 
@@ -64,7 +64,74 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     counts = {}
     for f in files:
         counts[f["status"]] = counts.get(f["status"], 0) + 1
-    return {"run_id": run_id, "files": files, "counts": counts, "seconds": timing}
+    started = time.perf_counter()
+    answered = _review(ledger, log)
+    timing["review"] = round(time.perf_counter() - started, 2)
+    return {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
+
+
+def _read(ledger, name):
+    return sheets.read_table(ledger, schema.table(schema.LEDGER, name))
+
+
+def _books(ledger):
+    """The ledger's transactions as they now stand, with what categorization needs.
+
+    effective: corrections applied, transfer pairs marked, old category names
+    aliased (the one transactions table both stages reason about).
+    """
+    txns = _read(ledger, "transactions")
+    effective = compute.effective_transactions(txns, _read(ledger, "txn_corrections"))
+    accounts = _read(ledger, "accounts")
+    paired = transfers.pairs(effective, accounts)
+    lonely = transfers.unmatched(effective, accounts, paired)
+    effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
+    effective = compute.apply_aliases(effective, _read(ledger, "category_aliases"))
+    return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
+            "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
+            "categories": _read(ledger, "categories"), "parameters": _read(ledger, "parameters")}
+
+
+def _categorized(books):
+    guess = categorize.household_parameter(books["parameters"], categorize.UNPAIRED_PARAMETER)
+    return categorize.categorize(books["effective"], books["rules"], books["decisions"],
+                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess)
+
+
+def review(session, folder_id, log=print, now=None):
+    """Read the answers typed in the review tab into the ledger, then rewrite the tab with what is open.
+
+    Runs at the end of every ingest (ingest_inbox); call it alone to turn answers
+    around without touching the inbox. A payee answer is stored as a
+    proposal_decisions row, a single line's answer as a txn_corrections row; an
+    answer that is not a category stays on its row with the reason.
+    """
+    ledger, _, _ = bootstrap(session, folder_id)
+    return _review(ledger, log, now)
+
+
+def _review(ledger, log=print, now=None):
+    review_table = schema.table(schema.LEDGER, "review")
+    typed = _read(ledger, "review")
+    categories = _read(ledger, "categories")["category"].astype(str).str.strip()
+    decisions, corrections, left = categorize.harvest(typed, set(categories), now=now)
+    sheets.append_rows(ledger, schema.table(schema.LEDGER, "proposal_decisions"), decisions)
+    sheets.append_rows(ledger, schema.table(schema.LEDGER, "txn_corrections"), corrections)
+    if len(decisions) or len(corrections):
+        _say(log, f"review: read {len(decisions)} payee answers and {len(corrections)} line answers")
+    for row in left.to_dict("records"):
+        _say(log, f"review: {row['key']}: {row['note']}")
+
+    books = _books(ledger)
+    categorized = _categorized(books)
+    rows = categorize.queue(categorized, carry=left)
+    answers = ["y"] + sorted(c for c in categories if c and c != "transfer") + ["transfer"]
+    sheets.rewrite_review(ledger, review_table, rows, answers=answers)
+    open_lines = int(pd.to_numeric(rows["lines"]).sum()) if len(rows) else 0
+    _say(log, f"review: {len(rows)} questions open ({open_lines} lines): answer them in the ledger's "
+              "review tab, then run ingest again")
+    return {"answered": len(decisions) + len(corrections), "unusable": len(left), "questions": len(rows),
+            "open_lines": open_lines}
 
 
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
@@ -74,27 +141,28 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger, reports, _ = bootstrap(session, folder_id)
 
-    txns = sheets.read_table(ledger, schema.table(schema.LEDGER, "transactions"))
-    corrections = sheets.read_table(ledger, schema.table(schema.LEDGER, "txn_corrections"))
-    effective = compute.effective_transactions(txns, corrections)
-    accounts = sheets.read_table(ledger, schema.table(schema.LEDGER, "accounts"))
-    paired = transfers.pairs(effective, accounts)
-    lonely = transfers.unmatched(effective, accounts, paired)
-    effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
+    books = _books(ledger)
+    txns, effective, paired, lonely = books["txns"], books["effective"], books["paired"], books["lonely"]
     for name, df in (("transfers", paired), ("transfers_unmatched", lonely)):
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
     _say(log, f"transfers: {len(paired)} pairs between your accounts, {len(lonely)} transfer lines "
               "with no partner")
     legacy_checked, legacy_blank = compute.legacy_rows(txns)
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
-    aliases = sheets.read_table(ledger, schema.table(schema.LEDGER, "category_aliases"))
-    effective = compute.apply_aliases(effective, aliases)
+
+    categorized = _categorized(books)
+    effective = effective.assign(category=categorized["category"].values)
+    recent = categorized[categorized["era"] != "legacy"]
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "categorized"), recent.assign(run_id=run_id))
+    counts = categorize.summary(categorized)
+    _say(log, f"categories since {categorize.REVIEW_FROM}: decided {counts['decided']}; "
+              f"{counts['open_lines']} lines open in review; waiting {counts['waiting']}")
     actuals = compute.monthly_actuals(effective)
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
 
-    decisions = sheets.read_table(ledger, schema.table(schema.LEDGER, "proposal_decisions"))
+    decisions = books["decisions"]
     dismissed = decisions.loc[(decisions["kind"] == "duplicate")
                               & (decisions["decision"] == "reject"), "proposal_key"]
     dupes = compute.possible_duplicates(effective, dismissed=set(dismissed))
@@ -103,6 +171,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"possible_duplicates: {len(dupes)}")
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
+              "review_open_lines": counts["open_lines"],
               "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
               "transfers_unmatched": len(lonely)}
 

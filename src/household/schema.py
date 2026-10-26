@@ -39,6 +39,8 @@ LEDGER = (
                               "doc_id")),
     Table("categories", ("category", "group", "priority"),
           {"priority": ("high", "medium", "low")}),
+    # old category names (the 2017 to 2024 books) and the category each now counts as
+    Table("category_aliases", ("alias", "category", "note")),
     Table("payee_rules", ("pattern", "category", "precedence", "effective")),
     Table("budget_rules", ("effective", "category", "rule", "params", "note"),
           {"rule": ("fixed", "trailing", "seasonal", "sinking_fund", "scheduled", "end")}),

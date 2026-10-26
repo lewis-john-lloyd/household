@@ -138,6 +138,30 @@ def append_rows(spreadsheet, t, df):
     return len(values)
 
 
+REVIEW = "review"
+
+
+def rewrite_review(spreadsheet, t, df, answers=()):
+    """Rewrite the ledger's review tab: the one ledger tab that is a work surface, not a record.
+
+    Its answers are read into the ledger before every rewrite (see engine.review),
+    so rewriting loses nothing. answers fill the answer column's dropdown; typing
+    something else is allowed and is reported back in note.
+    """
+    if t.name != REVIEW:
+        raise PermissionError(f"rewrite_review refused on '{t.name}': only the review tab is rewritten")
+    ws = spreadsheet.worksheet(t.name)
+    ws.clear()
+    values = [list(t.columns)] + df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
+    ws.resize(rows=max(len(values), 2), cols=len(t.columns))
+    ws.update(values=values, range_name="A1", value_input_option="RAW")
+    if answers:
+        rule = _validation(ws.id, t, "answer", list(answers))
+        rule["setDataValidation"]["rule"]["strict"] = False
+        spreadsheet.batch_update({"requests": [rule]})
+    return len(values) - 1
+
+
 def replace_table(spreadsheet, t, df):
     """Overwrite a derived table. Allowed only on the Reports spreadsheet."""
     if spreadsheet.title != REPORTS_TITLE:

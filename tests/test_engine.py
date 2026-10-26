@@ -105,3 +105,25 @@ def test_progress_is_logged_line_by_line(session):
     quiet = []
     engine.ingest_inbox(session, session.root, run_id="run-2", log=None)
     assert quiet == []
+
+
+def test_review_reads_answers_and_rewrites_the_queue(session):
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
+    ledger = session.sheets.files["ledger"]
+    ledger.worksheet("categories").append_rows([["food", "food", "high"], ["household", "household", "medium"]])
+    ledger.worksheet("transactions").append_rows([
+        ["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"],
+        ["b2", "2025-09-01", "card", -14.0, "QUILL & INK #2", "", "FALSE", "", "ofx", "ledger", "", "t"]])
+
+    first = engine.review(session, session.root, log=None)
+    queue = rows(ledger, "review")
+    assert (first["questions"], first["open_lines"]) == (1, 2)
+    assert queue.loc[0, "key"] == "QUILL & INK"
+
+    tab = ledger.worksheet("review").rows
+    tab[1][tab[0].index("answer")] = "household"
+    second = engine.review(session, session.root, log=None, now="2026-11-01T00:00:00")
+    assert (second["answered"], second["questions"]) == (1, 0)
+    made = rows(ledger, "proposal_decisions")
+    assert made[["proposal_key", "note"]].values.tolist() == [["payee:QUILL & INK", "household"]]
+    assert rows(ledger, "review").empty

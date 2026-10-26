@@ -41,7 +41,10 @@ LEDGER = (
           {"priority": ("high", "medium", "low")}),
     # old category names (the 2017 to 2024 books) and the category each now counts as
     Table("category_aliases", ("alias", "category", "note")),
-    Table("payee_rules", ("pattern", "category", "precedence", "effective")),
+    # a pattern on the payee and the category it means from `effective` on; ask TRUE only pre-fills the
+    # guess and still asks about each line (paper checks)
+    Table("payee_rules", ("pattern", "category", "precedence", "effective", "ask"),
+          {"ask": ("TRUE", "FALSE")}),
     Table("budget_rules", ("effective", "category", "rule", "params", "note"),
           {"rule": ("fixed", "trailing", "seasonal", "sinking_fund", "scheduled", "end")}),
     Table("allocation_targets", ("effective", "node", "parent", "weight")),
@@ -68,6 +71,11 @@ LEDGER = (
                                "received_at", "precedence")),
     Table("proposal_decisions", ("proposal_key", "kind", "decided_at", "decision", "note"),
           {"decision": ("approve", "reject", "snooze")}),
+    # the review queue: a work surface, not a record. Each ingest run reads the answers typed here
+    # into proposal_decisions and txn_corrections, then rewrites the tab with what is still open.
+    Table("review", ("key", "answer", "guess", "lines", "total", "example", "first", "last", "accounts",
+                     "guessed_by", "confidence", "kind", "note"),
+          {"kind": ("payee", "line")}),
 )
 
 REPORTS = (
@@ -92,6 +100,8 @@ REPORTS = (
                         "payee_b", "amount", "kind", "run_id"),
           {"kind": ("transfer", "card_payment", "reversal")}),
     Table("transfers_unmatched", ("txn_id", "date", "account_id", "amount", "payee_raw", "run_id")),
+    Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "key", "category",
+                          "decided_by", "confidence", "status", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets,
-               tax, taxsources, wisconsin, withholding)
+from . import (backup, compute, inbox, ingest, legacy, pennsylvania, projection, schema, sheets, tax,
+               taxsources, transfers, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -77,6 +77,14 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     txns = sheets.read_table(ledger, schema.table(schema.LEDGER, "transactions"))
     corrections = sheets.read_table(ledger, schema.table(schema.LEDGER, "txn_corrections"))
     effective = compute.effective_transactions(txns, corrections)
+    accounts = sheets.read_table(ledger, schema.table(schema.LEDGER, "accounts"))
+    paired = transfers.pairs(effective, accounts)
+    lonely = transfers.unmatched(effective, accounts, paired)
+    effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
+    for name, df in (("transfers", paired), ("transfers_unmatched", lonely)):
+        sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
+    _say(log, f"transfers: {len(paired)} pairs between your accounts, {len(lonely)} transfer lines "
+              "with no partner")
     actuals = compute.monthly_actuals(effective)
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
@@ -91,7 +99,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"possible_duplicates: {len(dupes)}")
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
-              "possible_duplicates": len(dupes)}
+              "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
+              "transfers_unmatched": len(lonely)}
 
     facts = sheets.read_table(ledger, schema.table(schema.LEDGER, "return_facts"))
     if not facts.empty:

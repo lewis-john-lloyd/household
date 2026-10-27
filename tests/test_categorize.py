@@ -191,3 +191,32 @@ def test_household_parameter():
                           columns=["year", "jurisdiction", "key", "value", "source"])
     assert categorize.household_parameter(params, "unpaired_transfer_guess") == "partner"
     assert categorize.household_parameter(params, "missing", "d") == "d"
+
+
+@pytest.mark.parametrize("key,answered,same", [
+    ("LANTERN CAFE WESTSIDE", "LANTERN CAFE", True),       # starts with the answer
+    ("LANTERNS CAFE", "LANTERN S CAFE", True),             # spaces don't count
+    ("LANTERN CAFEWESTSIDE", "LANTERN CAFE DOWNTOWN", True),  # cut-off name, same first letters
+    ("UNIVERSITY SQUARE", "UNIVERSITY BOOK STORE", False),  # shared letters are one word only
+    ("CITY OF ELMWOOD", "CITY OF SPRINGFIELD", False),
+    ("ODD", "ODD", True),
+    ("ODDITY SHOP", "ODD", False),                          # too short to cover others
+])
+def test_same_merchant(key, answered, same):
+    assert categorize.same_merchant(key, answered) is same
+
+
+def test_one_row_per_merchant_whatever_the_card_calls_it():
+    rows = history() + [txn(1, "2025-08-01", "LANTERN'S CAFE", -9.0, account="a"),
+                        txn(2, "2025-08-02", "LANTERNS CAFE 4471 SPRINGFIELD WI", -8.0, account="b"),
+                        txn(3, "2025-08-03", "AplPay LANTERNS CAFESPRINGFIELD WI", -7.0, account="c")]
+    q = categorize.queue(categorize.categorize(frame(rows)))
+    assert len(q) == 1 and q.iloc[0]["lines"] == 3
+    assert q.iloc[0]["example"].count(" | ") == 2  # the three spellings, so you can see what was joined
+
+
+def test_renamed_categories_follow_their_alias():
+    out = categorize.categorize(frame(history() + [txn(1, "2025-08-01", "STREAMER", -9.0)]),
+                                rules(["STREAMER", "subscriptions", "10", "", "FALSE"]))
+    aliases = pd.DataFrame([{"alias": "subscriptions", "category": "media", "note": ""}])
+    assert by_id(categorize.rename(out, aliases)).loc["t1", "category"] == "media"

@@ -6,8 +6,8 @@ Sources, first that applies wins:
   rule           payee_rules: a pattern on the payee, effective-dated; a rule marked
                  ask only pre-fills the guess and still asks for each line (Target,
                  paper checks)
-  your decision  an answer given in review for a payee: it covers every line whose
-                 payee key starts with the answered key, past and future
+  your decision  an answer given in review for a payee: it covers every line from
+                 the same merchant (same_merchant), past and future
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
                  Apple, Google): it keeps a provisional guess and is not asked about
                  until the export arrives
@@ -64,7 +64,7 @@ BANK_HINTS = {
     "life insurance": "insurance", "health insurance": "insurance", "interest income": "interest",
     "paycheck": "pay", "income": "pay", "bonus": "pay", "tuition": "tuition", "education": "tuition",
     "babysitter & daycare": "childcare", "kids activities": "camps", "mobile phone": "phone",
-    "television": "subscriptions", "newspapers & magazines": "subscriptions",
+    "television": "media", "newspapers & magazines": "media", "books": "media", "music": "media",
     "pet food & supplies": "pets", "veterinary": "pets", "lawn & garden": "garden",
     "furnishings": "furnishing", "home improvement": "maintenance", "gifts & donations": "charity",
     "federal tax": "taxes", "state tax": "taxes", "hotel": "travel", "travel": "travel",
@@ -86,7 +86,7 @@ def payee_key(text):
     s = str(text).upper().strip()
     for _ in range(2):
         s = PREFIX.sub("", s)
-    s = re.sub(r"\S*\d\S*", " ", s.replace("*", " "))
+    s = re.sub(r"\S*\d\S*", " ", s.replace("*", " ").replace("'", ""))
     s = re.sub(r"[^A-Z& ]", " ", s)
     words = s.split()
     if len(words) > 2 and STATE.fullmatch(words[-1]):
@@ -95,23 +95,52 @@ def payee_key(text):
     return " ".join(words[:KEY_WORDS])
 
 
-def _starts_with(key, prefix):
-    k, p = key.split(), prefix.split()
-    return bool(p) and k[:len(p)] == p
+PREFIX_CHARS = 5   # a key this long or longer covers every key that starts with it
+SAME_CHARS = 10    # keys that agree on this many letters are the same merchant (cut-off names)
+
+
+def _compact(key):
+    return key.replace(" ", "")
+
+
+def same_merchant(key, answered):
+    """Whether an answer for `answered` covers a line whose key is `key`.
+
+    Spaces don't count ("PAR MOKA" is "PARMOKA"). The answered key covers any key
+    that starts with it (WILLOW ST covers WILLOW ST COOP), and two keys that
+    agree on their first SAME_CHARS letters are one merchant whose name a card
+    cut short ("LANTERN CAFEWESTSIDE" is "LANTERN CAFE").
+    """
+    a, b = _compact(key), _compact(answered)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(b) >= PREFIX_CHARS and a.startswith(b):
+        return True
+    # the shared letters must reach past a first word, or every UNIVERSITY ... would be one merchant
+    first = min(len(key.split()[0]), len(answered.split()[0]))
+    return (len(a) >= SAME_CHARS and len(b) >= SAME_CHARS and a[:SAME_CHARS] == b[:SAME_CHARS]
+            and first < SAME_CHARS)
 
 
 def _longest_prefix(key, prefixes):
-    """prefixes: {first word: [keys]} (see _by_first_word)."""
-    words = key.split()
-    hits = [p for p in prefixes.get(words[0], []) if _starts_with(key, p)] if words else []
-    return max(hits, key=lambda p: len(p.split())) if hits else None
+    """The answered key that covers this key, the most specific one first.
+
+    prefixes: {first letters: [keys]} (see _by_first_word).
+    """
+    a = _compact(key)
+    hits = [p for p in prefixes.get(a[:PREFIX_CHARS], []) if same_merchant(key, p)]
+    if not hits:
+        return None
+    return max(hits, key=lambda p: (_compact(p) == a, a.startswith(_compact(p)), len(_compact(p))))
 
 
 def _by_first_word(keys):
     out = {}
     for k in keys:
-        if k.split():
-            out.setdefault(k.split()[0], []).append(k)
+        if _compact(k):
+            out.setdefault(_compact(k)[:PREFIX_CHARS], []).append(k)
     return out
 
 
@@ -358,13 +387,26 @@ REVIEW_COLUMNS = schema.table(schema.LEDGER, "review").columns
 
 
 def _merge_keys(keys):
-    """Each key to the shortest key among them that it starts with (WILLOW ST COOP -> WILLOW ST)."""
-    ordered = sorted(set(keys), key=lambda k: (len(k.split()), k))
-    root = {}
+    """Each key to the key its merchant is asked under: keys that are one merchant (same_merchant
+    either way round) form a group, named by its shortest key."""
+    ordered = sorted(set(keys), key=lambda k: (len(_compact(k)), k))
+    parent = {k: k for k in ordered}
+
+    def find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    index = _by_first_word(ordered)
     for k in ordered:
-        root[k] = next((r for r in ordered if len(r.split()) < len(k.split()) and _starts_with(k, r)
-                        and root.get(r) == r), k)
-    return root
+        for other in index.get(_compact(k)[:PREFIX_CHARS], []):
+            if other != k and (same_merchant(k, other) or same_merchant(other, k)):
+                a, b = find(k), find(other)
+                if a != b:
+                    first, second = sorted((a, b), key=lambda x: (len(_compact(x)), x))
+                    parent[second] = first
+    return {k: find(k) for k in ordered}
 
 
 def queue(categorized, carry=None):
@@ -384,7 +426,7 @@ def queue(categorized, carry=None):
             guess = g["guess"].mode().iloc[0]
             rows.append({"key": key, "answer": "", "guess": guess, "lines": len(g),
                          "total": round(float(amounts.sum()), 2),
-                         "example": g["payee_raw"].mode().iloc[0], "first": g["date"].min(),
+                         "example": " | ".join(g["payee_raw"].value_counts().index[:3]), "first": g["date"].min(),
                          "last": g["date"].max(), "accounts": ", ".join(sorted(set(g["account_id"]))),
                          "guessed_by": g["decided_by"].mode().iloc[0],
                          "confidence": round(float(pd.to_numeric(g["confidence"]).mean()), 3),
@@ -458,3 +500,15 @@ def actual_rows(categorized):
     if not parts:
         return whole
     return pd.concat([whole, pd.DataFrame(parts)], ignore_index=True)
+
+
+def rename(categorized, aliases):
+    """Apply category_aliases to what categorization produced (rules and answers given under an old
+    name, such as a category since renamed)."""
+    if aliases is None or aliases.empty:
+        return categorized
+    names = dict(zip(aliases["alias"].astype(str).str.strip(), aliases["category"].astype(str).str.strip()))
+    out = categorized.copy()
+    for column in ("category", "guess"):
+        out[column] = out[column].map(lambda c: names.get(c, c))
+    return out

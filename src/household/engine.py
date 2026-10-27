@@ -86,11 +86,13 @@ def _books(ledger):
     paired = transfers.pairs(effective, accounts)
     lonely = transfers.unmatched(effective, accounts, paired)
     effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
-    effective = compute.apply_aliases(effective, _read(ledger, "category_aliases"))
+    aliases = _read(ledger, "category_aliases")
+    effective = compute.apply_aliases(effective, aliases)
     return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
             "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
             "categories": _read(ledger, "categories"), "parameters": _read(ledger, "parameters"),
-            "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items")}
+            "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items"),
+            "aliases": aliases}
 
 
 def _categorized(books):
@@ -99,9 +101,10 @@ def _categorized(books):
     cards = {ingest._last4(c) for c in books["accounts"]["last4"] if str(c).strip()}
     explained = explain.explain(effective[effective["era"] != "legacy"], books["details"], books["items"], cards)
     books["coverage"] = explained["coverage"]
-    return categorize.categorize(effective, books["rules"], books["decisions"],
-                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,
-                                 explanations=explained)
+    out = categorize.categorize(effective, books["rules"], books["decisions"],
+                                unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,
+                                explanations=explained)
+    return categorize.rename(out, books["aliases"])
 
 
 def review(session, folder_id, log=print, now=None):

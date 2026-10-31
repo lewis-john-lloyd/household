@@ -127,3 +127,14 @@ def test_review_reads_answers_and_rewrites_the_queue(session):
     made = rows(ledger, "proposal_decisions")
     assert made[["proposal_key", "note"]].values.tolist() == [["payee:QUILL & INK", "household"]]
     assert rows(ledger, "review").empty
+
+
+def test_compute_writes_the_mortgage_schedule_when_a_loan_is_on_file(session):
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
+    ledger = session.sheets.files["ledger"]
+    ledger.worksheet("loans").append_rows([["home", "Lender", "2000-12-15", "1000", "12", "12", ""]])
+    said = []
+    engine.compute_all(session, session.root, run_id="run-2", log=said.append)
+    sched = session.sheets.files["reports"].worksheet("mortgage").get_values()
+    assert sched[0][:3] == ["month", "loan_id", "payment"] and len(sched) > 1
+    assert any(line.startswith("mortgage: home balance") for line in said)

@@ -1,10 +1,10 @@
 """Seed files: a CSV whose header is exactly the columns of one seedable ledger table.
 
 The accounts, the category set, the aliases that map old category names onto
-it, the payee rules and household parameters are short lists a person decides once and edits rarely,
-so they arrive as a file in the inbox like everything else. Rows are keyed on
-the first column (a payee rule on its pattern and effective date, a parameter on
-its year, jurisdiction and key): a
+it, the payee rules, household parameters and loans are short lists a person
+decides once and edits rarely, so they arrive as a file in the inbox like
+everything else. Rows are keyed on the first column (a payee rule on its
+pattern and effective date, a parameter on its year, jurisdiction and key): a
 seed that repeats a key adds nothing, so changing an existing row is a
 correction, not a new seed.
 """
@@ -19,7 +19,8 @@ from .common import ParseError, Result
 from .. import schema
 
 NAME = "seed"
-SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules")
+SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules",
+            "loans")
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
 KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],

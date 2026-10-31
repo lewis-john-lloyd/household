@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, categorize, checks, compute, explain, inbox, ingest, legacy, pennsylvania, projection,
-               recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
+from . import (backup, categorize, checks, compute, explain, inbox, ingest, legacy, mortgage, pennsylvania,
+               projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -182,6 +182,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"balance_check: {len(balanced)} balances, {len(off)} that disagree with the ledger")
     for row in off.to_dict("records"):
         _say(log, f"  {row['account_id']} {row['as_of']}: {row['status']}")
+    loans = _read(ledger, "loans")
+    if not loans.empty:
+        sched, notes = mortgage.schedule(loans, _read(ledger, "loan_events"), categorized, today[:7])
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
+        for line in notes + mortgage.summary(sched):
+            _say(log, line)
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "

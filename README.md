@@ -39,6 +39,10 @@ Everything else lands in the ledger's `review` tab, one row per merchant (`key`,
 
 Compute writes three reports for the monthly routine (`checks.py`, `recurring.py`). `coverage` lists each bank and card account that sends monthly statements with the newest date the ledger has for it, and marks it due after `max_gap_days` (45 when blank); then each explanation download with the last date it covers and how many lines wait for the next one. Set an account's `expected_docs` to `when_used` for an open card kept unused (listed, never due), or to `none` (or fill `closed`) to take it off the list. `balance_check` turns each stored balance into the balance the ledger implies before its first transaction; every snapshot of an account must imply the same one, so a later download that disagrees points at missing or doubled transactions. `recurring` lists payees charged at a steady cadence for a steady amount, marking the ones that changed price or stopped.
 
+## Mortgage
+
+`mortgage.py` amortizes each loan in `loans` (principal, annual rate, term in months, origination date and the monthly escrow, if the payment includes it) month by month from the month after origination, applying `loan_events`: recorded payments (escrow comes off first; anything above the scheduled payment is extra principal), prepayments, recasts (a lump sum, then the same term at a lower payment) and rate changes. A month with no recorded payment takes the scheduled one. Compute writes the schedule (interest, principal, escrow, extra principal, balance) to the `mortgage` report beside what the household's own transactions categorized as mortgage paid that month. Loans arrive as a seed file (`loan_id,lender,originated,principal,rate,term_months,escrow`); events are typed into `loan_events`. A loan missing a field is skipped with a note.
+
 ## Development
 
 ```

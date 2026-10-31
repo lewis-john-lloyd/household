@@ -110,6 +110,8 @@ REPORTS = (
                             "first_transaction", "status", "run_id")),
     Table("recurring", ("key", "category", "cadence", "typical", "latest", "charges", "first", "last",
                         "next_expected", "status", "run_id")),
+    Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
+                       "balance", "paid_from_ledger", "run_id")),
     Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key",
                           "category", "splits", "decided_by", "confidence", "status", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",

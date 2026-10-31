@@ -121,6 +121,8 @@ REPORTS = (
     Table("sinking_funds", ("month", "line", "category", "set_aside", "spent", "balance", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),
+    Table("flows", ("period", "level", "source", "target", "amount", "run_id"),
+          {"level": ("category", "group")}),
     Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key",
                           "category", "splits", "decided_by", "confidence", "status", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",

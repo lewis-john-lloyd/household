@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, explain, inbox, ingest, legacy, mortgage, pennsylvania,
-               projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
+from . import (backup, budget, categorize, checks, compute, explain, flows, inbox, ingest, legacy, mortgage,
+               pennsylvania, projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -211,6 +211,9 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "
               f"{int((subscriptions['status'] == 'price changed').sum())} changed price, "
               f"{int((subscriptions['status'] == 'stopped').sum())} stopped")
+    money = flows.build(_read(ledger, "paystubs"), categorized, books["categories"])
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "flows"), money.assign(run_id=run_id))
+    _say(log, f"flows: {money['period'].nunique()} months and years for the Sankey view")
 
     decisions = books["decisions"]
     dismissed = decisions.loc[(decisions["kind"] == "duplicate")

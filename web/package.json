@@ -1,0 +1,16 @@
+{
+  "name": "household-views",
+  "private": true,
+  "description": "The household views: an Apps Script web app over the Reports spreadsheet.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test \"build/test/**/*.test.js\"",
+    "push": "npm run build && clasp push"
+  },
+  "devDependencies": {
+    "@types/google-apps-script": "2.0.14",
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

@@ -6,6 +6,11 @@ __pycache__/
 build/
 dist/
 
+# Web app: dependencies, build output, and clasp's file (it names the deployed script)
+web/node_modules/
+web/.clasp.json
+web/.clasprc.json
+
 # Household data never enters this repo. Notebooks hold real output, so they stay in Drive.
 *.ipynb
 *.csv

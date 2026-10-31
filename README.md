@@ -47,6 +47,18 @@ Compute writes three reports for the monthly routine (`checks.py`, `recurring.py
 
 `mortgage.py` amortizes each loan in `loans` (principal, annual rate, term in months, origination date and the monthly escrow, if the payment includes it) month by month from the month after origination, applying `loan_events`: recorded payments (escrow comes off first; anything above the scheduled payment is extra principal), prepayments, recasts (a lump sum, then the same term at a lower payment) and rate changes. A month with no recorded payment takes the scheduled one. Compute writes the schedule (interest, principal, escrow, extra principal, balance) to the `mortgage` report beside what the household's own transactions categorized as mortgage paid that month. Loans arrive as a seed file (`loan_id,lender,originated,principal,rate,term_months,escrow`); events are typed into `loan_events`. A loan missing a field is skipped with a note.
 
+## Views
+
+Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts, then out to savings and each category, for any month or year, by category or by group. `web/src/shape.ts` turns rows into chart data and is tested under Node; no IDs or data live in `web/`.
+
+To deploy (Node 22 and `npm i -g @google/clasp`):
+
+1. `cd web && npm ci && npm run build`
+2. `clasp login`, then `clasp create --type webapp --title "Household views" --rootDir dist` (or copy `.clasp.json.example` to `.clasp.json` with an existing script id)
+3. `clasp push`
+4. In the script editor, Project Settings, Script properties: add `REPORTS_ID` with the Reports spreadsheet's id
+5. Deploy, New deployment, Web app. It runs as the person viewing it, so they see only what they can open; `access` in `appsscript.json` is `MYSELF` (only the owner). To let another household member open it, set `ANYONE` (any signed-in Google account; Reports' own sharing still decides who can read it) and redeploy.
+
 ## Development
 
 ```

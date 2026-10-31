@@ -324,7 +324,7 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     columns = ["category", "decided_by", "confidence", "status", "ask", "guess", "splits"]
     state = pd.DataFrame(out, index=df.index).reindex(columns=columns)
     text = [c for c in columns if c != "confidence"]
-    state[text] = state[text].fillna("").astype(str)
+    state[text] = state[text].astype(object).where(state[text].notna(), "").astype(str)
     state["confidence"] = pd.to_numeric(state["confidence"])
     df = df.drop(columns=["category"]).join(state)
 

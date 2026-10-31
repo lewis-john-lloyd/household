@@ -220,3 +220,12 @@ def test_renamed_categories_follow_their_alias():
                                 rules(["STREAMER", "subscriptions", "10", "", "FALSE"]))
     aliases = pd.DataFrame([{"alias": "subscriptions", "category": "media", "note": ""}])
     assert by_id(categorize.rename(out, aliases)).loc["t1", "category"] == "media"
+
+
+def test_a_rule_can_match_the_banks_own_category():
+    out = by_id(categorize.categorize(
+        frame(history() + [txn(1, "2025-08-01", "SOME CREDIT UNION", -203.0, note="Some Credit Union | Cash"),
+                           txn(2, "2025-08-01", "SOME CREDIT UNION", -50.0, note="Some Credit Union | Groceries")]),
+        rules(["\\| Cash$", "cash", "10", "", "FALSE"])))
+    assert out.loc["t1", ["category", "decided_by"]].tolist() == ["cash", "rule"]
+    assert out.loc["t2", "decided_by"] != "rule"

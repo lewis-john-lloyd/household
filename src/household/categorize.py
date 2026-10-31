@@ -3,7 +3,8 @@
 Sources, first that applies wins:
   you            a category a person set on the line (txn_corrections), or the old
                  books' label on a legacy row, or a transfer pair
-  rule           payee_rules: a pattern on the payee, effective-dated; a rule marked
+  rule           payee_rules: a pattern on the payee (and the bank's note, so a rule can
+                 match USAA's own category: "\\| Cash$"), effective-dated; a rule marked
                  ask only pre-fills the guess and still asks for each line (Target,
                  paper checks)
   your decision  an answer given in review for a payee: it covers every line from
@@ -163,6 +164,13 @@ def _rules(payee_rules):
     return out
 
 
+def _rule_text(payee, named, note):
+    """What a payee rule's pattern is matched against: the payee, the name an explanation gave it, and
+    the bank's note (USAA's ends with its own category, "... | Cash"), joined by " | "."""
+    parts = [payee] + ([named] if named != payee else []) + ([note] if str(note).strip() else [])
+    return " | ".join(parts)
+
+
 def rule_for(payee, date, rules):
     """The payee rule in force on date for this payee, or None.
 
@@ -293,15 +301,16 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     answered_index = _by_first_word(answered)
 
     out = []  # one dict per row: category, source, confidence, status, ask, guess, splits
-    for r in df[["txn_id", "date", "payee_raw", "payee_text", "amount", "era", "category", "key"]].itertuples(
-            index=False):
+    df["note"] = df["note"].astype(str) if "note" in df else ""
+    for r in df[["txn_id", "date", "payee_raw", "payee_text", "note", "amount", "era", "category",
+                 "key"]].itertuples(index=False):
         if r.category:
             source = ("old books" if r.era == "legacy" else
                       "transfer pair" if r.category == "transfer" else "you")
             out.append({"category": r.category, "decided_by": source, "status": "decided"})
             continue
         payee = str(r.payee_raw)
-        rule = rule_for(payee if r.payee_text == payee else f"{payee} {r.payee_text}", r.date, rules)
+        rule = rule_for(_rule_text(payee, r.payee_text, r.note), r.date, rules)
         service = _waiting(payee)
         if rule and not rule["ask"]:
             out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "commonjs",
+    "types": ["node"],
+    "strict": true,
+    "noEmitOnError": true,
+    "rootDir": ".",
+    "outDir": "build"
+  },
+  "include": ["src/shape.ts", "test/**/*.ts"]
+}

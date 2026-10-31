@@ -110,6 +110,8 @@ REPORTS = (
                             "first_transaction", "status", "run_id")),
     Table("recurring", ("key", "category", "cadence", "typical", "latest", "charges", "first", "last",
                         "next_expected", "status", "run_id")),
+    Table("flows", ("period", "level", "source", "target", "amount", "run_id"),
+          {"level": ("category", "group")}),
     Table("categorized", ("txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key",
                           "category", "splits", "decided_by", "confidence", "status", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root { --ink: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #ffffff; }
+      @media (prefers-color-scheme: dark) {
+        :root { --ink: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; }
+      }
+      body { margin: 0; padding: 16px; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+      header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+      h1 { font-size: 18px; margin: 0 12px 0 0; }
+      select, button { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px;
+        background: var(--bg); color: var(--ink); }
+      button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
+      #chart { width: 100%; min-height: 480px; }
+      #note { color: var(--muted); margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Where the money went</h1>
+      <label>Period <select id="period"></select></label>
+      <span role="group" aria-label="Detail">
+        <button id="group" aria-pressed="true">Groups</button>
+        <button id="category" aria-pressed="false">Categories</button>
+      </span>
+    </header>
+    <div id="chart">Loading…</div>
+    <div id="note"></div>
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+    <script>
+      var level = "group";
+      var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+      function fail(error) {
+        document.getElementById("chart").textContent = "Could not load flows: " + (error && error.message || error);
+      }
+
+      function draw(result) {
+        var chart = document.getElementById("chart");
+        var note = document.getElementById("note");
+        if (!result.rows.length) {
+          chart.textContent = "No flows for this period.";
+          note.textContent = "";
+          return;
+        }
+        var data = new google.visualization.DataTable();
+        data.addColumn("string", "From");
+        data.addColumn("string", "To");
+        data.addColumn("number", "Amount");
+        data.addColumn({ type: "string", role: "tooltip" });
+        data.addRows(result.rows.map(function (r) {
+          return [r[0], r[1], r[2], r[0] + " → " + r[1] + ": " + money.format(r[2])];
+        }));
+        var height = Math.max(480, 28 * result.rows.length);
+        chart.style.height = height + "px";
+        chart.textContent = "";
+        new google.visualization.Sankey(chart).draw(data, { height: height, sankey: { node: { nodePadding: 18 } } });
+        note.textContent = result.dropped.length
+          ? "Left out to keep the chart drawable (they would loop back): " +
+            result.dropped.map(function (r) { return r[0] + " → " + r[1]; }).join(", ")
+          : "";
+      }
+
+      function load() {
+        var period = document.getElementById("period").value;
+        document.getElementById("chart").textContent = "Loading…";
+        google.script.run.withSuccessHandler(draw).withFailureHandler(fail).getFlows(period, level);
+      }
+
+      function setLevel(next) {
+        level = next;
+        ["group", "category"].forEach(function (id) {
+          document.getElementById(id).setAttribute("aria-pressed", String(id === level));
+        });
+        load();
+      }
+
+      google.charts.load("current", { packages: ["sankey"] });
+      google.charts.setOnLoadCallback(function () {
+        google.script.run.withFailureHandler(fail).withSuccessHandler(function (periods) {
+          var select = document.getElementById("period");
+          periods.forEach(function (p) {
+            var option = document.createElement("option");
+            option.value = p;
+            option.textContent = p;
+            select.appendChild(option);
+          });
+          if (!periods.length) { fail("no flows yet: run compute"); return; }
+          select.addEventListener("change", load);
+          document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
+          document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
+          load();
+        }).getPeriods();
+      });
+    </script>
+  </body>
+</html>

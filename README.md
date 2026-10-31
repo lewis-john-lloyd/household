@@ -39,6 +39,18 @@ Everything else lands in the ledger's `review` tab, one row per merchant (`key`,
 
 Compute writes three reports for the monthly routine (`checks.py`, `recurring.py`). `coverage` lists each bank and card account that sends monthly statements with the newest date the ledger has for it, and marks it due after `max_gap_days` (45 when blank); then each explanation download with the last date it covers and how many lines wait for the next one. Set an account's `expected_docs` to `when_used` for an open card kept unused (listed, never due), or to `none` (or fill `closed`) to take it off the list. `balance_check` turns each stored balance into the balance the ledger implies before its first transaction; every snapshot of an account must imply the same one, so a later download that disagrees points at missing or doubled transactions. `recurring` lists payees charged at a steady cadence for a steady amount, marking the ones that changed price or stopped.
 
+## Views
+
+Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts, then out to savings and each category, for any month or year, by category or by group. `web/src/shape.ts` turns rows into chart data and is tested under Node; no IDs or data live in `web/`.
+
+To deploy (Node 22 and `npm i -g @google/clasp`):
+
+1. `cd web && npm ci && npm run build`
+2. `clasp login`, then `clasp create --type webapp --title "Household views" --rootDir dist` (or copy `.clasp.json.example` to `.clasp.json` with an existing script id)
+3. `clasp push`
+4. In the script editor, Project Settings, Script properties: add `REPORTS_ID` with the Reports spreadsheet's id
+5. Deploy, New deployment, Web app. It runs as the person viewing it, so they see only what they can open; `access` in `appsscript.json` is `MYSELF` (only the owner). To let another household member open it, set `ANYONE` (any signed-in Google account; Reports' own sharing still decides who can read it) and redeploy.
+
 ## Development
 
 ```

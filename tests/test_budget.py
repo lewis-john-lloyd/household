@@ -71,12 +71,14 @@ def test_versus_and_sinking_funds():
         ["car repairs", "2026-01-01", "car_upkeep", "emergency", "high", "sinking_fund", "1200", "annually", ""]),
         None, "2026-03")
     spent = actuals([["2026-01", "food", 900.0], ["2026-02", "food", 1100.0], ["2026-02", "car_upkeep", 250.0],
-                     ["2026-02", "booze", 40.0]])
-    cats = pd.DataFrame({"category": ["food", "car_upkeep"], "group": ["food", "car"], "priority": ["high", "high"]})
+                     ["2026-02", "booze", 40.0], ["2026-02", "transfer", 500.0], ["2026-02", "pay", -4000.0]])
+    cats = pd.DataFrame({"category": ["food", "car_upkeep", "pay"], "group": ["food", "car", "income"],
+                         "priority": ["high", "high", ""]})
     v = by(budget.versus(planned, spent, cats), "month", "category")
     assert v.loc[("2026-02", "food"), ["target", "actual", "remaining"]].tolist() == [1000.0, 1100.0, -100.0]
     assert v.loc[("2026-02", "booze"), ["target", "actual", "priority"]].tolist() == [0.0, 40.0, ""]
     assert v.loc[("2026-01", "car_upkeep"), "group"] == "car"
+    assert not {"transfer", "pay"} & set(v.index.get_level_values("category"))
     s = budget.sinking_funds(planned, spent)
     assert s["balance"].tolist() == [100.0, -50.0, 50.0]
 

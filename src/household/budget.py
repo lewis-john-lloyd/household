@@ -123,8 +123,19 @@ def _rule_target(state, month, spend):
     return None, f"unknown rule {rule!r}"
 
 
+def _not_spending(categories):
+    """Categories that are not spending: transfers, uncategorized, and the income group (pay, refunds...)."""
+    out = {"", "transfer"}
+    if categories is not None and not categories.empty:
+        out |= set(categories.loc[categories["group"].astype(str).str.strip() == "income", "category"].astype(str))
+    return out
+
+
 def versus(targets_df, actuals, categories=None):
-    """Budget against actuals per month and category: target, actual, remaining, and the highest priority."""
+    """Budget against actuals per month and category: target, actual, remaining, and the highest priority.
+
+    Transfers and income are not spending, so they are left out.
+    """
     t = targets_df.copy()
     if t.empty:
         return pd.DataFrame(columns=["month", "category", "group", "priority", "target", "actual", "remaining"])
@@ -132,6 +143,7 @@ def versus(targets_df, actuals, categories=None):
     by = t.groupby(["month", "category"], as_index=False).agg(target=("target", "sum"), rank=("rank", "min"))
     a = actuals.copy()
     a["spend"] = pd.to_numeric(a["spend"])
+    a = a[~a["category"].astype(str).str.strip().isin(_not_spending(categories))]
     a = a.groupby(["month", "category"], as_index=False)["spend"].sum().rename(columns={"spend": "actual"})
     months = set(by["month"])
     a = a[a["month"].isin(months)]

@@ -5,6 +5,8 @@ paid. An Amazon line says only AMAZON; Amazon's order history says what was in
 the shipment. Neither export adds money: it names a line already in the
 ledger, matched by amount and date.
 
+  Google   order_items rows of service google (Google Pay's purchase list): a
+           GOOGLE line takes the app and item bought as its payee.
   PayPal   payment_details rows of service paypal: same signed amount, the
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
@@ -161,7 +163,28 @@ def match_amazon(lines, items, cards):
     return out
 
 
+def match_google(lines, items):
+    """{txn_id: payee} for GOOGLE lines named by Google's purchase list: the app and item bought.
+
+    A charge matches a purchase, a credit a refund, by amount and date, one to one.
+    """
+    if items is None or items.empty:
+        return {}
+    google = items[items["service"] == "google"].copy()
+    if google.empty:
+        return {}
+    google["amount"] = pd.to_numeric(google["amount"]).round(2)
+    google = google.assign(group=google["item_id"], rank=0)
+    upper = lines["payee_raw"].astype(str).str.upper()
+    named = lines[upper.str.contains("GOOGLE") & ~upper.str.contains("PAYROLL")].copy()
+    named["amt"] = pd.to_numeric(named["amount"]).round(2)
+    named["abs_amt"] = named["amt"].abs()
+    found = (_greedy(named[named["amt"] < 0], google[google["kind"] == "item"], "abs_amt")
+             + _greedy(named[named["amt"] > 0], google[google["kind"] == "refund"], "abs_amt"))
+    return {r["txn_id"]: str(r["item"]) for r in found}
+
+
 def explain(lines, details=None, items=None, cards=()):
     """Everything categorization needs from the explanation downloads."""
-    return {"payee": match_paypal(lines, details), "split": match_amazon(lines, items, cards),
-            "coverage": coverage(details, items)}
+    named = {**match_paypal(lines, details), **match_google(lines, items)}
+    return {"payee": named, "split": match_amazon(lines, items, cards), "coverage": coverage(details, items)}

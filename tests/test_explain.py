@@ -194,3 +194,52 @@ def setup(monkeypatch):
     monkeypatch.setattr(inbox, "download", lambda d, fid: d.content[fid])
     drive.root = root
     return drive, ledger, box, record
+
+
+GOOGLE = ("Time,Transaction ID,Description,Product,Payment method,Status,Amount\n"
+          '"Oct 21, 2025, 10:51 PM",GPA.1..6,Pro Plan (Lantern Notes),Google Play Apps,'
+          '"Visa •••• 1111",Complete,USD 21.10\n'
+          '"Oct 17, 2025, 12:03 PM",GPA.2,Trail Map Peak (Trails: Hike),Google Play Apps,'
+          '"Visa •••• 1111",Complete,USD 84.39\n'
+          '"Oct 18, 2025, 9:00 AM",GPA.2,Trail Map Peak (Trails: Hike),Google Play Apps,'
+          '"Visa •••• 1111",Complete,−USD 84.39\n'
+          '"Oct 1, 2025, 9:00 AM",GPA.3,Declined thing,Google Play Apps,,Declined,USD 5.00\n')
+
+
+def test_google_purchases_and_matching():
+    from household.parsers import google_takeout, identify
+    assert identify(GOOGLE) is google_takeout
+    result = google_takeout.parse(GOOGLE)
+    items = result.tables["order_items"]
+    assert items[["kind", "amount", "card", "item"]].values.tolist() == [
+        ["item", 21.1, "1111", "Lantern Notes: Pro Plan"],
+        ["item", 84.39, "1111", "Trails: Hike: Trail Map Peak"],
+        ["refund", 84.39, "1111", "Trails: Hike: Trail Map Peak"]]
+    assert (result.covers_from, result.covers_to) == ("2025-10-17", "2025-10-21")
+    lines = pd.DataFrame([line(1, "2025-10-22", "GOOGLE *Lantern", -21.10), line(2, "2025-10-20", "GOOGLE *Trails", 84.39),
+                          line(3, "2025-10-22", "GOOGLE LLC PAYROLL", 21.10)])
+    assert explain.match_google(lines, items) == {"t1": "Lantern Notes: Pro Plan",
+                                                  "t2": "Trails: Hike: Trail Map Peak"}
+
+
+def takeout_zip(members):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for name, text in members.items():
+            z.writestr(name, text)
+    return buffer.getvalue()
+
+
+def test_takeout_parts_are_trimmed_and_trashed(setup):
+    drive, ledger, box, record = setup
+    drive.add("takeout-001.zip", box, "application/zip", takeout_zip({
+        "Takeout/Google Pay/Google transactions/transactions_1.csv": GOOGLE,
+        "Takeout/Google Play Store/Order History.json": '[{"billingContact": "1 Elm St"}]'}))
+    drive.add("takeout-1-001.zip", box, "application/zip", takeout_zip({"Takeout/archive_browser.html": "<html/>"}))
+    summaries = inbox.process(ledger, drive, drive.root)
+    assert [s["status"] for s in summaries] == ["ingested", "ingested"], summaries
+    assert len(rows(ledger, "order_items")) == 3
+    assert sorted(f["name"] for f in drive.items.values() if f["parent"] == "trash") == [
+        "takeout-001.zip", "takeout-1-001.zip"]
+    [filed] = [f for f in drive.items.values() if f["parent"] == record]
+    assert b"Elm St" not in drive.content[filed["id"]]

@@ -34,7 +34,7 @@ import pandas as pd
 from . import backup, ingest, pdftext, schema, sheets
 from .backup import RETRIES
 from .parsers import ParseError, identify
-from .parsers import amazon
+from .parsers import amazon, google_takeout
 
 PDF = "application/pdf"
 DOCS = schema.table(schema.LEDGER, "source_documents")
@@ -109,7 +109,7 @@ def is_zip(data):
     return data[:4] == b"PK\x03\x04"
 
 
-ZIP_PARSERS = {amazon.NAME: amazon}  # parsers that read their files out of an export zip
+ZIP_PARSERS = {amazon.NAME: amazon, google_takeout.NAME: google_takeout}  # read their files out of an export zip
 
 
 def parse_zip(data):
@@ -119,7 +119,8 @@ def parse_zip(data):
     """
     found = {}
     with zipfile.ZipFile(io.BytesIO(data)) as z:
-        for member in sorted(z.namelist()):
+        names = z.namelist()
+        for member in sorted(names):
             if not member.lower().endswith(".csv"):
                 continue
             text = to_text(member, "text/csv", z.read(member))
@@ -129,7 +130,11 @@ def parse_zip(data):
     if len(found) != 1:
         if found:
             raise ParseError(f"zip holds exports of several services: {sorted(found)}")
-        return None
+        # an export split across zips: a part holding nothing read is still that service's, and trashed
+        owner = next((p for p in ZIP_PARSERS.values()
+                      if getattr(p, "ZIP_PREFIX", None) and names and all(n.startswith(p.ZIP_PREFIX) for n in names)),
+                     None)
+        return owner.combine([]) if owner else None
     name, results = next(iter(found.items()))
     return ZIP_PARSERS[name].combine(results)
 

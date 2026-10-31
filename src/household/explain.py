@@ -184,7 +184,38 @@ def match_google(lines, items):
     return {r["txn_id"]: str(r["item"]) for r in found}
 
 
+HINT_WINDOW = (-2, 10)  # days from a shipment to an unmatched charge that might be part of it
+HINTS = 3
+
+
+def amazon_hints(lines, items, matched):
+    """{txn_id: "maybe: ..."} for AMAZON charges that matched nothing: the items shipped around then,
+    closest in price first, to answer the line by hand (a gift card or a split payment hides the total)."""
+    if items is None or items.empty:
+        return {}
+    bought = items[(items["service"] == "amazon") & (items["kind"] == "item")].copy()
+    if bought.empty:
+        return {}
+    bought["amount"] = pd.to_numeric(bought["amount"])
+    bought["day"] = pd.to_datetime(bought["date"], errors="coerce")
+    amazon = lines[lines["payee_raw"].astype(str).str.upper().str.contains("AMAZON|AMZN")
+                   & ~lines["txn_id"].isin(set(matched))]
+    out = {}
+    for r in amazon.to_dict("records"):
+        day, amount = pd.Timestamp(str(r["date"])[:10]), abs(float(r["amount"]))
+        gap = (day - bought["day"]).dt.days
+        near = bought[gap.between(*HINT_WINDOW)]
+        if near.empty:
+            continue
+        near = near.assign(off=(near["amount"] - amount).abs()).sort_values("off").head(HINTS)
+        out[r["txn_id"]] = "maybe: " + "; ".join(
+            f"{str(i)[:40]} ({a:.2f}, {d})" for i, a, d in zip(near["item"], near["amount"], near["date"]))
+    return out
+
+
 def explain(lines, details=None, items=None, cards=()):
     """Everything categorization needs from the explanation downloads."""
     named = {**match_paypal(lines, details), **match_google(lines, items)}
-    return {"payee": named, "split": match_amazon(lines, items, cards), "coverage": coverage(details, items)}
+    split = match_amazon(lines, items, cards)
+    return {"payee": named, "split": split, "coverage": coverage(details, items),
+            "hints": amazon_hints(lines, items, split)}

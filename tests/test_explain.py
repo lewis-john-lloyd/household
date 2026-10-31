@@ -123,7 +123,7 @@ def test_categorization_uses_what_was_matched():
     assert out.loc["t2", ["category", "decided_by", "key"]].tolist() == ["restaurant", "your decision",
                                                                          "LANTERN CAFE DINNER"]
     assert out.loc["t3", "status"] == "waiting"
-    assert out.loc["t4", "status"] == "open"
+    assert out.loc["t4", ["status", "ask", "decided_by"]].tolist() == ["open", "line", "amazon, no matching order"]
     assert out.loc["t5", ["status", "decided_by"]].tolist() == ["waiting", "waiting for apple"]
 
     actual = categorize.actual_rows(out.reset_index())
@@ -243,3 +243,10 @@ def test_takeout_parts_are_trimmed_and_trashed(setup):
         "takeout-001.zip", "takeout-1-001.zip"]
     [filed] = [f for f in drive.items.values() if f["parent"] == record]
     assert b"Elm St" not in drive.content[filed["id"]]
+
+
+def test_unmatched_amazon_charges_get_hints():
+    lines = pd.DataFrame([line(1, "2025-08-05", "AMAZON MKTPL*ZZ", -24.00), line(2, "2025-08-03", "AMAZON MKTPL*AB", -30.00)])
+    hints = explain.amazon_hints(lines, items(), matched={"t2"})
+    assert list(hints) == ["t1"]
+    assert hints["t1"].startswith("maybe: Spatula (20.00, 2025-08-02)")

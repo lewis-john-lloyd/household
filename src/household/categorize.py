@@ -11,7 +11,9 @@ Sources, first that applies wins:
                  the same merchant (same_merchant), past and future
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
                  Apple, Google): it keeps a provisional guess and is not asked about
-                 until the export arrives
+                 until the export arrives; an Amazon line inside the export's dates
+                 that matched no order is asked about on its own, with the items
+                 shipped around then as hints
   model          a scikit-learn classifier trained every run on the old books and on
                  every answer since, decided only when it is confident (THRESHOLD)
   bank           the bank's own category, mapped; used only as a guess
@@ -37,6 +39,7 @@ REVIEW_FROM = "2025-07-01"
 THRESHOLD = 0.9
 ACCEPT = ("y", "yes", "ok")
 UNPAIRED_PARAMETER = "unpaired_transfer_guess"
+ONE_BY_ONE = ("amazon",)  # an unmatched line from these services is asked about on its own
 DECISION_KIND = "category"
 
 # processor prefixes in front of the merchant ("APLPAY WILLOW ST", "TST* CAFE", "SQ *SHOP")
@@ -295,6 +298,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     named, split, covered = (explanations.get("payee", {}), explanations.get("split", {}),
                              explanations.get("coverage", {}))
     df["payee_text"] = [named.get(t, p) for t, p in zip(df["txn_id"], df["payee_raw"].astype(str))]
+    hints = explanations.get("hints", {})
+    df["hint"] = df["txn_id"].map(lambda t: hints.get(t, ""))
     df["key"] = df["payee_text"].map(payee_key)
     unpaired = set(unpaired)
     rules, answered = _rules(payee_rules), payee_decisions(decisions)
@@ -324,6 +329,9 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
             biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
             out.append({"category": biggest, "decided_by": service or "explained", "status": "decided",
                         "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
+        elif service in ONE_BY_ONE and _covers(covered.get(service), r.date) and r.txn_id not in named:
+            # inside the export's dates but matched nothing: no merchant answer fits, ask about this line
+            out.append({"decided_by": f"{service}, no matching order", "ask": "line"})
         elif (hit := _longest_prefix(r.key, answered_index)) is not None:
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and not _covers(covered.get(service), r.date):
@@ -444,7 +452,8 @@ def queue(categorized, carry=None):
     singles = open_[open_["ask"] == "line"].sort_values(["date", "txn_id"])
     for r in singles.to_dict("records"):
         rows.append({"key": r["txn_id"], "answer": "", "guess": r["guess"], "lines": 1,
-                     "total": round(float(r["amount"]), 2), "example": r["payee_raw"], "first": r["date"],
+                     "total": round(float(r["amount"]), 2),
+                     "example": r["payee_raw"] + (f" | {r['hint']}" if r.get("hint") else ""), "first": r["date"],
                      "last": r["date"], "accounts": r["account_id"], "guessed_by": r["decided_by"],
                      "confidence": r["confidence"], "kind": "line", "note": ""})
     out = pd.DataFrame(rows, columns=list(REVIEW_COLUMNS))

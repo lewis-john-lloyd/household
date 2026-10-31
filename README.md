@@ -49,7 +49,7 @@ Compute writes three reports for the monthly routine (`checks.py`, `recurring.py
 
 ## Views
 
-Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts, then out to savings and each category, for any month or year, by category or by group. `web/src/shape.ts` turns rows into chart data and is tested under Node; no IDs or data live in `web/`.
+Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts, then out to savings and each category, for any month, any year, or a year's monthly average (the year divided by the months it has data for), by category or by group. `web/src/shape.ts` turns rows into chart data and is tested under Node; no IDs or data live in `web/`.
 
 To deploy (Node 22 and `npm i -g @google/clasp`):
 

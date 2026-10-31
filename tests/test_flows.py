@@ -73,7 +73,7 @@ def test_other_income_savings_splits_and_balancing():
     assert e[("accounts", "food")] == 12.0
     assert ("accounts", "transfer") not in e
     assert e[("savings and balances", "accounts")] == 330.0
-    assert set(out["period"]) == {"2026-04", "2026"}
+    assert set(out["period"]) == {"2026-04", "2026", "2026 monthly average"}
 
     g = edges(out, "2026-04", "group")
     assert g[("other income", "accounts")] == 12.0
@@ -86,6 +86,7 @@ def test_years_add_up_their_months():
     out = flows.build(pd.DataFrame(), txns, CATEGORIES)
     assert edges(out, "2026")[("accounts", "food")] == 25.0
     assert edges(out, "2026")[("savings and balances", "accounts")] == 25.0
+    assert edges(out, "2026 monthly average")[("accounts", "food")] == 12.5  # two months of data
 
 
 def test_tax_nodes():

@@ -14,8 +14,10 @@ from "savings and balances"; when less, it goes to "unspent".
 
 Rows come at two levels: "category" (every tax line, deduction and category)
 and "group" (taxes, deductions and the category groups from the categories
-table), for the same periods: every month with ledger transactions, and every
-calendar year made of those months. The old books (era legacy) are left out:
+table), for the same periods: every month with ledger transactions, every
+calendar year made of those months, and each year's monthly average (the
+year's flows divided by the months it has data for, so a partial year
+compares with a full one). The old books (era legacy) are left out:
 they have no pay stubs to balance against.
 """
 
@@ -40,8 +42,12 @@ def tax_node(line_item):
     return "state tax"
 
 
+AVERAGE = "monthly average"
+
+
 def _periods(month):
-    return [month, month[:4]]
+    """The periods a month's flows count in: the month, its year, and its year's monthly average."""
+    return [month, month[:4], f"{month[:4]} {AVERAGE}"]
 
 
 def _stub_flows(paystubs, months):
@@ -88,6 +94,7 @@ def build(paystubs, categorized, categories):
 
     if not months:
         return pd.DataFrame(columns=COLUMNS)
+    months_in_year = pd.Series([m[:4] for m in months]).value_counts().to_dict()
     flows = _stub_flows(paystubs, set(months))
     txns = txns[~txns["category"].astype(str).str.strip().isin(["", "transfer"])]
     income = txns["category"].map(lambda c: groups.get(c) == "income" and c != "pay").astype(bool)
@@ -102,10 +109,12 @@ def build(paystubs, categorized, categories):
     detail = pd.DataFrame(flows, columns=["month", "source", "target", "amount", "gsource", "gtarget"])
     out = []
     for level, src, dst in (("category", "source", "target"), ("group", "gsource", "gtarget")):
-        for period_kind in (0, 1):
+        for period_kind in (0, 1, 2):
             d = detail.assign(period=detail["month"].map(lambda m: _periods(m)[period_kind]))
             sums = d.groupby(["period", src, dst], as_index=False)["amount"].sum()
             sums.columns = ["period", "source", "target", "amount"]
+            if period_kind == 2:  # the year's total spread over the months it has data for
+                sums["amount"] = sums["amount"] / sums["period"].str[:4].map(months_in_year)
             for period, p in sums.groupby("period"):
                 into = p.loc[p["target"] == ACCOUNTS, "amount"].sum()
                 out_of = p.loc[p["source"] == ACCOUNTS, "amount"].sum()

@@ -38,9 +38,18 @@ function parseRows(values: unknown[][]): FlowRow[] {
   return rows;
 }
 
-/** Periods present, newest first; a month (YYYY-MM) sorts after its year (YYYY). */
+/**
+ * Periods present, newest year first; within a year: the year, its monthly average, then its months
+ * newest first ("2026", "2026 monthly average", "2026-10", "2026-09", ...).
+ */
 function periods(rows: FlowRow[]): string[] {
-  return Array.from(new Set(rows.map((r) => r.period))).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  const rank = (p: string): number => (p.length === 4 ? 0 : p.indexOf(" ") > 0 ? 1 : 2);
+  return Array.from(new Set(rows.map((r) => r.period))).sort((a, b) => {
+    const year = b.slice(0, 4).localeCompare(a.slice(0, 4));
+    if (year !== 0) return year;
+    const r = rank(a) - rank(b);
+    return r !== 0 ? r : b.localeCompare(a);
+  });
 }
 
 function roundCents(x: number): number {

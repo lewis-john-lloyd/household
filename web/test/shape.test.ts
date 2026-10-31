@@ -37,8 +37,11 @@ test("parseRows names missing columns", () => {
   assert.throws(() => shape.parseRows([["period", "source"]]), /level, target, amount/);
 });
 
-test("periods are newest first", () => {
-  assert.deepEqual(shape.periods(shape.parseRows(VALUES)), ["2001-03", "2001"]);
+test("periods: newest year first, then its average, then its months newest first", () => {
+  const rows = ["2001-03", "2001", "2002-01", "2001 monthly average", "2002", "2001-11", "2002 monthly average"]
+    .map((period) => ({ period, level: "category", source: "a", target: "b", amount: 1 }));
+  assert.deepEqual(shape.periods(rows), ["2002", "2002 monthly average", "2002-01", "2001",
+    "2001 monthly average", "2001-11", "2001-03"]);
 });
 
 test("one period and level: merged, rounded, positive, no self loops, biggest first", () => {

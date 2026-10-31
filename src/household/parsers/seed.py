@@ -19,10 +19,11 @@ from .common import ParseError, Result
 from .. import schema
 
 NAME = "seed"
-SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters")
+SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules")
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
-KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"]}
+KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],
+        "budget_rules": ["line", "effective"]}
 
 
 def _table(text):

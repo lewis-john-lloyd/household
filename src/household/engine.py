@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, categorize, checks, compute, explain, inbox, ingest, legacy, pennsylvania, projection,
-               recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
+from . import (backup, budget, categorize, checks, compute, explain, inbox, ingest, legacy, pennsylvania,
+               projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
 def new_run_id(now=None):
@@ -171,6 +171,24 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
 
     today = computed_at[:10]
+    rules = _read(ledger, "budget_rules")
+    if not rules.empty:
+        planned = budget.targets(rules, actuals, today[:7])
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
+        compared = budget.versus(planned, actuals, books["categories"])
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_vs_actual"),
+                             compared.assign(run_id=run_id))
+        funds = budget.sinking_funds(planned, actuals)
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "sinking_funds"), funds.assign(run_id=run_id))
+        now = compared[compared["month"] == today[:7]]
+        over = now[now["remaining"] < 0]
+        _say(log, f"budget: {rules['line'].nunique()} lines; this month {now['target'].sum():,.0f} budgeted, "
+                  f"{now['actual'].sum():,.0f} spent, {len(over)} categories over")
+        warnings = planned[planned["basis"].str.contains("no usable|unknown|no fallback", regex=True)]
+        for line in sorted(set(warnings["line"])):
+            _say(log, f"  budget line {line}: {warnings.loc[warnings['line'] == line, 'basis'].iloc[-1]}")
+    else:
+        _say(log, "budget: no budget_rules yet")
     due = checks.coverage(books["accounts"], effective, _read(ledger, "balances"),
                           _read(ledger, "source_documents"), categorized, books["coverage"], today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "coverage"), due.assign(run_id=run_id))

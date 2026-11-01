@@ -90,13 +90,18 @@ def payee_key(text):
     s = str(text).upper().strip()
     for _ in range(2):
         s = PREFIX.sub("", s)
-    s = re.sub(r"\S*\d\S*", " ", s.replace("*", " ").replace("'", ""))
-    s = re.sub(r"[^A-Z& ]", " ", s)
-    words = s.split()
+    s = s.replace("*", " ").replace("'", "")
+    words = _words(re.sub(r"\S*\d\S*", " ", s))
+    if not words:  # every word had a digit in it ("BP#6602379EXPRESS"): keep the letters instead
+        words = _words(re.sub(r"\d+", " ", s))
+    return " ".join(words[:KEY_WORDS])
+
+
+def _words(s):
+    words = re.sub(r"[^A-Z& ]", " ", s).split()
     if len(words) > 2 and STATE.fullmatch(words[-1]):
         words = words[:-1]
-    words = [w for w in words if w not in NOISE]
-    return " ".join(words[:KEY_WORDS])
+    return [w for w in words if w not in NOISE]
 
 
 PREFIX_CHARS = 5   # a key this long or longer covers every key that starts with it
@@ -336,6 +341,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and not _covers(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
+        elif not r.key:  # no letters to name a merchant by: ask about the line itself
+            out.append({"ask": "line"})
         else:
             out.append({"ask": "payee"})
     columns = ["category", "decided_by", "confidence", "status", "ask", "guess", "splits"]

@@ -49,6 +49,9 @@ def by_id(df):
     ("SQ *RED KITE BAKERY", "RED KITE BAKERY"),
     ("FUEL STOP 4471", "FUEL STOP"),
     ("City of Springfield", "CITY OF SPRINGFIELD"),
+    ("FUELCO#6602379EXPRESS", "FUELCO EXPRESS"),  # every word has a digit: keep the letters
+    ("7-QUICK 34719", "QUICK"),
+    ("12345", ""),
 ])
 def test_payee_key(raw, key):
     assert categorize.payee_key(raw) == key
@@ -229,3 +232,9 @@ def test_a_rule_can_match_the_banks_own_category():
         rules(["\\| Cash$", "cash", "10", "", "FALSE"])))
     assert out.loc["t1", ["category", "decided_by"]].tolist() == ["cash", "rule"]
     assert out.loc["t2", "decided_by"] != "rule"
+
+
+def test_a_payee_without_letters_is_asked_about_alone():
+    out = by_id(categorize.categorize(frame(history() + [txn(1, "2025-08-01", "12345", -9.0),
+                                                         txn(2, "2025-08-02", "67890", -9.0)])))
+    assert out.loc[["t1", "t2"], "ask"].tolist() == ["line", "line"]

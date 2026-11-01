@@ -77,3 +77,46 @@ def test_yearly_charges_count():
     rows = [txn(n, f"{2023 + n}-02-10", "card", -99.0, "ANNUAL CLUB") for n in range(3)]
     out = recurring.discover(pd.DataFrame(rows), today="2025-06-01")
     assert out[["key", "cadence", "status"]].values.tolist() == [["ANNUAL CLUB", "yearly", "active"]]
+
+
+def _stub(date, stub_id, net, employer="Acme Inc", person="sam"):
+    return [{"pay_date": date, "person": person, "employer": employer, "stub_id": stub_id, "line_item": "Salary",
+             "kind": "income", "amount": net + 100.0},
+            {"pay_date": date, "person": person, "employer": employer, "stub_id": stub_id, "line_item": "FITW",
+             "kind": "tax", "amount": 100.0}]
+
+
+def _pay(i, date, amount, payee="ACME INC PAYROLL", account="checking", category="pay"):
+    return {"txn_id": f"p{i}", "date": date, "account_id": account, "amount": amount, "payee_raw": payee,
+            "category": category, "era": "ledger"}
+
+
+def test_paychecks_pair_stubs_with_deposits_and_flag_the_rest():
+    stubs = pd.DataFrame(_stub("2026-01-02", "1", 1000.0) + _stub("2026-01-16", "2", 1000.0)
+                         + _stub("2026-02-13", "4", 1000.0)
+                         + [{"pay_date": "2026-02-13", "person": "sam", "employer": "Acme Inc", "stub_id": "4",
+                             "line_item": "Net Pay", "kind": "memo", "amount": 990.0}])  # the stub's own net wins
+    txns = pd.DataFrame([
+        _pay(0, "2025-12-20", -5.0, payee="COFFEE", category="food"),  # the account's history starts here
+        _pay(1, "2026-01-02", 1000.0), _pay(2, "2026-01-16", 1000.0),
+        _pay(3, "2026-01-30", 1000.0),                                    # no stub: forgotten
+        _pay(5, "2026-02-12", 990.0),                                     # posted the day before payday
+        _pay(6, "2026-02-20", 40.0, payee="STATE REFUND"),                # names no employer: not checked
+    ])
+    out = checks.paychecks(stubs, txns)
+    assert out[["date", "status"]].values.tolist() == [["2026-01-30", "missing stub: did you forget it?"]]
+    assert out.iloc[0]["person"] == "sam" and out.iloc[0]["txn_id"] == "p3"
+
+
+def test_paychecks_flag_pay_that_never_arrived_but_not_history_before_the_ledger():
+    stubs = pd.DataFrame(_stub("2025-11-07", "0", 1000.0) + _stub("2026-01-02", "1", 1000.0)
+                         + _stub("2026-01-16", "2", 1000.0))
+    txns = pd.DataFrame([_pay(1, "2026-01-02", 1000.0), _pay(9, "2025-12-31", -5.0, payee="COFFEE", category="food")])
+    out = checks.paychecks(stubs, txns)
+    # November is before the account's history; January 16 should have arrived
+    assert out[["date", "status"]].values.tolist() == [["2026-01-16", "no deposit"]]
+
+
+def test_net_pays_use_the_stub_line_or_compute_it():
+    stubs = pd.DataFrame(_stub("2026-01-02", "1", 1000.0))
+    assert checks.net_pays(stubs)["net"].tolist() == [1000.0]

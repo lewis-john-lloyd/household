@@ -16,6 +16,14 @@ balance_check  one row per stored balance (an OFX download's ledger balance,
                ledger implies before its first transaction. Every snapshot of
                an account must imply the same opening; when one disagrees,
                transactions between them are missing or doubled.
+paychecks      each pay stub's net pay against the pay deposit it should be
+               (category pay, naming the stub's employer, same amount, posted
+               PAY_WINDOW days around the pay date), one to one. A deposit
+               with no stub is "missing stub: did you forget it?"; a stub with
+               no deposit is "no deposit". Stubs are checked from the first
+               days the ledger has the account their deposits land in, and
+               deposits from the employer's first stub, so history from
+               before either began is not flagged.
 """
 
 from datetime import date
@@ -27,6 +35,8 @@ DEFAULT_GAP = 45
 WHEN_USED = "when_used"  # an open card kept unused: listed, never due
 SERVICES = ("paypal", "amazon", "venmo", "apple", "google")
 TOLERANCE = 0.005
+PAY_WINDOW = (-3, 5)  # days from a stub's pay date to its deposit's posting date
+PAYCHECK_COLUMNS = ["date", "person", "employer", "amount", "txn_id", "account_id", "payee_raw", "status"]
 
 
 def _gap(value):
@@ -92,3 +102,63 @@ def balance_check(balances, transactions):
                         "first_transaction": mine["date"].min() if len(mine) else "", "status": status})
     return pd.DataFrame(out, columns=["account_id", "as_of", "balance", "ledger_through", "implied_opening",
                                       "first_transaction", "status"])
+
+
+def net_pays(paystubs):
+    """One row per stub with net pay: pay_date, person, employer, stub_id, net. The stub's own Net Pay line
+    when it has one, else gross less taxes and deductions."""
+    cols = ["pay_date", "person", "employer", "stub_id", "net"]
+    if paystubs is None or paystubs.empty:
+        return pd.DataFrame(columns=cols)
+    s = paystubs.copy()
+    s["amount"] = pd.to_numeric(s["amount"], errors="coerce").fillna(0.0)
+    s["pay_date"] = s["pay_date"].astype(str).str[:10]
+    sign = s["kind"].map({"income": 1.0, "tax": -1.0, "pre_tax": -1.0, "post_tax": -1.0}).fillna(0.0)
+    s["computed"] = s["amount"] * sign
+    s["stated"] = s["amount"].where((s["kind"] == "memo") & (s["line_item"].str.strip().str.lower() == "net pay"))
+    keys = ["pay_date", "person", "employer", "stub_id"]
+    out = s.groupby(keys, as_index=False).agg(computed=("computed", "sum"), stated=("stated", "max"))
+    out["net"] = out["stated"].fillna(out["computed"]).round(2)
+    return out[out["net"] > 0][cols].reset_index(drop=True)
+
+
+def paychecks(paystubs, categorized):
+    """Stubs and pay deposits that don't pair up: a missing stub, or pay that never arrived."""
+    from .flows import employer_word
+
+    stubs = net_pays(paystubs)
+    if stubs.empty or categorized is None or categorized.empty:
+        return pd.DataFrame(columns=PAYCHECK_COLUMNS)
+    txns = categorized[categorized["era"] != "legacy"].copy()
+    txns["date"] = txns["date"].astype(str).str[:10]
+    txns["amount"] = pd.to_numeric(txns["amount"], errors="coerce").round(2)
+    first_day = txns.groupby("account_id")["date"].min().to_dict()
+    pay = txns[(txns["category"].astype(str).str.strip() == "pay") & (txns["amount"] > 0)]
+    upper = pay["payee_raw"].astype(str).str.upper()
+    stubs["word"] = stubs["employer"].map(employer_word)
+    out = []
+    for (word, employer), g in stubs[stubs["word"] != ""].groupby(["word", "employer"]):
+        person = g["person"].iloc[0]
+        deposits = pay[upper.str.contains(rf"\b{word}\b", regex=True)]
+        deposits = deposits[deposits["date"] >= g["pay_date"].min()]
+        starts = [first_day[a] for a in set(deposits["account_id"]) if a in first_day]
+        # a deposit can post before its pay date, so a stub paid in the account's first days may predate it
+        start = (pd.Timestamp(min(starts)) - pd.Timedelta(days=PAY_WINDOW[0])).strftime("%Y-%m-%d") if starts else ""
+        checked = g[g["pay_date"] >= start] if starts else g.iloc[0:0]
+        pairs = g.merge(deposits, how="cross")
+        pairs = pairs[(pairs["net"] - pairs["amount"]).abs() < TOLERANCE]
+        gap = (pd.to_datetime(pairs["date"]) - pd.to_datetime(pairs["pay_date"])).dt.days
+        pairs = pairs[gap.between(*PAY_WINDOW)].assign(_gap=gap.abs()).sort_values(["_gap", "pay_date"])
+        used_stubs, used_txns = set(), set()
+        for r in pairs.to_dict("records"):
+            if r["stub_id"] not in used_stubs and r["txn_id"] not in used_txns:
+                used_stubs.add(r["stub_id"])
+                used_txns.add(r["txn_id"])
+        for r in checked[~checked["stub_id"].isin(used_stubs)].to_dict("records"):
+            out.append({"date": r["pay_date"], "person": person, "employer": employer, "amount": r["net"],
+                        "txn_id": "", "account_id": "", "payee_raw": "", "status": "no deposit"})
+        for r in deposits[~deposits["txn_id"].isin(used_txns)].to_dict("records"):
+            out.append({"date": r["date"], "person": person, "employer": employer, "amount": r["amount"],
+                        "txn_id": r["txn_id"], "account_id": r["account_id"], "payee_raw": r["payee_raw"],
+                        "status": "missing stub: did you forget it?"})
+    return pd.DataFrame(out, columns=PAYCHECK_COLUMNS).sort_values(["date", "person"]).reset_index(drop=True)

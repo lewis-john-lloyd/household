@@ -112,6 +112,8 @@ REPORTS = (
                        "run_id")),
     Table("balance_check", ("account_id", "as_of", "balance", "ledger_through", "implied_opening",
                             "first_transaction", "status", "run_id")),
+    Table("paychecks", ("date", "person", "employer", "amount", "txn_id", "account_id", "payee_raw", "status",
+                        "run_id")),
     Table("recurring", ("key", "category", "cadence", "typical", "latest", "charges", "first", "last",
                         "next_expected", "status", "run_id")),
     Table("budget_targets", ("month", "line", "category", "account", "priority", "rule", "target", "basis",

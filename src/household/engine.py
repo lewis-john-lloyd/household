@@ -200,6 +200,16 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"balance_check: {len(balanced)} balances, {len(off)} that disagree with the ledger")
     for row in off.to_dict("records"):
         _say(log, f"  {row['account_id']} {row['as_of']}: {row['status']}")
+    unpaired = checks.paychecks(_read(ledger, "paystubs"), categorized)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "paychecks"), unpaired.assign(run_id=run_id))
+    forgot = unpaired[unpaired["status"].str.startswith("missing stub")]
+    lost = unpaired[unpaired["status"] == "no deposit"]
+    _say(log, f"paychecks: {len(forgot)} pay deposits with no stub, {len(lost)} stubs with no deposit")
+    for who, g in forgot.groupby("person"):
+        _say(log, f"  did you forget {who}'s stubs? {len(g)} missing, the latest paid {g['date'].max()}")
+    for row in lost.to_dict("records"):
+        _say(log, f"  {row['date']} {row['person']} ({row['employer']}): net pay {row['amount']:,.2f} "
+                  "never arrived in an account")
     loans = _read(ledger, "loans")
     if not loans.empty:
         sched, notes = mortgage.schedule(loans, _read(ledger, "loan_events"), categorized, today[:7])
@@ -225,7 +235,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
     result = {"run_id": run_id, "months": actuals["month"].nunique(), "rows": len(actuals),
               "review_open_lines": counts["open_lines"], "downloads_due": len(to_get),
-              "balances_off": len(off),
+              "balances_off": len(off), "stubs_missing": len(forgot), "pay_not_deposited": len(lost),
               "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
               "transfers_unmatched": len(lonely)}
 

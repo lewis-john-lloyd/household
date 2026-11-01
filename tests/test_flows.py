@@ -26,8 +26,9 @@ PAY = stub("2026-03-13", "alex", [
     ("Group Term Life", "post_tax", 10.0), ("Internet Reim", "post_tax", -12.5), ("Net Pay", "memo", 2702.5)])
 
 
-def txn(i, date, amount, category, splits="", era="ledger"):
-    return {"txn_id": f"t{i}", "date": date, "amount": amount, "category": category, "splits": splits, "era": era}
+def txn(i, date, amount, category, splits="", era="ledger", payee=""):
+    return {"txn_id": f"t{i}", "date": date, "amount": amount, "category": category, "splits": splits, "era": era,
+            "payee_raw": payee}
 
 
 def frame(rows):
@@ -40,7 +41,7 @@ def edges(df, period, level="category"):
 
 
 def test_pay_splits_into_taxes_deductions_and_net_pay():
-    txns = frame([txn(1, "2026-03-14", 2702.5, "pay"), txn(2, "2026-03-20", -1000.0, "food")])
+    txns = frame([txn(1, "2026-03-14", 2702.5, "pay", payee="ACME PAYROLL"), txn(2, "2026-03-20", -1000.0, "food")])
     e = edges(flows.build(pd.DataFrame(PAY), txns, CATEGORIES), "2026-03")
     gross = "gross pay (alex)"
     assert e[(gross, "federal tax")] == 500.0
@@ -92,3 +93,51 @@ def test_years_add_up_their_months():
 def test_tax_nodes():
     assert [flows.tax_node(n) for n in ("FITW", "SS", "MED", "OASDI", "WI State Tax", "Federal Income Tax")] == [
         "federal tax", "social security", "medicare", "social security", "state tax", "federal tax"]
+
+
+def ytd_stub(date, person, employer, stub_id, items):
+    return [{"pay_date": date, "person": person, "employer": employer, "stub_id": stub_id, "line_item": name,
+             "kind": kind, "amount": amount, "ytd_amount": ytd} for name, kind, amount, ytd in items]
+
+
+def test_year_takes_year_to_date_from_the_last_stub_so_missing_stubs_still_count():
+    # only January's and October's stubs are on file; October's year-to-date covers the months between
+    stubs = pd.DataFrame(
+        ytd_stub("2026-01-09", "sam", "Acme Inc", "1", [("Salary", "income", 1000.0, "1000"), ("FITW", "tax", 100.0, "100"),
+                                                    ("Stipend", "post_tax", -10.0, "-10")])
+        + ytd_stub("2026-10-09", "sam", "Acme Inc", "2", [("Salary", "income", 1000.0, "10,000"),
+                                                      ("Bonus", "income", 0.0, "500"),
+                                                      ("FITW", "tax", 100.0, "1050"),
+                                                      ("Stipend", "post_tax", -10.0, "-100")]))
+    txns = frame([txn(i, f"2026-{m:02d}-10", 910.0, "pay", payee="ACME INC PAYROLL") for i, m in enumerate(range(1, 11))]
+                 + [txn(98, "2026-05-15", 40.0, "pay", payee="STATE REFUND"), txn(99, "2026-10-20", -9000.0, "food")])
+    out = flows.build(stubs, txns, CATEGORIES)
+    year = edges(out, "2026")
+    assert year[("gross pay (sam)", "federal tax")] == 1050.0
+    assert year[("gross pay (sam)", "net pay")] == 9550.0  # 10,500 gross, less 1,050 tax, plus the 100 stipend
+    assert ("pay without a stub (sam)", "accounts") not in year  # 9,100 deposited, all within the stubs' net pay
+    assert year[("pay without a stub", "accounts")] == 40.0  # no stub names that payer
+    assert edges(out, "2026 monthly average")[("gross pay (sam)", "federal tax")] == 105.0
+
+    may = edges(out, "2026-05")
+    assert may[("pay without a stub (sam)", "accounts")] == 910.0  # no stub this month: the deposit still counts
+    assert ("gross pay (sam)", "net pay") not in may
+    assert ("pay without a stub (sam)", "accounts") not in edges(out, "2026-01")
+
+
+def test_employer_word():
+    assert flows.employer_word("ACME Widgets, LLC") == "ACME"
+    assert flows.payers(pd.DataFrame([{"employer": "Acme Inc", "person": "sam"}])) == {"ACME": "sam"}
+
+
+def test_year_to_date_restarts_with_a_new_employer_and_partial_years_add_up_stubs():
+    stubs = pd.DataFrame(
+        ytd_stub("2025-03-07", "sam", "Old Co", "1", [("Salary", "income", 2000.0, "6000")])
+        + ytd_stub("2025-11-07", "sam", "New Co", "2", [("Salary", "income", 3000.0, "3000")]))
+    txns = frame([txn(1, "2025-01-05", -1.0, "food"), txn(2, "2025-03-07", 2000.0, "pay"),
+                  txn(3, "2025-11-07", 3000.0, "pay")])
+    assert edges(flows.build(stubs, txns, CATEGORIES), "2025")[("gross pay (sam)", "net pay")] == 9000.0
+
+    late = frame([txn(2, "2025-03-07", 2000.0, "pay"), txn(3, "2025-11-07", 3000.0, "pay")])
+    # the ledger starts in March: January and February's pay in the year-to-date is not in the ledger
+    assert edges(flows.build(stubs, late, CATEGORIES), "2025")[("gross pay (sam)", "net pay")] == 5000.0

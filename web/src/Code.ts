@@ -14,10 +14,23 @@ function reportsId_(): string {
   return id;
 }
 
+/**
+ * The flows tab, read through the Sheets API (the advanced service in appsscript.json): it works under
+ * the read-only spreadsheets scope, where SpreadsheetApp.openById demands full read and write access.
+ */
 function readFlows_(): FlowRow[] {
-  const sheet = SpreadsheetApp.openById(reportsId_()).getSheetByName("flows");
-  if (!sheet) throw new Error("The Reports spreadsheet has no flows tab yet: run compute first.");
-  return parseRows(sheet.getDataRange().getValues());
+  if (!Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
+    throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
+  }
+  let values: unknown[][] | undefined;
+  try {
+    values = Sheets.Spreadsheets.Values.get(reportsId_(), "flows", { valueRenderOption: "UNFORMATTED_VALUE" })
+      .values as unknown[][] | undefined;
+  } catch (e) {
+    throw new Error("Could not read the flows tab of Reports (run compute first, and check REPORTS_ID): " + e);
+  }
+  if (!values || !values.length) throw new Error("The Reports flows tab is empty: run compute first.");
+  return parseRows(values);
 }
 
 /** Periods with flows, newest first. */

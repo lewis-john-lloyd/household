@@ -15,13 +15,27 @@ is a person's when it names one of their stubs' employers (the first word of
 the employer's name); a pay deposit naming no employer on the stubs is "pay
 without a stub".
 
-Other income the ledger categorized (categories in the income group other than
-pay) flows into accounts too. Out of accounts go savings and every spending
-category, from categorize.actual_rows, so a split charge counts in each of its
-categories. Transfers between the household's own accounts are not flows.
+Shares that vest are pay too: the stub counts the vest's value as income, takes
+the taxes on it from the shares, and backs the shares kept out of the check
+with an "offset" line (post-tax). Those shares went to the brokerage, not to
+an account, so an offset line flows to VESTED, in the savings group.
 
-Each period is balanced: when more went out than came in, the difference comes
-from "savings and balances"; when less, it goes to "unspent".
+Every other category comes from the ledger's transactions (categorize.
+actual_rows, so a split charge counts in each of its categories), netted over
+the period, so money back in one month offsets spending in another:
+  income group (other than pay)  money in: category -> accounts ("other income")
+  savings group                  money out: accounts -> category (a 529, the
+                                 brokerage); money in: "from savings: category"
+                                 -> accounts (shares sold, a withdrawal)
+  everything else                money out: accounts -> category; money in, when
+                                 more came back than went out: "category (money
+                                 back)" -> accounts
+Transfers between the household's own accounts are not flows. Selling shares
+is drawing on savings, not income: the shares were income when they vested.
+
+Each period is balanced: when more went out of accounts than came in, the
+difference came from cash already in the accounts ("from cash balances"); when
+less, it stayed there ("to cash balances").
 
 Rows come at two levels: "category" (every tax line, deduction and category)
 and "group" (taxes, deductions and the category groups from the categories
@@ -36,8 +50,10 @@ import re
 
 import pandas as pd
 
-FROM_BALANCES = "savings and balances"
-UNSPENT = "unspent"
+FROM_BALANCES = "from cash balances"
+UNSPENT = "to cash balances"
+SAVINGS, FROM_SAVINGS, MONEY_BACK = "savings", "from savings", "money back"
+VESTED = "vested shares (to savings)"
 ACCOUNTS = "accounts"
 NET_PAY = "net pay"
 TAXES, PRE_TAX, POST_TAX, OTHER_INCOME = "taxes", "pre-tax deductions", "post-tax deductions", "other income"
@@ -76,8 +92,10 @@ def _check_flows(period, person, g, rows):
                               ("post_tax", POST_TAX, lambda n: f"post-tax: {n}")):
         items = by_kind[kind].groupby(by_kind[kind]["line_item"].map(name))["amount"].sum()
         for node, amount in items.items():
+            vested = kind == "post_tax" and "offset" in node.lower()  # shares kept, sent to the brokerage
             if amount > 0:
-                rows.append((period, gross_node, node, amount, gross_node, group))
+                rows.append((period, gross_node, VESTED if vested else node, amount, gross_node,
+                             SAVINGS if vested else group))
                 out += amount
             elif amount < 0:  # a reimbursement paid with the check adds to it
                 gross -= amount
@@ -171,6 +189,27 @@ def _no_stub(pay, period, net):
     return rows
 
 
+def _category_flows(by_period, groups):
+    """Flow rows (period, source, target, amount, group source, group target) for each category's net."""
+    rows = []
+    for period, category, amount in by_period[["period", "category", "amount"]].itertuples(index=False):
+        group = groups.get(category) or category
+        if abs(amount) < 0.005:
+            continue
+        if group == "income":
+            if amount > 0:
+                rows.append((period, category, ACCOUNTS, amount, OTHER_INCOME, ACCOUNTS))
+            else:
+                rows.append((period, ACCOUNTS, category, -amount, ACCOUNTS, OTHER_INCOME))
+        elif amount < 0:
+            rows.append((period, ACCOUNTS, category, -amount, ACCOUNTS, group))
+        elif group == SAVINGS:
+            rows.append((period, f"{FROM_SAVINGS}: {category}", ACCOUNTS, amount, FROM_SAVINGS, ACCOUNTS))
+        else:
+            rows.append((period, f"{category} ({MONEY_BACK})", ACCOUNTS, amount, MONEY_BACK, ACCOUNTS))
+    return rows
+
+
 def build(paystubs, categorized, categories):
     """The flows table: one row per period, level, source and target."""
     from .categorize import actual_rows
@@ -193,22 +232,17 @@ def build(paystubs, categorized, categories):
     year_rows, year_net = _year_flows(paystubs, set(months))
     month_rows += _no_stub(pay, "month", month_net)
     year_rows += _no_stub(pay, "year", year_net)
-    flows = []
-    income = txns["category"].map(lambda c: groups.get(c) == "income" and c != "pay").astype(bool)
-    for (month, category), amount in txns[income].groupby(["month", "category"])["amount"].sum().items():
-        if amount > 0:
-            flows.append((month, category, ACCOUNTS, amount, OTHER_INCOME, ACCOUNTS))
-    spend = txns[~txns["category"].map(lambda c: groups.get(c) == "income").astype(bool)]
-    for (month, category), amount in spend.groupby(["month", "category"])["amount"].sum().items():
-        if amount < 0:
-            flows.append((month, ACCOUNTS, category, -amount, ACCOUNTS, groups.get(category) or category))
+    signed = txns[txns["category"].astype(str).str.strip() != "pay"]
+    signed = signed.groupby(["month", "category"], as_index=False)["amount"].sum()
 
     cols = ["month", "source", "target", "amount", "gsource", "gtarget"]
-    detail = pd.DataFrame(flows, columns=cols)
     pay_detail = {0: pd.DataFrame(month_rows, columns=cols), 1: pd.DataFrame(year_rows, columns=cols)}
     out = []
     for level, src, dst in (("category", "source", "target"), ("group", "gsource", "gtarget")):
         for period_kind in (0, 1, 2):
+            by_period = signed.assign(period=signed["month"].map(lambda m: _periods(m)[min(period_kind, 1)]))
+            by_period = by_period.groupby(["period", "category"], as_index=False)["amount"].sum()
+            detail = pd.DataFrame(_category_flows(by_period, groups), columns=cols)
             d = pd.concat([detail, pay_detail[min(period_kind, 1)]], ignore_index=True)
             d = d.assign(period=d["month"].map(lambda m: _periods(m)[period_kind] if len(m) == 7 else
                                                [m, m, f"{m} {AVERAGE}"][period_kind]))

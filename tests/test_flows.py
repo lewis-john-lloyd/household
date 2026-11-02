@@ -54,7 +54,7 @@ def test_pay_splits_into_taxes_deductions_and_net_pay():
     assert e[("net pay", "accounts")] == 2712.5
     assert ("pay", "accounts") not in e  # the deposit is the net pay, counted once
     assert e[("accounts", "food")] == 1000.0
-    assert e[("accounts", "unspent")] == 1712.5
+    assert e[("accounts", "to cash balances")] == 1712.5
 
 
 def test_other_income_savings_splits_and_balancing():
@@ -73,7 +73,7 @@ def test_other_income_savings_splits_and_balancing():
     assert e[("accounts", "household")] == 30.0
     assert e[("accounts", "food")] == 12.0
     assert ("accounts", "transfer") not in e
-    assert e[("savings and balances", "accounts")] == 330.0
+    assert e[("from cash balances", "accounts")] == 330.0
     assert set(out["period"]) == {"2026-04", "2026", "2026 monthly average"}
 
     g = edges(out, "2026-04", "group")
@@ -86,7 +86,7 @@ def test_years_add_up_their_months():
     txns = frame([txn(1, "2026-01-05", -10.0, "food"), txn(2, "2026-02-05", -15.0, "food")])
     out = flows.build(pd.DataFrame(), txns, CATEGORIES)
     assert edges(out, "2026")[("accounts", "food")] == 25.0
-    assert edges(out, "2026")[("savings and balances", "accounts")] == 25.0
+    assert edges(out, "2026")[("from cash balances", "accounts")] == 25.0
     assert edges(out, "2026 monthly average")[("accounts", "food")] == 12.5  # two months of data
 
 
@@ -141,3 +141,36 @@ def test_year_to_date_restarts_with_a_new_employer_and_partial_years_add_up_stub
     late = frame([txn(2, "2025-03-07", 2000.0, "pay"), txn(3, "2025-11-07", 3000.0, "pay")])
     # the ledger starts in March: January and February's pay in the year-to-date is not in the ledger
     assert edges(flows.build(stubs, late, CATEGORIES), "2025")[("gross pay (sam)", "net pay")] == 5000.0
+
+
+def test_savings_flow_both_ways_and_money_back_nets_over_the_period():
+    cats = pd.concat([CATEGORIES, pd.DataFrame([{"category": "stock_sales", "group": "savings"},
+                                                {"category": "mortgage", "group": "home"}])])
+    txns = frame([
+        txn(1, "2026-01-05", 5000.0, "stock_sales"),                    # shares sold: drawn from savings
+        txn(2, "2026-01-06", -300.0, "savings_529"),
+        txn(3, "2026-02-01", -1000.0, "mortgage"), txn(4, "2026-03-01", 4000.0, "mortgage"),  # a sale's proceeds
+        txn(5, "2026-02-03", -50.0, "food"), txn(6, "2026-03-03", 20.0, "food"),
+    ])
+    out = flows.build(pd.DataFrame(), txns, cats)
+    year = edges(out, "2026")
+    assert year[("from savings: stock_sales", "accounts")] == 5000.0
+    assert year[("accounts", "savings_529")] == 300.0
+    assert year[("mortgage (money back)", "accounts")] == 3000.0  # netted over the year
+    assert year[("accounts", "food")] == 30.0
+    assert edges(out, "2026-02")[("accounts", "mortgage")] == 1000.0
+    assert edges(out, "2026-03")[("mortgage (money back)", "accounts")] == 4000.0
+    group = edges(out, "2026", "group")
+    assert group[("from savings", "accounts")] == 5000.0 and group[("money back", "accounts")] == 3000.0
+
+
+def test_vested_shares_go_to_savings_not_a_deduction():
+    vest = stub("2026-03-13", "alex", [
+        ("Regular Pay", "income", 4000.0), ("Stock Units", "income", 10000.0),
+        ("Federal Income Tax", "tax", 3000.0), ("Stock Offset", "post_tax", 7000.0)])
+    txns = frame([txn(1, "2026-03-14", 4000.0, "pay", payee="ACME PAYROLL")])
+    e = edges(flows.build(pd.DataFrame(vest), txns, CATEGORIES), "2026-03")
+    assert e[("gross pay (alex)", "vested shares (to savings)")] == 7000.0
+    assert e[("gross pay (alex)", "net pay")] == 4000.0
+    g = edges(flows.build(pd.DataFrame(vest), txns, CATEGORIES), "2026-03", "group")
+    assert g[("gross pay (alex)", "savings")] == 7000.0

@@ -134,7 +134,8 @@ def _not_spending(categories):
 def versus(targets_df, actuals, categories=None):
     """Budget against actuals per month and category: target, actual, remaining, and the highest priority.
 
-    Transfers and income are not spending, so they are left out.
+    Transfers and income are not spending, so they are left out, and so is money coming in to a category
+    with no budget (a savings category's shares sold, say).
     """
     t = targets_df.copy()
     if t.empty:
@@ -154,6 +155,7 @@ def versus(targets_df, actuals, categories=None):
     out["group"] = out["category"].map(lambda c: groups.get(c, ""))
     out["target"], out["actual"] = out["target"].round(2), out["actual"].round(2)
     out["remaining"] = (out["target"] - out["actual"]).round(2)
+    out = out[~((out["target"] == 0) & (out["actual"] < 0))]  # money in to an unbudgeted category (shares sold)
     return (out[["month", "category", "group", "priority", "target", "actual", "remaining"]]
             .sort_values(["month", "category"]).reset_index(drop=True))
 

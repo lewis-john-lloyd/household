@@ -46,6 +46,30 @@ def test_lookback_uses_the_same_three_months_a_year_earlier():
     assert "2025-09 to 2025-11" in out.loc["2026-10", "basis"]
 
 
+def test_seasonal_is_the_lookback_by_its_new_name():
+    history = actuals([["2025-09", "food", 900.0], ["2025-10", "food", 1000.0], ["2025-11", "food", 1100.0]])
+    out = budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "seasonal", "1500", "monthly", ""]),
+                         history, "2026-10")
+    assert out["target"].tolist() == [pytest.approx(1025.0)] and out["basis"].iloc[0].startswith("seasonal")
+
+
+def test_trailing_uses_the_four_months_before():
+    history = actuals([["2026-05", "petrol", 9999.0], ["2026-06", "petrol", 100.0], ["2026-07", "petrol", 200.0],
+                       ["2026-08", "petrol", 300.0], ["2026-10", "petrol", 9999.0]])  # September spent nothing
+    out = budget.targets(rules(["petrol", "2026-10-01", "petrol", "bills", "high", "trailing", "500", "monthly", ""]),
+                         history, "2026-10")
+    values = [100.0, 200.0, 300.0, 0.0]
+    mean, sd = sum(values) / 4, pd.Series(values).std()
+    assert out["target"].tolist() == [pytest.approx(round(mean + 0.25 * sd, 2))]
+    assert "2026-06 to 2026-09" in out["basis"].iloc[0]
+
+
+def test_trailing_falls_back_without_recent_history():
+    out = budget.targets(rules(["petrol", "2026-10-01", "petrol", "bills", "high", "trailing", "500", "monthly", ""]),
+                         actuals([]), "2026-10")
+    assert out["target"].tolist() == [500.0] and "fallback" in out["basis"].iloc[0]
+
+
 def test_lookback_falls_back_without_history():
     out = budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "lookback", "1500", "monthly", ""]),
                          actuals([]), "2026-10")

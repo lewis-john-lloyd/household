@@ -52,7 +52,7 @@ LEDGER = (
     # one row per budget line per change (see budget.py); scheduled rows are one-off amounts in their month
     Table("budget_rules", ("line", "effective", "category", "account", "priority", "rule", "amount", "per",
                            "note"),
-          {"rule": ("fixed", "lookback", "sinking_fund", "scheduled", "end"),
+          {"rule": ("fixed", "seasonal", "trailing", "lookback", "sinking_fund", "scheduled", "end"),
            "priority": ("high", "medium", "low"),
            "per": ("monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually")}),
     Table("allocation_targets", ("effective", "node", "parent", "weight")),

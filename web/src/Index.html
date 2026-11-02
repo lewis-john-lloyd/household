@@ -4,9 +4,11 @@
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-      :root { --ink: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #ffffff; }
+      :root { --ink: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #ffffff; --track: #eaeef2;
+        --ok: #1a7f37; --over: #cf222e; }
       @media (prefers-color-scheme: dark) {
-        :root { --ink: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; }
+        :root { --ink: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --track: #262c36;
+          --ok: #3fb950; --over: #f85149; }
       }
       body { margin: 0; padding: 16px; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
       header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
@@ -14,57 +16,151 @@
       select, button { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px;
         background: var(--bg); color: var(--ink); }
       button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
+      [hidden] { display: none !important; }
       #chart { width: 100%; min-height: 480px; }
-      #note { color: var(--muted); margin-top: 8px; }
+      .note { color: var(--muted); margin-top: 8px; }
       details { margin-top: 16px; }
       summary { cursor: pointer; font-weight: 600; }
+      .scroll { overflow-x: auto; }
       table { border-collapse: collapse; margin-top: 8px; }
-      th, td { padding: 3px 12px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
+      th, td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
       th:first-child, td:first-child { text-align: left; }
       td { font-variant-numeric: tabular-nums; }
+      td.text { text-align: left; }
       th button.sort { border: 0; padding: 0; background: none; font-weight: 600; cursor: pointer; }
       th button.sort[data-dir="asc"]::after { content: " ▲"; }
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
+      tr.line { cursor: pointer; }
+      tr.line:hover td { background: var(--track); }
+      tr.over td.left { color: var(--over); font-weight: 600; }
+      .bar { width: 120px; height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+      .bar span { display: block; height: 100%; background: var(--ok); }
+      tr.over .bar span { background: var(--over); }
+      tr.unbudgeted .bar span { background: var(--muted); }
+      tr.detail td { background: var(--track); padding: 6px 8px; }
+      tr.detail table { margin: 0; width: 100%; }
+      #budget-summary { margin: 4px 0; }
     </style>
   </head>
   <body>
     <header>
-      <h1>Where the money went</h1>
+      <span role="group" aria-label="View">
+        <button id="view-flows" aria-pressed="true">Where the money went</button>
+        <button id="view-budget" aria-pressed="false">Budget against actual</button>
+      </span>
       <label>Period <select id="period"></select></label>
       <span role="group" aria-label="Detail">
         <button id="group" aria-pressed="true">Groups</button>
         <button id="category" aria-pressed="false">Categories</button>
       </span>
     </header>
-    <div id="chart">Loading…</div>
-    <div id="note"></div>
-    <details id="totals" open>
-      <summary>Totals</summary>
-      <table>
+
+    <section id="flows">
+      <div id="chart">Loading…</div>
+      <div id="flows-note" class="note"></div>
+      <details open>
+        <summary>Totals</summary>
+        <div class="scroll"><table id="totals">
+          <thead><tr>
+            <th><button class="sort" data-key="name">Node</button></th>
+            <th><button class="sort" data-key="into">In</button></th>
+            <th><button class="sort" data-key="out">Out</button></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </details>
+    </section>
+
+    <section id="budget" hidden>
+      <div id="budget-summary">Loading…</div>
+      <div class="scroll"><table id="lines">
         <thead><tr>
-          <th><button class="sort" data-key="name">Node</button></th>
-          <th><button class="sort" data-key="into">In</button></th>
-          <th><button class="sort" data-key="out">Out</button></th>
+          <th><button class="sort" data-key="name">Line</button></th>
+          <th><button class="sort" data-key="priority">Priority</button></th>
+          <th><button class="sort" data-key="target">Budget</button></th>
+          <th><button class="sort" data-key="actual">Spent</button></th>
+          <th><button class="sort" data-key="remaining">Left</button></th>
+          <th><button class="sort" data-key="used">Used</button></th>
         </tr></thead>
-        <tbody id="totals-body"></tbody>
-      </table>
-    </details>
+        <tbody></tbody>
+      </table></div>
+      <div class="note">Click a line for its transactions. Transfers and income are left out; a line with no budget shows what was spent.</div>
+    </section>
+
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
-      var level = "group";
+      var view = "flows", level = "group";
+      var periods = { flows: null, budget: null };  // loaded once per view
+      var chosen = { flows: "", budget: "" };
       var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+      var cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+      var PRIORITY = { high: 0, medium: 1, low: 2 };
 
-      function fail(error) {
-        document.getElementById("chart").textContent = "Could not load flows: " + (error && error.message || error);
+      function call(name, args, done, where) {
+        var runner = google.script.run.withSuccessHandler(done).withFailureHandler(function (error) {
+          document.getElementById(where).textContent = "Could not load: " + (error && error.message || error);
+        });
+        runner[name].apply(runner, args);
       }
 
-      function draw(result) {
+      function cell(row, text, cls) {
+        var td = document.createElement("td");
+        td.textContent = text;
+        if (cls) td.className = cls;
+        row.appendChild(td);
+        return td;
+      }
+
+      // A table whose column headers sort it: names and words A to Z first, amounts biggest first.
+      function Sortable(tableId, key, dir, render) {
+        var self = this;
+        this.table = document.getElementById(tableId);
+        this.key = key;
+        this.dir = dir;
+        this.rows = [];
+        this.render = render;
+        this.table.querySelectorAll("th button.sort").forEach(function (b) {
+          b.addEventListener("click", function () {
+            var k = b.dataset.key;
+            if (self.key === k) self.dir = self.dir === "asc" ? "desc" : "asc";
+            else { self.key = k; self.dir = (k === "name" || k === "priority") ? "asc" : "desc"; }
+            self.draw(self.rows);
+          });
+        });
+      }
+      Sortable.prototype.draw = function (rows) {
+        var key = this.key, sign = this.dir === "asc" ? 1 : -1;
+        this.rows = rows;
+        this.table.querySelectorAll("th button.sort").forEach(function (b) {
+          if (b.dataset.key === key) b.dataset.dir = sign > 0 ? "asc" : "desc"; else delete b.dataset.dir;
+        });
+        var value = function (r) { return key === "priority" ? (PRIORITY[r.priority] !== undefined ? PRIORITY[r.priority] : 3) : r[key]; };
+        var body = this.table.querySelector("tbody");
+        body.textContent = "";
+        var render = this.render;
+        rows.slice().sort(function (a, b) {
+          var x = value(a), y = value(b);
+          var by = typeof x === "string" ? x.localeCompare(y) : x - y;
+          return sign * by || a.name.localeCompare(b.name);
+        }).forEach(function (r) { render(body, r); });
+      };
+
+      // Where the money went: the Sankey and its node totals.
+      var totals = new Sortable("totals", "total", "desc", function (body, t) {
+        var row = document.createElement("tr");
+        cell(row, t.name);
+        cell(row, t.into ? money.format(t.into) : "");
+        cell(row, t.out ? money.format(t.out) : "");
+        body.appendChild(row);
+      });
+
+      function drawFlows(result) {
         var chart = document.getElementById("chart");
-        var note = document.getElementById("note");
+        var note = document.getElementById("flows-note");
+        totals.draw(result.totals);
         if (!result.rows.length) {
           chart.textContent = "No flows for this period.";
           note.textContent = "";
-          drawTotals([]);
           return;
         }
         var label = {};  // each node shows its total after its name
@@ -77,7 +173,6 @@
         data.addRows(result.rows.map(function (r) {
           return [label[r[0]], label[r[1]], r[2], r[0] + " → " + r[1] + ": " + money.format(r[2])];
         }));
-        drawTotals(result.totals);
         var height = Math.max(480, 28 * result.rows.length);
         chart.style.height = height + "px";
         chart.textContent = "";
@@ -88,79 +183,136 @@
           : "";
       }
 
-      var totals = [];
-      var sortKey = "total", sortDir = "desc";  // biggest first until a column header is clicked
+      // Budget against actual: one line per category or group, a bar for how much of its budget is spent.
+      var lines = new Sortable("lines", "priority", "asc", function (body, l) {
+        var row = document.createElement("tr");
+        row.className = "line" + (l.target && l.remaining < 0 ? " over" : "") + (l.target ? "" : " unbudgeted");
+        cell(row, l.name);
+        cell(row, l.priority || "", "text");
+        cell(row, l.target ? money.format(l.target) : "no budget");
+        cell(row, money.format(l.actual));
+        cell(row, l.target ? money.format(l.remaining) : "", "left");
+        var bar = document.createElement("div");
+        bar.className = "bar";
+        var fill = document.createElement("span");
+        fill.style.width = Math.min(100, l.target ? 100 * l.actual / l.target : 100) + "%";
+        bar.appendChild(fill);
+        var used = cell(row, "");
+        used.appendChild(bar);
+        used.title = l.target ? Math.round(100 * l.actual / l.target) + "% of budget" : "no budget";
+        row.addEventListener("click", function () { toggleDetail(row, l); });
+        body.appendChild(row);
+      });
 
-      function sorted(list) {
-        var sign = sortDir === "asc" ? 1 : -1;
-        return list.slice().sort(function (a, b) {
-          var x = a[sortKey], y = b[sortKey];
-          var by = typeof x === "string" ? x.localeCompare(y) : x - y;
-          return sign * by || a.name.localeCompare(b.name);
+      function drawBudget(result) {
+        result.forEach(function (l) { l.used = l.target ? l.actual / l.target : (l.actual > 0 ? Infinity : 0); });
+        lines.draw(result);
+        var target = 0, actual = 0, over = 0, unbudgeted = 0;
+        result.forEach(function (l) {
+          target += l.target;
+          actual += l.actual;
+          if (l.target && l.remaining < 0) over += 1;
+          if (!l.target && l.actual > 0) unbudgeted += 1;
         });
+        document.getElementById("budget-summary").textContent = result.length
+          ? money.format(target) + " budgeted, " + money.format(actual) + " spent, " + money.format(target - actual) +
+            " left; " + over + " over budget" + (unbudgeted ? ", " + unbudgeted + " with spending but no budget" : "") + "."
+          : "No budget for this period.";
       }
 
-      function sortBy(key) {
-        if (sortKey === key) {
-          sortDir = sortDir === "asc" ? "desc" : "asc";
-        } else {
-          sortKey = key;
-          sortDir = key === "name" ? "asc" : "desc";  // names A to Z, amounts biggest first
-        }
-        drawTotals(totals);
-      }
-
-      function drawTotals(list) {
-        totals = list;
-        document.querySelectorAll("th button.sort").forEach(function (b) {
-          if (b.dataset.key === sortKey) b.dataset.dir = sortDir; else delete b.dataset.dir;
-        });
-        var body = document.getElementById("totals-body");
-        body.textContent = "";
-        sorted(totals).forEach(function (t) {
-          var row = document.createElement("tr");
-          [t.name, t.into ? money.format(t.into) : "", t.out ? money.format(t.out) : ""].forEach(function (text) {
-            var cell = document.createElement("td");
-            cell.textContent = text;
-            row.appendChild(cell);
+      function toggleDetail(row, line) {
+        var next = row.nextSibling;
+        if (next && next.classList && next.classList.contains("detail")) { next.remove(); return; }
+        var detail = document.createElement("tr");
+        detail.className = "detail";
+        var td = cell(detail, "Loading…");
+        td.colSpan = 6;
+        td.id = "detail-" + Math.random().toString(36).slice(2);
+        row.parentNode.insertBefore(detail, row.nextSibling);
+        call("getTransactions", [chosen.budget, line.categories], function (txns) {
+          td.textContent = "";
+          if (!txns.length) { td.textContent = "No transactions."; return; }
+          var table = document.createElement("table");
+          txns.forEach(function (t) {
+            var r = document.createElement("tr");
+            cell(r, t.date);
+            cell(r, t.payee, "text");
+            cell(r, line.categories.length > 1 ? t.category : "", "text");
+            cell(r, t.account, "text");
+            cell(r, cents.format(t.amount));
+            table.appendChild(r);
           });
-          body.appendChild(row);
+          td.appendChild(table);
+        }, td.id);
+      }
+
+      // The view, its period list and the level.
+      function fillPeriods(list) {
+        var select = document.getElementById("period");
+        select.textContent = "";
+        list.forEach(function (p) {
+          var option = document.createElement("option");
+          option.value = p;
+          option.textContent = p;
+          select.appendChild(option);
         });
+        if (chosen[view] && list.indexOf(chosen[view]) >= 0) select.value = chosen[view];
+        chosen[view] = select.value;
       }
 
       function load() {
-        var period = document.getElementById("period").value;
-        document.getElementById("chart").textContent = "Loading…";
-        google.script.run.withSuccessHandler(draw).withFailureHandler(fail).getFlows(period, level);
+        if (!periods[view]) {
+          var where = view === "flows" ? "chart" : "budget-summary";
+          call(view === "flows" ? "getPeriods" : "getBudgetPeriods", [], function (list) {
+            periods[view] = list;
+            if (!list.length) {
+              document.getElementById(where).textContent = view === "flows"
+                ? "No flows yet: run compute." : "No budget yet: add budget_rules and run compute.";
+              return;
+            }
+            load();
+          }, where);
+          return;
+        }
+        fillPeriods(periods[view]);
+        if (view === "flows") {
+          document.getElementById("chart").textContent = "Loading…";
+          call("getFlows", [chosen.flows, level], drawFlows, "chart");
+        } else {
+          document.getElementById("budget-summary").textContent = "Loading…";
+          call("getBudget", [chosen.budget, level], drawBudget, "budget-summary");
+        }
+      }
+
+      function press(ids, on) {
+        ids.forEach(function (id) { document.getElementById(id).setAttribute("aria-pressed", String(id === on)); });
+      }
+
+      function setView(next) {
+        view = next;
+        press(["view-flows", "view-budget"], "view-" + view);
+        document.getElementById("flows").hidden = view !== "flows";
+        document.getElementById("budget").hidden = view !== "budget";
+        load();
       }
 
       function setLevel(next) {
         level = next;
-        ["group", "category"].forEach(function (id) {
-          document.getElementById(id).setAttribute("aria-pressed", String(id === level));
-        });
+        press(["group", "category"], level);
         load();
       }
 
       google.charts.load("current", { packages: ["sankey"] });
       google.charts.setOnLoadCallback(function () {
-        google.script.run.withFailureHandler(fail).withSuccessHandler(function (periods) {
-          var select = document.getElementById("period");
-          periods.forEach(function (p) {
-            var option = document.createElement("option");
-            option.value = p;
-            option.textContent = p;
-            select.appendChild(option);
-          });
-          if (!periods.length) { fail("no flows yet: run compute"); return; }
-          select.addEventListener("change", load);
-          document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
-          document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
-          document.querySelectorAll("th button.sort").forEach(function (b) {
-            b.addEventListener("click", function () { sortBy(b.dataset.key); });
-          });
+        document.getElementById("period").addEventListener("change", function (e) {
+          chosen[view] = e.target.value;
           load();
-        }).getPeriods();
+        });
+        document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
+        document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
+        document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
+        document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
+        load();
       });
     </script>
   </body>

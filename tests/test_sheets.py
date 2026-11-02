@@ -186,3 +186,13 @@ def test_dropdowns_are_cleared_then_set_so_an_old_layout_leaves_none_behind():
     assert len(budget) == 1 + len(schema.table(schema.LEDGER, "budget_rules").enums)
     review = [r for r in requests if r["range"]["sheetId"] == ids["review"]]
     assert all("rule" in r for r in review)  # the review tab's answer dropdown is left alone
+
+
+def test_a_header_padded_by_its_cell_format_still_matches():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    t = schema.table(schema.LEDGER, "budget_rules")
+    ledger.tabs["budget_rules"].rows[0] = [f" {c} " if c == "amount" else c for c in t.columns]
+    ledger.tabs["budget_rules"].rows.append(["food"] + [""] * (len(t.columns) - 1))
+    assert sheets.ensure_tables(ledger, schema.LEDGER) == []
+    assert list(sheets.read_table(ledger, t).columns) == list(t.columns)

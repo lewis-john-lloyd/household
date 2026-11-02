@@ -39,10 +39,11 @@ def ensure_tables(spreadsheet, tables):
     migrate = []
     if present:  # one batched read for every header, to stay well inside the Sheets quota
         ranges = [f"'{t.name}'!1:2" for t in present]
-        result = spreadsheet.values_batch_get(ranges)
+        # unformatted, so a column's number format (accounting pads text with spaces) can't change the header
+        result = spreadsheet.values_batch_get(ranges, params={"valueRenderOption": "UNFORMATTED_VALUE"})
         for t, value_range in zip(present, result.get("valueRanges", [])):
             values = value_range.get("values") or [[]]
-            header = values[0]
+            header = [str(h).strip() for h in values[0]]
             if tuple(header) == t.columns:
                 continue
             if len(values) > 1 and any(str(c).strip() for c in values[1]):
@@ -131,7 +132,7 @@ def read_table(spreadsheet, t):
     rows = spreadsheet.worksheet(t.name).get_values(value_render_option=UNFORMATTED)
     if not rows:
         return pd.DataFrame(columns=list(t.columns))
-    header, body = rows[0], rows[1:]
+    header, body = [str(h).strip() for h in rows[0]], rows[1:]
     if tuple(header) != t.columns:
         raise SchemaMismatch(f"{t.name}: header {header} != {list(t.columns)}")
     width = len(header)

@@ -10,8 +10,11 @@ priority, and a rule:
                 spending in the three calendar months centered on the same
                 month a year earlier (for October 2026: September to November
                 2025), the old budget-reports formula; amount per `per` is the
-                fallback while there is no year-earlier history. "lookback" is
-                its earlier name and still works
+                fallback while there is no year-earlier history
+  lookback      the same formula over the twelve months before this one (for
+                October 2026: October 2025 to September 2026), a year-round
+                average; amount per `per` is the fallback while there is no
+                history
   trailing      the same formula over the four months before this one (for
                 October 2026: June to September 2026), for spending that
                 follows recent habits more than the season; amount per `per`
@@ -38,6 +41,7 @@ PER_MONTH = {"monthly": 1.0, "biweekly": 26 / 12, "weekly": 52 / 12, "semi_month
 LOOKBACK_SIGMA = 0.25
 SEASONAL_WINDOW = (-13, -12, -11)  # months from the budget month: the same month a year earlier, centered
 TRAILING_WINDOW = (-4, -3, -2, -1)  # the four months before the budget month
+LOOKBACK_WINDOW = tuple(range(-12, 0))  # the twelve months before the budget month
 TARGET_COLUMNS = ["month", "line", "category", "account", "priority", "rule", "target", "basis"]
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "": 3}
 
@@ -118,7 +122,7 @@ def _rule_target(state, month, spend):
         value, why = _per_month(state)
         return (None, why) if value is None else (value, f"{rule}: {why}")
     if rule in ("seasonal", "lookback", "trailing"):
-        window = TRAILING_WINDOW if rule == "trailing" else SEASONAL_WINDOW
+        window = {"trailing": TRAILING_WINDOW, "lookback": LOOKBACK_WINDOW}.get(rule, SEASONAL_WINDOW)
         return _from_history(state, month, spend, rule, [_shift(month, n) for n in window])
     return None, f"unknown rule {rule!r}"
 

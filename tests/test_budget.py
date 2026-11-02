@@ -37,20 +37,23 @@ def test_changes_take_effect_from_their_month_and_end_stops_a_line():
                                                        ["2026-04", 75.0]]
 
 
-def test_lookback_uses_the_same_three_months_a_year_earlier():
+def test_seasonal_uses_the_three_months_centered_a_year_earlier():
     history = actuals([["2025-09", "food", 900.0], ["2025-10", "food", 1000.0], ["2025-11", "food", 1100.0],
                        ["2025-12", "food", 5000.0]])
-    out = by(budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "lookback", "1500", "monthly", ""]),
+    out = by(budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "seasonal", "1500", "monthly", ""]),
                             history, "2026-10"), "month")
     assert out.loc["2026-10", "target"] == pytest.approx(1000 + 0.25 * 100)  # sd of 900, 1000, 1100 is 100
     assert "2025-09 to 2025-11" in out.loc["2026-10", "basis"]
 
 
-def test_seasonal_is_the_lookback_by_its_new_name():
-    history = actuals([["2025-09", "food", 900.0], ["2025-10", "food", 1000.0], ["2025-11", "food", 1100.0]])
-    out = budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "seasonal", "1500", "monthly", ""]),
+def test_lookback_uses_the_twelve_months_before():
+    months = [f"{y}-{m:02d}" for y, m in [(2025, 10), (2025, 11), (2025, 12)] + [(2026, m) for m in range(1, 10)]]
+    history = actuals([[m, "food", 1000.0 + 10 * i] for i, m in enumerate(months)] + [["2026-10", "food", 9999.0]])
+    out = budget.targets(rules(["food", "2026-10-01", "food", "bills", "high", "lookback", "1500", "monthly", ""]),
                          history, "2026-10")
-    assert out["target"].tolist() == [pytest.approx(1025.0)] and out["basis"].iloc[0].startswith("seasonal")
+    values = pd.Series([1000.0 + 10 * i for i in range(12)])
+    assert out["target"].tolist() == [pytest.approx(round(values.mean() + 0.25 * values.std(), 2))]
+    assert "2025-10 to 2026-09" in out["basis"].iloc[0]
 
 
 def test_trailing_uses_the_four_months_before():

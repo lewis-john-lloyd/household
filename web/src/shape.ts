@@ -142,3 +142,135 @@ function nodeTotals(rows: SankeyRow[]): NodeTotal[] {
   });
   return out.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Budget against actuals. The Reports "budget_vs_actual" tab has one row per month and category:
+// target and actual (spending, positive), with the category's group and the line's priority (see
+// budget.py). The "categorized" tab has one row per transaction, a split charge carrying its parts
+// in splits ("household -20.00; food -5.50").
+
+interface BudgetRow {
+  month: string;
+  category: string;
+  group: string;
+  priority: string;
+  target: number;
+  actual: number;
+}
+
+interface BudgetLine {
+  name: string;
+  group: string;
+  priority: string;
+  target: number;
+  actual: number;
+  remaining: number;
+  categories: string[];
+}
+
+interface Txn {
+  date: string;
+  account: string;
+  payee: string;
+  category: string;
+  amount: number;
+}
+
+const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
+const TXN_COLUMNS = ["date", "account_id", "amount", "payee_raw", "payee_text", "category", "splits"];
+const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+function columnsAt(values: unknown[][], wanted: string[], tab: string): number[] {
+  const header = values[0].map((h) => String(h).trim());
+  const at = wanted.map((c) => header.indexOf(c));
+  if (at.some((i) => i < 0)) {
+    throw new Error(`${tab} tab is missing columns: ${wanted.filter((_, n) => at[n] < 0).join(", ")}`);
+  }
+  return at;
+}
+
+function parseBudget(values: unknown[][]): BudgetRow[] {
+  if (!values.length) return [];
+  const at = columnsAt(values, BUDGET_COLUMNS, "budget_vs_actual");
+  const rows: BudgetRow[] = [];
+  for (const v of values.slice(1)) {
+    const [month, category, group, priority] = at.slice(0, 4).map((i) => String(v[i] ?? "").trim());
+    const target = Number(v[at[4]]) || 0;
+    const actual = Number(v[at[5]]) || 0;
+    if (month && category) rows.push({ month, category, group, priority, target, actual });
+  }
+  return rows;
+}
+
+/** Years and months with budget rows, newest first: "2026" (the year so far), "2026-10", "2026-09", ... */
+function budgetPeriods(rows: BudgetRow[]): string[] {
+  const months = Array.from(new Set(rows.map((r) => r.month))).sort().reverse();
+  const out: string[] = [];
+  for (const m of months) {
+    const year = m.slice(0, 4);
+    if (!out.includes(year)) out.push(year);
+    out.push(m);
+  }
+  return out;
+}
+
+function inPeriod(month: string, period: string): boolean {
+  return period.length === 4 ? month.slice(0, 4) === period : month === period;
+}
+
+/**
+ * One line per category (or per group) for a month, or for a year so far (its months added up): target,
+ * actual and what remains, the highest priority among its lines. Sorted by priority, then by what remains,
+ * least first, so what is over budget comes first within each priority.
+ */
+function budgetLines(rows: BudgetRow[], period: string, level: string): BudgetLine[] {
+  const by = new Map<string, BudgetLine>();
+  for (const r of rows) {
+    if (!inPeriod(r.month, period)) continue;
+    const name = level === "group" ? r.group || r.category : r.category;
+    let line = by.get(name);
+    if (!line) {
+      line = { name, group: r.group, priority: "", target: 0, actual: 0, remaining: 0, categories: [] };
+      by.set(name, line);
+    }
+    line.target += r.target;
+    line.actual += r.actual;
+    if (!line.categories.includes(r.category)) line.categories.push(r.category);
+    const rank = (p: string): number => PRIORITY_RANK[p] ?? 3;
+    if (rank(r.priority) < rank(line.priority)) line.priority = r.priority;
+  }
+  const out = Array.from(by.values()).map((l) => {
+    const target = roundCents(l.target);
+    const actual = roundCents(l.actual);
+    return { ...l, target, actual, remaining: roundCents(target - actual), categories: l.categories.sort() };
+  });
+  return out.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3)
+    || a.remaining - b.remaining || a.name.localeCompare(b.name));
+}
+
+/** Transactions as one row per category: a split charge becomes one row per part. */
+function parseTransactions(values: unknown[][]): Txn[] {
+  if (!values.length) return [];
+  const at = columnsAt(values, TXN_COLUMNS, "categorized");
+  const out: Txn[] = [];
+  for (const v of values.slice(1)) {
+    const [date, account, amount, raw, named, category, splits] = at.map((i) => String(v[i] ?? "").trim());
+    const base = { date: date.slice(0, 10), account, payee: named || raw };
+    if (splits) {
+      for (const piece of splits.split("; ")) {
+        const cut = piece.lastIndexOf(" ");
+        out.push({ ...base, category: piece.slice(0, cut), amount: Number(piece.slice(cut + 1)) || 0 });
+      }
+    } else {
+      out.push({ ...base, category, amount: Number(amount) || 0 });
+    }
+  }
+  return out;
+}
+
+/** The period's transactions in these categories, biggest spending first. */
+function transactionsFor(txns: Txn[], period: string, categories: string[]): Txn[] {
+  const wanted = new Set(categories);
+  return txns.filter((t) => wanted.has(t.category) && inPeriod(t.date.slice(0, 7), period))
+    .sort((a, b) => a.amount - b.amount || b.date.localeCompare(a.date));
+}

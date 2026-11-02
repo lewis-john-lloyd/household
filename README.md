@@ -10,6 +10,7 @@ The package holds logic only. All data lives in the owner's Google Drive. Notebo
 - Test fixtures under `tests/fixtures/` are synthetic.
 - Notebooks are never committed; they hold real output.
 - `tools/leak_guard.py` enforces this in CI and as a pre-commit hook. A deliberate exception is marked on its line with `leak-guard: allow`.
+- `tools/push_guard.py` runs before every push (see Before pushing) and also checks against a private list of the household's real values.
 
 ## What the package can do
 
@@ -51,15 +52,16 @@ Compute writes four reports for the monthly routine (`checks.py`, `recurring.py`
 
 ## Views
 
-Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts (vested shares go straight to savings), then out to savings and each category (savings categories also flow back in, as shares sold; a category that got more back than it spent shows as money back; whatever the period didn't cover came from or went to cash balances), for any month, any year, or a year's monthly average (the year divided by the months it has data for), by category or by group, each node labeled with its total and a totals table (in and out per node) under the chart. A year takes each pay line's year-to-date amount from the year's last stub, so a missing stub doesn't shrink the year, and pay deposits no stub accounts for show as "pay without a stub (person)", matched to a person by their employer's name on the deposit. `web/src/shape.ts` turns rows into chart data and is tested under Node; no IDs or data live in `web/`.
+Compute writes each view's data as a Reports table, and `web/` draws it: a TypeScript Apps Script web app that reads Reports under the viewer's own Google sign-in and draws with Google Charts. The first view is the `flows` table (`flows.py`) as a Sankey: pay through taxes, deductions and net pay into the accounts (vested shares go straight to savings), then out to savings and each category (savings categories also flow back in, as shares sold; a category that got more back than it spent shows as money back; whatever the period didn't cover came from or went to cash balances), for any month, any year, or a year's monthly average (the year divided by the months it has data for), by category or by group, each node labeled with its total and a totals table (in and out per node) under the chart. A year takes each pay line's year-to-date amount from the year's last stub, so a missing stub doesn't shrink the year, and pay deposits no stub accounts for show as "pay without a stub (person)", matched to a person by their employer's name on the deposit. The second view is budget against actual from `budget_vs_actual`: one line per category or group for a month or a year so far, with its budget, what was spent, what is left and a bar for how much is used, over-budget lines first within each priority, every column sortable. Clicking a line lists its transactions for the period from `categorized` (a split charge counts its part). Transfers and income are left out; a category with spending but no budget shows as such. `web/src/shape.ts` turns rows into chart and table data and is tested under Node; no IDs or data live in `web/`.
 
 To deploy (Node 22 and `npm i -g @google/clasp`):
 
 1. `cd web && npm ci && npm run build`
-2. `clasp login`, then `clasp create --type webapp --title "Household views" --rootDir dist` (or copy `.clasp.json.example` to `.clasp.json` with an existing script id)
-3. `clasp push`
+2. `clasp login`, then `clasp create-script --type webapp --title "Household views" --rootDir dist` (or copy `.clasp.json.example` to `.clasp.json` with an existing script id)
+3. `clasp push` (or `npm run push`, which builds first)
 4. In the script editor, Project Settings, Script properties: add `REPORTS_ID` with the Reports spreadsheet's id
 5. Deploy, New deployment, Web app. It runs as the person viewing it, so they see only what they can open; `access` in `appsscript.json` is `MYSELF` (only the owner). To let another household member open it, set `ANYONE` (any signed-in Google account; Reports' own sharing still decides who can read it) and redeploy.
+6. After a change: check out the release tag, `npm run push`, then `clasp update-deployment <deployment id>` (`clasp list-deployments` shows it), so the web app's URL stays the same.
 
 ## Development
 
@@ -69,7 +71,7 @@ pytest
 python tools/leak_guard.py
 ```
 
-Optional local hook: `pip install pre-commit && pre-commit install`.
+Optional local hooks: `pip install pre-commit && pre-commit install`, and `git config core.hooksPath .githooks` for the push guard.
 
 ## Tax law
 

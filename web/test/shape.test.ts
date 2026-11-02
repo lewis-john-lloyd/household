@@ -6,11 +6,16 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
   nodeTotals: (rows: SankeyRow[]) => NodeTotal[];
+  parseBudget: (values: unknown[][]) => BudgetRow[];
+  budgetPeriods: (rows: BudgetRow[]) => string[];
+  budgetLines: (rows: BudgetRow[], period: string, level: string) => BudgetLine[];
+  parseTransactions: (values: unknown[][]) => Txn[];
+  transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
 };
 
 const VALUES: unknown[][] = [
@@ -84,4 +89,50 @@ test("node totals: what each node took in and sent out, biggest first", () => {
     ["other income", 0, 100.01, 100.01],
     ["pets", 99.99, 0, 99.99],
   ]);
+});
+
+const BUDGET: unknown[][] = [
+  ["month", "category", "group", "priority", "target", "actual", "remaining", "run_id"],
+  ["2001-02", "food", "food", "high", 1000, 1100, -100, "r1"],
+  ["2001-02", "restaurant", "food", "low", 300, 120.5, 179.5, "r1"],
+  ["2001-02", "booze", "family_fun", "", 0, 40, -40, "r1"],
+  ["2001-01", "food", "food", "high", 1000, 900, 100, "r1"],
+  ["2001-01", "restaurant", "food", "low", 300, 310, -10, "r1"],
+  ["2000-12", "food", "food", "medium", 900, 950, -50, "r1"],
+];
+
+test("budget periods: each year so far, then its months, newest first", () => {
+  assert.deepEqual(shape.budgetPeriods(shape.parseBudget(BUDGET)), ["2001", "2001-02", "2001-01", "2000", "2000-12"]);
+});
+
+test("budget lines for a month by category: over budget first within each priority", () => {
+  const lines = shape.budgetLines(shape.parseBudget(BUDGET), "2001-02", "category");
+  assert.deepEqual(lines.map((l) => [l.name, l.priority, l.target, l.actual, l.remaining]), [
+    ["food", "high", 1000, 1100, -100],
+    ["restaurant", "low", 300, 120.5, 179.5],
+    ["booze", "", 0, 40, -40],
+  ]);
+});
+
+test("budget lines for a year by group add the months and keep the highest priority", () => {
+  const lines = shape.budgetLines(shape.parseBudget(BUDGET), "2001", "group");
+  assert.deepEqual(lines.map((l) => [l.name, l.priority, l.target, l.actual, l.remaining, l.categories]), [
+    ["food", "high", 2600, 2430.5, 169.5, ["food", "restaurant"]],
+    ["family_fun", "", 0, 40, -40, ["booze"]],
+  ]);
+});
+
+test("transactions: split charges become one row per part, filtered to the period and categories", () => {
+  const txns = shape.parseTransactions([
+    ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits"],
+    ["t1", "2001-02-03", "card", -50, "SHOP*1", "Shop", "SHOP", "household", "household -30.00; food -20.00"],
+    ["t2", "2001-02-10", "card", -12.5, "GROCER", "", "GROCER", "food", ""],
+    ["t3", "2001-03-01", "card", -99, "GROCER", "", "GROCER", "food", ""],
+  ]);
+  assert.equal(txns.length, 4);
+  assert.deepEqual(shape.transactionsFor(txns, "2001-02", ["food"]).map((t) => [t.date, t.payee, t.amount]), [
+    ["2001-02-03", "Shop", -20],
+    ["2001-02-10", "GROCER", -12.5],
+  ]);
+  assert.equal(shape.transactionsFor(txns, "2001", ["food"]).length, 3);
 });

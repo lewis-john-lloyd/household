@@ -80,6 +80,7 @@ def targets(rules, actuals, through):
     r = rules.copy()
     r["effective"] = r["effective"].astype(str).str[:7]
     r["rule"] = r["rule"].astype(str).str.strip()
+    r["line"] = r["line"].astype(str).str.strip()  # "Groceries " and "Groceries" are one line
     spend = _spend_lookup(actuals)
     out = []
     for line, rows in r.groupby("line"):

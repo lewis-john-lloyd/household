@@ -16,6 +16,11 @@ The leak guard's `leak-guard: allow` marker excuses a line from (1), never from 
 a real value is a leak however it is marked, and no file is exempt from (2), this one included. Without a denylist the push stops;
 HOUSEHOLD_NO_DENYLIST=1 pushes without check (2). HOUSEHOLD_PUSH_QUICK=1 skips (3).
 tools/denylist.py builds the denylist from exports of the ledger.
+
+The same text checks, (1) and (2), run earlier so a value never gets into a commit:
+`--staged` checks the staged changes (.githooks/pre-commit) and `--message FILE` a
+commit message (.githooks/commit-msg). The push check stays as the backstop.
+GitHub addresses are public, so a name inside one (the repo's owner) is not a find.
 """
 
 import os
@@ -32,6 +37,7 @@ ZERO = "0" * 40
 AMOUNT_ENTRY = re.compile(r"^-?\d+\.\d\d$")
 # 1234.56, 1,234.56, -1 234 56, with or without a dollar sign: a dollar part (digits, or groups of three) and two cents digits
 AMOUNT_TEXT = re.compile(r"(?<![\w.])-?\$?(\d{1,3}(?:[, ]\d{3})+|\d+)[. ](\d{2})(?![\d])")
+GITHUB = re.compile(r"(?:https?://)?github\.com/[\w.-]+(?:/[\w.-]+)?")
 
 
 def git(*args):
@@ -62,6 +68,7 @@ def amounts_in(text):
 
 def denied(text, amounts, words):
     """The denylist entries this text contains."""
+    text = GITHUB.sub(" ", text)
     hits = [entry for entry, pattern in words if pattern.search(text)]
     return hits + sorted(amounts_in(text) & amounts)
 
@@ -97,41 +104,83 @@ def pattern_findings(path, line):
             if (in_fix or not in_fixtures) and pattern.search(line)]
 
 
+def line_findings(path, line, denylist):
+    """Findings for one added line of a file."""
+    out = [f"{path}: {name}: {line.strip()[:120]}" for name in pattern_findings(path, line)]
+    if denylist:  # no file is exempt, this one included
+        out += [f"{path}: household value {hit!r}: {line.strip()[:120]}" for hit in denied(line, *denylist)]
+    return out
+
+
+def message_findings(label, body, denylist):
+    """Findings for a commit message (git's # comment lines left out)."""
+    out = []
+    for line in body.splitlines():
+        if line.startswith("#"):
+            continue
+        hits = denied(line, *denylist) if denylist else []
+        for what in pattern_findings("", line) + [f"household value {h!r}" for h in hits]:
+            out.append(f"{label}: {what}: {line.strip()[:120]}")
+    return out
+
+
 def check(ranges, denylist):
     """Findings, as printable lines, for the commits in these ranges."""
     findings = []
     for args in ranges:
         for path, line in added_lines(git("log", "-p", "--format=", "--unified=0", *args)):
-            for name in pattern_findings(path, line):
-                findings.append(f"{path}: {name}: {line.strip()[:120]}")
-            if denylist:  # no file is exempt, this one included
-                for hit in denied(line, *denylist):
-                    findings.append(f"{path}: household value {hit!r}: {line.strip()[:120]}")
+            findings += line_findings(path, line, denylist)
         for message in git("log", "--format=%H%n%B%x1e", *args).split("\x1e"):
             sha, _, body = message.strip().partition("\n")
-            for line in body.splitlines():
-                names = pattern_findings("", line)
-                hits = denied(line, *denylist) if denylist else []
-                for what in names + [f"household value {h!r}" for h in hits]:
-                    findings.append(f"commit {sha[:7]} message: {what}: {line.strip()[:120]}")
+            findings += message_findings(f"commit {sha[:7]} message", body, denylist)
     return findings
 
 
-def main(stdin_lines):
+def check_staged(denylist):
+    """Findings for the changes staged for the next commit."""
+    findings = []
+    for path, line in added_lines(git("diff", "--cached", "--unified=0")):
+        findings += line_findings(path, line, denylist)
+    return findings
+
+
+def _denylist(what):
+    """(denylist or None, stop): the private denylist, or why there is none."""
     path = Path(os.environ.get("HOUSEHOLD_DENYLIST", DENYLIST))
-    denylist = None
     if path.exists():
-        denylist = load_denylist(path)
-    elif os.environ.get("HOUSEHOLD_NO_DENYLIST") != "1":
-        print(f"push guard: no denylist at {path}. Build one with tools/denylist.py, "
-              "or push with HOUSEHOLD_NO_DENYLIST=1 to skip that check.")
-        return 1
-    findings = check(outgoing(stdin_lines), denylist)
+        return load_denylist(path), False
+    if os.environ.get("HOUSEHOLD_NO_DENYLIST") == "1":
+        return None, False
+    print(f"push guard: no denylist at {path}. Build one with tools/denylist.py, "
+          f"or {what} with HOUSEHOLD_NO_DENYLIST=1 to skip that check.")
+    return None, True
+
+
+def _report(findings, what, fix):
     if findings:
-        print("push guard: the push would publish household data:")
+        print(f"push guard: {what} household data:")
         for line in findings:
             print("  " + line)
-        print("Fix the commits (amend or rebase) and push again.")
+        print(fix)
+    return 1 if findings else 0
+
+
+def main(stdin_lines, argv=()):
+    argv = list(argv)
+    if argv[:1] == ["--staged"]:
+        denylist, stop = _denylist("commit")
+        return 1 if stop else _report(check_staged(denylist), "the commit would hold",
+                                      "Change it to a made-up value, stage it again and commit.")
+    if argv[:1] == ["--message"] and len(argv) == 2:
+        denylist, stop = _denylist("commit")
+        body = Path(argv[1]).read_text(encoding="utf-8")
+        return 1 if stop else _report(message_findings("commit message", body, denylist),
+                                      "the commit message holds", "Reword the message and commit again.")
+    denylist, stop = _denylist("push")
+    if stop:
+        return 1
+    if _report(check(outgoing(stdin_lines), denylist), "the push would publish",
+               "Fix the commits (amend or rebase) and push again."):
         return 1
     if os.environ.get("HOUSEHOLD_PUSH_QUICK") != "1":
         for command in ([sys.executable, "tools/import_guard.py"], [sys.executable, "-m", "pytest", "-q"]):
@@ -142,4 +191,5 @@ def main(stdin_lines):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.stdin.read().splitlines()))
+    args = sys.argv[1:]
+    sys.exit(main([] if args else sys.stdin.read().splitlines(), args))

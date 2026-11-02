@@ -71,3 +71,37 @@ def test_a_push_with_a_household_value_is_stopped(tmp_path, monkeypatch):
     assert push_guard.main(stdin) == 0
     monkeypatch.setenv("HOUSEHOLD_DENYLIST", str(tmp_path / "missing.txt"))
     assert push_guard.main(stdin) == 1  # no denylist, no push
+
+
+def test_personal_categories_join_the_denylist(tmp_path):
+    (tmp_path / "c.json").write_text('{"values": [["category", "group", "priority"], ["food", "food", "high"], '
+                                     '["alex", "personal", "low"], ["joint", "personal", "low"], '
+                                     '["aunt_bea", "family_support", "medium"], ["misc", "other"]]}')
+    assert denylist.personal_categories(str(tmp_path / "c.json")) == {"alex", "aunt_bea"}
+
+
+def test_a_github_address_is_not_a_household_value(tmp_path):
+    path = tmp_path / "deny.txt"
+    path.write_text("alex\n")
+    deny = push_guard.load_denylist(path)
+    assert push_guard.denied("pip install git+https://github.com/alex-q/household", *deny) == []
+    assert push_guard.denied("alex 20; family", *deny) == ["alex"]
+
+
+def test_staged_changes_and_messages_are_checked_before_a_commit(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    git(tmp_path, "init", "-q", str(work))
+    (work / "a.py").write_text("x = 1\n# example: alex 20; family\n")
+    git(work, "add", "a.py")
+    deny = tmp_path / "deny.txt"
+    deny.write_text("alex\n")
+    message = tmp_path / "msg"
+    message.write_text("Split alex's books\n# Please enter the commit message (alex)\n")
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("HOUSEHOLD_DENYLIST", str(deny))
+    assert push_guard.main([], ["--staged"]) == 1
+    assert push_guard.main([], ["--message", str(message)]) == 1
+    message.write_text("Split a line\n# Please enter the commit message (alex)\n")
+    assert push_guard.main([], ["--message", str(message)]) == 0
+    deny.write_text("sam\n")
+    assert push_guard.main([], ["--staged"]) == 0

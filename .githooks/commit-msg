@@ -1,0 +1,4 @@
+#!/bin/sh
+# Checks a commit message for household data before the commit is made.
+if [ -x .venv/bin/python ]; then py=.venv/bin/python; else py=${PYTHON:-python3}; fi
+exec "$py" tools/push_guard.py --message "${1}"

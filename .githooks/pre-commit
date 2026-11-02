@@ -1,0 +1,5 @@
+#!/bin/sh
+# Checks the staged changes for household data before they become a commit (the push guard's text checks).
+# Turn on once per clone:  git config core.hooksPath .githooks
+if [ -x .venv/bin/python ]; then py=.venv/bin/python; else py=${PYTHON:-python3}; fi
+exec "$py" tools/push_guard.py --staged

@@ -173,12 +173,12 @@ def test_boa_statement_keys_on_reference_and_takes_last_four_from_the_name():
     from household.parsers import boa_csv
     assert identify(BOA) is boa_csv
     accounts = pd.concat([ACCOUNTS, pd.DataFrame([{"account_id": "boa", "type": "credit_card",
-                                                   "last4": "4242"}])])
-    r = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_4242.csv", accounts, "now")
+                                                   "last4": "4321"}])])
+    r = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_4321.csv", accounts, "now")
     t = r.tables["transactions"]
     assert list(t["amount"]) == [68.15, -31.79, -36.36]  # signed as in the ledger already
     assert t["payee_raw"][1] == "STREAMING*ONE example.com/billCA" and r.account_id == "boa"
-    again = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_4242 (1).csv", accounts, "now")
+    again = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_4321 (1).csv", accounts, "now")
     assert list(again.tables["transactions"]["txn_id"]) == list(t["txn_id"])
 
 

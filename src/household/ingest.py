@@ -87,7 +87,7 @@ def append_transactions(ledger, incoming):
 # --- bank downloads -----------------------------------------------------------------------------
 
 def _last4(value):
-    v = re.sub(r"\.0+$", "", str(value).strip())  # a Sheet may hand back 42.0 for "0042"
+    v = re.sub(r"\.0+$", "", str(value).strip())  # a Sheet may hand back 123.0 for "0123"
     return (v.zfill(4) if v.isdigit() else v)[-4:]  # Amex shows five digits; four decide
 
 

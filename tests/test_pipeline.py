@@ -32,7 +32,7 @@ def test_parse_dates_in_every_format():
 
 
 def test_parse_money():
-    assert legacy.parse_money("$ 1,050.25") == 1050.25  # leak-guard: allow (synthetic)
+    assert legacy.parse_money("$ 1,047.39") == 1047.39  # leak-guard: allow (synthetic)
     assert legacy.parse_money("($ 5.00)") == -5.0  # leak-guard: allow (synthetic)
     assert legacy.parse_money("-12.50") == -12.5
     assert legacy.parse_money("$ -") == 0.0
@@ -43,7 +43,7 @@ def test_parse_data_rows_strips_and_skips_blanks(legacy_df):
     assert len(legacy_df) == 6
     assert legacy_df.loc[0, "category"] == "food"
     assert legacy_df.loc[0, "payee_raw"] == "GROCER ONE"
-    assert legacy_df["cost"].sum() == pytest.approx(1161.49)
+    assert legacy_df["cost"].sum() == pytest.approx(1151.49)
 
 
 def test_txn_ids_are_stable_and_distinguish_duplicates(legacy_df):

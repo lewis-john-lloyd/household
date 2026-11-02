@@ -126,7 +126,7 @@ def test_year_takes_year_to_date_from_the_last_stub_so_missing_stubs_still_count
 
 
 def test_employer_word():
-    assert flows.employer_word("ACME Widgets, LLC") == "ACME"
+    assert flows.employer_word("Acme Widgets, LLC") == "ACME"
     assert flows.payers(pd.DataFrame([{"employer": "Acme Inc", "person": "sam"}])) == {"ACME": "sam"}
 
 

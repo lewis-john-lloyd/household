@@ -65,8 +65,8 @@ def test_adp_lines_kinds_and_year_to_date():
 
 
 def test_adp_amounts_read_groups_into_numbers():
-    words = [(0, "-1"), (2, "234"), (6, "50"), (10, "40"), (13, "000"), (17, "25*")]
-    assert adp_statement._amounts(words, "x") == [(6, -1234.50, False), (17, 40000.25, True)]
+    words = [(0, "-1"), (2, "234"), (6, "56"), (10, "12"), (13, "345"), (17, "67*")]
+    assert adp_statement._amounts(words, "x") == [(6, -1234.56, False), (17, 12345.67, True)]
 
 
 def test_adp_rejects_a_misread_number():

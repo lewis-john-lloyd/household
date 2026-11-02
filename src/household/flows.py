@@ -141,7 +141,7 @@ def _year_flows(paystubs, months):
 
 
 def employer_word(employer):
-    """The word that names an employer on its deposits: "ACME Widgets, LLC" -> "ACME"."""
+    """The word that names an employer on its deposits: "Acme Widgets, LLC" -> "ACME"."""
     words = re.sub(r"[^A-Z ]", " ", str(employer).upper()).split()
     return next((w for w in words if len(w) >= 3), "")
 

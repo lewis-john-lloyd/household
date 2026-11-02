@@ -1,7 +1,7 @@
 """Seed files: a CSV whose header is exactly the columns of one seedable ledger table.
 
 The accounts, the category set, the aliases that map old category names onto
-it, the payee rules, household parameters and loans are short lists a person
+it, the payee rules, household parameters, loans and the history of pay changes are short lists a person
 decides once and edits rarely, so they arrive as a file in the inbox like
 everything else. Rows are keyed on the first column (a payee rule on its
 pattern and effective date, a parameter on its year, jurisdiction and key): a
@@ -20,11 +20,11 @@ from .. import schema
 
 NAME = "seed"
 SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules",
-            "loans")
+            "loans", "comp_events")
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
 KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],
-        "budget_rules": ["line", "effective"]}
+        "budget_rules": ["line", "effective"], "comp_events": ["effective", "person", "employer"]}
 
 
 def _table(text):

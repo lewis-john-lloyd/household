@@ -83,6 +83,10 @@ python tools/verify_tax_law.py <folder of source PDFs>
 
 It checks that each quote is on its cited page and states the value the code uses, that every bracket threshold appears, and that every row of Pub 15-T's annual married-filing-jointly table equals the brackets shifted by the table floor. Wisconsin prints no rate schedule or standard deduction formula, so those are proved by reproducing every row of the Form 1 tax table, standard deduction table and homeowner's credit table, and the amounts printed in the tax computation worksheet and Pub W-166. It exits nonzero on any failure, missing document, or uncited value.
 
+## Before pushing
+
+This repo is public, so a pre-push hook checks what is about to leave the machine. Turn it on once per clone with `git config core.hooksPath .githooks`. `tools/push_guard.py` checks every added line and commit message against the leak guard's patterns and against a private denylist of the household's real values (names, places, employers, account digits, and every amount with cents in the pay stubs and transactions, however it is written), kept outside the repo at `~/.config/household/denylist.txt`; then it runs the import guard and the tests. `tools/denylist.py` builds the denylist from ledger exports and a words file. Without a denylist the push stops (`HOUSEHOLD_NO_DENYLIST=1` skips that check; `HOUSEHOLD_PUSH_QUICK=1` skips the tests).
+
 ## Releases
 
 Notebooks pin a tag, for example `pip install git+https://github.com/lewis-john-lloyd/household@v0.0.1`. Upgrading is a deliberate edit of that tag; rolling back is reverting it.

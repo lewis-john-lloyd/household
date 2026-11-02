@@ -103,7 +103,7 @@ def _categorized(books):
     books["coverage"] = explained["coverage"]
     out = categorize.categorize(effective, books["rules"], books["decisions"],
                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,
-                                explanations=explained)
+                                explanations=explained, categories=books["categories"]["category"])
     return categorize.rename(out, books["aliases"])
 
 

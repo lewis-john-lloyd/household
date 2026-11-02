@@ -10,15 +10,23 @@ DUPLICATE_WINDOW_DAYS = 3
 def effective_transactions(transactions, corrections=None):
     """Apply superseding corrections (latest recorded_at per txn_id and field wins).
 
+    A `split` correction divides a line among categories ("kids 20; hobby 15.50;
+    family", categorize.parse_split); a line's category and its split replace
+    each other, so whichever was recorded later stands, in the `split` column.
     A `void` correction with value TRUE removes the transaction, which is how a
     confirmed duplicate leaves the books without deleting a ledger row; a later
     `void` FALSE restores it.
     """
     df = transactions.copy()
+    if "split" not in df:
+        df["split"] = ""
     if corrections is not None and not corrections.empty:
-        latest = (corrections.sort_values("recorded_at")
+        latest = (corrections.sort_values("recorded_at", kind="stable")
                   .groupby(["txn_id", "field"], as_index=False).last())
-        for field in ("category", "one_off", "note"):
+        either = latest["field"].isin(("category", "split"))
+        later = latest[either].sort_values("recorded_at", kind="stable").groupby("txn_id").tail(1)
+        latest = pd.concat([latest[~either], later])
+        for field in ("category", "split", "one_off", "note"):
             patch = latest[latest["field"] == field].set_index("txn_id")["value"]
             mask = df["txn_id"].isin(patch.index)
             df.loc[mask, field] = df.loc[mask, "txn_id"].map(patch)

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from household import categorize, schema, sheets
+from household import categorize, compute, schema, sheets
 from household.parsers import ParseError, seed
 
 COLUMNS = ["txn_id", "date", "account_id", "amount", "payee_raw", "category", "note", "era", "source"]
@@ -238,3 +238,93 @@ def test_a_payee_without_letters_is_asked_about_alone():
     out = by_id(categorize.categorize(frame(history() + [txn(1, "2025-08-01", "12345", -9.0),
                                                          txn(2, "2025-08-02", "67890", -9.0)])))
     assert out.loc[["t1", "t2"], "ask"].tolist() == ["line", "line"]
+
+
+# --- splits ---------------------------------------------------------------------------------------
+
+KNOWN = {"kids", "hobby", "gifts", "family", "media", "savings_529"}
+
+
+def test_a_split_takes_the_lines_sign_and_the_rest():
+    text = "Kids 20; hobby 15.50; gifts $40; family"  # leak-guard: allow (made up)
+    parts = categorize.parse_split(text, -87.37, KNOWN)
+    assert parts == [("kids", -20.0), ("hobby", -15.5), ("gifts", -40.0), ("family", -11.87)]
+    assert categorize.parse_split("kids 5, family 7.25", 12.25) == [("kids", 5.0), ("family", 7.25)]
+    assert categorize.parse_split("kids 1,005.00; family", -1010.0) == [("kids", -1005.0), ("family", -5.0)]
+    assert categorize.split_text(parts) == "kids 20.00; hobby 15.50; gifts 40.00; family 11.87"
+
+
+@pytest.mark.parametrize("text, reason", [
+    ("kids 20; hobby 15", "the parts come to 35.00, the line is 36.00"),
+    ("kids 40; family", "leaving nothing of the line's 36.00 for family"),
+    ("kids; family", "only one part can leave its amount out"),
+    ("kids 10; kids 26", "kids is named twice"),
+    ("davd 36", "not a category: davd"),
+    ("20 kids", "can't read"),
+    ("kids 0; family", "nothing for kids"),
+])
+def test_a_split_that_does_not_add_up_says_why(text, reason):
+    with pytest.raises(ValueError, match=reason):
+        categorize.parse_split(text, -36.0, KNOWN)
+
+
+def test_a_split_without_the_line_amount_keeps_the_rest_for_later():
+    assert categorize.parse_split("kids 20; family") == [("kids", 20.0), ("family", None)]
+    assert categorize.split_text([("kids", 20.0), ("family", None)]) == "kids 20.00; family"
+
+
+def test_a_persons_split_decides_the_line_and_counts_each_part():
+    rows = history() + [txn(1, "2025-08-01", "PAGE TURNER BOOKS 7", -87.37), txn(2, "2025-08-02", "QUILL", -9.0)]
+    df = frame(rows)
+    df["split"] = ""
+    df.loc[df["txn_id"] == "t1", "split"] = "kids 20; hobby 15.50; gifts 40; family"
+    df.loc[df["txn_id"] == "t2", "split"] = "kids 5; family 5"
+    out = by_id(categorize.categorize(df, categories=KNOWN | {"food", "petrol", "household"}))
+    assert out.loc["t1", ["category", "decided_by", "status"]].tolist() == ["gifts", "you, split", "decided"]
+    assert out.loc["t1", "splits"] == "kids -20.00; hobby -15.50; gifts -40.00; family -11.87"
+    assert out.loc["t2", "status"] == "open"
+    assert out.loc["t2", "decided_by"] == "your split: the parts come to 10.00, the line is 9.00"
+    parts = categorize.actual_rows(out.reset_index())
+    assert parts[parts["txn_id"] == "t1"].set_index("category")["amount"].to_dict() == {
+        "kids": -20.0, "hobby": -15.5, "gifts": -40.0, "family": -11.87}
+
+
+def test_the_later_of_a_category_and_a_split_stands():
+    txns = frame([txn(1, "2025-08-01", "PAGE TURNER BOOKS", -30.0, "media")])
+    corrections = pd.DataFrame([
+        {"txn_id": "t1", "field": "split", "value": "kids 10; family", "recorded_at": "2026-11-02T10:00:00"},
+        {"txn_id": "t1", "field": "category", "value": "family", "recorded_at": "2026-11-01T10:00:00"}])
+    effective = compute.effective_transactions(txns, corrections)
+    assert effective.iloc[0][["category", "split"]].tolist() == ["media", "kids 10; family"]
+    corrections.loc[1, "recorded_at"] = "2026-11-03T10:00:00"
+    effective = compute.effective_transactions(txns, corrections)
+    assert effective.iloc[0][["category", "split"]].tolist() == ["family", ""]
+
+
+def test_harvest_reads_a_split_answer_for_a_line():
+    review = pd.DataFrame([
+        {"key": "t1", "answer": "kids 20; hobby 15.50; gifts 40; family", "guess": "media", "total": -87.37,
+         "kind": "line", "note": ""},
+        {"key": "t2", "answer": "kids 20; family 5", "guess": "media", "total": -30.0, "kind": "line", "note": ""},
+        {"key": "QUILL", "answer": "kids 5; family", "guess": "media", "total": -9.0, "kind": "payee", "note": ""},
+        {"key": "t3", "answer": "kids 20; family", "guess": "", "total": "", "kind": "line", "note": ""},
+        {"key": "t4", "answer": "savings_529", "guess": "", "total": -50.0, "kind": "line", "note": ""},
+    ], columns=list(categorize.REVIEW_COLUMNS))
+    _, fixed, left = categorize.harvest(review, KNOWN, now="2026-11-02T00:00:00")
+    assert fixed[["txn_id", "field", "value"]].values.tolist() == [
+        ["t1", "split", "kids 20.00; hobby 15.50; gifts 40.00; family 11.87"],
+        ["t3", "split", "kids 20.00; family"],
+        ["t4", "category", "savings_529"]]
+    assert left[["key", "note"]].values.tolist() == [
+        ["t2", "split: the parts come to 25.00, the line is 30.00"],
+        ["QUILL", "a split answers one line: answer a merchant with one category"]]
+
+
+def test_a_line_typed_into_review_by_hand_stays_until_it_is_fixed():
+    rows = history() + [txn(1, "2025-08-01", "QUILL & INK", -12.0)]
+    carry = pd.DataFrame([{"key": "t9", "answer": "kids 20; family 5", "kind": "line", "total": "",
+                           "note": "split: the parts come to 25.00, the line is 30.00"},
+                          {"key": "GONE", "answer": "fod", "kind": "payee", "note": "not a category: fod"}])
+    q = categorize.queue(categorize.categorize(frame(rows)), carry=carry)
+    assert q["key"].tolist() == ["QUILL & INK", "t9"]
+    assert q.iloc[1]["note"] == "split: the parts come to 25.00, the line is 30.00"

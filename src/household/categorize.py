@@ -1,6 +1,8 @@
 """Categorization: give every transaction a category and record what decided it.
 
 Sources, first that applies wins:
+  you, split     a split a person set on the line (txn_corrections field split):
+                 categories and amounts that must come to the line's amount
   you            a category a person set on the line (txn_corrections), or the old
                  books' label on a legacy row, or a transfer pair
   rule           payee_rules: a pattern on the payee (and the bank's note, so a rule can
@@ -17,6 +19,9 @@ Sources, first that applies wins:
   model          a scikit-learn classifier trained every run on the old books and on
                  every answer since, decided only when it is confident (THRESHOLD)
   bank           the bank's own category, mapped; used only as a guess
+
+A split that does not add up, or names something that is not a category, puts
+the line in review with the reason, like any open line.
 
 Lines dated before REVIEW_FROM are never asked about; they take the best guess.
 Everything else that nothing decided goes to the review tab, grouped by payee so
@@ -49,6 +54,7 @@ STATE = re.compile(r"(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|M
                    r"NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)")
 NOISE = {"CO", "OP", "INC", "LLC", "COM", "WWW", "THE", "CORP", "LTD", "US", "USA"}
 KEY_WORDS = 3
+SPLIT_PART = re.compile(r"^(?P<category>[a-z][a-z0-9_]*)\s*[:=]?\s*(?:\$?(?P<amount>\d+(?:\.\d{1,2})?))?$")
 
 # lines an explanation download names; until it arrives they wait
 WAITING = (
@@ -283,8 +289,64 @@ def household_parameter(parameters, key, default=""):
     return str(hit["value"].iloc[-1]).strip() if len(hit) else default
 
 
+def parse_split(text, amount=None, known=None):
+    """[(category, signed amount)] from a split such as "kids 20; hobby 15.50; gifts 40; family".
+
+    Parts are separated by semicolons (or by commas when there is no semicolon);
+    each is a category and an amount, written as money with no sign. One part may
+    leave its amount out and takes what the others leave of the line. With the
+    line's amount given, the parts must come to it to the cent and take its sign;
+    without it they are only read, and the part with no amount stays None.
+    known, when given, is the set of categories a part may name. Raises
+    ValueError saying what is wrong.
+    """
+    text = str(text).strip().lower()
+    pieces = [p.strip() for p in (text.split(";") if ";" in text else text.split(","))]
+    parts, rest = [], None
+    for piece in filter(None, pieces):
+        m = SPLIT_PART.match(piece.replace(",", "") if ";" in text else piece)
+        if not m:
+            raise ValueError(f"can't read {piece!r}: write a category and an amount")
+        category, cents = m["category"], m["amount"]
+        if known is not None and category not in known:
+            raise ValueError(f"not a category: {category}")
+        if category in [c for c, _ in parts] + [rest]:
+            raise ValueError(f"{category} is named twice")
+        if cents is None:
+            if rest is not None:
+                raise ValueError(f"only one part can leave its amount out ({rest} and {category} do)")
+            rest = category
+            parts.append((category, None))
+            continue
+        value = round(float(cents) * 100)
+        if value <= 0:
+            raise ValueError(f"nothing for {category}")
+        parts.append((category, value))
+    if not parts:
+        raise ValueError("no parts")
+    given = sum(v for _, v in parts if v is not None)
+    if amount is None or str(amount).strip() in ("", "nan", "None"):  # checked against the line later
+        return [(c, None if v is None else v / 100) for c, v in parts]
+    line = round(abs(float(amount)) * 100)
+    sign = -1 if float(amount) < 0 else 1
+    if rest is not None:
+        if given >= line:
+            raise ValueError(f"the parts come to {given / 100:.2f}, leaving nothing of the line's "
+                             f"{line / 100:.2f} for {rest}")
+        parts = [(c, line - given if v is None else v) for c, v in parts]
+    elif given != line:
+        raise ValueError(f"the parts come to {given / 100:.2f}, the line is {line / 100:.2f}")
+    return [(c, sign * v / 100) for c, v in parts]
+
+
+def split_text(parts):
+    """The canonical text of a split, amounts unsigned: "kids 20.00; family 11.87" (or "family" for a
+    part still to take the rest)."""
+    return "; ".join(c if v is None else f"{c} {abs(v):.2f}" for c, v in parts)
+
+
 def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpaired_guess="",
-               explanations=None, review_from=REVIEW_FROM):
+               explanations=None, review_from=REVIEW_FROM, categories=None):
     """Every transaction with category, decided_by, confidence, status and, when open, how it is asked.
 
     transactions are effective (corrections applied), transfer pairs marked and
@@ -294,10 +356,14 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     Amazon split, each service's coverage). status is decided, open (asked in
     review) or waiting (for an explanation download); category is the decision
     or, failing one, the best guess, so totals are whole while the queue is
-    open; splits lists an explained line's parts ("household -20.00; food -5.50").
+    open; splits lists a split line's parts ("household -20.00; food -5.50"), from
+    a person's split or an explanation. categories: the names a person's split
+    may use (any, when not given).
     """
     df = transactions.copy().reset_index(drop=True)
     df["category"] = df["category"].astype(str).str.strip()
+    df["split"] = df["split"].astype(str).str.strip() if "split" in df else ""
+    known = None if categories is None else {str(c).strip() for c in categories}
     df["date"] = df["date"].astype(str).str[:10]
     explanations = explanations or {}
     named, split, covered = (explanations.get("payee", {}), explanations.get("split", {}),
@@ -313,7 +379,17 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     out = []  # one dict per row: category, source, confidence, status, ask, guess, splits
     df["note"] = df["note"].astype(str) if "note" in df else ""
     for r in df[["txn_id", "date", "payee_raw", "payee_text", "note", "amount", "era", "category",
-                 "key"]].itertuples(index=False):
+                 "key", "split"]].itertuples(index=False):
+        if r.split and r.split != "nan":
+            try:
+                parts = parse_split(r.split, r.amount, known)
+            except ValueError as e:  # ask about the line, saying why
+                out.append({"decided_by": f"your split: {e}", "ask": "line"})
+                continue
+            biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
+            out.append({"category": biggest, "decided_by": "you, split", "status": "decided",
+                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
+            continue
         if r.category:
             source = ("old books" if r.era == "legacy" else
                       "transfer pair" if r.category == "transfer" else "you")
@@ -470,6 +546,11 @@ def queue(categorized, carry=None):
             if key in kept.index:
                 out.at[i, "answer"] = kept.at[key, "answer"]
                 out.at[i, "note"] = kept.at[key, "note"]
+        # a row typed in by hand (a split for a decided line) stays, with its note, until it is fixed
+        typed = carry[~carry["key"].isin(set(out["key"])) & (carry.get("kind", "") == "line")]
+        typed = typed.reindex(columns=list(REVIEW_COLUMNS))
+        if not typed.empty:
+            out = pd.concat([out, typed.astype(object).where(typed.notna(), "")], ignore_index=True)
     return out
 
 
@@ -479,8 +560,12 @@ def harvest(review, categories, now=None):
     Returns (decisions, corrections, left): a payee answer becomes a
     proposal_decisions row for "payee:<key>" (the key as it stands in the tab,
     so editing it widens or narrows what the answer covers); a line answer
-    becomes a txn_corrections row. "y" takes the guess. Rows whose answer is not
-    a category stay, with the reason in note.
+    becomes a txn_corrections row. "y" takes the guess. A line's answer can be a
+    split ("kids 20; hobby 15.50; family", parse_split), checked against the
+    row's total when it has one; it becomes a split correction. A row typed in by
+    hand with a txn_id as key and kind line answers that line, so any line can be
+    split, decided or not. Rows whose answer is not a category or a split that
+    adds up stay, with the reason in note.
     """
     now = now or datetime.now(timezone.utc).isoformat(timespec="seconds")
     known = {str(c).strip() for c in categories}
@@ -491,6 +576,18 @@ def harvest(review, categories, now=None):
             continue
         category = str(r.get("guess", "")).strip() if answer.lower() in ACCEPT else answer.lower()
         key = str(r.get("key", "")).strip()
+        if key and category not in known and (";" in answer or "," in answer or re.search(r"\d", answer)):
+            if r.get("kind") != "line":
+                left.append({**r, "note": "a split answers one line: answer a merchant with one category"})
+                continue
+            try:
+                parts = parse_split(answer, r.get("total"), known)
+            except ValueError as e:
+                left.append({**r, "note": f"split: {e}"})
+                continue
+            corrections.append({"txn_id": key, "field": "split", "value": split_text(parts), "recorded_at": now,
+                                "reason": "review", "source": "hand"})
+            continue
         if category not in known or not key:
             left.append({**r, "note": f"not a category: {answer}" if key else "no key"})
             continue

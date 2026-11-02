@@ -6,10 +6,11 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
+  nodeTotals: (rows: SankeyRow[]) => NodeTotal[];
 };
 
 const VALUES: unknown[][] = [
@@ -68,4 +69,19 @@ test("an edge that would close a cycle is dropped, the smaller one", () => {
 
 test("nothing for a period that is not there", () => {
   assert.deepEqual(shape.toSankeyRows(shape.parseRows(VALUES), "1999", "group").rows, []);
+});
+
+test("node totals: what each node took in and sent out, biggest first", () => {
+  const totals = shape.nodeTotals([
+    ["net pay", "accounts", 2500], ["other income", "accounts", 100.005],
+    ["accounts", "food", 400], ["accounts", "pets", 99.99], ["accounts", "to cash balances", 2100.02],
+  ]);
+  assert.deepEqual(totals.map((t) => [t.name, t.into, t.out, t.total]), [
+    ["accounts", 2600.01, 2600.01, 2600.01],
+    ["net pay", 0, 2500, 2500],
+    ["to cash balances", 2100.02, 0, 2100.02],
+    ["food", 400, 0, 400],
+    ["other income", 0, 100.01, 100.01],
+    ["pets", 99.99, 0, 99.99],
+  ]);
 });

@@ -108,3 +108,37 @@ function toSankeyRows(rows: FlowRow[], period: string, level: string): { rows: S
   }
   return { rows: kept, dropped };
 }
+
+interface NodeTotal {
+  name: string;
+  into: number;
+  out: number;
+  total: number;
+}
+
+/**
+ * Each node's money in and out across the chart's rows, biggest first. A node's total is the larger
+ * of the two: everything a source sent, everything a sink received, what passed through a node in the
+ * middle (in and out differ there only by rounding).
+ */
+function nodeTotals(rows: SankeyRow[]): NodeTotal[] {
+  const by = new Map<string, NodeTotal>();
+  const at = (name: string): NodeTotal => {
+    let t = by.get(name);
+    if (!t) {
+      t = { name, into: 0, out: 0, total: 0 };
+      by.set(name, t);
+    }
+    return t;
+  };
+  for (const [source, target, amount] of rows) {
+    at(source).out += amount;
+    at(target).into += amount;
+  }
+  const out = Array.from(by.values()).map((t) => {
+    const into = roundCents(t.into);
+    const sent = roundCents(t.out);
+    return { name: t.name, into, out: sent, total: Math.max(into, sent) };
+  });
+  return out.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}

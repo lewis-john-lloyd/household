@@ -16,6 +16,12 @@
       button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
       #chart { width: 100%; min-height: 480px; }
       #note { color: var(--muted); margin-top: 8px; }
+      details { margin-top: 16px; }
+      summary { cursor: pointer; font-weight: 600; }
+      table { border-collapse: collapse; margin-top: 8px; }
+      th, td { padding: 3px 12px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
+      th:first-child, td:first-child { text-align: left; }
+      td { font-variant-numeric: tabular-nums; }
     </style>
   </head>
   <body>
@@ -29,6 +35,13 @@
     </header>
     <div id="chart">Loading…</div>
     <div id="note"></div>
+    <details id="totals" open>
+      <summary>Totals</summary>
+      <table>
+        <thead><tr><th>Node</th><th>In</th><th>Out</th></tr></thead>
+        <tbody id="totals-body"></tbody>
+      </table>
+    </details>
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
       var level = "group";
@@ -44,16 +57,20 @@
         if (!result.rows.length) {
           chart.textContent = "No flows for this period.";
           note.textContent = "";
+          drawTotals([]);
           return;
         }
+        var label = {};  // each node shows its total after its name
+        result.totals.forEach(function (t) { label[t.name] = t.name + "  " + money.format(t.total); });
         var data = new google.visualization.DataTable();
         data.addColumn("string", "From");
         data.addColumn("string", "To");
         data.addColumn("number", "Amount");
         data.addColumn({ type: "string", role: "tooltip" });
         data.addRows(result.rows.map(function (r) {
-          return [r[0], r[1], r[2], r[0] + " → " + r[1] + ": " + money.format(r[2])];
+          return [label[r[0]], label[r[1]], r[2], r[0] + " → " + r[1] + ": " + money.format(r[2])];
         }));
+        drawTotals(result.totals);
         var height = Math.max(480, 28 * result.rows.length);
         chart.style.height = height + "px";
         chart.textContent = "";
@@ -62,6 +79,20 @@
           ? "Left out to keep the chart drawable (they would loop back): " +
             result.dropped.map(function (r) { return r[0] + " → " + r[1]; }).join(", ")
           : "";
+      }
+
+      function drawTotals(totals) {
+        var body = document.getElementById("totals-body");
+        body.textContent = "";
+        totals.forEach(function (t) {
+          var row = document.createElement("tr");
+          [t.name, t.into ? money.format(t.into) : "", t.out ? money.format(t.out) : ""].forEach(function (text) {
+            var cell = document.createElement("td");
+            cell.textContent = text;
+            row.appendChild(cell);
+          });
+          body.appendChild(row);
+        });
       }
 
       function load() {

@@ -196,3 +196,14 @@ def test_a_header_padded_by_its_cell_format_still_matches():
     ledger.tabs["budget_rules"].rows.append(["food"] + [""] * (len(t.columns) - 1))
     assert sheets.ensure_tables(ledger, schema.LEDGER) == []
     assert list(sheets.read_table(ledger, t).columns) == list(t.columns)
+
+
+def test_dates_typed_into_sheets_read_back_as_iso():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    t = schema.table(schema.LEDGER, "budget_rules")
+    blank = [""] * (len(t.columns) - 2)
+    ledger.tabs["budget_rules"].rows += [["food", 45839] + blank, ["fuel", "7/1/2025"] + blank,
+                                         ["rent", "2025-07-01"] + blank]
+    assert sheets.read_table(ledger, t)["effective"].tolist() == ["2025-07-01"] * 3
+    assert sheets.iso_date("not a date") == "not a date" and sheets.iso_date(True) is True

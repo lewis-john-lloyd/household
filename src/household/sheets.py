@@ -5,6 +5,9 @@ spreadsheet unless it is the Reports spreadsheet, so a bug in compute cannot
 overwrite stored facts.
 """
 
+import re
+from datetime import date, timedelta
+
 import pandas as pd
 
 REPORTS_TITLE = "reports"
@@ -127,8 +130,28 @@ def _drop_default_sheet(spreadsheet, existing, tables):
             spreadsheet.del_worksheet(ws)
 
 
+DATE_COLUMNS = {"date", "effective", "originated", "as_of", "period_start", "period_end", "covers_from", "covers_to"}
+SHEETS_EPOCH = date(1899, 12, 30)  # day 0 of a Sheets date serial
+US_DATE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+
+
+def is_date_column(name):
+    return name in DATE_COLUMNS or name.endswith("_date")
+
+
+def iso_date(value):
+    """A date cell as YYYY-MM-DD: a date typed into Sheets reads back as a serial day count (45839) or,
+    formatted, as 7/1/2025; text already in ISO form, or anything else, is left as it is."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and 1 <= value < 200000:
+        return (SHEETS_EPOCH + timedelta(days=int(value))).isoformat()
+    m = US_DATE.match(str(value).strip())
+    if m:
+        return date(int(m.group(3)), int(m.group(1)), int(m.group(2))).isoformat()
+    return value
+
+
 def read_table(spreadsheet, t):
-    """Read a declared table as a DataFrame of raw (unformatted) values."""
+    """Read a declared table as a DataFrame of raw (unformatted) values, its date columns as YYYY-MM-DD."""
     rows = spreadsheet.worksheet(t.name).get_values(value_render_option=UNFORMATTED)
     if not rows:
         return pd.DataFrame(columns=list(t.columns))
@@ -136,7 +159,10 @@ def read_table(spreadsheet, t):
     if tuple(header) != t.columns:
         raise SchemaMismatch(f"{t.name}: header {header} != {list(t.columns)}")
     width = len(header)
-    return pd.DataFrame([r + [""] * (width - len(r)) for r in body], columns=header)
+    df = pd.DataFrame([r + [""] * (width - len(r)) for r in body], columns=header)
+    for column in [c for c in header if is_date_column(c)]:
+        df[column] = df[column].map(iso_date)
+    return df
 
 
 def append_rows(spreadsheet, t, df):

@@ -57,7 +57,6 @@ LEDGER = (
            "per": ("monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually")}),
     Table("allocation_targets", ("effective", "node", "parent", "weight")),
     Table("parameters", ("year", "jurisdiction", "key", "value", "source")),
-    Table("tax_brackets", ("year", "jurisdiction", "filing_status", "floor", "rate")),
     Table("return_facts", ("year", "kind", "key", "person", "value", "source_doc", "note", "doc_id"),
           {"kind": ("input", "filed", "estimate")}),
     # the household's history of pay changes: each raise, promotion, new job or schedule change

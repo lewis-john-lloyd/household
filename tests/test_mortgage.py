@@ -89,3 +89,4 @@ def test_loans_can_be_seeded():
             "home,Lender,2020-01-15,200000,6,360,300\n")
     result = seed.parse(text)
     assert result.keys == {"loans": ["loan_id"]} and len(result.tables["loans"]) == 1
+

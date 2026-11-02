@@ -193,3 +193,12 @@ def test_seeds_for_categories_and_aliases():
     assert seed.parse(aliases).tables["category_aliases"]["category"].tolist() == ["food", "car_payment"]
     with pytest.raises(ParseError, match="no category"):
         seed.parse(aliases + "old,,\n")
+
+
+def test_pay_history_can_be_seeded():
+    text = ("effective,person,employer,salary,band,rating,fte,note\n"
+            "2020-04-01,alex,Acme,90000,B3,meets,1,annual raise\n"
+            "2021-01-01,alex,Acme,95000,B4,,0.6,promotion; part time\n")
+    result = seed.parse(text)
+    assert result.keys == {"comp_events": ["effective", "person", "employer"]}
+    assert result.tables["comp_events"]["fte"].tolist() == ["1", "0.6"]

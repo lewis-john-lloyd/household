@@ -60,7 +60,8 @@ LEDGER = (
     Table("tax_brackets", ("year", "jurisdiction", "filing_status", "floor", "rate")),
     Table("return_facts", ("year", "kind", "key", "person", "value", "source_doc", "note", "doc_id"),
           {"kind": ("input", "filed", "estimate")}),
-    Table("comp_events", ("effective", "person", "employer", "salary", "band", "fte")),
+    # the household's history of pay changes: each raise, promotion, new job or schedule change
+    Table("comp_events", ("effective", "person", "employer", "salary", "band", "rating", "fte", "note")),
     Table("paystubs", ("pay_date", "period_start", "period_end", "person", "employer",
                        "stub_id", "line_item", "kind", "amount", "ytd_amount", "doc_id"),
           {"kind": ("income", "pre_tax", "tax", "post_tax", "employer", "memo")}),

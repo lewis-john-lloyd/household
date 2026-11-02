@@ -21,10 +21,11 @@ priority, and a rule:
                 category spent
   scheduled     an explicit amount in the month of `effective`; a line can have
                 any number of these rows (tuition installments)
-  end           the line stops from `effective` on
+  end           the line stops from the month of `effective` on
 
-A line's state in a month is its latest non-scheduled row effective on or
-before the month's first day, so a change takes effect from its month and the
+A line's state in a month is its latest non-scheduled row whose effective date
+falls in that month or before, so a change takes effect for the whole month it
+is dated in (an end dated 2026-05-15 leaves May without a target) and the
 history of targets stays reproducible. A missing or malformed amount is a
 warning in the report's basis column, never an error.
 """

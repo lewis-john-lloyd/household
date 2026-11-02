@@ -291,3 +291,27 @@ def test_a_move_the_batch_rejects_is_retried_alone(setup, monkeypatch):
     out = inbox.process(ledger, drive, "root")
     assert [s["status"] for s in out] == ["ingested", "ingested"], out
     assert drive.names_in(box) == []
+
+
+def test_a_file_filed_unread_is_read_again_once_a_parser_knows_it(setup, monkeypatch):
+    import household.parsers as parsers
+    from test_adp_statement import text as adp_text
+
+    drive, ledger, box, record = setup
+    stub = adp_text().encode()
+    without = tuple(p for p in parsers.PARSERS if p is not parsers.adp_statement)
+    monkeypatch.setattr(parsers, "PARSERS", without)
+    drive.add("stub.txt", box, "text/plain", stub)
+    [first] = inbox.process(ledger, drive, "root")
+    assert first["parser"] == "documents" and rows(ledger, "paystubs").empty
+
+    drive.add("stub.txt", box, "text/plain", stub)  # the same file again, still no parser: a duplicate
+    assert inbox.process(ledger, drive, "root")[0]["status"] == "duplicate"
+
+    monkeypatch.setattr(parsers, "PARSERS", without[:-1] + (parsers.adp_statement, without[-1]))
+    drive.add("stub.txt", box, "text/plain", stub)
+    [again] = inbox.process(ledger, drive, "root")
+    assert again["status"] == "ingested" and again["parser"] == "adp_statement"
+    assert len(rows(ledger, "paystubs")) > 0
+    docs = rows(ledger, "source_documents")
+    assert docs["kind"].tolist() == ["paystub_unparsed", "paystub"]  # the newer row supersedes

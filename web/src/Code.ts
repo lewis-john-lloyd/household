@@ -38,7 +38,8 @@ function getPeriods(): string[] {
   return periods(readFlows_());
 }
 
-/** Sankey rows for one period ("2026" or "2026-10") at one level ("category" or "group"). */
-function getFlows(period: string, level: string): { rows: SankeyRow[]; dropped: SankeyRow[] } {
-  return toSankeyRows(readFlows_(), period, level);
+/** Sankey rows for one period ("2026" or "2026-10") at one level ("category" or "group"), with each node's total. */
+function getFlows(period: string, level: string): { rows: SankeyRow[]; dropped: SankeyRow[]; totals: NodeTotal[] } {
+  const { rows, dropped } = toSankeyRows(readFlows_(), period, level);
+  return { rows, dropped, totals: nodeTotals(rows) };
 }

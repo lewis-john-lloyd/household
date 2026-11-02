@@ -22,6 +22,9 @@
       th, td { padding: 3px 12px 3px 0; text-align: right; border-bottom: 1px solid var(--line); }
       th:first-child, td:first-child { text-align: left; }
       td { font-variant-numeric: tabular-nums; }
+      th button.sort { border: 0; padding: 0; background: none; font-weight: 600; cursor: pointer; }
+      th button.sort[data-dir="asc"]::after { content: " ▲"; }
+      th button.sort[data-dir="desc"]::after { content: " ▼"; }
     </style>
   </head>
   <body>
@@ -38,7 +41,11 @@
     <details id="totals" open>
       <summary>Totals</summary>
       <table>
-        <thead><tr><th>Node</th><th>In</th><th>Out</th></tr></thead>
+        <thead><tr>
+          <th><button class="sort" data-key="name">Node</button></th>
+          <th><button class="sort" data-key="into">In</button></th>
+          <th><button class="sort" data-key="out">Out</button></th>
+        </tr></thead>
         <tbody id="totals-body"></tbody>
       </table>
     </details>
@@ -81,10 +88,36 @@
           : "";
       }
 
-      function drawTotals(totals) {
+      var totals = [];
+      var sortKey = "total", sortDir = "desc";  // biggest first until a column header is clicked
+
+      function sorted(list) {
+        var sign = sortDir === "asc" ? 1 : -1;
+        return list.slice().sort(function (a, b) {
+          var x = a[sortKey], y = b[sortKey];
+          var by = typeof x === "string" ? x.localeCompare(y) : x - y;
+          return sign * by || a.name.localeCompare(b.name);
+        });
+      }
+
+      function sortBy(key) {
+        if (sortKey === key) {
+          sortDir = sortDir === "asc" ? "desc" : "asc";
+        } else {
+          sortKey = key;
+          sortDir = key === "name" ? "asc" : "desc";  // names A to Z, amounts biggest first
+        }
+        drawTotals(totals);
+      }
+
+      function drawTotals(list) {
+        totals = list;
+        document.querySelectorAll("th button.sort").forEach(function (b) {
+          if (b.dataset.key === sortKey) b.dataset.dir = sortDir; else delete b.dataset.dir;
+        });
         var body = document.getElementById("totals-body");
         body.textContent = "";
-        totals.forEach(function (t) {
+        sorted(totals).forEach(function (t) {
           var row = document.createElement("tr");
           [t.name, t.into ? money.format(t.into) : "", t.out ? money.format(t.out) : ""].forEach(function (text) {
             var cell = document.createElement("td");
@@ -123,6 +156,9 @@
           select.addEventListener("change", load);
           document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
           document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
+          document.querySelectorAll("th button.sort").forEach(function (b) {
+            b.addEventListener("click", function () { sortBy(b.dataset.key); });
+          });
           load();
         }).getPeriods();
       });

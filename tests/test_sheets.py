@@ -171,3 +171,18 @@ def test_a_reports_table_with_rows_takes_a_new_header_but_the_ledger_never_does(
     sheets.append_rows(ledger, old, pd.DataFrame([{"year": 2026, "scenario": "as is", "run_id": "r"}]))
     with pytest.raises(sheets.SchemaMismatch):
         sheets.ensure_tables(ledger, (new,))
+
+
+def test_dropdowns_are_cleared_then_set_so_an_old_layout_leaves_none_behind():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.batch_updates.clear()
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    requests = [r["setDataValidation"] for body in ledger.batch_updates for r in body["requests"]
+                if "setDataValidation" in r]
+    ids = {name: tab.id for name, tab in ledger.tabs.items()}
+    budget = [r for r in requests if r["range"]["sheetId"] == ids["budget_rules"]]
+    assert "rule" not in budget[0] and "startColumnIndex" not in budget[0]["range"]  # a clear, first
+    assert len(budget) == 1 + len(schema.table(schema.LEDGER, "budget_rules").enums)
+    review = [r for r in requests if r["range"]["sheetId"] == ids["review"]]
+    assert all("rule" in r for r in review)  # the review tab's answer dropdown is left alone

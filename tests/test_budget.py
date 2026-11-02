@@ -114,3 +114,11 @@ def test_budget_rules_seed_keys_on_line_and_date():
             "tuition,2026-08-01,tuition,school,high,scheduled,7500,,fall\n"
             "tuition,2027-01-01,tuition,school,high,scheduled,7500,,spring\n")
     assert seed.parse(text).keys == {"budget_rules": ["line", "effective"]}
+
+
+def test_a_line_name_with_stray_spaces_or_symbols_is_still_one_line():
+    out = budget.targets(rules(
+        ["Kids' food & snacks", "2026-01-01", "food", "bills", "high", "fixed", "100", "monthly", ""],
+        ["Kids' food & snacks ", "2026-03-01", "food", "bills", "high", "end", "", "", ""]), None, "2026-04")
+    assert out["line"].unique().tolist() == ["Kids' food & snacks"]
+    assert out["month"].tolist() == ["2026-01", "2026-02"]

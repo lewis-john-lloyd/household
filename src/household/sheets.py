@@ -53,10 +53,9 @@ def ensure_tables(spreadsheet, tables):
             migrate.append((t, existing[t.name], len(header)))
     if migrate:
         _migrate_empty_tables(spreadsheet, migrate)
-    refresh = [_validation(existing[t.name].id, t, column, values)
-               for t in present if t not in [m[0] for m in migrate]
-               for column, values in t.enums.items()]
-    if refresh:  # keeps dropdowns in step with the schema; one call
+    refresh = [r for t in present if t not in [m[0] for m in migrate]
+               for r in _dropdowns(existing[t.name].id, t)]
+    if refresh:  # keeps dropdowns in step with the schema, stale ones cleared; one call
         spreadsheet.batch_update({"requests": refresh})
     missing = [t for t in tables if t.name not in existing]
     if missing:
@@ -77,10 +76,20 @@ def _migrate_empty_tables(spreadsheet, migrate):
         {"range": f"'{t.name}'!A1",
          "values": [list(t.columns) + [""] * max(0, old_width - len(t.columns))]}
         for t, ws, old_width in migrate]})
-    validations = [_validation(ws.id, t, column, values)
-                   for t, ws, _ in migrate for column, values in t.enums.items()]
+    validations = [r for t, ws, _ in migrate for r in _dropdowns(ws.id, t)]
     if validations:
         spreadsheet.batch_update({"requests": validations})
+
+
+def _dropdowns(sheet_id, t):
+    """Requests that clear a tab's dropdowns below the header, then set the schema's.
+
+    Clearing first drops a dropdown a column kept from an older layout of the tab (a "per" list
+    left on the column that now holds categories). The review tab keeps its own: its answer
+    dropdown is set when the tab is rewritten.
+    """
+    clear = [] if t.name == REVIEW else [{"setDataValidation": {"range": {"sheetId": sheet_id, "startRowIndex": 1}}}]
+    return clear + [_validation(sheet_id, t, column, values) for column, values in t.enums.items()]
 
 
 def _create_tables(spreadsheet, tables):

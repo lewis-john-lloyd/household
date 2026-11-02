@@ -4,7 +4,7 @@ import pytest
 from household import mortgage
 from household.parsers import seed
 
-LOAN = {"loan_id": "home", "lender": "Lender", "originated": "2020-01-15", "principal": "200000", "rate": "6",
+LOAN = {"loan_id": "home", "lender": "Lender", "originated": "2019-12-15", "principal": "200000", "rate": "6",
         "term_months": "360", "escrow": ""}
 
 
@@ -17,6 +17,10 @@ def run(loan=LOAN, ev=None, through="2050-12"):
     rows, notes = mortgage.amortize(loan, ev, through)
     assert notes == []
     return rows.set_index("month")
+
+
+def test_first_payment_is_the_second_month_after_closing():
+    assert run(dict(LOAN, originated="2025-05-07")).index[0] == "2025-07"
 
 
 def test_textbook_thirty_year_schedule():

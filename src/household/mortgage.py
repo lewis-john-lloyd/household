@@ -2,7 +2,11 @@
 
 A loan row (loans) gives the original principal, the annual rate, the term in
 months, the origination date and, when the payment includes escrow, the
-monthly escrow amount. Payments start the month after origination. Each month:
+monthly escrow amount (mortgage insurance paid with the payment counts as escrow
+here: it comes off before principal and interest). Interest is paid in
+arrears and the closing prepays the rest of the closing month, so the first
+payment is due the second month after origination (closing in May, first
+payment in July). Each month:
 
   1. a rate_change dated that month sets the new annual rate (its amount) and
      re-amortizes the balance over the months left;
@@ -68,7 +72,7 @@ def amortize(loan, events=None, through_month=None):
         principal = _money(loan["principal"])
         rate = _rate(loan["rate"])
         term = int(float(loan["term_months"]))
-        start = _next_month(_month(loan["originated"]))
+        start = _next_month(_next_month(_month(loan["originated"])))
     except (KeyError, TypeError, ValueError):
         return pd.DataFrame(columns=COLUMNS), [f"{loan_id or 'a loan'}: needs principal, rate, term_months and "
                                                "originated to be amortized; skipped"]

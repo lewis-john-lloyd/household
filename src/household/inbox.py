@@ -3,7 +3,8 @@
 A run has three phases.
 
   1. Read: for every file in household_finances/inbox, download and hash it.
-     A file already registered is a duplicate. Otherwise identify and parse it
+     A file already registered is a duplicate, unless it was filed unread
+     (kind ending "_unparsed"), which is read again. Otherwise identify and parse it
      (a parser's self-checks must pass), and stage the rows whose key is not
      already in the ledger or staged earlier in this run, so an overlapping
      export adds nothing twice. A file whose rows are all present already is
@@ -253,6 +254,8 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     registered = ledger_tables.read("source_documents")
     clock.add("read ledger", started)
     by_sha = dict(zip(registered["sha256"], registered["drive_link"]))
+    kinds = dict(zip(registered["sha256"], registered["kind"].astype(str)))  # the latest row for a file wins
+    unparsed = {sha for sha, kind in kinds.items() if kind.endswith("_unparsed")}
     trimmed = set(registered.loc[registered["parser"].isin(list(ZIP_PARSERS)), "sha256"])
     names = dict(zip(registered["doc_id"], registered["original_name"]))
     summaries, moves = [], []
@@ -265,7 +268,7 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
         started = time.perf_counter()
         try:
             move_to = _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock,
-                                record, trimmed)
+                                record, trimmed, unparsed)
             if move_to:
                 moves.append((f, summary, move_to))
         except Exception as e:  # keep going; the file stays in the inbox for the next run
@@ -314,8 +317,13 @@ def _link(file_id):
 
 
 def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock, record=None,
-              trimmed=None):
-    """Phase 1 for one file: returns (folder, name) to move it to ("trash" too), or None to leave it."""
+              trimmed=None, unparsed=None):
+    """Phase 1 for one file: returns (folder, name) to move it to ("trash" too), or None to leave it.
+
+    A file sent before is a duplicate, unless it was filed unread (a pay stub in a layout no parser
+    knew then): that one is read again, and if a parser reads it now, it is ingested like a new file
+    and its new source_documents row supersedes the old one.
+    """
     tables = ledger_tables.spec
     started = time.perf_counter()
     data = download(drive, f["id"])
@@ -323,7 +331,8 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
     sha = hashlib.sha256(data).hexdigest()
     unfiled = sha in by_sha and by_sha[sha] == _link(f["id"])  # registered, move had failed
     trimmed = set() if trimmed is None else trimmed
-    if sha in by_sha and not unfiled:
+    retry = sha in (unparsed or set()) and not unfiled
+    if sha in by_sha and not unfiled and not retry:
         summary["status"] = "duplicate"
         return ("trash" if sha in trimmed else "duplicates", f["name"])
 
@@ -350,6 +359,11 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
         return None
     finally:
         clock.add("parse", started)
+    if retry and result.kind.endswith("_unparsed"):  # still no parser for it
+        summary["status"] = "duplicate"
+        return ("duplicates", f["name"])
+    if retry:
+        unparsed.discard(sha)
     new_name = canonical_name(result, sha, f["name"])
     if result.record is not None:
         new_name = new_name.rsplit(".", 1)[0] + ".csv"

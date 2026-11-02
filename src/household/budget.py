@@ -6,11 +6,16 @@ priority, and a rule:
 
   fixed         amount per `per` (monthly, biweekly, weekly, semi_monthly,
                 quarterly, semi_annually, annually), normalized to a month
-  lookback      mean plus LOOKBACK_SIGMA standard deviations of the category's
-                spending in the same three calendar months a year earlier
-                (for October 2026: September to November 2025), the old
-                budget-reports formula; amount per `per` is the fallback while
-                there is no year-earlier history
+  seasonal      mean plus LOOKBACK_SIGMA standard deviations of the category's
+                spending in the three calendar months centered on the same
+                month a year earlier (for October 2026: September to November
+                2025), the old budget-reports formula; amount per `per` is the
+                fallback while there is no year-earlier history. "lookback" is
+                its earlier name and still works
+  trailing      the same formula over the four months before this one (for
+                October 2026: June to September 2026), for spending that
+                follows recent habits more than the season; amount per `per`
+                is the fallback while there is no recent history
   sinking_fund  amount per `per` (usually annually) set aside each month, with a
                 balance: what was set aside since the line began less what the
                 category spent
@@ -30,6 +35,8 @@ import pandas as pd
 PER_MONTH = {"monthly": 1.0, "biweekly": 26 / 12, "weekly": 52 / 12, "semi_monthly": 2.0, "quarterly": 1 / 3,
              "semi_annually": 1 / 6, "annually": 1 / 12, "": 1.0}
 LOOKBACK_SIGMA = 0.25
+SEASONAL_WINDOW = (-13, -12, -11)  # months from the budget month: the same month a year earlier, centered
+TRAILING_WINDOW = (-4, -3, -2, -1)  # the four months before the budget month
 TARGET_COLUMNS = ["month", "line", "category", "account", "priority", "rule", "target", "basis"]
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "": 3}
 
@@ -108,19 +115,25 @@ def _rule_target(state, month, spend):
     if rule in ("fixed", "sinking_fund"):
         value, why = _per_month(state)
         return (None, why) if value is None else (value, f"{rule}: {why}")
-    if rule == "lookback":
-        category = str(state["category"]).strip()
-        window = [_shift(month, n) for n in (-13, -12, -11)]
-        history = [spend.get((category, m)) for m in window]
-        if all(h is None for h in history):
-            value, why = _per_month(state)
-            if value is None:
-                return None, "lookback: no history a year earlier and no fallback amount"
-            return value, f"lookback: no history a year earlier, fallback {why}"
-        values = np.array([h or 0.0 for h in history])
-        value = values.mean() + LOOKBACK_SIGMA * values.std(ddof=1)
-        return value, f"lookback {window[0]} to {window[-1]}: mean {values.mean():.2f} + {LOOKBACK_SIGMA} sd"
+    if rule in ("seasonal", "lookback", "trailing"):
+        window = TRAILING_WINDOW if rule == "trailing" else SEASONAL_WINDOW
+        return _from_history(state, month, spend, rule, [_shift(month, n) for n in window])
     return None, f"unknown rule {rule!r}"
+
+
+def _from_history(state, month, spend, rule, window):
+    """Mean plus LOOKBACK_SIGMA standard deviations of the category's spending over the window's months
+    (a month with no spending counts as zero), or the line's amount while none of them has any."""
+    category = str(state["category"]).strip()
+    history = [spend.get((category, m)) for m in window]
+    if all(h is None for h in history):
+        value, why = _per_month(state)
+        if value is None:
+            return None, f"{rule}: no history for {window[0]} to {window[-1]} and no fallback amount"
+        return value, f"{rule}: no history for {window[0]} to {window[-1]}, fallback {why}"
+    values = np.array([h or 0.0 for h in history])
+    value = values.mean() + LOOKBACK_SIGMA * values.std(ddof=1)
+    return value, f"{rule} {window[0]} to {window[-1]}: mean {values.mean():.2f} + {LOOKBACK_SIGMA} sd"
 
 
 def _not_spending(categories):

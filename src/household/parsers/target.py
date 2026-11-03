@@ -11,7 +11,10 @@ their department (CLOTHES, SHOES), so they map to clothing the way Amazon's
 departments do; everything else takes the default.
 
 Only purchases linked to the account appear: online orders, and store trips
-paid with a card or the Target Circle number the account knows.
+paid with a card or the Target Circle number the account knows. An online
+order's invoices are its charges, so a file can list each invoice as its own
+order (its id and date, the invoice total, and each item's total as the price),
+and each charge then matches to the cent. An order that cost nothing is left out.
 """
 
 import csv
@@ -61,6 +64,8 @@ def parse(text):
             prices = [round(float(p) * 100) * int(q) for p, q in zip(order["price"], order["qty"])]
         except ValueError as e:
             raise ParseError(f"{NAME}: order {order_id}: bad amount") from e
+        if total <= 0 or sum(prices) <= 0:  # free (a replacement, a gift card at no cost): no charge to explain
+            continue
         for n, (r, cents) in enumerate(zip(order.to_dict("records"), _shares(prices, total))):
             item = " ".join(r["item"].split())
             if int(r["qty"]) > 1:

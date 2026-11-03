@@ -85,15 +85,22 @@ def denied(text, amounts, words):
     return hits + sorted(amounts_in(text) & amounts)
 
 
-def outgoing(lines):
-    """git log range arguments for each ref git says it is pushing (stdin of pre-push)."""
+def known(sha):
+    return git_bytes("cat-file", "-e", f"{sha}^{{commit}}") is not None
+
+
+def outgoing(lines, exists=known):
+    """git log range arguments for each ref git says it is pushing (stdin of pre-push). A new ref, or
+    one whose remote commit this clone does not have (a force push of rewritten history), checks
+    everything not already on a remote."""
     out = []
     for line in lines:
         parts = line.split()
         if len(parts) != 4 or parts[1] == ZERO:  # a deletion pushes nothing
             continue
         local, remote = parts[1], parts[3]
-        out.append([local, "--not", "--remotes"] if remote == ZERO else [f"{remote}..{local}"])
+        new = remote == ZERO or not exists(remote)
+        out.append([local, "--not", "--remotes"] if new else [f"{remote}..{local}"])
     return out
 
 

@@ -87,7 +87,7 @@ def test_scheduled_amounts_land_in_their_month():
 
 
 def test_a_bad_amount_is_a_warning_not_an_error():
-    out = budget.targets(rules(["gym", "2026-01-01", "alex", "alex", "low", "fixed", "abc", "monthly", ""]),
+    out = budget.targets(rules(["gym", "2026-01-01", "hobby", "hobby", "low", "fixed", "abc", "monthly", ""]),
                          None, "2026-01")
     assert out["target"].tolist() == [0.0] and "no usable amount" in out["basis"].iloc[0]
 

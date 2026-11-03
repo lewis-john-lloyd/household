@@ -8,6 +8,10 @@ rejects:
   - dynamic code: eval, exec, compile, __import__, and getattr with a computed name.
 
 Widening ALLOWED is a deliberate, reviewable change to this file.
+
+This is an import policy, not a sandbox: an allowed library, and the Google
+clients with the owner's sign-in, can do whatever they do. What keeps a run safe
+is reviewing a release before the notebook pins it; this keeps that review small.
 """
 
 import ast

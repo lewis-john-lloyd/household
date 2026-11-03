@@ -133,3 +133,42 @@ def test_leak_guard_reads_a_listed_pdf_and_refuses_an_unreadable_one(tmp_path, m
     assert [n for _, n, _ in push_guard.leak_guard.scan("tests/fixtures/x.pdf")] == ["listed PDF that can't be read"]
     (tmp_path / "y.jpg").write_bytes(b"\xff\xd8\xff")
     assert [n for _, n, _ in push_guard.leak_guard.scan("y.jpg")] == [push_guard.leak_guard.BINARY]
+
+
+def _pushed(tmp_path, monkeypatch, steps):
+    """push_guard.check over commits made by steps, each a function of the work tree, after a first push."""
+    work = tmp_path / "work"
+    git(tmp_path, "init", "-q", str(work))
+    for k, v in (("user.email", "t@example.com"), ("user.name", "t")):
+        git(work, "config", k, v)
+    (work / "a.py").write_text("x = 1\n")
+    git(work, "add", ".")
+    git(work, "commit", "-qm", "start")
+    base = git(work, "rev-parse", "HEAD")
+    for n, step in enumerate(steps):
+        step(work)
+        git(work, "add", "-A")
+        git(work, "commit", "-qm", f"step {n}")
+    monkeypatch.chdir(work)
+    deny = tmp_path / "deny.txt"
+    deny.write_text("alex\n")
+    return push_guard.check([[f"{base}..HEAD"]], push_guard.load_denylist(deny))
+
+
+def test_a_binary_added_then_deleted_in_the_same_push_is_still_refused(tmp_path, monkeypatch):
+    found = _pushed(tmp_path, monkeypatch, [
+        lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff"),
+        lambda w: (w / "statement.pdf").unlink()])
+    assert len(found) == 1 and "statement.pdf" in found[0]
+
+
+def test_a_binary_replaced_before_the_push_is_checked_in_every_version(tmp_path, monkeypatch):
+    def listed(w):
+        (w / "tests" / "fixtures").mkdir(parents=True)
+        (w / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/chart.png  # made up\n")
+        (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff")
+    found = _pushed(tmp_path, monkeypatch, [
+        listed,
+        lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 other \x00\xfe")])
+    assert len(found) == 2 and all("statement.pdf" in f for f in found)
+    assert len({f.split()[1] for f in found}) == 2  # one finding for each commit's version

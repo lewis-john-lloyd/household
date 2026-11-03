@@ -11,13 +11,16 @@ ledger, matched by amount and date.
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
            (rules, your answers for that payee, the model).
-  Amazon   order_items: a card charge is one shipment (the items shipped
-           together, summed) or, failing that, a whole order; a credit is one
-           refund, of the item that cost exactly that much if there is one. The line takes its category from the items: Whole Foods
-           orders are food, departments map through DEPARTMENTS, anything else
-           is household, and a charge whose items fall in several categories
-           is split by item amount. The items themselves go along (contents),
-           so a view can show what an Amazon charge bought.
+  Orders   order_items of a service in ORDER_SERVICES (Amazon so far; any
+           store whose order history lists items joins by a parser writing
+           order_items rows and an entry there): a card charge is one shipment
+           (the items shipped together, summed) or, failing that, a whole
+           order; a credit is one refund, of the item that cost exactly that
+           much if there is one. The line takes its category from the items:
+           Whole Foods orders are food, departments map through DEPARTMENTS,
+           anything else is household, and a charge whose items fall in several
+           categories is split by item amount. The items themselves go along
+           (contents), so a view can show what a charge bought.
 
 Each match is one to one, closest dates first. Orders paid with a card that is
 not one of the household's (a corporate card) are left out of matching.
@@ -42,6 +45,8 @@ DEPARTMENTS = {
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
 ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
+# stores whose order history itemizes a charge: service -> the pattern of its lines' payee
+ORDER_SERVICES = {"amazon": "AMAZON|AMZN"}
 
 
 def coverage(details=None, items=None):
@@ -99,15 +104,15 @@ def _category(item):
     return DEPARTMENTS.get(str(item["department"]).strip().lower(), DEFAULT)
 
 
-def amazon_groups(items, cards):
-    """Shipments, whole orders and refunds, each with its amount and date, ready to match.
+def order_groups(items, cards, service="amazon"):
+    """A service's shipments, whole orders and refunds, each with its amount and date, ready to match.
 
     cards: the household's cards' last four digits; an order paid with any other
-    card is left out.
+    card is left out (an order with no card on file is kept).
     """
     if items is None or items.empty:
         return pd.DataFrame(columns=["group", "order_id", "level", "date", "amount", "rank"])
-    df = items[items["service"] == "amazon"].copy()
+    df = items[items["service"] == service].copy()
     df["amount"] = pd.to_numeric(df["amount"])
     bought = df[df["kind"] == "item"]
     foreign = bought[~bought["card"].isin(set(cards) | {"", "gift"})]["order_id"]
@@ -124,21 +129,26 @@ def amazon_groups(items, cards):
     return groups
 
 
-def match_amazon(lines, items, cards, contents=None):
-    """{txn_id: [(category, amount), ...]} for AMAZON lines matched to order history.
+def amazon_groups(items, cards):
+    return order_groups(items, cards, "amazon")
+
+
+def match_orders(lines, items, cards, contents=None, service="amazon"):
+    """{txn_id: [(category, amount), ...]} for a service's lines matched to its order history.
 
     The split amounts carry the line's sign and sum to the line's amount. contents,
     when a dict, is filled with {txn_id: [(category, item, amount), ...]}: the
     items each matched line paid for (or the one refunded), as the order history
     prices them.
     """
-    groups = amazon_groups(items, cards)
+    groups = order_groups(items, cards, service)
     if groups.empty:
         return {}
-    amazon = lines[lines["payee_raw"].astype(str).str.upper().str.contains("AMAZON|AMZN")].copy()
-    amazon["amt"] = pd.to_numeric(amazon["amount"]).round(2)
-    charges = amazon[amazon["amt"] < 0].assign(abs_amt=lambda d: -d["amt"])
-    credits = amazon[amazon["amt"] > 0].assign(abs_amt=lambda d: d["amt"])
+    pattern = ORDER_SERVICES.get(service, service.upper())
+    store = lines[lines["payee_raw"].astype(str).str.upper().str.contains(pattern)].copy()
+    store["amt"] = pd.to_numeric(store["amount"]).round(2)
+    charges = store[store["amt"] < 0].assign(abs_amt=lambda d: -d["amt"])
+    credits = store[store["amt"] > 0].assign(abs_amt=lambda d: d["amt"])
 
     def exclusive(r):  # a shipment used rules out its order, and the reverse
         if r["level"] == "refund":
@@ -149,7 +159,7 @@ def match_amazon(lines, items, cards, contents=None):
 
     found = (_greedy(charges, groups[groups["level"] != "refund"], "abs_amt", exclusive=exclusive)
              + _greedy(credits, groups[groups["level"] == "refund"], "abs_amt"))
-    bought = items[(items["service"] == "amazon") & (items["kind"] == "item")].copy()
+    bought = items[(items["service"] == service) & (items["kind"] == "item")].copy()
     bought["amount"] = pd.to_numeric(bought["amount"])
     out = {}
     for r in found:
@@ -170,6 +180,18 @@ def match_amazon(lines, items, cards, contents=None):
         shares = (weights / weights.sum() * amount).round(2)
         shares.iloc[shares.abs().argmax()] += round(amount - shares.sum(), 2)  # cents land on the biggest
         out[r["txn_id"]] = sorted((c, round(float(v), 2)) for c, v in shares.items())
+    return out
+
+
+def match_amazon(lines, items, cards, contents=None):
+    return match_orders(lines, items, cards, contents, "amazon")
+
+
+def match_all_orders(lines, items, cards, contents=None):
+    """match_orders over every service in ORDER_SERVICES, each line matched by its own store."""
+    out = {}
+    for service in ORDER_SERVICES:
+        out.update(match_orders(lines, items, cards, contents, service))
     return out
 
 
@@ -198,20 +220,22 @@ HINT_WINDOW = (-2, 10)  # days from a shipment to an unmatched charge that might
 HINTS = 3
 
 
-def amazon_hints(lines, items, matched):
-    """{txn_id: "maybe: ..."} for AMAZON charges that matched nothing: the items shipped around then,
-    closest in price first, to answer the line by hand (a gift card or a split payment hides the total)."""
+def amazon_hints(lines, items, matched, service="amazon"):
+    """{txn_id: "maybe: ..."} for a store's charges that matched nothing (AMAZON by default): the items
+    shipped around then, closest in price first, to answer the line by hand (a gift card or a split
+    payment hides the total)."""
     if items is None or items.empty:
         return {}
-    bought = items[(items["service"] == "amazon") & (items["kind"] == "item")].copy()
+    bought = items[(items["service"] == service) & (items["kind"] == "item")].copy()
     if bought.empty:
         return {}
     bought["amount"] = pd.to_numeric(bought["amount"])
     bought["day"] = pd.to_datetime(bought["date"], errors="coerce")
-    amazon = lines[lines["payee_raw"].astype(str).str.upper().str.contains("AMAZON|AMZN")
-                   & ~lines["txn_id"].isin(set(matched))]
+    pattern = ORDER_SERVICES.get(service, service.upper())
+    store = lines[lines["payee_raw"].astype(str).str.upper().str.contains(pattern)
+                  & ~lines["txn_id"].isin(set(matched))]
     out = {}
-    for r in amazon.to_dict("records"):
+    for r in store.to_dict("records"):
         day, amount = pd.Timestamp(str(r["date"])[:10]), abs(float(r["amount"]))
         gap = (day - bought["day"]).dt.days
         near = bought[gap.between(*HINT_WINDOW)]
@@ -227,7 +251,9 @@ def explain(lines, details=None, items=None, cards=()):
     """Everything categorization needs from the explanation downloads."""
     named = {**match_paypal(lines, details), **match_google(lines, items)}
     contents = {}
-    split = match_amazon(lines, items, cards, contents)
-    return {"payee": named, "split": split, "coverage": coverage(details, items),
-            "hints": amazon_hints(lines, items, split),
+    split = match_all_orders(lines, items, cards, contents)
+    hints = {}
+    for service in ORDER_SERVICES:
+        hints.update(amazon_hints(lines, items, split, service))
+    return {"payee": named, "split": split, "coverage": coverage(details, items), "hints": hints,
             "items": {t: json.dumps([list(i) for i in parts]) for t, parts in contents.items()}}

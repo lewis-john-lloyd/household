@@ -266,3 +266,30 @@ def test_unmatched_amazon_charges_get_hints():
     hints = explain.amazon_hints(lines, items(), matched={"t2"})
     assert list(hints) == ["t1"]
     assert hints["t1"].startswith("maybe: Spatula (20.00, 2025-08-02)")
+
+
+def test_any_store_with_an_order_history_is_itemized_like_amazon(monkeypatch):
+    monkeypatch.setitem(explain.ORDER_SERVICES, "quill", "QUILL")
+    quill = pd.DataFrame([
+        {"item_id": "q1", "service": "quill", "order_id": "Q-1", "kind": "item", "order_date": "2025-08-01",
+         "date": "2025-08-01", "amount": "8.00", "card": "", "department": "", "item": "Fountain pen", "website": "",
+         "doc_id": ""},
+        {"item_id": "q2", "service": "quill", "order_id": "Q-1", "kind": "item", "order_date": "2025-08-01",
+         "date": "2025-08-01", "amount": "4.00", "card": "", "department": "grocery", "item": "Tea", "website": "",
+         "doc_id": ""}])
+    lines = pd.DataFrame([line(1, "2025-08-03", "QUILL & INK", -12.00),
+                          line(2, "2025-08-03", "AMAZON MKTPL*AB12", -30.00)])
+    out = explain.explain(lines, items=pd.concat([items(), quill], ignore_index=True), cards={"1111"})
+    assert out["split"]["t1"] == [("food", -4.0), ("household", -8.0)]
+    assert [i[1] for i in json.loads(out["items"]["t1"])] == ["Fountain pen", "Tea"]
+    assert out["split"]["t2"] == [("clothing", -10.0), ("household", -20.0)]  # Amazon goes on as before
+
+
+def test_an_order_history_decides_ahead_of_a_rule_that_only_asks():
+    lines = pd.DataFrame([line(1, "2025-08-03", "QUILL & INK", -12.00), line(2, "2025-08-04", "QUILL & INK", -5.00)])
+    rules = pd.DataFrame([{"pattern": "QUILL", "category": "household", "precedence": 10, "effective": "",
+                           "ask": "TRUE"}])
+    explained = {"split": {"t1": [("food", -4.0), ("household", -8.0)]}}
+    out = categorize.categorize(lines, rules, explanations=explained).set_index("txn_id")
+    assert out.loc["t1", ["status", "splits"]].tolist() == ["decided", "food -4.00; household -8.00"]
+    assert out.loc["t2", ["status", "ask"]].tolist() == ["open", "line"]  # nothing explains it: asked

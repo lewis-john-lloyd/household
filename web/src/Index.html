@@ -27,6 +27,8 @@
       th:first-child, td:first-child { text-align: left; }
       td { font-variant-numeric: tabular-nums; }
       td.text { text-align: left; }
+      ul.items { margin: 2px 0 0; padding-left: 16px; font-size: 0.85em; opacity: 0.75; }
+      ul.items li { max-width: 46em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       th button.sort { border: 0; padding: 0; background: none; font-weight: 600; cursor: pointer; }
       th button.sort[data-dir="asc"]::after { content: " ▲"; }
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
@@ -94,6 +96,7 @@
       var chosen = { flows: "", budget: "" };
       var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
       var cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+      var ITEMS_SHOWN = 5;  // items listed under a charge before the rest fold into one line
       var PRIORITY = { high: 0, medium: 1, low: 2 };
 
       function call(name, args, done, where) {
@@ -236,7 +239,24 @@
           txns.forEach(function (t) {
             var r = document.createElement("tr");
             cell(r, t.date);
-            cell(r, t.payee, "text");
+            var payee = cell(r, t.payee, "text");
+            if (t.items && t.items.length) {  // what an order history says the charge bought
+              var list = document.createElement("ul");
+              list.className = "items";
+              t.items.slice(0, ITEMS_SHOWN).forEach(function (i) {
+                var li = document.createElement("li");
+                li.textContent = i.name + " · " + cents.format(i.amount);
+                li.title = i.name;
+                list.appendChild(li);
+              });
+              if (t.items.length > ITEMS_SHOWN) {
+                var more = document.createElement("li");
+                more.textContent = "+" + (t.items.length - ITEMS_SHOWN) + " more: " +
+                  t.items.slice(ITEMS_SHOWN).map(function (i) { return i.name; }).join("; ");
+                list.appendChild(more);
+              }
+              payee.appendChild(list);
+            }
             cell(r, line.categories.length > 1 ? t.category : "", "text");
             cell(r, t.account, "text");
             cell(r, cents.format(t.amount));

@@ -135,4 +135,18 @@ test("transactions: split charges become one row per part, filtered to the perio
     ["2001-02-10", "GROCER", -12.5],
   ]);
   assert.equal(shape.transactionsFor(txns, "2001", ["food"]).length, 3);
+  assert.deepEqual(txns[0].items, []);  // a report without an items column
+});
+
+test("transactions: a charge an order history explains carries its items, each part its own", () => {
+  const items = JSON.stringify([["household", "Spatula", 30], ["food", "Coffee", 20]]);
+  const txns = shape.parseTransactions([
+    ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits", "items"],
+    ["t1", "2001-02-03", "card", -50, "SHOP*1", "", "SHOP", "household", "household -30.00; food -20.00", items],
+    ["t2", "2001-02-04", "card", -9, "SHOP*2", "", "SHOP", "household", "", "not json"],
+    ["t3", "2001-02-05", "card", -30, "SHOP*3", "", "SHOP", "household", "", JSON.stringify([["household", "Spatula", 30]])],
+  ]);
+  assert.deepEqual(txns.map((t) => [t.category, t.items.map((i) => i.name)]), [
+    ["household", ["Spatula"]], ["food", ["Coffee"]], ["household", []], ["household", ["Spatula"]],
+  ]);
 });

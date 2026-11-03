@@ -16,7 +16,8 @@ ledger, matched by amount and date.
            refund, of the item that cost exactly that much if there is one. The line takes its category from the items: Whole Foods
            orders are food, departments map through DEPARTMENTS, anything else
            is household, and a charge whose items fall in several categories
-           is split by item amount.
+           is split by item amount. The items themselves go along (contents),
+           so a view can show what an Amazon charge bought.
 
 Each match is one to one, closest dates first. Orders paid with a card that is
 not one of the household's (a corporate card) are left out of matching.
@@ -25,6 +26,8 @@ Coverage: a service's export covers the dates from its first to its last row.
 A line from that service dated inside the coverage that matched nothing is not
 waiting any more; categorization handles it like any other line.
 """
+
+import json
 
 import pandas as pd
 
@@ -38,6 +41,7 @@ DEPARTMENTS = {
 }
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
+ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
 
 
 def coverage(details=None, items=None):
@@ -120,10 +124,13 @@ def amazon_groups(items, cards):
     return groups
 
 
-def match_amazon(lines, items, cards):
+def match_amazon(lines, items, cards, contents=None):
     """{txn_id: [(category, amount), ...]} for AMAZON lines matched to order history.
 
-    The split amounts carry the line's sign and sum to the line's amount.
+    The split amounts carry the line's sign and sum to the line's amount. contents,
+    when a dict, is filled with {txn_id: [(category, item, amount), ...]}: the
+    items each matched line paid for (or the one refunded), as the order history
+    prices them.
     """
     groups = amazon_groups(items, cards)
     if groups.empty:
@@ -152,6 +159,9 @@ def match_amazon(lines, items, cards):
         elif r["level"] == "refund":  # an item that cost exactly the refund is the one returned
             same = order[(order["amount"].round(2) - abs(float(r["amt"]))).abs() < 0.005]
             order = same.head(1) if len(same) else order
+        if contents is not None:
+            contents[r["txn_id"]] = [(_category(i), " ".join(str(i["item"]).split())[:ITEM_CHARS],
+                                      round(float(i["amount"]), 2)) for i in order.to_dict("records")]
         weights = order.assign(category=order.apply(_category, axis=1)).groupby("category")["amount"].sum()
         weights = weights[weights > 0]
         if weights.empty:
@@ -216,6 +226,8 @@ def amazon_hints(lines, items, matched):
 def explain(lines, details=None, items=None, cards=()):
     """Everything categorization needs from the explanation downloads."""
     named = {**match_paypal(lines, details), **match_google(lines, items)}
-    split = match_amazon(lines, items, cards)
+    contents = {}
+    split = match_amazon(lines, items, cards, contents)
     return {"payee": named, "split": split, "coverage": coverage(details, items),
-            "hints": amazon_hints(lines, items, split)}
+            "hints": amazon_hints(lines, items, split),
+            "items": {t: json.dumps([list(i) for i in parts]) for t, parts in contents.items()}}

@@ -11,7 +11,10 @@ git runs this from .githooks/pre-push (turned on once per clone with
      ignoring case) or an amount with cents, matched however it is written: 1234.56,
      1,234.56, a dollar sign before it, or the digit groups of a PDF's text, "1 234 56";
   3. binary files (PDFs, images, archives, office files): refused unless listed in
-     tests/fixtures/BINARIES, and a listed PDF's text goes through (1) and (2);
+     tests/fixtures/BINARIES (as the push leaves it), and a listed PDF's text goes
+     through (2). A file is binary when git says so or its name does (.pdf, .png, ...).
+     Every version a pushed commit adds or changes is checked, as it was at that commit,
+     so a file added in one commit and deleted or replaced in a later one is still caught;
   4. the import guard and the tests.
 
 The leak guard's `leak-guard: allow` marker excuses a line from (1), never from (2):
@@ -43,7 +46,8 @@ GITHUB = re.compile(r"(?:https?://)?github\.com/[\w.-]+(?:/[\w.-]+)?")
 
 
 def git(*args):
-    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+    # replace bytes that are not UTF-8 (an old file in another encoding) rather than stop on them
+    return subprocess.run(["git", *args], capture_output=True, check=True).stdout.decode("utf-8", "replace")
 
 
 def git_bytes(*args):
@@ -132,15 +136,40 @@ def message_findings(label, body, denylist):
     return out
 
 
+def is_binary_path(path):
+    return Path(path).suffix.lower() in leak_guard.BINARY_SUFFIXES
+
+
 def binary_paths(numstat):
-    """Paths git counts as binary in `--numstat` output ("-<tab>-<tab>path")."""
-    return sorted({line.split("\t", 2)[2] for line in numstat.splitlines() if line.startswith("-\t-\t")})
+    """Paths in `--numstat` output that git counts as binary ("-<tab>-<tab>path") or that are named as
+    binary (a .pdf git happened to diff as text is still a PDF)."""
+    out = set()
+    for line in numstat.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3 and (line.startswith("-\t-\t") or is_binary_path(parts[2])):
+            out.add(parts[2])
+    return sorted(out)
 
 
-def binary_findings(paths, read, denylist):
-    """Findings for binary files: refused unless listed in tests/fixtures/BINARIES; a listed PDF's text
-    goes through the denylist too. read(path) -> bytes, or None for a file that no longer exists."""
-    allowed = leak_guard.allowed_binaries(lambda p: (read(p) or b"").decode("utf-8", "replace"))
+def commit_binaries(log):
+    """{commit: [paths]} for the binary files each commit adds or changes, from
+    `git log --no-renames --numstat --format=%x1e%H` output."""
+    out = {}
+    for chunk in log.split("\x1e"):
+        sha, _, numstat = chunk.strip().partition("\n")
+        if sha:
+            paths = binary_paths(numstat)
+            if paths:
+                out[sha] = paths
+    return out
+
+
+def binary_findings(paths, read, denylist, allowed=None):
+    """Findings for binary files: refused unless listed in tests/fixtures/BINARIES (as read with read,
+    unless allowed is given); a listed PDF's text goes through the denylist too. read(path) -> bytes,
+    or None for a file that no longer exists."""
+    if allowed is None:
+        allowed = leak_guard.allowed_binaries(lambda p: (read(p) or b"").decode("utf-8", "replace"))
     findings = []
     for path in paths:
         data = read(path)
@@ -159,13 +188,17 @@ def check(ranges, denylist):
     findings = []
     for args in ranges:
         for path, line in added_lines(git("log", "-p", "--format=", "--unified=0", *args)):
-            findings += line_findings(path, line, denylist)
+            if not is_binary_path(path):  # binary files are checked whole, below
+                findings += line_findings(path, line, denylist)
         for message in git("log", "--format=%H%n%B%x1e", *args).split("\x1e"):
             sha, _, body = message.strip().partition("\n")
             findings += message_findings(f"commit {sha[:7]} message", body, denylist)
+        # which binaries are made-up fixtures: the list as the push leaves it
         tip = args[0].split("..")[-1]
-        paths = binary_paths(git("log", "--numstat", "--format=", *args))
-        findings += binary_findings(paths, lambda p, tip=tip: git_bytes("show", f"{tip}:{p}"), denylist)
+        allowed = leak_guard.allowed_binaries(lambda p: (git_bytes("show", f"{tip}:{p}") or b"").decode("utf-8", "replace"))
+        for sha, paths in commit_binaries(git("log", "--no-renames", "--numstat", "--format=%x1e%H", *args)).items():
+            found = binary_findings(paths, lambda p, sha=sha: git_bytes("show", f"{sha}:{p}"), denylist, allowed)
+            findings += [f"commit {sha[:7]} {f}" for f in found]
     return findings
 
 

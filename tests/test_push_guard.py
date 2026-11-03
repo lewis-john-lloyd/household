@@ -105,3 +105,31 @@ def test_staged_changes_and_messages_are_checked_before_a_commit(tmp_path, monke
     assert push_guard.main([], ["--message", str(message)]) == 0
     deny.write_text("sam\n")
     assert push_guard.main([], ["--staged"]) == 0
+
+
+def test_a_binary_file_is_refused_unless_listed_as_a_made_up_fixture(tmp_path, monkeypatch):
+    work = tmp_path / "work"
+    git(tmp_path, "init", "-q", str(work))
+    (work / "statement.pdf").write_bytes(b"%PDF-1.4 not really \x00\xff")
+    (work / "tests" / "fixtures").mkdir(parents=True)
+    (work / "tests" / "fixtures" / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
+    git(work, "add", ".")
+    deny = tmp_path / "deny.txt"
+    deny.write_text("alex\n")
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("HOUSEHOLD_DENYLIST", str(deny))
+    found = push_guard.check_staged(push_guard.load_denylist(deny))
+    assert sorted(f.split(":")[0] for f in found) == ["statement.pdf", "tests/fixtures/chart.png"]
+    (work / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/chart.png  # made up\n")
+    git(work, "add", ".")
+    assert [f.split(":")[0] for f in push_guard.check_staged(push_guard.load_denylist(deny))] == ["statement.pdf"]
+
+
+def test_leak_guard_reads_a_listed_pdf_and_refuses_an_unreadable_one(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+    (tmp_path / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/x.pdf\n")
+    (tmp_path / "tests" / "fixtures" / "x.pdf").write_bytes(b"%PDF-1.4 broken")
+    assert [n for _, n, _ in push_guard.leak_guard.scan("tests/fixtures/x.pdf")] == ["listed PDF that can't be read"]
+    (tmp_path / "y.jpg").write_bytes(b"\xff\xd8\xff")
+    assert [n for _, n, _ in push_guard.leak_guard.scan("y.jpg")] == [push_guard.leak_guard.BINARY]

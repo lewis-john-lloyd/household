@@ -32,7 +32,9 @@ def test_added_lines_and_outgoing_ranges():
     zero = push_guard.ZERO
     lines = [f"refs/heads/main abc refs/heads/main def", f"refs/heads/new abc refs/heads/new {zero}",
              f"(delete) {zero} refs/heads/old def"]
-    assert push_guard.outgoing(lines) == [["def..abc"], ["abc", "--not", "--remotes"]]
+    assert push_guard.outgoing(lines, exists=lambda sha: True) == [["def..abc"], ["abc", "--not", "--remotes"]]
+    # a force push of rewritten history: the remote's commit is not here, so everything new is checked
+    assert push_guard.outgoing(lines[:1], exists=lambda sha: False) == [["abc", "--not", "--remotes"]]
 
 
 def test_denylist_builder_keeps_amounts_with_cents(tmp_path):

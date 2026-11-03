@@ -11,7 +11,7 @@ ledger, matched by amount and date.
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
            (rules, your answers for that payee, the model).
-  Orders   order_items of a service in ORDER_SERVICES (Amazon so far; any
+  Orders   order_items of a service in ORDER_SERVICES (Amazon, Target; any
            store whose order history lists items joins by a parser writing
            order_items rows and an entry there): a card charge is one shipment
            (the items shipped together, summed) or, failing that, a whole
@@ -31,6 +31,7 @@ waiting any more; categorization handles it like any other line.
 """
 
 import json
+import re
 
 import pandas as pd
 
@@ -46,7 +47,7 @@ DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
 ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
 # stores whose order history itemizes a charge: service -> the pattern of its lines' payee
-ORDER_SERVICES = {"amazon": "AMAZON|AMZN"}
+ORDER_SERVICES = {"amazon": "AMAZON|AMZN", "target": r"\bTARGET\b|TARGET\.?COM"}
 
 
 def coverage(details=None, items=None):
@@ -185,6 +186,12 @@ def match_orders(lines, items, cards, contents=None, service="amazon"):
 
 def match_amazon(lines, items, cards, contents=None):
     return match_orders(lines, items, cards, contents, "amazon")
+
+
+def order_service(payee):
+    """The store in ORDER_SERVICES whose card lines look like this payee, or ""."""
+    text = str(payee).upper()
+    return next((s for s, pattern in ORDER_SERVICES.items() if re.search(pattern, text)), "")
 
 
 def match_all_orders(lines, items, cards, contents=None):

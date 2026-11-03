@@ -285,11 +285,46 @@ def test_any_store_with_an_order_history_is_itemized_like_amazon(monkeypatch):
     assert out["split"]["t2"] == [("clothing", -10.0), ("household", -20.0)]  # Amazon goes on as before
 
 
-def test_an_order_history_decides_ahead_of_a_rule_that_only_asks():
+@pytest.mark.parametrize("ask", ["TRUE", "FALSE"])
+def test_an_order_history_decides_ahead_of_any_payee_rule(ask):
     lines = pd.DataFrame([line(1, "2025-08-03", "QUILL & INK", -12.00), line(2, "2025-08-04", "QUILL & INK", -5.00)])
     rules = pd.DataFrame([{"pattern": "QUILL", "category": "household", "precedence": 10, "effective": "",
-                           "ask": "TRUE"}])
+                           "ask": ask}])
     explained = {"split": {"t1": [("food", -4.0), ("household", -8.0)]}}
     out = categorize.categorize(lines, rules, explanations=explained).set_index("txn_id")
     assert out.loc["t1", ["status", "splits"]].tolist() == ["decided", "food -4.00; household -8.00"]
-    assert out.loc["t2", ["status", "ask"]].tolist() == ["open", "line"]  # nothing explains it: asked
+    # nothing explains the other line: the rule has it, asking each time or deciding
+    expected = ["open", "line"] if ask == "TRUE" else ["decided", ""]
+    assert out.loc["t2", ["status", "ask"]].tolist() == expected
+
+
+TARGET = ("target_order_id,date,store,order_total,item,price,qty,returned\n"
+          "A-1,2025-08-02,Willow St,21.80,Girls' Denim Jeans - Blue 14,12.00,1,\n"
+          "A-1,2025-08-02,Willow St,21.80,Kids' Rain Boots - Red 1,4.00,1,\n"
+          "A-1,2025-08-02,Willow St,21.80,Dish Soap - 16oz,2.00,2,\n"
+          "B-2,2025-08-09,,9.00,Spatula,9.00,1,\n")
+
+
+def test_a_target_purchase_list_reads_as_orders_with_tax_shared_out():
+    from household.parsers import identify, target
+    assert identify(TARGET) is target
+    df = target.parse(TARGET).tables["order_items"]
+    a = df[df["order_id"] == "A-1"]
+    assert round(a["amount"].sum(), 2) == 21.80  # the order total, tax included
+    assert a["department"].tolist() == ["apparel", "shoes", ""]
+    assert a["item"].tolist()[-1] == "Dish Soap - 16oz (x2)"
+    assert df[df["order_id"] == "B-2"]["website"].item() == "target.com"
+
+
+def test_a_target_charge_is_itemized_ahead_of_its_payee_rule():
+    from household.parsers import target
+    orders = pd.concat([items(), target.parse(TARGET).tables["order_items"]], ignore_index=True)
+    lines = pd.DataFrame([line(1, "2025-08-03", "TARGET 0042", -21.80),
+                          line(2, "2025-08-20", "TARGET 0042", -7.00)])
+    rules = pd.DataFrame([{"pattern": r"\bTARGET\b", "category": "household", "precedence": 10, "effective": "",
+                           "ask": "FALSE"}])
+    explained = explain.explain(lines, items=orders, cards={"1111"})
+    out = categorize.categorize(lines, rules, explanations=explained).set_index("txn_id")
+    assert out.loc["t1", ["decided_by", "category"]].tolist() == ["target", "clothing"]
+    assert out.loc["t1", "splits"] == "clothing -17.44; household -4.36"  # 12 + 4 of 20, scaled to 21.80
+    assert out.loc["t2", ["decided_by", "category"]].tolist() == ["rule", "household"]

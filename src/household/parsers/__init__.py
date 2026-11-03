@@ -5,10 +5,10 @@ Tax law sources go first of all: they quote the phrases other recognizers look f
 """
 
 from . import (adp_statement, amazon, boa_csv, google_takeout, documents, earnings_statement, ofx, pay_statement, paypal_qif, return_facts,
-               schwab_equity, seed, tax_law, usaa_csv)
+               schwab_equity, seed, target, tax_law, usaa_csv)
 from .common import ParseError, Result
 
-PARSERS = (tax_law, seed, return_facts, schwab_equity, ofx, usaa_csv, boa_csv, paypal_qif, amazon, google_takeout,
+PARSERS = (tax_law, seed, return_facts, schwab_equity, ofx, usaa_csv, boa_csv, paypal_qif, amazon, google_takeout, target,
            pay_statement, earnings_statement, adp_statement, documents)
 
 

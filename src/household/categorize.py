@@ -5,13 +5,13 @@ Sources, first that applies wins:
                  categories and amounts that must come to the line's amount
   you            a category a person set on the line (txn_corrections), or the old
                  books' label on a legacy row, or a transfer pair
+  order history  a store whose order history lists items (explain.ORDER_SERVICES:
+                 Amazon, Target): the line takes its category from what it bought,
+                 split by item amount when the items differ, ahead of any payee rule
   rule           payee_rules: a pattern on the payee (and the bank's note, so a rule can
                  match USAA's own category: "\\| Cash$"), effective-dated; a rule marked
                  ask only pre-fills the guess and still asks for each line (Target,
-                 paper checks), unless an order history explains the line
-  order history  a store whose order history lists items (explain.ORDER_SERVICES,
-                 Amazon so far): the line takes its category from what it bought,
-                 split by item amount when the items differ
+                 paper checks)
   your decision  an answer given in review for a payee: it covers every line from
                  the same merchant (same_merchant), past and future
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
@@ -405,13 +405,14 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         payee = str(r.payee_raw)
         rule = rule_for(_rule_text(payee, r.payee_text, r.note), r.date, rules)
         service = _waiting(payee)
-        if rule and not rule["ask"]:
-            out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
-        elif r.txn_id in split:  # an order history's items decide, ahead of a rule that only asks
+        if r.txn_id in split:  # what an order history says the line bought decides, ahead of any payee rule
             parts = split[r.txn_id]
             biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
-            out.append({"category": biggest, "decided_by": service or "explained", "status": "decided",
+            out.append({"category": biggest, "decided_by": explain.order_service(payee) or service or "explained",
+                        "status": "decided",
                         "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
+        elif rule and not rule["ask"]:
+            out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
         elif rule:  # guess from the rule, ask about this line
             out.append({"guess": rule["category"], "decided_by": "rule, asks each time", "ask": "line"})
         elif r.txn_id in unpaired:

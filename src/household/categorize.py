@@ -5,8 +5,8 @@ Sources, first that applies wins:
                  categories and amounts that must come to the line's amount
   you            a category a person set on the line (txn_corrections), or the old
                  books' label on a legacy row, or a transfer pair
-  order history  a store whose order history lists items (explain.ORDER_SERVICES:
-                 Amazon, Target): the line takes its category from what it bought,
+  order history  a store whose order history lists items (explain.order_services:
+                 Amazon, Target and any the household adds): the line takes its category from what it bought,
                  split by item amount when the items differ, ahead of any payee rule
   rule           payee_rules: a pattern on the payee (and the bank's note, so a rule can
                  match USAA's own category: "\\| Cash$"), effective-dated; a rule marked
@@ -408,7 +408,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         if r.txn_id in split:  # what an order history says the line bought decides, ahead of any payee rule
             parts = split[r.txn_id]
             biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
-            out.append({"category": biggest, "decided_by": explain.order_service(payee) or service or "explained",
+            out.append({"category": biggest, "decided_by": explain.order_service(payee, explanations.get("services")) or service
+                        or "explained",
                         "status": "decided",
                         "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
         elif rule and not rule["ask"]:

@@ -1,0 +1,46 @@
+===== RECEIPT m001 =====
+From: Willow St Co-op <receipts@example.coop>
+Subject: Electronic Receipt
+Date: 2026-03-04T18:00:00.000Z
+
+Greetings ALEX SAMPLE,
+
+  *Willow St Grocery Cooperative*
+  EAST: 100 Example Ave
+
+#010-001 2026-03-04 11:59:00 TEST
+
+Inv#:0001 Trs#:0001
+ALEX SAMPLE 0001
+************ EMAIL RECEIPT *************
+----------------------------------------
+Rolled Oats 32 oz $4.00 F
+Bag Credit contribution: $0.10
+0.50 lb @ 4.00/ 1 lb
+Apples bulk $2.00 FW
+Amber Ale 6x12 fl oz $10.00 T1
+Jigsaw Puzzle 500 pc $20.00 T1
+Beeswax Candle $6.00 T1
+Dark Chocolate Bar 3 oz $4.00 T1F
+CPN: Dark Chocolate Bar 3 oz T1F
+-Vendor coupon: $1.00
+Dark Chocolate Bar 3 o-$0.50 T1F
+NA Ginger Brew 4x12 fl oz $8.00
+Free Sample Cracker F
+----------------------------------------
+Net Sales $53.50
+Tax 1 [$39.50] $2.00
+TOTAL SALES $55.50
+Vendor coupon $1.00
+----------------------------------------*SUB TOTAL $54.50
+*
+Visa $54.50
+----------------------------------------
+Item count 8
+
+===== RECEIPT m002 =====
+From: Some Shop <orders@example.com>
+Subject: Your order
+Date: 2026-03-05T18:00:00.000Z
+
+Thanks for your order.

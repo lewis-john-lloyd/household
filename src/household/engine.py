@@ -114,7 +114,8 @@ def _categorized(books):
     guess = categorize.household_parameter(books["parameters"], categorize.UNPAIRED_PARAMETER)
     effective = books["effective"]
     cards = {ingest._last4(c) for c in books["accounts"]["last4"] if str(c).strip()}
-    explained = explain.explain(effective[effective["era"] != "legacy"], books["details"], books["items"], cards)
+    explained = explain.explain(effective[effective["era"] != "legacy"], books["details"], books["items"], cards,
+                                explain.order_services(books["parameters"]))
     books["coverage"] = explained["coverage"]
     out = categorize.categorize(effective, books["rules"], books["decisions"],
                                 unpaired=books["lonely"]["txn_id"], unpaired_guess=guess,

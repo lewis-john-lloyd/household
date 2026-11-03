@@ -11,7 +11,8 @@ ledger, matched by amount and date.
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
            (rules, your answers for that payee, the model).
-  Orders   order_items of a service in ORDER_SERVICES (Amazon, Target; any
+  Orders   order_items of a service in ORDER_SERVICES (Amazon, Target, and any a household
+           parameter order_payee:<service> adds, so a local store's name stays out of this code; any
            store whose order history lists items joins by a parser writing
            order_items rows and an entry there): a card charge is one shipment
            (the items shipped together, summed) or, failing that, a whole
@@ -42,12 +43,15 @@ DEPARTMENTS = {
     "pet products": "pets", "pet supplies": "pets",
     "lawn & patio": "garden", "lawn and garden": "garden",
     "tools & home improvement": "maintenance", "tools & hardware": "maintenance",
+    "alcohol": "booze", "beer, wine & spirits": "booze",
+    "toys & games": "family",
 }
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
 ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
 # stores whose order history itemizes a charge: service -> the pattern of its lines' payee
 ORDER_SERVICES = {"amazon": "AMAZON|AMZN", "target": r"\bTARGET\b|TARGET\.?COM"}
+ORDER_PAYEE = "order_payee:"  # a household parameter "order_payee:<service>" adds a store, its value the payee pattern
 
 
 def coverage(details=None, items=None):
@@ -134,7 +138,7 @@ def amazon_groups(items, cards):
     return order_groups(items, cards, "amazon")
 
 
-def match_orders(lines, items, cards, contents=None, service="amazon"):
+def match_orders(lines, items, cards, contents=None, service="amazon", services=None):
     """{txn_id: [(category, amount), ...]} for a service's lines matched to its order history.
 
     The split amounts carry the line's sign and sum to the line's amount. contents,
@@ -145,7 +149,7 @@ def match_orders(lines, items, cards, contents=None, service="amazon"):
     groups = order_groups(items, cards, service)
     if groups.empty:
         return {}
-    pattern = ORDER_SERVICES.get(service, service.upper())
+    pattern = (services or ORDER_SERVICES).get(service, service.upper())
     store = lines[lines["payee_raw"].astype(str).str.upper().str.contains(pattern)].copy()
     store["amt"] = pd.to_numeric(store["amount"]).round(2)
     charges = store[store["amt"] < 0].assign(abs_amt=lambda d: -d["amt"])
@@ -188,17 +192,29 @@ def match_amazon(lines, items, cards, contents=None):
     return match_orders(lines, items, cards, contents, "amazon")
 
 
-def order_service(payee):
-    """The store in ORDER_SERVICES whose card lines look like this payee, or ""."""
+def order_service(payee, services=None):
+    """The store whose card lines look like this payee (services: ORDER_SERVICES by default), or ""."""
     text = str(payee).upper()
-    return next((s for s, pattern in ORDER_SERVICES.items() if re.search(pattern, text)), "")
+    return next((s for s, pattern in (services or ORDER_SERVICES).items() if re.search(pattern, text, re.I)), "")
 
 
-def match_all_orders(lines, items, cards, contents=None):
-    """match_orders over every service in ORDER_SERVICES, each line matched by its own store."""
+def order_services(parameters=None):
+    """ORDER_SERVICES and the stores the household's parameters add (order_payee:<service> = pattern)."""
+    out = dict(ORDER_SERVICES)
+    if parameters is not None and not parameters.empty:
+        rows = parameters[(parameters["jurisdiction"] == "household")
+                          & parameters["key"].astype(str).str.startswith(ORDER_PAYEE)]
+        for key, value in zip(rows["key"], rows["value"]):
+            if str(value).strip():
+                out[str(key)[len(ORDER_PAYEE):].strip()] = str(value).strip()
+    return out
+
+
+def match_all_orders(lines, items, cards, contents=None, services=None):
+    """match_orders over every store, each line matched by its own store's history."""
     out = {}
-    for service in ORDER_SERVICES:
-        out.update(match_orders(lines, items, cards, contents, service))
+    for service in (services or ORDER_SERVICES):
+        out.update(match_orders(lines, items, cards, contents, service, services))
     return out
 
 
@@ -227,7 +243,7 @@ HINT_WINDOW = (-2, 10)  # days from a shipment to an unmatched charge that might
 HINTS = 3
 
 
-def amazon_hints(lines, items, matched, service="amazon"):
+def amazon_hints(lines, items, matched, service="amazon", services=None):
     """{txn_id: "maybe: ..."} for a store's charges that matched nothing (AMAZON by default): the items
     shipped around then, closest in price first, to answer the line by hand (a gift card or a split
     payment hides the total)."""
@@ -238,7 +254,7 @@ def amazon_hints(lines, items, matched, service="amazon"):
         return {}
     bought["amount"] = pd.to_numeric(bought["amount"])
     bought["day"] = pd.to_datetime(bought["date"], errors="coerce")
-    pattern = ORDER_SERVICES.get(service, service.upper())
+    pattern = (services or ORDER_SERVICES).get(service, service.upper())
     store = lines[lines["payee_raw"].astype(str).str.upper().str.contains(pattern)
                   & ~lines["txn_id"].isin(set(matched))]
     out = {}
@@ -254,13 +270,15 @@ def amazon_hints(lines, items, matched, service="amazon"):
     return out
 
 
-def explain(lines, details=None, items=None, cards=()):
-    """Everything categorization needs from the explanation downloads."""
+def explain(lines, details=None, items=None, cards=(), services=None):
+    """Everything categorization needs from the explanation downloads. services: the stores with an
+    order history and their payee patterns (order_services; ORDER_SERVICES by default)."""
+    services = services or ORDER_SERVICES
     named = {**match_paypal(lines, details), **match_google(lines, items)}
     contents = {}
-    split = match_all_orders(lines, items, cards, contents)
+    split = match_all_orders(lines, items, cards, contents, services)
     hints = {}
-    for service in ORDER_SERVICES:
-        hints.update(amazon_hints(lines, items, split, service))
-    return {"payee": named, "split": split, "coverage": coverage(details, items), "hints": hints,
+    for service in services:
+        hints.update(amazon_hints(lines, items, split, service, services))
+    return {"payee": named, "split": split, "coverage": coverage(details, items), "hints": hints, "services": services,
             "items": {t: json.dumps([list(i) for i in parts]) for t, parts in contents.items()}}

@@ -54,7 +54,7 @@ STATE = re.compile(r"(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|M
                    r"NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)")
 NOISE = {"CO", "OP", "INC", "LLC", "COM", "WWW", "THE", "CORP", "LTD", "US", "USA"}
 KEY_WORDS = 3
-SPLIT_PART = re.compile(r"^(?P<category>[a-z][a-z0-9_]*)\s*[:=]?\s*(?:\$?(?P<amount>\d+(?:\.\d{1,2})?))?$")
+SPLIT_PART = re.compile(r"^(?P<category>[a-z][a-z0-9_]*)\s*[:=]?\s*(?:-?\$?-?(?P<amount>\d+(?:\.\d{1,2})?))?$")
 
 # lines an explanation download names; until it arrives they wait
 WAITING = (
@@ -293,7 +293,8 @@ def parse_split(text, amount=None, known=None):
     """[(category, signed amount)] from a split such as "kids 20; hobby 15.50; gifts 40; family".
 
     Parts are separated by semicolons (or by commas when there is no semicolon);
-    each is a category and an amount, written as money with no sign. One part may
+    each is a category and an amount; a sign is ignored, since every part takes the
+    line's own (a charge's parts are charges, a refund's are refunds). One part may
     leave its amount out and takes what the others leave of the line. With the
     line's amount given, the parts must come to it to the cent and take its sign;
     without it they are only read, and the part with no amount stays None.
@@ -524,7 +525,7 @@ def queue(categorized, carry=None):
         for key, g in payees.groupby("group"):
             amounts = pd.to_numeric(g["amount"])
             guess = g["guess"].mode().iloc[0]
-            rows.append({"key": key, "answer": "", "guess": guess, "lines": len(g),
+            rows.append({"key": key, "answer": "", "split": "", "guess": guess, "lines": len(g),
                          "total": round(float(amounts.sum()), 2),
                          "example": " | ".join(g["payee_raw"].value_counts().index[:3]), "first": g["date"].min(),
                          "last": g["date"].max(), "accounts": ", ".join(sorted(set(g["account_id"]))),
@@ -534,7 +535,7 @@ def queue(categorized, carry=None):
     rows.sort(key=lambda r: (-r["lines"], -abs(r["total"]), r["key"]))
     singles = open_[open_["ask"] == "line"].sort_values(["date", "txn_id"])
     for r in singles.to_dict("records"):
-        rows.append({"key": r["txn_id"], "answer": "", "guess": r["guess"], "lines": 1,
+        rows.append({"key": r["txn_id"], "answer": "", "split": "", "guess": r["guess"], "lines": 1,
                      "total": round(float(r["amount"]), 2),
                      "example": r["payee_raw"] + (f" | {r['hint']}" if r.get("hint") else ""), "first": r["date"],
                      "last": r["date"], "accounts": r["account_id"], "guessed_by": r["decided_by"],
@@ -545,6 +546,7 @@ def queue(categorized, carry=None):
         for i, key in out["key"].items():
             if key in kept.index:
                 out.at[i, "answer"] = kept.at[key, "answer"]
+                out.at[i, "split"] = kept.at[key, "split"] if "split" in kept else ""
                 out.at[i, "note"] = kept.at[key, "note"]
         # a row typed in by hand (a split for a decided line) stays, with its note, until it is fixed
         typed = carry[~carry["key"].isin(set(out["key"])) & (carry.get("kind", "") == "line")]
@@ -560,9 +562,10 @@ def harvest(review, categories, now=None):
     Returns (decisions, corrections, left): a payee answer becomes a
     proposal_decisions row for "payee:<key>" (the key as it stands in the tab,
     so editing it widens or narrows what the answer covers); a line answer
-    becomes a txn_corrections row. "y" takes the guess. A line's answer can be a
-    split ("kids 20; hobby 15.50; family", parse_split), checked against the
-    row's total when it has one; it becomes a split correction. A row typed in by
+    becomes a txn_corrections row. "y" takes the guess. A line's split column
+    ("kids 20; hobby 15.50; family", parse_split; a split typed in answer counts
+    too) is checked against the row's total when it has one and becomes a split
+    correction; a split, when given, is the line's answer. A row typed in by
     hand with a txn_id as key and kind line answers that line, so any line can be
     split, decided or not. Rows whose answer is not a category or a split that
     adds up stay, with the reason in note.
@@ -572,11 +575,16 @@ def harvest(review, categories, now=None):
     decisions, corrections, left = [], [], []
     for r in review.to_dict("records"):
         answer = str(r.get("answer", "")).strip()
+        typed_split = str(r.get("split", "") or "").strip()
+        typed_split = "" if typed_split == "nan" else typed_split
+        if typed_split:
+            answer = typed_split
         if not answer:
             continue
         category = str(r.get("guess", "")).strip() if answer.lower() in ACCEPT else answer.lower()
         key = str(r.get("key", "")).strip()
-        if key and category not in known and (";" in answer or "," in answer or re.search(r"\d", answer)):
+        if key and (typed_split or (category not in known
+                                    and (";" in answer or "," in answer or re.search(r"\d", answer)))):
             if r.get("kind") != "line":
                 left.append({**r, "note": "a split answers one line: answer a merchant with one category"})
                 continue

@@ -88,12 +88,19 @@ function body_(payload) {
     }
     (part.parts || []).forEach(walk);
   })(payload);
-  if (found.plain.length > 400 || !found.html) return found.plain;
-  return found.html
+  // Some stores put HTML in the plain-text part, so that counts as HTML too.
+  const plainIsHtml = /<(table|td|tr|div|br|pre)\b/i.test(found.plain);
+  if (found.plain.length > 400 && !plainIsHtml) return found.plain;
+  const html = found.html || (plainIsHtml ? found.plain : "");
+  if (!html) return found.plain;
+  return html
     .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&zwnj;|&shy;|&copy;/g, "")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, "\"")
-    .replace(/[ \t]+/g, " ")
+    .replace(/\r/g, "")
+    .replace(/[ \t ]+/g, " ")
     .replace(/\n\s*\n+/g, "\n");
 }

@@ -60,6 +60,8 @@ Some stores email a receipt for every purchase. `exporter/` is a separate, small
 
 The first layout is a co-op's point-of-sale receipt (service `co_op`), which marks each item's tax class, so food, alcohol, toys and games and everything else (candles, medicine) separate, and tax and coupons are shared out so the items add to the charge. The household names the store's card lines with a ledger parameter, jurisdiction `household`, key `order_payee:co_op`, value a pattern for the payee; any store with an order history can be added the same way (`explain.order_services`), and its charges then split by what was bought like Amazon's.
 
+The second is a bookseller's (service `bookseller`, key `order_payee:bookseller`): the receipt it emails from the register when you ask for one, read item by item at what each came to after member discounts and rewards, with the tax shared out. Toys, games and puzzles go to toys and games (family) and everything else to books (media). Its online billing summaries name the items but not their prices, so one that bills a single item reads as that item, and one that bills several is counted in the notes and stays one charge. Some stores put HTML in a receipt's plain-text part; the exporter and the reader both turn that into text.
+
 To set it up (`npm i -g @google/clasp`, logged in):
 
 1. `cd exporter && clasp create-script --type standalone --title "Household receipt exporter" --rootDir .`, then `clasp push`

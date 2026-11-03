@@ -13,6 +13,20 @@ from . import (backup, budget, categorize, checks, compute, explain, flows, inbo
                pennsylvania, projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
+def versions():
+    """The libraries this run uses and their versions ("pandas 2.2.2, ..."): the tested range is in
+    pyproject.toml, and Colab's image decides where in it a run lands, so each run says."""
+    import gspread
+    import numpy
+    import pypdf
+    import sklearn
+    out = []
+    for name, module in (("pandas", pd), ("numpy", numpy), ("scikit-learn", sklearn), ("gspread", gspread),
+                         ("pypdf", pypdf)):
+        out.append(f"{name} {getattr(module, '__version__', '?')}")
+    return ", ".join(out)
+
+
 def new_run_id(now=None):
     return (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
@@ -52,6 +66,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     """
     run_id = run_id or new_run_id()
     _say(log, f"run {run_id}: opening the ledger")
+    _say(log, f"versions: {versions()}")
     ledger, _, _ = bootstrap(session, folder_id)
     drive = session.drive()
     _say(log, "backing up every ledger tab")
@@ -147,6 +162,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
     _say(log, f"run {run_id}: reading the ledger")
+    _say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger, reports, _ = bootstrap(session, folder_id)
 
@@ -331,6 +347,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                       f"{-float(row['amount']):.2f}")
 
     log = pd.DataFrame([{"run_id": run_id, "computed_at": computed_at, "stage": "compute",
-                         "detail": str(result)}])
+                         "detail": str(result)},
+                        {"run_id": run_id, "computed_at": computed_at, "stage": "versions", "detail": versions()}])
     sheets.replace_table(reports, schema.table(schema.REPORTS, "run_log"), log)
     return result

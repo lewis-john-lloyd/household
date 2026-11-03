@@ -328,3 +328,9 @@ def test_a_target_charge_is_itemized_ahead_of_its_payee_rule():
     assert out.loc["t1", ["decided_by", "category"]].tolist() == ["target", "clothing"]
     assert out.loc["t1", "splits"] == "clothing -17.44; household -4.36"  # 12 + 4 of 20, scaled to 21.80
     assert out.loc["t2", ["decided_by", "category"]].tolist() == ["rule", "household"]
+
+
+def test_a_free_target_order_is_left_out():
+    from household.parsers import target
+    text = TARGET + "C-3,2025-08-10,,0.00,Replacement part,0.00,1,\n"
+    assert set(target.parse(text).tables["order_items"]["order_id"]) == {"A-1", "B-2"}

@@ -136,6 +136,7 @@ test("transactions: split charges become one row per part, filtered to the perio
   ]);
   assert.equal(shape.transactionsFor(txns, "2001", ["food"]).length, 3);
   assert.deepEqual(txns[0].items, []);  // a report without an items column
+  assert.deepEqual([txns[0].id, txns[0].split, txns[2].split], ["t1", "household -30.00; food -20.00", ""]);
 });
 
 test("transactions: a charge an order history explains carries its items, each part its own", () => {

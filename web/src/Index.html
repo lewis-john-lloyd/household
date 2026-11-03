@@ -29,6 +29,11 @@
       td.text { text-align: left; }
       ul.items { margin: 2px 0 0; padding-left: 16px; font-size: 0.85em; opacity: 0.75; }
       ul.items li { max-width: 46em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      ul.items li.more { cursor: pointer; text-decoration: underline dotted; }
+      span.badge { font-size: 0.75em; padding: 0 5px; border: 1px solid currentColor; border-radius: 8px;
+                   opacity: 0.7; cursor: help; }
+      td.txn-id code { visibility: hidden; user-select: all; cursor: copy; font-size: 0.8em; opacity: 0.7; }
+      tr:hover > td.txn-id code, td.txn-id code.copied { visibility: visible; }
       th button.sort { border: 0; padding: 0; background: none; font-weight: 600; cursor: pointer; }
       th button.sort[data-dir="asc"]::after { content: " ▲"; }
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
@@ -223,6 +228,60 @@
           : "No budget for this period.";
       }
 
+      // What an order history says a charge bought: the first few items, the rest behind "+N more".
+      function itemList(items) {
+        var list = document.createElement("ul");
+        list.className = "items";
+        function add(i) {
+          var li = document.createElement("li");
+          li.textContent = i.name + " · " + cents.format(i.amount);
+          li.title = i.name;
+          list.appendChild(li);
+        }
+        items.slice(0, ITEMS_SHOWN).forEach(add);
+        if (items.length > ITEMS_SHOWN) {
+          var more = document.createElement("li");
+          more.className = "more";
+          more.textContent = "+" + (items.length - ITEMS_SHOWN) + " more";
+          more.title = "show them all";
+          more.onclick = function (e) {
+            e.stopPropagation();
+            more.remove();
+            items.slice(ITEMS_SHOWN).forEach(add);
+          };
+          list.appendChild(more);
+        }
+        return list;
+      }
+
+      // A txn_id shown when the row is hovered: one click selects it and copies it where the browser allows.
+      function copyable(id) {
+        var code = document.createElement("code");
+        code.textContent = id;
+        code.title = "txn_id: click to copy";
+        code.onclick = function (e) {
+          e.stopPropagation();
+          var range = document.createRange();
+          range.selectNodeContents(code);
+          var selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          var done = function () {
+            code.classList.add("copied");
+            code.textContent = "copied";
+            setTimeout(function () { code.textContent = id; code.classList.remove("copied"); }, 900);
+          };
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(id).then(done, function () { document.execCommand("copy") && done(); });
+            } else if (document.execCommand("copy")) {
+              done();
+            }
+          } catch (err) { /* selected; copy by hand */ }
+        };
+        return code;
+      }
+
       function toggleDetail(row, line) {
         var next = row.nextSibling;
         if (next && next.classList && next.classList.contains("detail")) { next.remove(); return; }
@@ -240,26 +299,19 @@
             var r = document.createElement("tr");
             cell(r, t.date);
             var payee = cell(r, t.payee, "text");
-            if (t.items && t.items.length) {  // what an order history says the charge bought
-              var list = document.createElement("ul");
-              list.className = "items";
-              t.items.slice(0, ITEMS_SHOWN).forEach(function (i) {
-                var li = document.createElement("li");
-                li.textContent = i.name + " · " + cents.format(i.amount);
-                li.title = i.name;
-                list.appendChild(li);
-              });
-              if (t.items.length > ITEMS_SHOWN) {
-                var more = document.createElement("li");
-                more.textContent = "+" + (t.items.length - ITEMS_SHOWN) + " more: " +
-                  t.items.slice(ITEMS_SHOWN).map(function (i) { return i.name; }).join("; ");
-                list.appendChild(more);
-              }
-              payee.appendChild(list);
+            if (t.split) {  // one part of a split charge: the badge names every part
+              var badge = document.createElement("span");
+              badge.className = "badge";
+              badge.textContent = "split";
+              badge.title = t.split.split("; ").join("\n");
+              payee.appendChild(document.createTextNode(" "));
+              payee.appendChild(badge);
             }
+            if (t.items && t.items.length) payee.appendChild(itemList(t.items));
             cell(r, line.categories.length > 1 ? t.category : "", "text");
             cell(r, t.account, "text");
             cell(r, cents.format(t.amount));
+            cell(r, "", "txn-id").appendChild(copyable(t.id));
             table.appendChild(r);
           });
           td.appendChild(table);

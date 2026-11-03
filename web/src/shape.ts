@@ -175,16 +175,18 @@ interface Item {
 }
 
 interface Txn {
+  id: string;  // the line's txn_id, for correcting it in the ledger
   date: string;
   account: string;
   payee: string;
   category: string;
   amount: number;
+  split: string;  // a split charge's parts ("household -30.00; food -20.00"); "" for a whole one
   items: Item[];
 }
 
 const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
-const TXN_COLUMNS = ["date", "account_id", "amount", "payee_raw", "payee_text", "category", "splits"];
+const TXN_COLUMNS = ["date", "account_id", "amount", "payee_raw", "payee_text", "category", "splits", "txn_id"];
 const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 function columnsAt(values: unknown[][], wanted: string[], tab: string): number[] {
@@ -278,11 +280,11 @@ function parseTransactions(values: unknown[][]): Txn[] {
   const itemsAt = values[0].map((h) => String(h).trim()).indexOf("items");  // reports written before it: none
   const out: Txn[] = [];
   for (const v of values.slice(1)) {
-    const [date, account, amount, raw, named, category, splits] = at.map((i) => String(v[i] ?? "").trim());
+    const [date, account, amount, raw, named, category, splits, id] = at.map((i) => String(v[i] ?? "").trim());
     const bought = parseItems(itemsAt < 0 ? "" : String(v[itemsAt] ?? "").trim());
     const itemsIn = (c: string | null): Item[] =>
       bought.filter((i) => c === null || i[0] === c).map((i) => ({ name: i[1], amount: i[2] }));
-    const base = { date: date.slice(0, 10), account, payee: named || raw };
+    const base = { id, date: date.slice(0, 10), account, payee: named || raw, split: splits };
     if (splits) {
       for (const piece of splits.split("; ")) {
         const cut = piece.lastIndexOf(" ");

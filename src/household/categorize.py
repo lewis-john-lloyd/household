@@ -8,7 +8,10 @@ Sources, first that applies wins:
   rule           payee_rules: a pattern on the payee (and the bank's note, so a rule can
                  match USAA's own category: "\\| Cash$"), effective-dated; a rule marked
                  ask only pre-fills the guess and still asks for each line (Target,
-                 paper checks)
+                 paper checks), unless an order history explains the line
+  order history  a store whose order history lists items (explain.ORDER_SERVICES,
+                 Amazon so far): the line takes its category from what it bought,
+                 split by item amount when the items differ
   your decision  an answer given in review for a payee: it covers every line from
                  the same merchant (same_merchant), past and future
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
@@ -38,13 +41,13 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 
-from . import schema
+from . import explain, schema
 
 REVIEW_FROM = "2025-07-01"
 THRESHOLD = 0.9
 ACCEPT = ("y", "yes", "ok")
 UNPAIRED_PARAMETER = "unpaired_transfer_guess"
-ONE_BY_ONE = ("amazon",)  # an unmatched line from these services is asked about on its own
+ONE_BY_ONE = tuple(explain.ORDER_SERVICES)  # an unmatched line from a store with order history is asked alone
 DECISION_KIND = "category"
 
 # processor prefixes in front of the merchant ("APLPAY WILLOW ST", "TST* CAFE", "SQ *SHOP")
@@ -404,16 +407,16 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         service = _waiting(payee)
         if rule and not rule["ask"]:
             out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
+        elif r.txn_id in split:  # an order history's items decide, ahead of a rule that only asks
+            parts = split[r.txn_id]
+            biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
+            out.append({"category": biggest, "decided_by": service or "explained", "status": "decided",
+                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
         elif rule:  # guess from the rule, ask about this line
             out.append({"guess": rule["category"], "decided_by": "rule, asks each time", "ask": "line"})
         elif r.txn_id in unpaired:
             guess = unpaired_guess if float(r.amount) < 0 else "transfer"
             out.append({"guess": guess, "decided_by": "transfer with no partner", "ask": "line"})
-        elif r.txn_id in split:
-            parts = split[r.txn_id]
-            biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
-            out.append({"category": biggest, "decided_by": service or "explained", "status": "decided",
-                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
         elif service in ONE_BY_ONE and _covers(covered.get(service), r.date) and r.txn_id not in named:
             # inside the export's dates but matched nothing: no merchant answer fits, ask about this line
             out.append({"decided_by": f"{service}, no matching order", "ask": "line"})

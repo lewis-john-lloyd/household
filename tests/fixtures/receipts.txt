@@ -44,3 +44,58 @@ Subject: Your order
 Date: 2026-03-05T18:00:00.000Z
 
 Thanks for your order.
+===== RECEIPT m003 =====
+From: Page Turner Books <receipts@example.org>
+Subject: Thank You for Shopping
+Date: 2026-03-07T20:00:00.000Z
+
+ Thank you for shopping. Your receipt is attached below.
+ Page Turner Books #0042 
+ 100 Example Ave 
+ Springfield 
+ 555-0100 
+ STR:0042 REG:001 TRN:0007 CSHR:0001 
+ MEMBER EXP: 12/31/2026 
+ Quiet River: A Novel 
+ 9780001 T1 
+ (1 @ 20.00) Member Card 10% (2.00) 
+ (1 @ 18.00) Rewards $ (1.00) 
+ #REWARD 
+ (1 @ 17.00) 17.00 
+ Brick Castle Building Set 
+ 0670001 T1 
+ (1 @ 40.00) Member Card 10% (4.00) 
+ (1 @ 36.00) 36.00 
+ Ocean Jigsaw Puzzle 500pc 
+ 5020001 T1 
+ (1 @ 15.00) 15.00 
+ Subtotal 68.00 
+ Sales Tax T1 (5.000%) 3.40 
+ TOTAL 71.40 
+ VISA 71.40 
+ 03/07/2026 02:00PM 
+ CUSTOMER COPY 
+===== RECEIPT m004 =====
+From: Page Turner Books <orders@example.org>
+Subject: Billing Summary for Your Recent Order
+Date: 2026-03-09T08:00:00.000Z
+
+<html><body><table><tr><th>Item(s) Shipped/Billed</th><th>Qty</th></tr>
+<tr><td>Garden Birds Field Guide</td><td> 1 </td></tr></table>
+<table><tr><td>
+ Order Subtotal: $30.00</td></tr><tr><td>Tax: $1.50</td></tr><tr><td>Order Total: $31.50</td></tr></table>
+<table><tr><td>Payment card(s) charged/refunded:</td></tr><tr><td>Visa
+ (ending in) 0000: 
+ $31.50</td></tr></table>&copy;&nbsp;2026 Page Turner Books</body></html>
+===== RECEIPT m005 =====
+From: Page Turner Books <orders@example.org>
+Subject: Billing Summary for Your Recent Order
+Date: 2026-03-10T08:00:00.000Z
+
+Item(s) Shipped/Billed Qty
+Garden Birds Field Guide 1
+Ocean Jigsaw Puzzle 500pc 2
+Order Subtotal: $60.00
+Tax: $3.00
+Order Total: $63.00
+Visa (ending in) 0000: $63.00

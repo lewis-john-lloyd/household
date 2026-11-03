@@ -268,6 +268,11 @@ def test_a_split_that_does_not_add_up_says_why(text, reason):
         categorize.parse_split(text, -36.0, KNOWN)
 
 
+def test_a_sign_is_ignored_and_the_parts_take_the_lines_sign():
+    assert categorize.parse_split("kids -20; family", -30.0) == [("kids", -20.0), ("family", -10.0)]
+    assert categorize.parse_split("kids 20; family", 30.0) == [("kids", 20.0), ("family", 10.0)]  # a refund
+
+
 def test_a_split_without_the_line_amount_keeps_the_rest_for_later():
     assert categorize.parse_split("kids 20; family") == [("kids", 20.0), ("family", None)]
     assert categorize.split_text([("kids", 20.0), ("family", None)]) == "kids 20.00; family"
@@ -318,6 +323,19 @@ def test_harvest_reads_a_split_answer_for_a_line():
     assert left[["key", "note"]].values.tolist() == [
         ["t2", "split: the parts come to 25.00, the line is 30.00"],
         ["QUILL", "a split answers one line: answer a merchant with one category"]]
+
+
+def test_harvest_reads_the_split_column_before_the_answer():
+    review = pd.DataFrame([
+        {"key": "t1", "answer": "", "split": "kids 20; family", "total": -30.0, "kind": "line", "note": ""},
+        {"key": "t2", "answer": "media", "split": "kids 40; family", "total": -30.0, "kind": "line", "note": ""},
+        {"key": "t3", "answer": "media", "split": "", "total": -30.0, "kind": "line", "note": ""},
+    ], columns=list(categorize.REVIEW_COLUMNS))
+    _, fixed, left = categorize.harvest(review, KNOWN, now="2026-11-02T00:00:00")
+    assert fixed[["txn_id", "field", "value"]].values.tolist() == [["t1", "split", "kids 20.00; family 10.00"],
+                                                                ["t3", "category", "media"]]
+    assert left[["key", "note"]].values.tolist() == [
+        ["t2", "split: the parts come to 40.00, leaving nothing of the line's 30.00 for family"]]
 
 
 def test_a_line_typed_into_review_by_hand_stays_until_it_is_fixed():

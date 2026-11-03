@@ -207,3 +207,22 @@ def test_dates_typed_into_sheets_read_back_as_iso():
                                          ["rent", "2025-07-01"] + blank]
     assert sheets.read_table(ledger, t)["effective"].tolist() == ["2025-07-01"] * 3
     assert sheets.iso_date("not a date") == "not a date" and sheets.iso_date(True) is True
+
+
+def test_the_review_tab_takes_a_new_layout_without_losing_typed_answers():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    t = schema.table(schema.LEDGER, "review")
+    old = [c for c in t.columns if c != "split"]  # the layout before the split column
+    ledger.tabs["review"].rows = [old, ["t1", "family"] + [""] * (len(old) - 2)]
+    assert sheets.ensure_tables(ledger, schema.LEDGER) == []  # no SchemaMismatch, nothing cleared
+    typed = sheets.read_table(ledger, t)
+    assert list(typed.columns) == list(t.columns)
+    assert typed.iloc[0][["key", "answer", "split"]].tolist() == ["t1", "family", ""]
+    ledger.batch_updates.clear()
+    sheets.rewrite_review(ledger, t, pd.DataFrame(columns=list(t.columns)), answers=["y", "food"])
+    assert ledger.tabs["review"].rows[0] == list(t.columns)
+    requests = [r["setDataValidation"] for r in ledger.batch_updates[0]["requests"]]
+    assert "rule" not in requests[0]  # every old dropdown cleared first
+    columns = {r["range"]["startColumnIndex"]: r["rule"].get("strict") for r in requests[1:]}
+    assert columns == {t.columns.index("kind"): True, t.columns.index("answer"): False}

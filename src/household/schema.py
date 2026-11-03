@@ -81,7 +81,7 @@ LEDGER = (
           {"decision": ("approve", "reject", "snooze")}),
     # the review queue: a work surface, not a record. Each ingest run reads the answers typed here
     # into proposal_decisions and txn_corrections, then rewrites the tab with what is still open.
-    Table("review", ("key", "answer", "guess", "lines", "total", "example", "first", "last", "accounts",
+    Table("review", ("key", "answer", "split", "guess", "lines", "total", "example", "first", "last", "accounts",
                      "guessed_by", "confidence", "kind", "note"),
           {"kind": ("payee", "line")}),
 )

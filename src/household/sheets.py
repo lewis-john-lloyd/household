@@ -35,7 +35,9 @@ def ensure_tables(spreadsheet, tables):
     data rows yet: then its header is rewritten, which is how a table that has
     never held data picks up a schema change. On the Reports spreadsheet every
     table is derived and rebuilt each run, so a changed header clears that tab
-    and takes the new one; ledger data is never cleared.
+    and takes the new one; ledger data is never cleared. The ledger's review tab is
+    a work surface rewritten by every review: its header follows on that rewrite,
+    and it is read by column name until then (read_table).
     """
     existing = {ws.title: ws for ws in spreadsheet.worksheets()}
     present = [t for t in tables if t.name in existing]
@@ -47,7 +49,7 @@ def ensure_tables(spreadsheet, tables):
         for t, value_range in zip(present, result.get("valueRanges", [])):
             values = value_range.get("values") or [[]]
             header = [str(h).strip() for h in values[0]]
-            if tuple(header) == t.columns:
+            if tuple(header) == t.columns or t.name == REVIEW:
                 continue
             if len(values) > 1 and any(str(c).strip() for c in values[1]):
                 if spreadsheet.title != REPORTS_TITLE:
@@ -151,15 +153,21 @@ def iso_date(value):
 
 
 def read_table(spreadsheet, t):
-    """Read a declared table as a DataFrame of raw (unformatted) values, its date columns as YYYY-MM-DD."""
+    """Read a declared table as a DataFrame of raw (unformatted) values, its date columns as YYYY-MM-DD.
+
+    The review tab is read by column name (a column it doesn't have yet reads as blank), so
+    answers typed under an older layout still count; every other table must match the schema.
+    """
     rows = spreadsheet.worksheet(t.name).get_values(value_render_option=UNFORMATTED)
     if not rows:
         return pd.DataFrame(columns=list(t.columns))
     header, body = [str(h).strip() for h in rows[0]], rows[1:]
-    if tuple(header) != t.columns:
+    if tuple(header) != t.columns and t.name != REVIEW:
         raise SchemaMismatch(f"{t.name}: header {header} != {list(t.columns)}")
     width = len(header)
     df = pd.DataFrame([r + [""] * (width - len(r)) for r in body], columns=header)
+    if tuple(header) != t.columns:
+        df = df.loc[:, ~df.columns.duplicated()].reindex(columns=list(t.columns), fill_value="")
     for column in [c for c in header if is_date_column(c)]:
         df[column] = df[column].map(iso_date)
     return df
@@ -182,7 +190,9 @@ def rewrite_review(spreadsheet, t, df, answers=()):
 
     Its answers are read into the ledger before every rewrite (see engine.review),
     so rewriting loses nothing. answers fill the answer column's dropdown; typing
-    something else is allowed and is reported back in note.
+    something else is allowed and is reported back in note. The split column has
+    no dropdown, so a split can be typed. Every dropdown below the header is
+    cleared first, so one left by an older layout of the tab does not linger.
     """
     if t.name != REVIEW:
         raise PermissionError(f"rewrite_review refused on '{t.name}': only the review tab is rewritten")
@@ -191,10 +201,13 @@ def rewrite_review(spreadsheet, t, df, answers=()):
     values = [list(t.columns)] + df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
     ws.resize(rows=max(len(values), 2), cols=len(t.columns))
     ws.update(values=values, range_name="A1", value_input_option="RAW")
+    requests = [{"setDataValidation": {"range": {"sheetId": ws.id, "startRowIndex": 1}}}]
+    requests += [_validation(ws.id, t, column, values) for column, values in t.enums.items()]
     if answers:
         rule = _validation(ws.id, t, "answer", list(answers))
         rule["setDataValidation"]["rule"]["strict"] = False
-        spreadsheet.batch_update({"requests": [rule]})
+        requests.append(rule)
+    spreadsheet.batch_update({"requests": requests})
     return len(values) - 1
 
 

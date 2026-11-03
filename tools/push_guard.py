@@ -11,7 +11,7 @@ git runs this from .githooks/pre-push (turned on once per clone with
      ignoring case) or an amount with cents, matched however it is written: 1234.56,
      1,234.56, a dollar sign before it, or the digit groups of a PDF's text, "1 234 56";
   3. binary files (PDFs, images, archives, office files): refused unless listed in
-     tests/fixtures/BINARIES (as the push leaves it), and a listed PDF's text goes
+     tests/fixtures/BINARIES (as the push leaves it or the checkout has it), and a listed PDF's text goes
      through (2). A file is binary when git says so or its name does (.pdf, .png, ...).
      Every version a pushed commit adds or changes is checked, as it was at that commit,
      so a file added in one commit and deleted or replaced in a later one is still caught;
@@ -193,9 +193,13 @@ def check(ranges, denylist):
         for message in git("log", "--format=%H%n%B%x1e", *args).split("\x1e"):
             sha, _, body = message.strip().partition("\n")
             findings += message_findings(f"commit {sha[:7]} message", body, denylist)
-        # which binaries are made-up fixtures: the list as the push leaves it
+        # which binaries are made-up fixtures: the list as the push leaves it, and as the checkout has it
+        # (an old tag pushed again predates the list; each PDF version's text is still checked)
         tip = args[0].split("..")[-1]
-        allowed = leak_guard.allowed_binaries(lambda p: (git_bytes("show", f"{tip}:{p}") or b"").decode("utf-8", "replace"))
+        allowed = set()
+        for ref in (tip, "HEAD"):
+            allowed |= set(leak_guard.allowed_binaries(
+                lambda p, ref=ref: (git_bytes("show", f"{ref}:{p}") or b"").decode("utf-8", "replace")))
         for sha, paths in commit_binaries(git("log", "--no-renames", "--numstat", "--format=%x1e%H", *args)).items():
             found = binary_findings(paths, lambda p, sha=sha: git_bytes("show", f"{sha}:{p}"), denylist, allowed)
             findings += [f"commit {sha[:7]} {f}" for f in found]

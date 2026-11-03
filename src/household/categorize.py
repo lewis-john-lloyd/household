@@ -357,7 +357,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     Amazon split, each service's coverage). status is decided, open (asked in
     review) or waiting (for an explanation download); category is the decision
     or, failing one, the best guess, so totals are whole while the queue is
-    open; splits lists a split line's parts ("household -20.00; food -5.50"), from
+    open; items, for a line an order history explains, is JSON [[category, item,
+    amount], ...] of what it bought; splits lists a split line's parts ("household -20.00; food -5.50"), from
     a person's split or an explanation. categories: the names a person's split
     may use (any, when not given).
     """
@@ -372,6 +373,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     df["payee_text"] = [named.get(t, p) for t, p in zip(df["txn_id"], df["payee_raw"].astype(str))]
     hints = explanations.get("hints", {})
     df["hint"] = df["txn_id"].map(lambda t: hints.get(t, ""))
+    contents = explanations.get("items", {})  # what an explained charge bought, as JSON, for the views
+    df["items"] = df["txn_id"].map(lambda t: contents.get(t, ""))
     df["key"] = df["payee_text"].map(payee_key)
     unpaired = set(unpaired)
     rules, answered = _rules(payee_rules), payee_decisions(decisions)

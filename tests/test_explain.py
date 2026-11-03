@@ -1,6 +1,7 @@
 """Amazon's export, explanation matching, and how matches reach categorization."""
 
 import io
+import json
 import zipfile
 
 import pandas as pd
@@ -79,6 +80,18 @@ def test_shipments_orders_refunds_and_a_foreign_card():
     assert found["t5"] == [("clothing", 10.0)]  # the socks came back
 
 
+def test_what_a_matched_charge_bought_goes_along():
+    lines = pd.DataFrame([line(1, "2025-08-03", "AMAZON MKTPL*AB12", -30.00),
+                          line(5, "2025-08-22", "AMAZON MKTPLACE PMTS", 10.00)])
+    contents = {}
+    explain.match_amazon(lines, items(), cards={"1111"}, contents=contents)
+    assert sorted(c for c, _, _ in contents["t1"]) == ["clothing", "household"]
+    assert sum(a for _, _, a in contents["t1"]) == 30.0
+    assert [(c, a) for c, _, a in contents["t5"]] == [("clothing", 10.0)]
+    out = explain.explain(lines, items=items(), cards={"1111"})
+    assert json.loads(out["items"]["t1"]) == [list(i) for i in contents["t1"]]
+
+
 def test_a_whole_order_matches_when_no_shipment_does():
     lines = pd.DataFrame([line(1, "2025-08-06", "AMAZON MKTPL*AB12", -35.50)])
     assert explain.match_amazon(lines, items(), cards={"1111"})["t1"][-1][0] == "household"
@@ -114,7 +127,8 @@ def test_categorization_uses_what_was_matched():
     ])
     explained = {"payee": {"t2": "Lantern Cafe Dinner"},
                  "split": {"t1": [("clothing", -10.0), ("household", -20.0)]},
-                 "coverage": {"amazon": ("2025-08-02", "2025-08-21")}}
+                 "coverage": {"amazon": ("2025-08-02", "2025-08-21")},
+                 "items": {"t1": '[["household", "Spatula", 20.0], ["clothing", "Socks", 10.0]]'}}
     decisions = pd.DataFrame([{"proposal_key": "payee:LANTERN CAFE DINNER", "kind": "category",
                                "decided_at": "2026-01-01", "decision": "approve", "note": "restaurant"}])
     out = categorize.categorize(lines, decisions=decisions, explanations=explained).set_index("txn_id")
@@ -125,6 +139,8 @@ def test_categorization_uses_what_was_matched():
     assert out.loc["t3", "status"] == "waiting"
     assert out.loc["t4", ["status", "ask", "decided_by"]].tolist() == ["open", "line", "amazon, no matching order"]
     assert out.loc["t5", ["status", "decided_by"]].tolist() == ["waiting", "waiting for apple"]
+    assert json.loads(out.loc["t1", "items"])[0] == ["household", "Spatula", 20.0]
+    assert out.loc["t2", "items"] == ""
 
     actual = categorize.actual_rows(out.reset_index())
     t1 = actual[actual["txn_id"] == "t1"].sort_values("category")

@@ -168,12 +168,19 @@ interface BudgetLine {
   categories: string[];
 }
 
+/** An item an order history says a charge bought: its name and price. */
+interface Item {
+  name: string;
+  amount: number;
+}
+
 interface Txn {
   date: string;
   account: string;
   payee: string;
   category: string;
   amount: number;
+  items: Item[];
 }
 
 const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
@@ -248,21 +255,42 @@ function budgetLines(rows: BudgetRow[], period: string, level: string): BudgetLi
     || a.remaining - b.remaining || a.name.localeCompare(b.name));
 }
 
-/** Transactions as one row per category: a split charge becomes one row per part. */
+/** The items column: JSON [[category, name, amount], ...], or nothing (a line no order history explains). */
+function parseItems(text: string): [string, string, number][] {
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed)
+      ? parsed.filter((i) => Array.isArray(i) && i.length === 3).map((i) => [String(i[0]), String(i[1]), Number(i[2]) || 0])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Transactions as one row per category: a split charge becomes one row per part. A charge an order history
+ * explains carries what it bought, each part only the items in its own category.
+ */
 function parseTransactions(values: unknown[][]): Txn[] {
   if (!values.length) return [];
   const at = columnsAt(values, TXN_COLUMNS, "categorized");
+  const itemsAt = values[0].map((h) => String(h).trim()).indexOf("items");  // reports written before it: none
   const out: Txn[] = [];
   for (const v of values.slice(1)) {
     const [date, account, amount, raw, named, category, splits] = at.map((i) => String(v[i] ?? "").trim());
+    const bought = parseItems(itemsAt < 0 ? "" : String(v[itemsAt] ?? "").trim());
+    const itemsIn = (c: string | null): Item[] =>
+      bought.filter((i) => c === null || i[0] === c).map((i) => ({ name: i[1], amount: i[2] }));
     const base = { date: date.slice(0, 10), account, payee: named || raw };
     if (splits) {
       for (const piece of splits.split("; ")) {
         const cut = piece.lastIndexOf(" ");
-        out.push({ ...base, category: piece.slice(0, cut), amount: Number(piece.slice(cut + 1)) || 0 });
+        const part = piece.slice(0, cut);
+        out.push({ ...base, category: part, amount: Number(piece.slice(cut + 1)) || 0, items: itemsIn(part) });
       }
     } else {
-      out.push({ ...base, category, amount: Number(amount) || 0 });
+      out.push({ ...base, category, amount: Number(amount) || 0, items: itemsIn(null) });
     }
   }
   return out;

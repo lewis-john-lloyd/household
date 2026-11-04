@@ -6,7 +6,7 @@
  * the engine's receipt reader parses them. It never changes Gmail.
  *
  * Drive access is drive.file: the exporter can see and change only what it created. So it makes its
- * own folder ("receipts from email", in My Drive) on the first run; move that folder into the
+ * own folder ("email_receipts", in My Drive) on the first run; move that folder into the
  * household inbox folder once, and the engine reads it there. It keeps writing into the folder
  * wherever it is moved, and nothing else in Drive is open to it.
  *
@@ -24,7 +24,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const OVERLAP_DAYS = 3;   // each search reaches back this far before SINCE, in case a receipt arrives late
 const KEEP_DAYS = 30;     // DONE remembers ids this long
 const SEPARATOR = "===== RECEIPT ";
-const FOLDER_NAME = "receipts from email";
+const FOLDER_NAME = "email_receipts";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 function exportReceipts() {

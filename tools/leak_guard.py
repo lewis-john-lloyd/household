@@ -7,13 +7,17 @@ which should be rare and obvious in review.
 
 Binary files (PDFs, images, office files, archives: anything not UTF-8 text)
 are refused unless listed in tests/fixtures/BINARIES, the made-up fixtures the
-tests need; a listed PDF has its text checked like a fixture's. Pay stubs,
+tests need. A line there is a path under tests/fixtures/ and the SHA-256 of the
+contents approved, so a listed name never vouches for other contents (a new
+version needs its own line, or a new hash); a listed PDF has its text checked
+like a fixture's. Pay stubs,
 statements and exports are the documents that must never land here, and they
 are binary.
 
 Exit status is 1 when anything is found.
 """
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -22,10 +26,11 @@ from pathlib import Path
 ALLOW_MARKER = "leak-guard: allow"
 FIXTURE_DIR = "tests/fixtures/"
 SKIP_SUFFIXES = {".lock"}
-ALLOWED_BINARIES = FIXTURE_DIR + "BINARIES"  # made-up binary fixtures, one path per line
+ALLOWED_BINARIES = FIXTURE_DIR + "BINARIES"  # made-up binary fixtures: "path sha256", one per line
 BINARY_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".heic", ".webp", ".zip", ".gz", ".tgz", ".7z",
                    ".tar", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ofx", ".qfx"}
 BINARY = "binary file not listed in " + ALLOWED_BINARIES
+CHANGED = "binary file whose contents are not the ones listed (sha256) in " + ALLOWED_BINARIES
 
 CHECKS = [
     ("account-number-shaped digit run", re.compile(r"(?<![\d.])\d{8,}(?![\d.])"), True),
@@ -39,16 +44,41 @@ CHECKS = [
 ]
 
 
+HASH = re.compile(r"(?<!\w)(?:[0-9a-f]{64}|[0-9a-f]{40})(?!\w)")
+
+
+def without_hashes(line):
+    """The line with whole git and SHA-256 hashes (40 or 64 hex digits) taken out: their digit runs
+    are not account numbers."""
+    return HASH.sub(" ", line)
+
+
 def tracked_files():
     out = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True)
     return [line for line in out.stdout.splitlines() if line]
 
 
 def allowed_binaries(read=None):
-    """The paths tests/fixtures/BINARIES lists (# starts a comment). read(path) -> text or None."""
+    """{path: {sha256}} from tests/fixtures/BINARIES (# starts a comment). A line is a path under
+    tests/fixtures/ and the SHA-256 of its approved contents; a line without a hash, or a path
+    outside the fixtures, allows nothing. read(path) -> text or None."""
     text = read(ALLOWED_BINARIES) if read else (Path(ALLOWED_BINARIES).read_text(encoding="utf-8")
                                                  if Path(ALLOWED_BINARIES).exists() else "")
-    return {line.split("#", 1)[0].strip() for line in (text or "").splitlines()} - {""}
+    out = {}
+    for line in (text or "").splitlines():
+        parts = line.split("#", 1)[0].split()
+        if len(parts) == 2 and parts[0].startswith(FIXTURE_DIR) and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+            out.setdefault(parts[0], set()).add(parts[1])
+    return out
+
+
+def merge_allowed(*lists):
+    """One {path: {sha256}} holding every entry of these."""
+    out = {}
+    for allowed in lists:
+        for path, hashes in allowed.items():
+            out.setdefault(path, set()).update(hashes)
+    return out
 
 
 def binary(path, data):
@@ -78,6 +108,8 @@ def binary_findings(path, data, allowed):
     path = path.replace("\\", "/")
     if path not in allowed:
         return [(0, BINARY, path)]
+    if hashlib.sha256(data).hexdigest() not in allowed[path]:
+        return [(0, CHANGED, path)]
     if path.lower().endswith(".pdf"):
         text = pdf_text(data)
         if text is None:
@@ -94,7 +126,7 @@ def _lines(text, in_fixtures):
         for name, pattern, applies_in_fixtures in CHECKS:
             if in_fixtures and not applies_in_fixtures:
                 continue
-            if pattern.search(line):
+            if pattern.search(without_hashes(line)):
                 findings.append((number, name, line.strip()))
     return findings
 

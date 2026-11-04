@@ -1,5 +1,6 @@
 """The push guard stops household values and leak patterns in what is about to be pushed."""
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -122,16 +123,23 @@ def test_a_binary_file_is_refused_unless_listed_as_a_made_up_fixture(tmp_path, m
     monkeypatch.setenv("HOUSEHOLD_DENYLIST", str(deny))
     found = push_guard.check_staged(push_guard.load_denylist(deny))
     assert sorted(f.split(":")[0] for f in found) == ["statement.pdf", "tests/fixtures/chart.png"]
-    (work / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/chart.png  # made up\n")
+    chart = hashlib.sha256((work / "tests" / "fixtures" / "chart.png").read_bytes()).hexdigest()
+    (work / "tests" / "fixtures" / "BINARIES").write_text(f"tests/fixtures/chart.png {chart}  # made up\n")
     git(work, "add", ".")
     assert [f.split(":")[0] for f in push_guard.check_staged(push_guard.load_denylist(deny))] == ["statement.pdf"]
+    (work / "tests" / "fixtures" / "chart.png").write_bytes(b"\x89PNG\r\n\x1a\n\x01 other")
+    git(work, "add", ".")
+    found = push_guard.check_staged(push_guard.load_denylist(deny))
+    assert any("chart.png" in f and "sha256" in f for f in found)  # same name, other contents: refused
 
 
 def test_leak_guard_reads_a_listed_pdf_and_refuses_an_unreadable_one(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tests" / "fixtures").mkdir(parents=True)
-    (tmp_path / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/x.pdf\n")
-    (tmp_path / "tests" / "fixtures" / "x.pdf").write_bytes(b"%PDF-1.4 broken")
+    broken = b"%PDF-1.4 broken"
+    (tmp_path / "tests" / "fixtures" / "BINARIES").write_text(
+        f"tests/fixtures/x.pdf {hashlib.sha256(broken).hexdigest()}\n")
+    (tmp_path / "tests" / "fixtures" / "x.pdf").write_bytes(broken)
     assert [n for _, n, _ in push_guard.leak_guard.scan("tests/fixtures/x.pdf")] == ["listed PDF that can't be read"]
     (tmp_path / "y.jpg").write_bytes(b"\xff\xd8\xff")
     assert [n for _, n, _ in push_guard.leak_guard.scan("y.jpg")] == [push_guard.leak_guard.BINARY]
@@ -167,10 +175,28 @@ def test_a_binary_added_then_deleted_in_the_same_push_is_still_refused(tmp_path,
 def test_a_binary_replaced_before_the_push_is_checked_in_every_version(tmp_path, monkeypatch):
     def listed(w):
         (w / "tests" / "fixtures").mkdir(parents=True)
-        (w / "tests" / "fixtures" / "BINARIES").write_text("tests/fixtures/chart.png  # made up\n")
+        (w / "tests" / "fixtures" / "BINARIES").write_text(f"tests/fixtures/chart.png {'0' * 64}  # made up\n")
         (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff")
     found = _pushed(tmp_path, monkeypatch, [
         listed,
         lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 other \x00\xfe")])
     assert len(found) == 2 and all("statement.pdf" in f for f in found)
     assert len({f.split()[1] for f in found}) == 2  # one finding for each commit's version
+
+
+def test_the_binary_list_allows_only_fixtures_pinned_by_their_hash():
+    good = "a" * 64
+    text = (f"tests/fixtures/x.png {good}  # made up\n"
+            f"docs/real.png {good}\n"            # outside the fixtures: allows nothing
+            "tests/fixtures/y.png\n"              # no hash: allows nothing
+            f"tests/fixtures/x.png {'b' * 64}\n")  # a second approved version
+    assert push_guard.leak_guard.allowed_binaries(lambda p: text) == {"tests/fixtures/x.png": {good, "b" * 64}}
+
+
+def test_whole_hashes_are_not_account_numbers_but_digits_beside_them_are():
+    lg = push_guard.leak_guard
+    digits = "".join(str(n % 10) for n in range(1, 11))  # ten digits in a row, built so this file holds none
+    sha = digits * 6 + "abcd"
+    assert push_guard.pattern_findings("src/x.py", "pinned " + sha) == []
+    assert push_guard.pattern_findings("src/x.py", "acct " + digits + " " + sha) != []
+    assert lg.without_hashes("x" + sha) == "x" + sha  # part of a longer word is not a hash

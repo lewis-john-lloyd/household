@@ -36,6 +36,7 @@ function exportReceipts() {
   const done = JSON.parse(props.getProperty("DONE") || "{}");   // id -> epoch ms of the message
   const parts = [];
   let newest = 0;
+  let skipped = 0;
   for (const sender of senders) {
     const query = sender + (since ? " after:" + since : "");
     let pageToken;
@@ -45,7 +46,13 @@ function exportReceipts() {
         if (done[ref.id]) continue;
         const message = Gmail.Users.Messages.get("me", ref.id, { format: "full" });
         const when = Number(message.internalDate);
-        parts.push(render_(message));
+        try {
+          parts.push(render_(message));
+        } catch (e) {  // one unreadable message is logged and left, not the end of the run
+          console.log("could not read message " + ref.id + ": " + e);
+          skipped++;
+          continue;
+        }
         done[ref.id] = when;
         newest = Math.max(newest, when);
       }
@@ -63,7 +70,7 @@ function exportReceipts() {
   const cutoff = Date.now() - KEEP_DAYS * DAY_MS;
   for (const id of Object.keys(done)) if (done[id] < cutoff) delete done[id];
   props.setProperty("DONE", JSON.stringify(done));
-  console.log("exported " + parts.length + " receipts");
+  console.log("exported " + parts.length + " receipts" + (skipped ? ", " + skipped + " unreadable (see above)" : ""));
 }
 
 /** The exporter's own folder: made on the first run, then the same one wherever it is moved. */
@@ -106,15 +113,21 @@ function render_(message) {
   ].join("\n");
 }
 
+/** A part's body as text. The Gmail service hands it over as bytes, or as base64url that may lack its
+ * padding, depending on the message; both are read. */
+function decode_(data) {
+  if (typeof data !== "string") return Utilities.newBlob(data).getDataAsString("UTF-8");
+  let text = data.replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");
+  while (text.length % 4) text += "=";
+  return Utilities.newBlob(Utilities.base64Decode(text)).getDataAsString("UTF-8");
+}
+
 /** The message's plain text, or its HTML reduced to text when the plain part says too little. */
 function body_(payload) {
   const found = { plain: "", html: "" };
   (function walk(part) {
-    if (part.body && part.body.data) {
-      const text = Utilities.newBlob(Utilities.base64DecodeWebSafe(part.body.data)).getDataAsString();
-      if (part.mimeType === "text/plain" && !found.plain) found.plain = text;
-      if (part.mimeType === "text/html" && !found.html) found.html = text;
-    }
+    const kind = part.mimeType === "text/plain" ? "plain" : part.mimeType === "text/html" ? "html" : "";
+    if (kind && !found[kind] && part.body && part.body.data) found[kind] = decode_(part.body.data);
     (part.parts || []).forEach(walk);
   })(payload);
   // Some stores put HTML in the plain-text part, so that counts as HTML too.

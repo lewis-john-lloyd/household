@@ -6,7 +6,7 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -16,6 +16,7 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   budgetLines: (rows: BudgetRow[], period: string, level: string) => BudgetLine[];
   parseTransactions: (values: unknown[][]) => Txn[];
   transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
+  parseStatus: (runLog: unknown[][], notes: unknown[][]) => Status;
 };
 
 const VALUES: unknown[][] = [
@@ -150,4 +151,43 @@ test("transactions: a charge an order history explains carries its items, each p
   assert.deepEqual(txns.map((t) => [t.category, t.items.map((i) => i.name)]), [
     ["household", ["Spatula"]], ["food", ["Coffee"]], ["household", []], ["household", ["Spatula"]],
   ]);
+});
+
+const RUN_LOG: unknown[][] = [
+  ["run_id", "computed_at", "stage", "detail"],
+  ["r2", "2001-03-02T07:00:00+00:00", "compute",
+   JSON.stringify({ review_open_lines: 4, downloads_due: 0, balances_off: 0, transfers_unmatched: 2,
+                    projection: { "as is": -1500, "no extra withholding": 300 } })],
+  ["r1", "2001-03-02T06:00:00+00:00", "ingest",
+   JSON.stringify({ counts: { ingested: 1, unrecognized: 1 },
+                    files: [{ file: "a.csv", status: "ingested" }, { file: "notes.txt", status: "unrecognized" }] })],
+  ["r0", "2001-03-01T06:00:00+00:00", "versions", "pandas 2"],
+];
+const RUN_NOTES: unknown[][] = [
+  ["run_id", "stage", "at", "n", "message"],
+  ["r2", "compute", "2001-03-02T07:00:00+00:00", 1, "transfers: 9 pairs between your accounts, 2 transfer lines with no partner"],
+  ["r2", "compute", "2001-03-02T07:00:00+00:00", 0, "run r2: reading the ledger"],
+  ["r2", "compute", "2001-03-02T07:00:00+00:00", 2, "categories since 2001-01-01: decided {}; 4 lines open in review"],
+  ["r1", "ingest", "2001-03-02T06:00:00+00:00", 0, "run r1: opening the ledger"],
+  ["old", "ingest", "2001-02-01T06:00:00+00:00", 0, "an earlier run, not shown"],
+];
+
+test("the status page shows each stage's latest run, its lines in order, and what needs the owner", () => {
+  const status = shape.parseStatus(RUN_LOG, RUN_NOTES);
+  assert.deepEqual(status.stages.map((s) => [s.stage, s.runId]), [["ingest", "r1"], ["compute", "r2"]]);
+  assert.deepEqual(status.stages[1].lines, ["run r2: reading the ledger",
+    "transfers: 9 pairs between your accounts, 2 transfer lines with no partner",
+    "categories since 2001-01-01: decided {}; 4 lines open in review"]);
+  assert.deepEqual(status.attention.map((a) => [a.label, a.count]), [
+    ["inbox files not read", 1], ["lines waiting in the review tab", 4], ["transfer lines with no partner", 2]]);
+  assert.deepEqual(status.attention[1].detail, ["categories since 2001-01-01: decided {}; 4 lines open in review"]);
+  assert.equal(status.stale, false);
+  assert.deepEqual(status.projection, [["as is", -1500], ["no extra withholding", 300]]);
+});
+
+test("the status page flags a compute older than the last ingest, and copes with no runs yet", () => {
+  const later = RUN_LOG.map((r, n) => (n === 2 ? ["r3", "2001-03-02T08:00:00+00:00", "ingest", "{}"] : r));
+  assert.equal(shape.parseStatus(later, []).stale, true);
+  const empty = shape.parseStatus([], []);
+  assert.deepEqual([empty.stages, empty.attention, empty.projection, empty.stale], [[], [], [], false]);
 });

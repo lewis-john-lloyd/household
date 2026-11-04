@@ -62,3 +62,17 @@ function getBudget(period: string, level: string): BudgetLine[] {
 function getTransactions(period: string, categories: string[]): Txn[] {
   return transactionsFor(parseTransactions(readTab_("categorized")), period, categories);
 }
+
+/** A Reports tab's values, or [] when it is missing or empty (the status tabs start with the first run that writes them). */
+function readTabIfAny_(name: string): unknown[][] {
+  try {
+    return readTab_(name);
+  } catch (e) {
+    return [];
+  }
+}
+
+/** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
+function getStatus(): Status {
+  return parseStatus(readTabIfAny_("run_log"), readTabIfAny_("run_notes"));
+}

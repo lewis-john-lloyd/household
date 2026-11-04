@@ -88,6 +88,7 @@ LEDGER = (
 
 REPORTS = (
     Table("run_log", ("run_id", "computed_at", "stage", "detail")),
+    Table("run_notes", ("run_id", "stage", "at", "n", "message")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),
     Table("tax_check", ("year", "line", "filed", "computed", "diff", "match", "run_id")),

@@ -138,3 +138,24 @@ def test_compute_writes_the_mortgage_schedule_when_a_loan_is_on_file(session):
     sched = session.sheets.files["reports"].worksheet("mortgage").get_values()
     assert sched[0][:3] == ["month", "loan_id", "payment"] and len(sched) > 1
     assert any(line.startswith("mortgage: home balance") for line in said)
+
+
+def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session):
+    import json
+    for name, mime in (("pay_statement.pdf", "application/pdf"), ("schwab_equity.csv", "text/csv"),
+                       ("accounts_seed.csv", "text/csv"), ("return_facts.csv", "text/csv")):
+        drop(session, name, mime)
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")
+    engine.compute_all(session, session.root, run_id="run-2", log=None)
+    engine.ingest_inbox(session, session.root, run_id="run-3", log=None)  # replaces only the ingest stage
+    reports = session.sheets.files[sheets.REPORTS_TITLE]
+    runs = sheets.read_table(reports, schema.table(schema.REPORTS, "run_log"))
+    assert dict(zip(runs["stage"], runs["run_id"])) == {"compute": "run-2", "ingest": "run-3"}
+    summary = json.loads(runs.loc[runs["stage"] == "compute", "detail"].item())
+    assert "review_open_lines" in summary and "versions" in summary
+    notes = sheets.read_table(reports, schema.table(schema.REPORTS, "run_notes"))
+    assert set(notes["run_id"]) == {"run-2", "run-3"}
+    compute_lines = notes[notes["stage"] == "compute"]["message"].tolist()
+    assert compute_lines[0] == "run run-2: reading the ledger"
+    assert any(line.startswith("transfers:") for line in compute_lines)

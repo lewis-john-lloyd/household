@@ -4,6 +4,7 @@ Stores are found by name inside the household folder, so a notebook needs only
 the folder ID (and, for migration, the legacy workbook ID).
 """
 
+import json
 import time
 from datetime import datetime, timezone
 
@@ -59,15 +60,42 @@ def _say(log, message):
         log(message)
 
 
+def _recording(log):
+    """(say, lines): say prints through log as before and keeps every line, for the views' status page."""
+    lines = []
+
+    def say(message):
+        lines.append(str(message))
+        if log:
+            log(message)
+    return say, lines
+
+
+def _record(reports, stage, run_id, at, summary, lines):
+    """Keep this run of this stage in Reports (run_log: its summary as JSON; run_notes: every line it
+    printed), replacing that stage's last run and leaving the other stages' alone."""
+    for name, rows in (
+            ("run_log", [{"run_id": run_id, "computed_at": at, "stage": stage,
+                          "detail": json.dumps(summary, default=str, sort_keys=True)}]),
+            ("run_notes", [{"run_id": run_id, "stage": stage, "at": at, "n": n, "message": m}
+                           for n, m in enumerate(lines)])):
+        t = schema.table(schema.REPORTS, name)
+        kept = sheets.read_table(reports, t)
+        kept = kept[kept["stage"].astype(str) != stage] if len(kept) else kept
+        sheets.replace_table(reports, t, pd.concat([kept, pd.DataFrame(rows, columns=t.columns)], ignore_index=True))
+
+
 def ingest_inbox(session, folder_id, run_id=None, log=print):
     """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py).
 
     Progress goes to log (print by default; None for silence).
     """
     run_id = run_id or new_run_id()
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    log, lines = _recording(log)
     _say(log, f"run {run_id}: opening the ledger")
     _say(log, f"versions: {versions()}")
-    ledger, _, _ = bootstrap(session, folder_id)
+    ledger, reports, _ = bootstrap(session, folder_id)
     drive = session.drive()
     _say(log, "backing up every ledger tab")
     started = time.perf_counter()
@@ -82,7 +110,12 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     started = time.perf_counter()
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
-    return {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
+    for f in files:  # a parser's notes, kept with the run (the notebook prints them itself)
+        lines += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
+    result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
+    _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}
+            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended")} for f in files]}, lines)
+    return result
 
 
 def _read(ledger, name):
@@ -162,6 +195,7 @@ def _review(ledger, log=print, now=None):
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
+    log, lines = _recording(log)
     _say(log, f"run {run_id}: reading the ledger")
     _say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -347,8 +381,5 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             _say(log, f"  not in the old rollup (no category): {row['date']} {row['payee_raw']} "
                       f"{-float(row['amount']):.2f}")
 
-    log = pd.DataFrame([{"run_id": run_id, "computed_at": computed_at, "stage": "compute",
-                         "detail": str(result)},
-                        {"run_id": run_id, "computed_at": computed_at, "stage": "versions", "detail": versions()}])
-    sheets.replace_table(reports, schema.table(schema.REPORTS, "run_log"), log)
+    _record(reports, "compute", run_id, computed_at, result | {"versions": versions()}, lines)
     return result

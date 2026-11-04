@@ -304,3 +304,97 @@ function transactionsFor(txns: Txn[], period: string, categories: string[]): Txn
   return txns.filter((t) => wanted.has(t.category) && inPeriod(t.date.slice(0, 7), period))
     .sort((a, b) => a.amount - b.amount || b.date.localeCompare(a.date));
 }
+
+/**
+ * The status page: the latest run of each stage (ingest, compute) from the Reports tabs run_log (its
+ * summary, as JSON) and run_notes (every line it printed), and what in them needs the owner.
+ */
+interface StageRun {
+  stage: string;
+  runId: string;
+  at: string;
+  summary: Record<string, unknown>;
+  lines: string[];
+}
+
+interface Attention {
+  label: string;
+  count: number;
+  detail: string[];  // the log lines that say more
+}
+
+interface Status {
+  stages: StageRun[];
+  attention: Attention[];
+  stale: boolean;  // compute has not run since the last ingest
+  projection: [string, number][];  // scenario, owe (positive) or refund (negative)
+}
+
+const RUN_LOG_COLUMNS = ["run_id", "computed_at", "stage", "detail"];
+const RUN_NOTES_COLUMNS = ["run_id", "stage", "at", "n", "message"];
+// a compute summary count that needs the owner when it is not zero: key, what it counts, the line that says more
+const CHECKS: [string, string, string][] = [
+  ["review_open_lines", "lines waiting in the review tab", "categories since"],
+  ["downloads_due", "downloads due", "coverage:"],
+  ["balances_off", "balances that disagree with the ledger", "balance_check:"],
+  ["stubs_missing", "pay deposits with no stub", "paychecks:"],
+  ["pay_not_deposited", "pay stubs with no deposit", "paychecks:"],
+  ["possible_duplicates", "possible duplicate transactions", "possible_duplicates:"],
+  ["tax_check_mismatches", "filed tax lines that disagree", "tax_check:"],
+  ["tax_sources_unfiled", "tax values whose source PDF is not filed", "tax_sources:"],
+  ["withholding_unexplained", "federal withholding stubs unexplained", "withholding_backtest:"],
+  ["wi_withholding_unexplained", "state (wi) withholding stubs unexplained", "wi_withholding_backtest:"],
+  ["pa_withholding_unexplained", "state (pa) withholding stubs unexplained", "pa_withholding_backtest:"],
+  ["mismatches", "legacy check mismatches", "legacy check"],
+  ["legacy_uncategorized", "legacy lines with no category", "legacy check"],
+  ["transfers_unmatched", "transfer lines with no partner", "transfers:"],
+];
+const UNREAD = ["error", "unrecognized"];  // inbox file statuses that leave a file in the inbox
+
+function parseStatus(runLog: unknown[][], notes: unknown[][]): Status {
+  const runs: StageRun[] = [];
+  if (runLog.length) {
+    const [id, at, stage, detail] = columnsAt(runLog, RUN_LOG_COLUMNS, "run_log");
+    for (const v of runLog.slice(1)) {
+      const name = String(v[stage] ?? "").trim();
+      if (name !== "ingest" && name !== "compute") continue;  // an older run_log row ("versions")
+      let summary: Record<string, unknown> = {};
+      try {
+        summary = JSON.parse(String(v[detail] ?? "")) as Record<string, unknown>;
+      } catch (e) {
+        summary = {};  // a summary from before the status page: no counts to show
+      }
+      runs.push({ stage: name, runId: String(v[id] ?? ""), at: String(v[at] ?? ""), summary, lines: [] });
+    }
+  }
+  if (notes.length) {
+    const [id, stage, , n, message] = columnsAt(notes, RUN_NOTES_COLUMNS, "run_notes");
+    const sorted = notes.slice(1).slice().sort((a, b) => Number(a[n]) - Number(b[n]));
+    for (const v of sorted) {
+      const run = runs.find((r) => r.stage === String(v[stage] ?? "").trim() && r.runId === String(v[id] ?? ""));
+      if (run) run.lines.push(String(v[message] ?? ""));
+    }
+  }
+  runs.sort((a, b) => (a.stage === "ingest" ? 0 : 1) - (b.stage === "ingest" ? 0 : 1));
+  const ingest = runs.find((r) => r.stage === "ingest");
+  const compute = runs.find((r) => r.stage === "compute");
+  const attention: Attention[] = [];
+  if (ingest) {
+    const files = (ingest.summary.files as { file?: string; status?: string; reason?: string }[] | undefined) || [];
+    const unread = files.filter((f) => UNREAD.indexOf(String(f.status)) >= 0);
+    if (unread.length) {
+      attention.push({ label: "inbox files not read", count: unread.length,
+                       detail: unread.map((f) => `${f.file}: ${f.status}${f.reason ? " (" + f.reason + ")" : ""}`) });
+    }
+  }
+  if (compute) {
+    for (const [key, label, prefix] of CHECKS) {
+      const count = Number(compute.summary[key] ?? 0);
+      if (count) attention.push({ label, count, detail: compute.lines.filter((l) => l.startsWith(prefix)) });
+    }
+  }
+  const projection = compute && compute.summary.projection && typeof compute.summary.projection === "object"
+    ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
+    : [];
+  return { stages: runs, attention, stale: !!(ingest && compute && ingest.at > compute.at), projection };
+}

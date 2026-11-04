@@ -47,22 +47,46 @@
       tr.detail td { background: var(--track); padding: 6px 8px; }
       tr.detail table { margin: 0; width: 100%; }
       #budget-summary { margin: 4px 0; }
+      #status h2 { font-size: 15px; margin: 18px 0 6px; }
+      .runs { color: var(--muted); }
+      .stale { color: var(--over); font-weight: 600; margin-top: 4px; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+      .card { border: 1px solid var(--line); border-left: 4px solid var(--over); border-radius: 6px; padding: 8px 10px; }
+      .card .count { font-size: 20px; font-weight: 600; margin-right: 6px; }
+      .card .detail { margin-top: 4px; font-size: 0.85em; color: var(--muted); overflow-wrap: anywhere; }
+      .clear { border-left-color: var(--ok); }
+      pre.log { margin: 6px 0 0; padding: 8px; background: var(--track); border-radius: 6px; overflow-x: auto;
+                font-size: 12px; line-height: 1.45; }
+      pre.log .flag { color: var(--over); font-weight: 600; }
     </style>
   </head>
   <body>
     <header>
       <span role="group" aria-label="View">
-        <button id="view-flows" aria-pressed="true">Where the money went</button>
+        <button id="view-status" aria-pressed="true">Status</button>
+        <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
       </span>
-      <label>Period <select id="period"></select></label>
-      <span role="group" aria-label="Detail">
-        <button id="group" aria-pressed="true">Groups</button>
-        <button id="category" aria-pressed="false">Categories</button>
+      <span id="controls" hidden>
+        <label>Period <select id="period"></select></label>
+        <span role="group" aria-label="Detail">
+          <button id="group" aria-pressed="true">Groups</button>
+          <button id="category" aria-pressed="false">Categories</button>
+        </span>
       </span>
     </header>
 
-    <section id="flows">
+    <section id="status">
+      <div id="status-runs" class="runs">Loading…</div>
+      <h2>Needs you</h2>
+      <div id="status-attention" class="cards"></div>
+      <h2>Tax projection</h2>
+      <div id="status-projection"></div>
+      <h2>Latest runs</h2>
+      <div id="status-logs"></div>
+    </section>
+
+    <section id="flows" hidden>
       <div id="chart">Loading…</div>
       <div id="flows-note" class="note"></div>
       <details open>
@@ -96,7 +120,7 @@
 
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
-      var view = "flows", level = "group";
+      var view = "status", level = "group";
       var periods = { flows: null, budget: null };  // loaded once per view
       var chosen = { flows: "", budget: "" };
       var money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -332,7 +356,94 @@
         chosen[view] = select.value;
       }
 
+      function when(at) {
+        var d = new Date(at);
+        return isNaN(d) ? at : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+      }
+
+      function drawStatus(status) {
+        var runs = document.getElementById("status-runs");
+        var cards = document.getElementById("status-attention");
+        var projection = document.getElementById("status-projection");
+        var logs = document.getElementById("status-logs");
+        runs.textContent = cards.textContent = projection.textContent = logs.textContent = "";
+        if (!status.stages.length) {
+          runs.textContent = "No runs recorded yet: run ingest and compute once with this release.";
+          return;
+        }
+        status.stages.forEach(function (s) {
+          var line = document.createElement("div");
+          line.textContent = "Last " + s.stage + ": " + when(s.at) + " (run " + s.runId + ")";
+          runs.appendChild(line);
+        });
+        if (status.stale) {
+          var stale = document.createElement("div");
+          stale.className = "stale";
+          stale.textContent = "Compute has not run since the last ingest: these numbers are from before it.";
+          runs.appendChild(stale);
+        }
+        var flagged = {};
+        if (!status.attention.length) {
+          var clear = document.createElement("div");
+          clear.className = "card clear";
+          clear.textContent = "Nothing needs you.";
+          cards.appendChild(clear);
+        }
+        status.attention.forEach(function (a) {
+          var card = document.createElement("div");
+          card.className = "card";
+          var count = document.createElement("span");
+          count.className = "count";
+          count.textContent = a.count.toLocaleString();
+          card.appendChild(count);
+          card.appendChild(document.createTextNode(a.label));
+          a.detail.forEach(function (d) {
+            flagged[d] = true;
+            var detail = document.createElement("div");
+            detail.className = "detail";
+            detail.textContent = d;
+            card.appendChild(detail);
+          });
+          cards.appendChild(card);
+        });
+        if (status.projection.length) {
+          var table = document.createElement("table");
+          status.projection.forEach(function (p) {
+            var row = document.createElement("tr");
+            cell(row, p[0], "text");
+            cell(row, (p[1] > 0 ? "owe " : "refund ") + money.format(Math.abs(p[1])));
+            table.appendChild(row);
+          });
+          projection.appendChild(table);
+        } else {
+          projection.textContent = "No projection in the last compute.";
+          projection.className = "note";
+        }
+        status.stages.forEach(function (s) {
+          var details = document.createElement("details");
+          var summary = document.createElement("summary");
+          summary.textContent = s.stage + " " + when(s.at) + " (" + s.lines.length + " lines)";
+          details.appendChild(summary);
+          var pre = document.createElement("pre");
+          pre.className = "log";
+          s.lines.forEach(function (l) {
+            var span = document.createElement("span");
+            if (flagged[l]) span.className = "flag";
+            span.textContent = l + "\n";
+            pre.appendChild(span);
+          });
+          details.appendChild(pre);
+          logs.appendChild(details);
+        });
+      }
+
       function load() {
+        document.getElementById("controls").hidden = view === "status";
+        if (view === "status") {
+          document.getElementById("status-runs").textContent = "Loading…";
+          call("getStatus", [], drawStatus, "status-runs");
+          return;
+        }
         if (!periods[view]) {
           var where = view === "flows" ? "chart" : "budget-summary";
           call(view === "flows" ? "getPeriods" : "getBudgetPeriods", [], function (list) {
@@ -362,7 +473,8 @@
 
       function setView(next) {
         view = next;
-        press(["view-flows", "view-budget"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget"], "view-" + view);
+        document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
         load();
@@ -380,6 +492,7 @@
           chosen[view] = e.target.value;
           load();
         });
+        document.getElementById("view-status").addEventListener("click", function () { setView("status"); });
         document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
         document.getElementById("group").addEventListener("click", function () { setLevel("group"); });

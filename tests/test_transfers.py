@@ -57,3 +57,19 @@ def test_aliases_rename_old_categories_and_leave_the_rest():
               ("2001-01-04", "chk", -7.0, "C", "")])
     aliases = pd.DataFrame([{"alias": "meat", "category": "food", "note": ""}])
     assert list(compute.apply_aliases(t, aliases)["category"]) == ["food", "food", ""]
+
+
+def test_a_card_payment_with_no_partner_is_taken_as_from_the_named_account():
+    rows = txns([("2001-04-05", "card", 250.0, "ONLINE PAYMENT THANK YOU", ""),  # its payer's statement is missing
+                 ("2001-04-06", "chk", -300.0, "BANK FUNDS TRANSFER DB", "")])
+    paired = transfers.pairs(rows, ACCOUNTS)
+    lonely = transfers.unmatched(rows, ACCOUNTS, paired)
+    assumed, left = transfers.assume_card_payments(lonely, ACCOUNTS, "chk")
+    assert assumed[["account_a", "account_b", "amount", "kind", "txn_a"]].values.tolist() == [
+        ["chk", "card", 250.0, transfers.ASSUMED, ""]]
+    assert left["txn_id"].tolist() == ["t1"]  # money leaving a bank account is still reported
+    assert transfers.paired_ids(assumed) == {"t0"}
+    marked = compute.mark_transfers(rows, transfers.paired_ids(assumed))
+    assert marked.loc[0, "category"] == compute.TRANSFER  # not spending, and not asked about
+    none, same = transfers.assume_card_payments(lonely, ACCOUNTS, "no_such_account")
+    assert none.empty and same.equals(lonely)

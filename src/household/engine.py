@@ -131,14 +131,19 @@ def _books(ledger):
     txns = _read(ledger, "transactions")
     effective = compute.effective_transactions(txns, _read(ledger, "txn_corrections"))
     accounts = _read(ledger, "accounts")
+    parameters = _read(ledger, "parameters")
     paired = transfers.pairs(effective, accounts)
     lonely = transfers.unmatched(effective, accounts, paired)
+    source = categorize.household_parameter(parameters, transfers.CARD_SOURCE)
+    assumed, lonely = transfers.assume_card_payments(lonely, accounts, source)
+    if len(assumed):
+        paired = pd.concat([paired, assumed], ignore_index=True)
     effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
     aliases = _read(ledger, "category_aliases")
     effective = compute.apply_aliases(effective, aliases)
     return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
             "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
-            "categories": _read(ledger, "categories"), "parameters": _read(ledger, "parameters"),
+            "categories": _read(ledger, "categories"), "parameters": parameters,
             "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items"),
             "aliases": aliases}
 
@@ -205,8 +210,11 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     txns, effective, paired, lonely = books["txns"], books["effective"], books["paired"], books["lonely"]
     for name, df in (("transfers", paired), ("transfers_unmatched", lonely)):
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
-    _say(log, f"transfers: {len(paired)} pairs between your accounts, {len(lonely)} transfer lines "
-              "with no partner")
+    assumed = int((paired["kind"] == transfers.ASSUMED).sum())
+    _say(log, f"transfers: {len(paired) - assumed} pairs between your accounts, {len(lonely)} transfer lines "
+              "with no partner" + (f", {assumed} card payments with no partner taken as from "
+                                   f"{categorize.household_parameter(books['parameters'], transfers.CARD_SOURCE)}"
+                                   if assumed else ""))
     legacy_checked, legacy_blank = compute.legacy_rows(txns)
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
 

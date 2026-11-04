@@ -15,7 +15,11 @@ account; those pair too, as a reversal.
 
 A line that reads like a move between the household's own accounts but finds
 no partner is reported: usually the other side lies
-outside the downloaded dates, sometimes a download is missing. Payments to
+outside the downloaded dates, sometimes a download is missing. A payment received
+on a credit card is the exception when the household names, in the parameter
+card_payment_from, the account card payments come from: one with no partner is
+taken to have come from that account (its statements for those dates are the
+missing ones), paired with it as an assumed card payment, and not reported. Payments to
 people and services (NOT_OWN: Venmo, PayPal, Zelle, a mortgage, taxes) are not
 reported; categorization handles them.
 """
@@ -82,5 +86,24 @@ def unmatched(transactions, accounts, paired):
         ["date", "account_id"]).reset_index(drop=True)
 
 
+CARD_SOURCE = "card_payment_from"  # household parameter: the account an unpaired card payment came from
+ASSUMED = "card_payment_assumed"
+
+
+def assume_card_payments(lonely, accounts, source):
+    """(assumed pairs, still unmatched): each payment received on a credit card with no partner, taken
+    to have come from the account source; the pair's side a is that account, with no line of its own.
+    Nothing is assumed when source names no household account."""
+    if not source or lonely.empty or source not in set(accounts["account_id"]):
+        return pd.DataFrame(columns=COLUMNS), lonely
+    kinds = dict(zip(accounts["account_id"], accounts["type"]))
+    hit = lonely["account_id"].map(kinds).eq("credit_card") & (pd.to_numeric(lonely["amount"]) > 0)
+    rows = [{"txn_a": "", "date_a": str(r.date), "account_a": source,
+             "payee_a": "assumed: no statement for these dates", "txn_b": r.txn_id, "date_b": str(r.date),
+             "account_b": r.account_id, "payee_b": r.payee_raw, "amount": round(float(r.amount), 2), "kind": ASSUMED}
+            for r in lonely[hit].itertuples(index=False)]
+    return pd.DataFrame(rows, columns=COLUMNS), lonely[~hit].reset_index(drop=True)
+
+
 def paired_ids(paired):
-    return set(paired["txn_a"]) | set(paired["txn_b"])
+    return (set(paired["txn_a"]) | set(paired["txn_b"])) - {""}

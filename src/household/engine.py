@@ -215,9 +215,13 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     for name, df in (("transfers", paired), ("transfers_unmatched", lonely)):
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
     assumed = int((paired["kind"] == transfers.ASSUMED).sum())
+    answered = set(effective.loc[(effective["category"].astype(str).str.strip() != "")
+                                 | (effective["split"].astype(str).str.strip() != ""), "txn_id"])
+    waiting = lonely[~lonely["txn_id"].isin(answered)]  # a person's category or split answers one
     _say(log, f"transfers: {len(paired) - assumed} pairs between your accounts, {len(lonely)} transfer lines "
-              "with no partner" + (f", {assumed} more from before the other account's downloaded history, "
-                                   "taken as transfers with it" if assumed else ""))
+              f"with no partner ({len(waiting)} not yet answered)"
+              + (f", {assumed} more from before the other account's downloaded history, "
+                 "taken as transfers with it" if assumed else ""))
     legacy_checked, legacy_blank = compute.legacy_rows(txns)
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
 
@@ -299,7 +303,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
               "review_open_lines": counts["open_lines"], "downloads_due": len(to_get),
               "balances_off": len(off), "stubs_missing": len(forgot), "pay_not_deposited": len(lost),
               "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
-              "transfers_unmatched": len(lonely)}
+              "transfers_unmatched": len(waiting), "transfers_unmatched_answered": len(lonely) - len(waiting)}
 
     facts = sheets.read_table(ledger, schema.table(schema.LEDGER, "return_facts"))
     if not facts.empty:

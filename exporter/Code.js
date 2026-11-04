@@ -1,13 +1,20 @@
 /**
- * Receipt exporter: copies new store receipts from Gmail into the household inbox folder, once a day.
+ * Receipt exporter: copies new store receipts from Gmail into the household inbox, once a day.
  *
  * It runs only the Gmail searches listed in the script property SENDERS, reads each new message, and
- * writes all of a run's messages as one text file (receipts_<date>.txt) in the inbox, where the
- * engine's receipt reader parses them. It never changes Gmail. Script properties, set once by hand
- * in Project Settings: INBOX_FOLDER_ID (the household inbox folder) and SENDERS (a JSON list of
- * searches, such as ["from:receipts@example.coop"]; kept out of this file so no store is named in
- * the repo). It keeps its own state there too: SINCE (the date the next search starts from) and DONE
- * (ids already exported, kept for a few weeks so the overlap between searches is not exported twice).
+ * writes all of a run's messages as one text file (receipts_<date>.txt) in a folder of its own, where
+ * the engine's receipt reader parses them. It never changes Gmail.
+ *
+ * Drive access is drive.file: the exporter can see and change only what it created. So it makes its
+ * own folder ("receipts from email", in My Drive) on the first run; move that folder into the
+ * household inbox folder once, and the engine reads it there. It keeps writing into the folder
+ * wherever it is moved, and nothing else in Drive is open to it.
+ *
+ * Script properties, set once by hand in Project Settings: SENDERS (a JSON list of searches, such as
+ * ["from:receipts@example.coop"]; kept out of this file so no store is named in the repo). It keeps
+ * its own state there too: FOLDER_ID (its folder), SINCE (the date the next search starts from) and
+ * DONE (ids already exported, kept for a few weeks so the overlap between searches is not exported
+ * twice).
  *
  * Run exportReceipts once by hand (it asks for permission, then exports everything so far), then
  * installTrigger once to run it every morning.
@@ -17,12 +24,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const OVERLAP_DAYS = 3;   // each search reaches back this far before SINCE, in case a receipt arrives late
 const KEEP_DAYS = 30;     // DONE remembers ids this long
 const SEPARATOR = "===== RECEIPT ";
+const FOLDER_NAME = "receipts from email";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 function exportReceipts() {
   const props = PropertiesService.getScriptProperties();
-  const folderId = props.getProperty("INBOX_FOLDER_ID");
-  if (!folderId) throw new Error("Set the script property INBOX_FOLDER_ID to the household inbox folder's id.");
-  const folder = DriveApp.getFolderById(folderId);
+  const folderId = folder_(props);
   const senders = JSON.parse(props.getProperty("SENDERS") || "[]");
   if (!senders.length) throw new Error("Set the script property SENDERS to a JSON list of Gmail searches.");
   const since = props.getProperty("SINCE");   // "yyyy/mm/dd", or none for everything so far
@@ -47,7 +54,9 @@ function exportReceipts() {
   }
   if (parts.length) {
     const stamp = Utilities.formatDate(new Date(), "UTC", "yyyy-MM-dd'T'HHmmss");
-    folder.createFile("receipts_" + stamp + ".txt", parts.join("\n"), MimeType.PLAIN_TEXT);
+    const name = "receipts_" + stamp + ".txt";
+    Drive.Files.create({ name: name, mimeType: MimeType.PLAIN_TEXT, parents: [folderId] },
+                       Utilities.newBlob(parts.join("\n"), MimeType.PLAIN_TEXT, name));
   }
   const start = new Date((newest || Date.now()) - OVERLAP_DAYS * DAY_MS);
   props.setProperty("SINCE", Utilities.formatDate(start, "UTC", "yyyy/MM/dd"));
@@ -55,6 +64,26 @@ function exportReceipts() {
   for (const id of Object.keys(done)) if (done[id] < cutoff) delete done[id];
   props.setProperty("DONE", JSON.stringify(done));
   console.log("exported " + parts.length + " receipts");
+}
+
+/** The exporter's own folder: made on the first run, then the same one wherever it is moved. */
+function folder_(props) {
+  const id = props.getProperty("FOLDER_ID");
+  if (!id) {
+    const made = Drive.Files.create({ name: FOLDER_NAME, mimeType: FOLDER_MIME });
+    props.setProperty("FOLDER_ID", made.id);
+    console.log("made the folder '" + FOLDER_NAME + "' in My Drive: move it into the household inbox folder");
+    return made.id;
+  }
+  let found;
+  try {
+    found = Drive.Files.get(id, { fields: "id,trashed" });
+  } catch (e) {
+    throw new Error("The exporter's folder (FOLDER_ID " + id + ") can't be reached. Restore it, or delete "
+                    + "FOLDER_ID in Project Settings to make a new one: " + e);
+  }
+  if (found.trashed) throw new Error("The exporter's folder is in the trash. Restore it, or delete FOLDER_ID to make a new one.");
+  return id;
 }
 
 function installTrigger() {

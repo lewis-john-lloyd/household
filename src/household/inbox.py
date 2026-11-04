@@ -2,7 +2,10 @@
 
 A run has three phases.
 
-  1. Read: for every file in household_finances/inbox, download and hash it.
+  1. Read: for every file in household_finances/inbox, and in the folders directly inside it (the
+     receipt exporter writes into a folder of its own, moved there once), download and hash it.
+     A file larger than MAX_FILE_BYTES is left in the inbox unread, and a zip is read only within
+     ZIP_LIMITS (member count, each member's size, the total unpacked).
      A file already registered is a duplicate, unless it was filed unread
      (kind ending "_unparsed"), which is read again. Otherwise identify and parse it
      (a parser's self-checks must pass), and stage the rows whose key is not
@@ -41,12 +44,25 @@ PDF = "application/pdf"
 DOCS = schema.table(schema.LEDGER, "source_documents")
 
 
-def list_files(drive, folder_id):
-    query = (f"'{folder_id}' in parents and trashed = false and "
-             f"mimeType != '{backup.FOLDER_MIME}'")
-    response = drive.files().list(q=query, fields="files(id,name,mimeType)",
+MAX_FILE_BYTES = 200 * 1024 * 1024  # a file bigger than this is left in the inbox, not downloaded
+ZIP_LIMITS = {"members": 2000, "member_bytes": 200 * 1024 * 1024, "total_bytes": 1024 * 1024 * 1024}
+
+
+def list_files(drive, folder_id, folders=False):
+    """The files (or, with folders, the folders) directly in a folder."""
+    op = "=" if folders else "!="
+    query = f"'{folder_id}' in parents and trashed = false and mimeType {op} '{backup.FOLDER_MIME}'"
+    response = drive.files().list(q=query, fields="files(id,name,mimeType,size)",
                                   pageSize=1000).execute(num_retries=RETRIES)
     return response.get("files", [])
+
+
+def list_inbox(drive, inbox):
+    """The inbox's files and those in the folders directly inside it, each with the folder it is in."""
+    files = [dict(f, parent=inbox) for f in list_files(drive, inbox)]
+    for folder in list_files(drive, inbox, folders=True):
+        files += [dict(f, parent=folder["id"]) for f in list_files(drive, folder["id"])]
+    return files
 
 
 def download(drive, file_id):
@@ -120,6 +136,15 @@ def parse_zip(data):
     """
     found = {}
     with zipfile.ZipFile(io.BytesIO(data)) as z:
+        infos = z.infolist()
+        if len(infos) > ZIP_LIMITS["members"]:
+            raise ParseError(f"zip holds {len(infos)} files, more than {ZIP_LIMITS['members']}")
+        biggest = max((i.file_size for i in infos), default=0)
+        if biggest > ZIP_LIMITS["member_bytes"]:
+            raise ParseError(f"zip holds a file of {biggest} bytes unpacked, more than {ZIP_LIMITS['member_bytes']}")
+        total = sum(i.file_size for i in infos)
+        if total > ZIP_LIMITS["total_bytes"]:
+            raise ParseError(f"zip unpacks to {total} bytes, more than {ZIP_LIMITS['total_bytes']}")
         names = z.namelist()
         for member in sorted(names):
             if not member.lower().endswith(".csv"):
@@ -260,7 +285,7 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     names = dict(zip(registered["doc_id"], registered["original_name"]))
     summaries, moves = [], []
 
-    files = list_files(drive, inbox)
+    files = list_inbox(drive, inbox)
     log(f"inbox: {len(files)} files")
     for i, f in enumerate(files, start=1):
         summary = {"file": f["name"], "status": None}
@@ -292,7 +317,7 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     targets = {"record_store": record}
     if any(where == "duplicates" for _, _, (where, _) in moves):
         targets["duplicates"] = backup.find_or_create_folder(drive, "duplicates", record)
-    failed = move_all(drive, [(f["id"], inbox, targets[where], name)
+    failed = move_all(drive, [(f["id"], f.get("parent", inbox), targets[where], name)
                               for f, _, (where, name) in moves if where != "trash"])
     for f, _, (where, _) in moves:
         if where == "trash":
@@ -325,6 +350,9 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
     and its new source_documents row supersedes the old one.
     """
     tables = ledger_tables.spec
+    if int(f.get("size") or 0) > MAX_FILE_BYTES:
+        summary.update(status="error", reason=f"{f['size']} bytes, more than {MAX_FILE_BYTES}: left in the inbox")
+        return None
     started = time.perf_counter()
     data = download(drive, f["id"])
     clock.add("download", started)

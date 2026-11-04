@@ -58,6 +58,28 @@
       pre.log { margin: 6px 0 0; padding: 8px; background: var(--track); border-radius: 6px; overflow-x: auto;
                 font-size: 12px; line-height: 1.45; }
       pre.log .flag { color: var(--over); font-weight: 600; }
+      body.editing { padding-bottom: 72px; }
+      #edit-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+      input[type="text"], input[type="date"], input:not([type]) { font: inherit; padding: 3px 6px; border: 1px solid var(--line);
+        border-radius: 6px; background: var(--bg); color: var(--ink); }
+      input.amount { width: 7em; }
+      input.wide { width: 22em; max-width: 100%; }
+      form.edit { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; padding: 8px; }
+      form.edit label { display: flex; flex-direction: column; font-size: 0.85em; color: var(--muted); gap: 2px; }
+      form.edit .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      form.edit .error { color: var(--over); width: 100%; }
+      tr.staged td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+      td.staged-note { color: var(--ok); font-size: 0.85em; white-space: normal; }
+      button.small { font-size: 0.8em; padding: 1px 6px; }
+      #pending { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px; background: var(--bg);
+        border-top: 2px solid var(--ok); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; z-index: 5; }
+      #pending ul { width: 100%; max-height: 40vh; overflow-y: auto; margin: 4px 0 0; padding-left: 18px; }
+      #pending li button { margin-left: 6px; }
+      #pending-msg { width: 100%; }
+      .error, .refused { color: var(--over); }
+      .saved { color: var(--ok); }
+      #edit th, #edit td { text-align: left; }
+      #edit h3 { font-size: 14px; margin: 18px 0 4px; }
     </style>
   </head>
   <body>
@@ -66,6 +88,7 @@
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
+        <button id="view-edit" aria-pressed="false">Edit</button>
       </span>
       <span id="controls" hidden>
         <label>Period <select id="period"></select></label>
@@ -115,8 +138,33 @@
         </tr></thead>
         <tbody></tbody>
       </table></div>
-      <div class="note">Click a line for its transactions. Transfers and income are left out; a line with no budget shows what was spent.</div>
+      <div class="note">Click a line for its transactions, and "edit" on one to correct it. Transfers and income are left out; a line with no budget shows what was spent.</div>
     </section>
+
+    <section id="edit" hidden>
+      <div id="edit-tabs" role="group" aria-label="What to edit">
+        <button data-tab="review" aria-pressed="true">Review</button>
+        <button data-tab="budget" aria-pressed="false">Budget lines</button>
+        <button data-tab="rules" aria-pressed="false">Payee rules</button>
+        <button data-tab="categories" aria-pressed="false">Categories</button>
+        <button data-tab="settings" aria-pressed="false">Settings</button>
+        <button data-tab="withholding" aria-pressed="false">Withholding</button>
+        <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
+        <button data-tab="waiting" aria-pressed="false">Saved</button>
+      </div>
+      <div id="edit-body">Loading…</div>
+      <div class="note">Changes stay in this page until you Save. Save writes them as one file for ingest, which applies
+        them to the ledger; until ingest and compute run, these tables show the ledger as it was.</div>
+    </section>
+
+    <div id="pending" hidden>
+      <strong id="pending-count"></strong>
+      <button id="pending-show">Show</button>
+      <button id="pending-save">Save</button>
+      <button id="pending-discard">Discard all</button>
+      <ul id="pending-list" hidden></ul>
+      <div id="pending-msg"></div>
+    </div>
 
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
@@ -336,10 +384,654 @@
             cell(r, t.account, "text");
             cell(r, cents.format(t.amount));
             cell(r, "", "txn-id").appendChild(copyable(t.id));
+            var edit = document.createElement("button");
+            edit.className = "small";
+            edit.textContent = "edit";
+            edit.onclick = function (e) { e.stopPropagation(); toggleLineForm(r, t, 6); };
+            cell(r, "").appendChild(edit);
+            if (staged["line|" + t.id + "|category"] || staged["line|" + t.id + "|void"]) r.className = "staged";
             table.appendChild(r);
           });
           td.appendChild(table);
         }, td.id);
+      }
+
+      // --- editing ---------------------------------------------------------------------------------------
+      // Edits are staged here, one per setting (a newer edit of the same thing replaces the older), and
+      // shown in the pending bar. Save sends them to saveChanges, which writes one change set for ingest.
+      var editor = null, editTab = "review";
+      var staged = {}, stagedOrder = [];
+      var RULES = ["fixed", "seasonal", "lookback", "trailing", "sinking_fund"];
+      var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
+      var PRIORITIES = ["", "high", "medium", "low"];
+
+      // The setting an edit changes; the same rule as editTarget in edits.ts.
+      function targetOf(e) {
+        switch (e.kind) {
+          case "budget_line": return e.rule === "scheduled" ? "budget_line|" + e.line + "|scheduled|" + e.effective : "budget_line|" + e.line;
+          case "line": return "line|" + e.txn_id + "|" + (e.field === "split" ? "category" : e.field);
+          case "payee": return "payee|" + e.key.toUpperCase();
+          case "payee_rule": return "payee_rule|" + e.pattern;
+          case "category": return "category|" + e.category;
+          case "alias": return "alias|" + e.alias;
+          case "parameter": return "parameter|" + e.key;
+          case "explanation": return "explanation|" + e.jurisdiction + "|" + e.stub_id;
+          case "not_duplicate": return "not_duplicate|" + [e.txn_a, e.txn_b].sort().join("|");
+        }
+        return e.kind + "|" + JSON.stringify(e);
+      }
+
+      function stage(edit, text) {
+        var t = targetOf(edit);
+        if (!staged[t]) stagedOrder.push(t);
+        staged[t] = { edit: edit, text: text };
+        drawPending();
+        return t;
+      }
+
+      function unstage(t) {
+        if (!staged[t]) return;
+        delete staged[t];
+        stagedOrder.splice(stagedOrder.indexOf(t), 1);
+        drawPending();
+      }
+
+      function drawPending() {
+        var bar = document.getElementById("pending");
+        var n = stagedOrder.length;
+        bar.hidden = !n && !document.getElementById("pending-msg").textContent;
+        document.body.classList.toggle("editing", !bar.hidden);
+        document.getElementById("pending-count").textContent = n ? n + (n === 1 ? " change" : " changes") + " not saved" : "";
+        ["pending-show", "pending-save", "pending-discard"].forEach(function (id) { document.getElementById(id).hidden = !n; });
+        var list = document.getElementById("pending-list");
+        list.textContent = "";
+        stagedOrder.forEach(function (t) {
+          var li = document.createElement("li");
+          li.textContent = staged[t].text;
+          var undo = document.createElement("button");
+          undo.className = "small";
+          undo.textContent = "undo";
+          undo.onclick = function () { unstage(t); redrawEditor(); };
+          li.appendChild(undo);
+          list.appendChild(li);
+        });
+        if (!n) list.hidden = true;
+      }
+
+      function saveStaged() {
+        var msg = document.getElementById("pending-msg");
+        var edits = stagedOrder.map(function (t) { return staged[t].edit; });
+        var texts = stagedOrder.map(function (t) { return staged[t].text; });
+        msg.className = "";
+        msg.textContent = "Saving " + edits.length + " changes…";
+        document.getElementById("pending-save").disabled = true;
+        google.script.run.withSuccessHandler(function (r) {
+          document.getElementById("pending-save").disabled = false;
+          stagedOrder.slice().forEach(unstage);
+          msg.className = "saved";
+          msg.textContent = "Saved " + r.count + " changes as " + r.name + ". Run ingest, then compute, to apply them." +
+            (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "");
+          drawPending();
+          redrawEditor();
+        }).withFailureHandler(function (error) {
+          document.getElementById("pending-save").disabled = false;
+          msg.className = "error";
+          msg.textContent = "Not saved (your changes are still here): " + (error && error.message || error);
+        }).saveChanges(edits, texts);
+      }
+
+      // Small builders for the editor's forms.
+      function el(tag, text, cls) {
+        var e = document.createElement(tag);
+        if (text !== undefined && text !== null) e.textContent = text;
+        if (cls) e.className = cls;
+        return e;
+      }
+
+      function field(form, label, control) {
+        var l = el("label", label);
+        l.appendChild(control);
+        form.appendChild(l);
+        return control;
+      }
+
+      function textInput(value, cls, placeholder) {
+        var i = document.createElement("input");
+        i.type = "text";
+        i.value = value || "";
+        if (cls) i.className = cls;
+        if (placeholder) i.placeholder = placeholder;
+        return i;
+      }
+
+      function dateInput(value) {
+        var i = document.createElement("input");
+        i.type = "date";
+        i.value = value || "";
+        return i;
+      }
+
+      function choice(options, value, labels) {
+        var s = document.createElement("select");
+        options.forEach(function (o) {
+          var opt = el("option", labels && labels[o] !== undefined ? labels[o] : (o || "(none)"));
+          opt.value = o;
+          s.appendChild(opt);
+        });
+        s.value = options.indexOf(value) >= 0 ? value : options[0];
+        return s;
+      }
+
+      function categoryChoice(value, blank) {
+        var names = (editor ? editor.categories : []).map(function (c) { return c.category; });
+        return choice([""].concat(names), value, { "": blank || "(choose)" });
+      }
+
+      function button(text, onclick, cls) {
+        var b = el("button", text, cls);
+        b.type = "button";
+        b.onclick = onclick;
+        return b;
+      }
+
+      function today() {
+        var d = new Date();
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      }
+
+      function firstOfMonth() { return today().slice(0, 8) + "01"; }
+
+      function isDate(text) { return /^\d{4}-\d{2}-\d{2}$/.test(text); }
+
+      function isAmount(text) { return /^-?\d+(\.\d{1,2})?$/.test(text.replace(/,/g, "")); }
+
+      // The txn row's form: category, split, note, drop it; or answer its whole merchant.
+      function toggleLineForm(row, t, span) {
+        var next = row.nextSibling;
+        if (next && next.classList && next.classList.contains("form-row")) { next.remove(); return; }
+        var tr = el("tr", null, "form-row");
+        var td = cell(tr, "");
+        td.colSpan = span + 1;
+        var form = el("form", null, "edit");
+        var category = field(form, "Category", categoryChoice(t.split ? "" : t.category, "(as it is)"));
+        var split = field(form, "Split (kids 20; food)", textInput("", "wide", t.split ? t.split : ""));
+        var note = field(form, "Note", textInput(t.note, "wide"));
+        var merchant = document.createElement("input");
+        merchant.type = "checkbox";
+        if (t.key) field(form, "Every line from " + t.key, merchant);
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Keep", function () {
+          error.textContent = "";
+          var said = t.date + " " + t.payee + " " + cents.format(t.amount);
+          var any = false;
+          if (split.value.trim()) {
+            stage({ kind: "line", txn_id: t.id, field: "split", value: split.value.trim() }, said + ": split " + split.value.trim());
+            any = true;
+          } else if (category.value && merchant.checked && t.key) {
+            stage({ kind: "payee", key: t.key, category: category.value }, "every " + t.key + " line: " + category.value);
+            any = true;
+          } else if (category.value && category.value !== t.category) {
+            stage({ kind: "line", txn_id: t.id, field: "category", value: category.value }, said + ": " + category.value);
+            any = true;
+          }
+          if (note.value.trim() !== t.note) {
+            stage({ kind: "line", txn_id: t.id, field: "note", value: note.value.trim() }, said + ": note " + (note.value.trim() || "(cleared)"));
+            any = true;
+          }
+          if (!any) { error.textContent = "Nothing changed."; return; }
+          row.className = "staged";
+          tr.remove();
+        }));
+        actions.appendChild(button("Drop this line (a duplicate)", function () {
+          stage({ kind: "line", txn_id: t.id, field: "void", value: "TRUE" }, t.date + " " + t.payee + " " + cents.format(t.amount) + ": dropped");
+          row.className = "staged";
+          tr.remove();
+        }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        td.appendChild(form);
+        row.parentNode.insertBefore(tr, row.nextSibling);
+      }
+
+      function setEditTab(tab) {
+        editTab = tab;
+        document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); });
+        redrawEditor();
+      }
+
+      function loadEditor() {
+        if (editor) { redrawEditor(); return; }
+        document.getElementById("edit-body").textContent = "Loading…";
+        call("getEditor", [], function (data) { editor = data; redrawEditor(); }, "edit-body");
+      }
+
+      function redrawEditor() {
+        if (!editor || view !== "edit") return;
+        var body = document.getElementById("edit-body");
+        body.textContent = "";
+        if (editTab === "waiting") { drawWaiting(body); return; }
+        if (!editor.baseRun) {
+          body.appendChild(el("div", "No compute run with editor tables yet: run ingest and compute once with this release.", "note"));
+          return;
+        }
+        ({ review: drawReview, budget: drawBudgetLines, rules: drawRules, categories: drawCategories, settings: drawSettings,
+           withholding: drawWithholding, duplicates: drawDuplicates })[editTab](body);
+      }
+
+      // A table: headers, then one row per item; click opens a form under the row. fill returns what is staged
+      // for the item, in words (shown in the last column), or true when it is staged and its row says so itself.
+      function grid(body, headers, items, fill, form) {
+        if (!items.length) { body.appendChild(el("div", "Nothing here.", "note")); return; }
+        var wrap = el("div", null, "scroll");
+        var table = el("table");
+        var head = el("tr");
+        headers.concat(["Not saved yet"]).forEach(function (h) { head.appendChild(el("th", h)); });
+        table.appendChild(el("thead")).appendChild(head);
+        var tbody = el("tbody");
+        items.forEach(function (item) {
+          var row = el("tr", null, form ? "line" : "");
+          var mark = fill(row, item);
+          cell(row, typeof mark === "string" ? mark : "", "staged-note");
+          if (mark) row.classList.add("staged");
+          if (form) row.addEventListener("click", function (e) {
+            if (e.target.closest("select, input, button")) return;
+            var next = row.nextSibling;
+            if (next && next.classList.contains("form-row")) { next.remove(); return; }
+            var tr = el("tr", null, "form-row");
+            var td = cell(tr, "");
+            td.colSpan = headers.length + 1;
+            td.appendChild(form(item, function () { tr.remove(); redrawEditor(); }));
+            row.parentNode.insertBefore(tr, row.nextSibling);
+          });
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        body.appendChild(wrap);
+      }
+
+      // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
+      function stagedText(t) {
+        return stagedOrder.filter(function (k) { return k === t || k.indexOf(t + "|") === 0; })
+          .map(function (k) { return staged[k].text; }).join("; ");
+      }
+
+      function drawReview(body) {
+        body.appendChild(el("div", editor.review.length + " questions from the review queue. Answer a merchant once for all its lines; a single line can be split.", "note"));
+        grid(body, ["Merchant or line", "Lines", "Total", "Dates", "Guess", "Answer"], editor.review, function (row, r) {
+          var first = cell(row, r.example, "text");
+          first.title = r.key;
+          if (r.note) first.appendChild(el("div", r.note, "error"));
+          cell(row, r.lines);
+          cell(row, cents.format(Number(r.total) || 0));
+          cell(row, r.first === r.last ? r.first : r.first + " to " + r.last, "text");
+          cell(row, r.guess + (r.guessed_by ? " (" + r.guessed_by + ")" : ""), "text");
+          var answer = cell(row, "", "text");
+          var line = r.kind === "line";
+          var target = line ? "line|" + r.key + "|category" : "payee|" + r.key.toUpperCase();
+          var current = staged[target] ? staged[target].edit : null;
+          var pick = categoryChoice(current && current.field !== "split" ? (current.category || current.value) : "", "(answer)");
+          pick.onchange = function () {
+            if (!pick.value) { unstage(target); row.classList.remove("staged"); return; }
+            stage(line ? { kind: "line", txn_id: r.key, field: "category", value: pick.value }
+                       : { kind: "payee", key: r.key, category: pick.value },
+                  (line ? r.example + " " + r.first : "every " + r.key + " line") + ": " + pick.value);
+            row.classList.add("staged");
+          };
+          answer.appendChild(pick);
+          if (r.guess) answer.appendChild(button("use guess", function () { pick.value = r.guess; pick.onchange(); }, "small"));
+          if (line) {
+            var split = textInput(current && current.field === "split" ? current.value : "", "", "or split: kids 20; food");
+            split.onchange = function () {
+              if (!split.value.trim()) { unstage(target); row.classList.remove("staged"); return; }
+              stage({ kind: "line", txn_id: r.key, field: "split", value: split.value.trim() }, r.example + " " + r.first + ": split " + split.value.trim());
+              pick.value = "";
+              row.classList.add("staged");
+            };
+            answer.appendChild(split);
+          }
+          return !!current;
+        });
+      }
+
+      function budgetWas(l) {
+        return l.in_force === "scheduled only" ? null
+          : { effective: l.effective, rule: l.rule, amount: l.amount, per: l.per, category: l.category };
+      }
+
+      function budgetForm(l, done) {
+        var form = el("form", null, "edit");
+        var isNew = !l;
+        l = l || { line: "", effective: "", category: "", account: "", priority: "", rule: "fixed", amount: "", per: "monthly", note: "", in_force: "new" };
+        var name = isNew ? field(form, "Line", textInput("", "", "groceries")) : null;
+        var effective = field(form, "From", dateInput(firstOfMonth()));
+        var rule = field(form, "Rule", choice(RULES, l.rule === "end" ? "fixed" : l.rule));
+        var amount = field(form, "Amount", textInput(l.amount, "amount"));
+        var per = field(form, "Per", choice(PERS, l.per || "monthly"));
+        var category = field(form, "Category", categoryChoice(l.category || l.spends_from));
+        var priority = field(form, "Priority", choice(PRIORITIES, l.priority));
+        var account = field(form, "Paid from", textInput(l.account));
+        var note = field(form, "Note", textInput(l.note, "wide"));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        function lineName() { return isNew ? name.value.trim() : l.line; }
+        actions.appendChild(button(isNew ? "Add line" : (l.in_force === "ended" ? "Start again" : "Keep this change"), function () {
+          var e = { kind: "budget_line", line: lineName(), effective: effective.value, rule: rule.value, category: category.value,
+                    account: account.value.trim(), priority: priority.value, amount: amount.value.trim().replace(/,/g, ""),
+                    per: per.value, note: note.value.trim(), was: isNew ? null : budgetWas(l) };
+          var wrong = !e.line ? "Name the line." : !isDate(e.effective) ? "Pick the date it starts." : !e.category ? "Pick a category." :
+            e.amount && !isAmount(e.amount) ? "The amount is not a number." :
+            !e.amount && (e.rule === "fixed" || e.rule === "sinking_fund") ? "A " + e.rule + " line needs an amount." : "";
+          if (wrong) { error.textContent = wrong; return; }
+          stage(e, "budget line " + e.line + ": " + e.rule + (e.amount ? " " + e.amount + " " + e.per : "") + " for " + e.category + " from " + e.effective);
+          done();
+        }));
+        if (!isNew && l.in_force === "yes") {
+          actions.appendChild(button("End line", function () {
+            if (!isDate(effective.value)) { error.textContent = "Pick the date it ends."; return; }
+            stage({ kind: "budget_line", line: l.line, effective: effective.value, rule: "end", was: budgetWas(l) },
+                  "budget line " + l.line + ": ends " + effective.value);
+            done();
+          }));
+        }
+        form.appendChild(actions);
+        if (!isNew) {
+          var on = field(form, "Scheduled on", dateInput(""));
+          var much = field(form, "Scheduled amount (0 cancels)", textInput("", "amount"));
+          var add = el("div", null, "actions");
+          add.appendChild(button("Add scheduled amount", function () {
+            if (!isDate(on.value) || !isAmount(much.value.trim())) { error.textContent = "A scheduled amount needs a date and an amount."; return; }
+            stage({ kind: "budget_line", line: l.line, effective: on.value, rule: "scheduled", category: l.category || l.spends_from,
+                    amount: much.value.trim().replace(/,/g, "") }, "budget line " + l.line + ": " + much.value.trim() + " scheduled " + on.value);
+            done();
+          }));
+          form.appendChild(add);
+        }
+        form.appendChild(error);
+        return form;
+      }
+
+      function drawBudgetLines(body) {
+        var top = el("div", null, "actions");
+        var holder = el("div");
+        top.appendChild(button("New budget line", function () {
+          holder.textContent = "";
+          holder.appendChild(budgetForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+        }));
+        body.appendChild(top);
+        body.appendChild(holder);
+        body.appendChild(el("div", "Click a line to change it from a date, end it, or schedule a one-off amount. A change counts for the whole month it is dated in.", "note"));
+        var lines = editor.budgetLines.slice().sort(function (a, b) {
+          return (a.in_force === "ended") - (b.in_force === "ended") || a.line.localeCompare(b.line);
+        });
+        grid(body, ["Line", "Category", "Rule", "This month", "Last 12 months", "Priority", "Scheduled"], lines, function (row, l) {
+          cell(row, l.line + (l.in_force === "ended" ? " (ended)" : ""));
+          cell(row, l.category || l.spends_from, "text");
+          cell(row, l.in_words, "text");
+          cell(row, money.format(Number(l.this_month) || 0));
+          cell(row, money.format(Number(l.last_12_months) || 0));
+          cell(row, l.priority, "text");
+          cell(row, l.scheduled, "text");
+          return stagedText("budget_line|" + l.line);  // its change, and any scheduled amounts
+        }, budgetForm);
+      }
+
+      function ruleWas(r) { return { category: r.category, precedence: r.precedence, effective: r.effective, ask: r.ask }; }
+
+      function ruleForm(r, done) {
+        var form = el("form", null, "edit");
+        var isNew = !r;
+        r = r || { pattern: "", category: "", precedence: "", effective: "", ask: "FALSE" };
+        var pattern = isNew ? field(form, "Pattern (matches the payee)", textInput("", "wide", "ACME GROCER")) : null;
+        var category = field(form, "Category", categoryChoice(r.category, isNew ? "(choose)" : "(none: only asks)"));
+        var precedence = field(form, "Precedence (lower wins)", textInput(r.precedence, "amount"));
+        var ask = document.createElement("input");
+        ask.type = "checkbox";
+        ask.checked = r.ask === "TRUE";
+        field(form, "Ask about each line", ask);
+        var effective = field(form, "From", dateInput(today()));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button(isNew ? "Add rule" : "Keep this change", function () {
+          var text = isNew ? pattern.value.trim() : r.pattern;
+          try { new RegExp(text); } catch (err) { error.textContent = "The pattern does not read: " + err.message; return; }
+          var e = { kind: "payee_rule", pattern: text, category: category.value, effective: effective.value,
+                    precedence: precedence.value.trim(), ask: ask.checked ? "TRUE" : "FALSE", was: isNew ? null : ruleWas(r) };
+          var wrong = !text ? "Write a pattern." : text.length > 200 ? "Keep the pattern under 200 characters." :
+            !isDate(e.effective) ? "Pick the date it starts." : e.precedence && !isAmount(e.precedence) ? "Precedence is a number." :
+            !e.category && !ask.checked ? "Pick a category, or tick ask." : "";
+          if (wrong) { error.textContent = wrong; return; }
+          stage(e, "payee rule " + text + ": " + (e.category || "(no guess)") + (ask.checked ? ", asks each line" : "") + " from " + e.effective);
+          done();
+        }));
+        if (!isNew && r.status !== "stopped") {
+          actions.appendChild(button("Stop rule", function () {
+            if (!isDate(effective.value)) { error.textContent = "Pick the date it stops."; return; }
+            stage({ kind: "payee_rule", pattern: r.pattern, category: "", effective: effective.value, precedence: r.precedence,
+                    ask: "FALSE", was: ruleWas(r) }, "payee rule " + r.pattern + ": stopped from " + effective.value);
+            done();
+          }));
+        }
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
+      }
+
+      function drawRules(body) {
+        var top = el("div", null, "actions");
+        var holder = el("div");
+        top.appendChild(button("New payee rule", function () {
+          holder.textContent = "";
+          holder.appendChild(ruleForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+        }));
+        body.appendChild(top);
+        body.appendChild(holder);
+        grid(body, ["Pattern", "Category", "Precedence", "Since", "Asks", "Status"], editor.payeeRules, function (row, r) {
+          cell(row, r.pattern);
+          cell(row, r.category, "text");
+          cell(row, r.precedence);
+          cell(row, r.effective, "text");
+          cell(row, r.ask === "TRUE" ? "yes" : "", "text");
+          cell(row, r.status, "text");
+          return stagedText("payee_rule|" + r.pattern);
+        }, ruleForm);
+      }
+
+      function categoryForm(c, done) {
+        var form = el("form", null, "edit");
+        var isNew = !c;
+        c = c || { category: "", group: "", priority: "" };
+        var name = isNew ? field(form, "Category", textInput("", "", "lower_case")) : null;
+        var group = field(form, "Group", textInput(c.group));
+        var priority = field(form, "Priority", choice(PRIORITIES, c.priority));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button(isNew ? "Add category" : "Keep this change", function () {
+          var e = { kind: "category", category: isNew ? name.value.trim() : c.category, group: group.value.trim(), priority: priority.value,
+                    was: isNew ? null : { group: c.group, priority: c.priority } };
+          if (!/^[a-z][a-z0-9_]*$/.test(e.category)) { error.textContent = "Use lower case letters, digits and _."; return; }
+          if (isNew && editor.categories.some(function (x) { return x.category === e.category; })) { error.textContent = "That category exists."; return; }
+          stage(e, "category " + e.category + ": group " + (e.group || "(none)") + ", priority " + (e.priority || "(none)"));
+          done();
+        }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
+      }
+
+      function aliasForm(a, done) {
+        var form = el("form", null, "edit");
+        var isNew = !a;
+        a = a || { alias: "", category: "", note: "" };
+        var name = isNew ? field(form, "Old name", textInput("")) : null;
+        var category = field(form, "Counts as", categoryChoice(a.category));
+        var note = field(form, "Note", textInput(a.note, "wide"));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button(isNew ? "Add alias" : "Keep this change", function () {
+          var e = { kind: "alias", alias: isNew ? name.value.trim() : a.alias, category: category.value, note: note.value.trim(),
+                    was: isNew ? null : { category: a.category } };
+          if (!e.alias || !e.category) { error.textContent = "An alias needs a name and a category."; return; }
+          stage(e, "alias " + e.alias + " counts as " + e.category);
+          done();
+        }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
+      }
+
+      function drawCategories(body) {
+        var top = el("div", null, "actions");
+        var holder = el("div");
+        top.appendChild(button("New category", function () {
+          holder.textContent = "";
+          holder.appendChild(categoryForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+        }));
+        top.appendChild(button("New alias", function () {
+          holder.textContent = "";
+          holder.appendChild(aliasForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+        }));
+        body.appendChild(top);
+        body.appendChild(holder);
+        grid(body, ["Category", "Group", "Priority"], editor.categories, function (row, c) {
+          cell(row, c.category);
+          cell(row, c.group, "text");
+          cell(row, c.priority, "text");
+          return stagedText("category|" + c.category);
+        }, categoryForm);
+        body.appendChild(el("h3", "Old names (aliases)"));
+        grid(body, ["Old name", "Counts as", "Note"], editor.aliases, function (row, a) {
+          cell(row, a.alias);
+          cell(row, a.category, "text");
+          cell(row, a.note, "text");
+          return stagedText("alias|" + a.alias);
+        }, aliasForm);
+      }
+
+      function parameterForm(p, done) {
+        var form = el("form", null, "edit");
+        var isNew = !p;
+        p = p || { key: "", value: "" };
+        var key = isNew ? field(form, "Setting", textInput("", "", "order_payee:books")) : null;
+        var value = field(form, "Value", textInput(p.value, "wide"));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button(isNew ? "Add setting" : "Keep this change", function () {
+          var e = { kind: "parameter", key: isNew ? key.value.trim() : p.key, value: value.value.trim(), was: isNew ? null : { value: p.value } };
+          if (!/^[a-z][a-z0-9_]*(:[a-z0-9_]+)?$/.test(e.key)) { error.textContent = "A setting is lower case letters, digits, _ and one ':'."; return; }
+          stage(e, "setting " + e.key + " = " + (e.value || "(blank)"));
+          done();
+        }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
+      }
+
+      function drawSettings(body) {
+        var top = el("div", null, "actions");
+        var holder = el("div");
+        top.appendChild(button("New setting", function () {
+          holder.textContent = "";
+          holder.appendChild(parameterForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+        }));
+        body.appendChild(top);
+        body.appendChild(holder);
+        body.appendChild(el("div", "Household settings, such as the account transfers come from and the stores with order histories.", "note"));
+        grid(body, ["Setting", "Value", "Source"], editor.parameters, function (row, p) {
+          cell(row, p.key);
+          cell(row, p.value, "text");
+          cell(row, p.source, "text");
+          return stagedText("parameter|" + p.key);
+        }, parameterForm);
+      }
+
+      function drawWithholding(body) {
+        body.appendChild(el("div", "Stubs whose withholding the tables don't explain. Say why (an extra amount you asked for, a bonus) and they stop being flagged.", "note"));
+        grid(body, ["Pay date", "Person", "Employer", "Tax", "Withheld", "Expected", "Why"], editor.withholding, function (row, w) {
+          cell(row, w.pay_date);
+          cell(row, w.person, "text");
+          cell(row, w.employer, "text");
+          cell(row, w.jurisdiction, "text");
+          cell(row, cents.format(Number(w.withheld) || 0));
+          cell(row, cents.format(Number(w.expected) || 0));
+          var target = "explanation|" + w.jurisdiction + "|" + w.stub_id;
+          var why = textInput(staged[target] ? staged[target].edit.note : "", "wide", w.explanation);
+          why.onchange = function () {
+            if (!why.value.trim()) { unstage(target); row.classList.remove("staged"); return; }
+            stage({ kind: "explanation", jurisdiction: w.jurisdiction, stub_id: w.stub_id, note: why.value.trim() },
+                  w.jurisdiction + " withholding " + w.pay_date + " " + w.person + ": " + why.value.trim());
+            row.classList.add("staged");
+          };
+          cell(row, "", "text").appendChild(why);
+          return !!staged[target];
+        });
+      }
+
+      function drawDuplicates(body) {
+        body.appendChild(el("div", "Pairs that look like one charge recorded twice. Keep both, or drop one.", "note"));
+        grid(body, ["Account", "Amount", "First", "Second", ""], editor.duplicates, function (row, d) {
+          cell(row, d.account_id);
+          cell(row, cents.format(Number(d.amount) || 0));
+          cell(row, d.date_a + " " + d.payee_a, "text");
+          cell(row, d.date_b + " " + d.payee_b, "text");
+          var targets = ["not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|"), "line|" + d.txn_a + "|void", "line|" + d.txn_b + "|void"];
+          var choices = cell(row, "", "text");
+          function only(edit, text) {
+            targets.forEach(unstage);
+            stage(edit, text);
+            row.lastChild.textContent = text;
+            row.classList.add("staged");
+          }
+          choices.appendChild(button("both are real", function () {
+            only({ kind: "not_duplicate", txn_a: d.txn_a, txn_b: d.txn_b }, d.payee_a + " " + d.date_a + " and " + d.date_b + ": both real");
+          }, "small"));
+          choices.appendChild(button("drop first", function () {
+            only({ kind: "line", txn_id: d.txn_a, field: "void", value: "TRUE" }, d.payee_a + " " + d.date_a + ": dropped as a duplicate");
+          }, "small"));
+          choices.appendChild(button("drop second", function () {
+            only({ kind: "line", txn_id: d.txn_b, field: "void", value: "TRUE" }, d.payee_b + " " + d.date_b + ": dropped as a duplicate");
+          }, "small"));
+          var already = targets.filter(function (t) { return staged[t]; })[0];
+          return already ? staged[already].text : "";
+        });
+      }
+
+      // Change sets saved and not yet read by ingest, and any it refused.
+      function drawWaiting(body) {
+        body.textContent = "Loading…";
+        call("getWaiting", [], function (list) {
+          body.textContent = "";
+          if (!list.length) { body.appendChild(el("div", "Nothing waiting: every saved change has been read by ingest.", "note")); return; }
+          list.forEach(function (w) {
+            var card = el("div", null, "card" + (w.refused ? "" : " clear"));
+            card.appendChild(el("strong", w.name));
+            card.appendChild(el("div", (w.savedAt ? "saved " + when(w.savedAt) + ", " : "") +
+              (w.refused ? "refused by the last ingest" : "waiting for ingest"), "detail"));
+            if (w.refused) card.appendChild(el("div", w.refused, "detail refused"));
+            w.edits.forEach(function (text) { card.appendChild(el("div", text, "detail")); });
+            card.appendChild(button("Discard", function () {
+              call("discardWaiting", [w.id], function () { drawWaiting(body); }, "edit-body");
+            }, "small"));
+            body.appendChild(card);
+          });
+        }, "edit-body");
+      }
+
+      function loadWaitingCard() {
+        google.script.run.withSuccessHandler(function (list) {
+          if (!list.length) return;
+          var refused = list.filter(function (w) { return w.refused; });
+          var cards = document.getElementById("status-attention");
+          var clear = cards.querySelector(".card.clear");
+          if (clear && refused.length) clear.remove();
+          var card = el("div", null, "card" + (refused.length ? "" : " clear"));
+          card.appendChild(el("span", String(list.length), "count"));
+          card.appendChild(document.createTextNode(refused.length ? "saved changes refused by ingest" : "saved changes waiting for ingest"));
+          refused.forEach(function (w) { card.appendChild(el("div", w.name + ": " + w.refused, "detail")); });
+          card.appendChild(button("See them", function () { setView("edit"); setEditTab("waiting"); }, "small"));
+          cards.insertBefore(card, cards.firstChild);
+        }).withFailureHandler(function () { /* no folder yet, or no Drive access: nothing to show */ }).getWaiting();
       }
 
       // The view, its period list and the level.
@@ -438,10 +1130,14 @@
       }
 
       function load() {
-        document.getElementById("controls").hidden = view === "status";
+        document.getElementById("controls").hidden = view === "status" || view === "edit";
         if (view === "status") {
           document.getElementById("status-runs").textContent = "Loading…";
-          call("getStatus", [], drawStatus, "status-runs");
+          call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); }, "status-runs");
+          return;
+        }
+        if (view === "edit") {
+          loadEditor();
           return;
         }
         if (!periods[view]) {
@@ -473,10 +1169,11 @@
 
       function setView(next) {
         view = next;
-        press(["view-status", "view-flows", "view-budget"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-edit"], "view-" + view);
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
+        document.getElementById("edit").hidden = view !== "edit";
         load();
       }
 
@@ -495,6 +1192,23 @@
         document.getElementById("view-status").addEventListener("click", function () { setView("status"); });
         document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
+        document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
+        document.querySelectorAll("#edit-tabs button").forEach(function (b) {
+          b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
+        });
+        document.getElementById("pending-show").addEventListener("click", function () {
+          var list = document.getElementById("pending-list");
+          list.hidden = !list.hidden;
+          this.textContent = list.hidden ? "Show" : "Hide";
+        });
+        document.getElementById("pending-save").addEventListener("click", saveStaged);
+        document.getElementById("pending-discard").addEventListener("click", function () {
+          stagedOrder.slice().forEach(unstage);
+          redrawEditor();
+        });
+        window.addEventListener("beforeunload", function (e) {  // unsaved changes live only in this page
+          if (stagedOrder.length) { e.preventDefault(); e.returnValue = ""; }
+        });
         document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
         document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
         load();

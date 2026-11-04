@@ -309,6 +309,8 @@ def _describe(e):
     if kind == "budget_line":
         if e["rule"] == "end":
             return f"budget line {e['line']}: ends {e['effective']}"
+        if e["rule"] == "scheduled":
+            return f"budget line {e['line']}: {e.get('amount')} scheduled for {e['effective']} ({e.get('category')})"
         amount = f" {e.get('amount')} {e.get('per') or 'monthly'}" if e.get("amount") else ""
         return f"budget line {e['line']}: {e['rule']}{amount} for {e.get('category')} from {e['effective']}"
     if kind == "payee_rule":

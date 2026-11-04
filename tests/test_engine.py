@@ -159,3 +159,18 @@ def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session)
     compute_lines = notes[notes["stage"] == "compute"]["message"].tolist()
     assert compute_lines[0] == "run run-2: reading the ledger"
     assert any(line.startswith("transfers:") for line in compute_lines)
+
+
+def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(session):
+    for name, mime in (("pay_statement.pdf", "application/pdf"), ("schwab_equity.csv", "text/csv"),
+                       ("accounts_seed.csv", "text/csv"), ("return_facts.csv", "text/csv")):
+        drop(session, name, mime)
+    printed = {"ingest": [], "compute": []}
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=printed["ingest"].append)
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")
+    engine.compute_all(session, session.root, run_id="run-2", log=printed["compute"].append)
+    notes = sheets.read_table(session.sheets.files[sheets.REPORTS_TITLE], schema.table(schema.REPORTS, "run_notes"))
+    for stage, lines in printed.items():
+        kept = notes[notes["stage"] == stage].sort_values("n", key=lambda n: n.astype(int))["message"].tolist()
+        assert kept[:len(lines)] == [str(line) for line in lines]  # ingest adds the parsers' notes after
+    assert len(notes[notes["stage"] == "compute"]) == len(printed["compute"])

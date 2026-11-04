@@ -59,17 +59,25 @@ def test_aliases_rename_old_categories_and_leave_the_rest():
     assert list(compute.apply_aliases(t, aliases)["category"]) == ["food", "food", ""]
 
 
-def test_a_card_payment_with_no_partner_is_taken_as_from_the_named_account():
-    rows = txns([("2001-04-05", "card", 250.0, "ONLINE PAYMENT THANK YOU", ""),  # its payer's statement is missing
-                 ("2001-04-06", "chk", -300.0, "BANK FUNDS TRANSFER DB", "")])
+def test_a_transfer_from_before_the_other_accounts_history_is_taken_as_with_that_account():
+    rows = txns([("2001-01-05", "card", 250.0, "ONLINE PAYMENT THANK YOU", ""),     # before chk's history: assumed
+                 ("2001-01-08", "sav", -300.0, "BANK FUNDS TRANSFER DB", ""),        # money out, before chk's history
+                 ("2001-01-02", "sav", -40.0, "EXAMPLE CARD ONLINE PMT", ""),        # names the card, before its history
+                 ("2001-03-05", "chk", -500.0, "BANK FUNDS TRANSFER DB", ""),        # within chk's and sav's: reported
+                 ("2001-02-01", "chk", -1.0, "COFFEE", ""),                          # chk's history starts here
+                 ("2001-03-01", "card", -9.0, "GROCER", "")])                        # the card's starts here
     paired = transfers.pairs(rows, ACCOUNTS)
     lonely = transfers.unmatched(rows, ACCOUNTS, paired)
-    assumed, left = transfers.assume_card_payments(lonely, ACCOUNTS, "chk")
-    assert assumed[["account_a", "account_b", "amount", "kind", "txn_a"]].values.tolist() == [
-        ["chk", "card", 250.0, transfers.ASSUMED, ""]]
-    assert left["txn_id"].tolist() == ["t1"]  # money leaving a bank account is still reported
-    assert transfers.paired_ids(assumed) == {"t0"}
+    starts = transfers.history_starts(rows)
+    assumed, left = transfers.assume_before_history(lonely, ACCOUNTS, starts, "chk", {"card": "EXAMPLE CARD"})
+    got = assumed[["txn_a", "account_a", "txn_b", "account_b", "amount"]].values.tolist()
+    assert got == [["t2", "sav", "", "card", 40.0],       # the payee names the card, paid before its history
+                   ["", "chk", "t0", "card", 250.0],      # into the card, from chk
+                   ["t1", "sav", "", "chk", 300.0]]       # out of savings, to chk
+    assert set(assumed["kind"]) == {transfers.ASSUMED}
+    assert left["txn_id"].tolist() == ["t3"]
+    assert transfers.paired_ids(assumed) == {"t0", "t1", "t2"}
     marked = compute.mark_transfers(rows, transfers.paired_ids(assumed))
-    assert marked.loc[0, "category"] == compute.TRANSFER  # not spending, and not asked about
-    none, same = transfers.assume_card_payments(lonely, ACCOUNTS, "no_such_account")
+    assert (marked.loc[[0, 1, 2], "category"] == compute.TRANSFER).all()
+    none, same = transfers.assume_before_history(lonely, ACCOUNTS, starts, "no_such_account")
     assert none.empty and same.equals(lonely)

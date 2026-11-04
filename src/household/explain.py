@@ -44,7 +44,7 @@ DEPARTMENTS = {
     "lawn & patio": "garden", "lawn and garden": "garden",
     "tools & home improvement": "maintenance", "tools & hardware": "maintenance",
     "alcohol": "booze", "beer, wine & spirits": "booze",
-    "toys & games": "family", "books": "media",
+    "toys & games": "family", "books": "media", "charity": "charity", "membership": "subscriptions",
 }
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"

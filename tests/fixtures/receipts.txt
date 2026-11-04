@@ -99,3 +99,48 @@ Order Subtotal: $60.00
 Tax: $3.00
 Order Total: $63.00
 Visa (ending in) 0000: $63.00
+===== RECEIPT m006 =====
+From: Willow St Co-op <receipts@example.coop>
+Subject: Electronic Receipt
+Date: 2026-03-12T18:00:00.000Z
+
+  *Willow St Grocery Cooperative*
+
+#010-001 2026-03-12 11:59:00 TEST
+
+************ EMAIL RECEIPT *************
+----------------------------------------
+Popcorn 6 oz $3.50 F
+** Voided
+2.00 lb @ 3.00/ 1 lb
+Apples bulk $6.00 FW
+2.00 lb @ 3.00/ 1 lb
+Apples bulk $6.00 FW
+Coffee 12 fl oz $2.00 T1
+CPN: Own mug deal 1 pc T1
+CHIP $0.50
+** Voided
+CHIP $0.50
+Charity: $0.04
+----------------------------------------
+Net Sales $11.70
+Electronic store coupon $0.30
+Tax 1 [$1.70] $0.10
+TOTAL SALES $11.50
+Charity $0.04
+SUB TOTAL $11.54
+===== RECEIPT m007 =====
+From: Page Turner Books <orders@example.org>
+Subject: Billing Summary for Your Recent Order
+Date: 2026-03-14T08:00:00.000Z
+
+Item(s) Shipped/Billed
+Qty
+Premium Membership
+1
+Order Subtotal: $40.00
+Tax: $2.00
+Order Total: $42.00
+Visa
+(ending in) 0000:
+$42.00

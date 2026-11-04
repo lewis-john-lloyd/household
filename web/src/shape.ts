@@ -183,6 +183,8 @@ interface Txn {
   amount: number;
   split: string;  // a split charge's parts ("household -30.00; food -20.00"); "" for a whole one
   items: Item[];
+  key: string;  // the merchant it is answered under in review ("" in reports from before it)
+  note: string;  // the line's note in the ledger
 }
 
 const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
@@ -277,14 +279,20 @@ function parseItems(text: string): [string, string, number][] {
 function parseTransactions(values: unknown[][]): Txn[] {
   if (!values.length) return [];
   const at = columnsAt(values, TXN_COLUMNS, "categorized");
-  const itemsAt = values[0].map((h) => String(h).trim()).indexOf("items");  // reports written before it: none
+  const header = values[0].map((h) => String(h).trim());
+  const itemsAt = header.indexOf("items");  // reports written before it: none
+  const optional = (v: unknown[], name: string): string => {
+    const i = header.indexOf(name);
+    return i < 0 ? "" : String(v[i] ?? "").trim();
+  };
   const out: Txn[] = [];
   for (const v of values.slice(1)) {
     const [date, account, amount, raw, named, category, splits, id] = at.map((i) => String(v[i] ?? "").trim());
     const bought = parseItems(itemsAt < 0 ? "" : String(v[itemsAt] ?? "").trim());
     const itemsIn = (c: string | null): Item[] =>
       bought.filter((i) => c === null || i[0] === c).map((i) => ({ name: i[1], amount: i[2] }));
-    const base = { id, date: date.slice(0, 10), account, payee: named || raw, split: splits };
+    const base = { id, date: date.slice(0, 10), account, payee: named || raw, split: splits, key: optional(v, "key"),
+                   note: optional(v, "note") };
     if (splits) {
       for (const piece of splits.split("; ")) {
         const cut = piece.lastIndexOf(" ");
@@ -349,7 +357,7 @@ const CHECKS: [string, string, string][] = [
   ["legacy_uncategorized", "legacy lines with no category", "legacy check"],
   ["transfers_unmatched", "transfer lines with no partner, not yet answered", "transfers:"],
 ];
-const UNREAD = ["error", "unrecognized"];  // inbox file statuses that leave a file in the inbox
+const UNREAD = ["error", "unrecognized", "failed"];  // inbox file statuses that leave a file in the inbox
 
 function parseStatus(runLog: unknown[][], notes: unknown[][]): Status {
   const runs: StageRun[] = [];

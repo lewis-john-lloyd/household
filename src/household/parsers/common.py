@@ -75,6 +75,10 @@ class Result:
     addresses and other things the household has no use for): the inbox files
     it in record_store instead of the original and moves the original to the
     trash. An empty record files nothing.
+
+    check, when not None, is called with read(table name) before anything is
+    staged, so a parser whose rows depend on the ledger (a change set naming
+    transactions and categories) can refuse the file whole.
     """
     kind: str
     parser: str
@@ -88,6 +92,7 @@ class Result:
     keys: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
     record: object = None  # text to file in place of the original, which then goes to the trash
+    check: object = None   # read -> None, raising ParseError when the rows don't fit the ledger as it stands
 
     def frame(self, name):
         return self.tables.get(name, pd.DataFrame())

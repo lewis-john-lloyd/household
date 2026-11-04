@@ -38,7 +38,7 @@ import pandas as pd
 from . import backup, ingest, pdftext, schema, sheets
 from .backup import RETRIES
 from .parsers import ParseError, identify
-from .parsers import amazon, google_takeout
+from .parsers import amazon, changes, google_takeout
 
 PDF = "application/pdf"
 DOCS = schema.table(schema.LEDGER, "source_documents")
@@ -58,10 +58,17 @@ def list_files(drive, folder_id, folders=False):
 
 
 def list_inbox(drive, inbox):
-    """The inbox's files and those in the folders directly inside it, each with the folder it is in."""
-    files = [dict(f, parent=inbox) for f in list_files(drive, inbox)]
-    for folder in list_files(drive, inbox, folders=True):
-        files += [dict(f, parent=folder["id"]) for f in list_files(drive, folder["id"])]
+    """The inbox's files and those in the folders directly inside it, each with the folder it is in.
+
+    Each folder's files come in name order, so change sets (named by the time they were saved) are read
+    oldest first and a later one's edits supersede an earlier one's.
+    """
+    def by_name(found):
+        return sorted(found, key=lambda f: f["name"])
+
+    files = [dict(f, parent=inbox) for f in by_name(list_files(drive, inbox))]
+    for folder in by_name(list_files(drive, inbox, folders=True)):
+        files += [dict(f, parent=folder["id"]) for f in by_name(list_files(drive, folder["id"]))]
     return files
 
 
@@ -300,6 +307,9 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
             summary.update(status="error", reason=f"{type(e).__name__}: {e}")
         log(f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
             f"({time.perf_counter() - started:.1f}s)")
+        if summary.get("parser") == changes.NAME and summary["status"] == "ingested":
+            for note in summary.get("notes") or []:  # each edit a person made in the views, as it is written
+                log(f"  {note}")
 
     pending = {name: len(ledger_tables.pending[name])
                for name in sorted(ledger_tables.pending, key=lambda n: n == "source_documents")}
@@ -382,6 +392,8 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
             result = parser.parse(text)
         if "transactions" in result.tables:  # a bank download: find its account
             ingest.finish_bank_rows(result, f["name"], ledger_tables.read("accounts"), received_at)
+        if result.check is not None:  # rows that must fit the ledger as it stands (a change set)
+            result.check(ledger_tables.read)
     except ParseError as e:
         summary.update(status="failed", reason=str(e))
         return None

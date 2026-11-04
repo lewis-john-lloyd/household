@@ -38,8 +38,10 @@ def _cadence(gaps):
 def discover(categorized, today=None):
     today = pd.Timestamp(today or date.today())
     df = categorized[(categorized["era"] != "legacy") & (categorized["category"] != "transfer")].copy()
+    if df.empty:  # no transactions yet (a fresh ledger): nothing recurs
+        return pd.DataFrame(columns=COLUMNS)
     df["amount"] = pd.to_numeric(df["amount"])
-    df = df[(df["amount"] < 0) & (df["key"] != "") & ~df["key"].str.startswith("CHECK")]
+    df = df[(df["amount"] < 0) & (df["key"] != "") & ~df["key"].astype(str).str.startswith("CHECK")]
     rows = []
     for key, g in df.groupby("key"):
         if len(g) < MIN_CHARGES:

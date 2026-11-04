@@ -347,7 +347,7 @@ const CHECKS: [string, string, string][] = [
   ["pa_withholding_unexplained", "state (pa) withholding stubs unexplained", "pa_withholding_backtest:"],
   ["mismatches", "legacy check mismatches", "legacy check"],
   ["legacy_uncategorized", "legacy lines with no category", "legacy check"],
-  ["transfers_unmatched", "transfer lines with no partner", "transfers:"],
+  ["transfers_unmatched", "transfer lines with no partner, not yet answered", "transfers:"],
 ];
 const UNREAD = ["error", "unrecognized"];  // inbox file statuses that leave a file in the inbox
 

@@ -179,7 +179,7 @@ test("the status page shows each stage's latest run, its lines in order, and wha
     "transfers: 9 pairs between your accounts, 2 transfer lines with no partner",
     "categories since 2001-01-01: decided {}; 4 lines open in review"]);
   assert.deepEqual(status.attention.map((a) => [a.label, a.count]), [
-    ["inbox files not read", 1], ["lines waiting in the review tab", 4], ["transfer lines with no partner", 2]]);
+    ["inbox files not read", 1], ["lines waiting in the review tab", 4], ["transfer lines with no partner, not yet answered", 2]]);
   assert.deepEqual(status.attention[1].detail, ["categories since 2001-01-01: decided {}; 4 lines open in review"]);
   assert.equal(status.stale, false);
   assert.deepEqual(status.projection, [["as is", -1500], ["no extra withholding", 300]]);

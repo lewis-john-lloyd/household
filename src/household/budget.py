@@ -23,13 +23,15 @@ priority, and a rule:
                 balance: what was set aside since the line began less what the
                 category spent
   scheduled     an explicit amount in the month of `effective`; a line can have
-                any number of these rows (tuition installments)
+                any number of these rows (tuition installments), and a later
+                row on the same date replaces the amount (0 cancels it)
   end           the line stops from the month of `effective` on
 
 A line's state in a month is its latest non-scheduled row whose effective date
 falls in that month or before, so a change takes effect for the whole month it
 is dated in (an end dated 2026-05-15 leaves May without a target) and the
-history of targets stays reproducible. A missing or malformed amount is a
+history of targets stays reproducible. Of two rows in one month, the later in
+the sheet is in force, so a correction is a new row, never an edit. A missing or malformed amount is a
 warning in the report's basis column, never an error.
 """
 
@@ -82,15 +84,16 @@ def targets(rules, actuals, through):
     if rules is None or rules.empty:
         return pd.DataFrame(columns=TARGET_COLUMNS)
     r = rules.copy()
+    r["day"] = r["effective"].astype(str).str[:10]
     r["effective"] = r["effective"].astype(str).str[:7]
     r["rule"] = r["rule"].astype(str).str.strip()
     r["line"] = r["line"].astype(str).str.strip()  # "Groceries " and "Groceries" are one line
     spend = _spend_lookup(actuals)
     out = []
     for line, rows in r.groupby("line"):
-        rows = rows.sort_values("effective")
+        rows = rows.sort_values("effective", kind="stable")  # within a month, the later row in the sheet wins
         states = rows[rows["rule"] != "scheduled"]
-        scheduled = rows[rows["rule"] == "scheduled"]
+        scheduled = rows[rows["rule"] == "scheduled"].drop_duplicates("day", keep="last")
         for month in _months(rows["effective"].min(), through):
             current = states[states["effective"] <= month]
             state = current.iloc[-1] if len(current) else None

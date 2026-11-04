@@ -174,3 +174,30 @@ def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(sessio
         kept = notes[notes["stage"] == stage].sort_values("n", key=lambda n: n.astype(int))["message"].tolist()
         assert kept[:len(lines)] == [str(line) for line in lines]  # ingest adds the parsers' notes after
     assert len(notes[notes["stage"] == "compute"]) == len(printed["compute"])
+
+
+def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(session):
+    import json
+    seed = "category,group,priority\nfood,living,high\nkids,family,high\n"
+    session._drive.add("categories.csv", session.box, "text/csv", seed.encode())
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
+    edits = session._drive.folder("web_edits", session.box)
+    change = {"format": "household_changes", "version": 1, "created_at": "2026-01-31T12:00:00Z", "base_run": "run-1",
+              "edits": [{"kind": "budget_line", "line": "groceries", "effective": "2026-01-01", "rule": "fixed",
+                         "category": "food", "amount": "50", "per": "weekly", "was": None},
+                        {"kind": "category", "category": "food", "group": "groceries", "priority": "high",
+                         "was": {"group": "living"}},
+                        {"kind": "parameter", "key": "transfer_account", "value": "checking", "was": None}]}
+    session._drive.add("changes_2026-01-31T120000Z.json", edits, "application/json", json.dumps(change).encode())
+    lines = []
+    ingested = engine.ingest_inbox(session, session.root, run_id="run-2", log=lines.append)
+    assert ingested["counts"] == {"ingested": 1}
+    assert "budget line groceries: fixed 50 weekly for food from 2026-01-01" in "\n".join(lines)
+
+    engine.compute_all(session, session.root, run_id="run-3", log=None)
+    reports = session.sheets.files["reports"]
+    read = lambda name: sheets.read_table(reports, schema.table(schema.REPORTS, name))
+    line = read("editor_budget_lines").iloc[0]
+    assert (line["line"], line["in_words"], line["in_force"]) == ("groceries", "50.00 a week", "yes")
+    assert read("editor_categories").set_index("category").at["food", "group"] == "groceries"
+    assert read("editor_parameters")[["key", "value"]].values.tolist() == [["transfer_account", "checking"]]

@@ -128,7 +128,8 @@ def test_ingests_files_registers_and_files_them(setup):
     assert out["schwab_equity.csv"]["appended"] == {"equity_vests": 2, "equity_sales": 2}
     assert out["accounts_seed.csv"]["appended"] == {"accounts": 2}
     assert len(rows(ledger, "source_documents")) == 3
-    assert set(rows(ledger, "paystubs")["doc_id"]) == {rows(ledger, "source_documents")["doc_id"][0]}
+    docs = rows(ledger, "source_documents").set_index("original_name")
+    assert set(rows(ledger, "paystubs")["doc_id"]) == {docs.at["pay_statement.txt", "doc_id"]}
     assert drive.names_in(box) == ["notes.txt"]
     filed = drive.names_in(record)
     assert any(n.startswith("paystub_alex_2001-01-19_") and n.endswith(".txt") for n in filed)

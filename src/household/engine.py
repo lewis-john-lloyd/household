@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, explain, flows, inbox, ingest, legacy, mortgage,
+from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage,
                pennsylvania, projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
 
 
@@ -113,8 +113,9 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     started = time.perf_counter()
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
-    for f in files:  # a parser's notes, kept with the run (the notebook prints them itself)
-        said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
+    for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are printed above)
+        if f.get("parser") != "changes":
+            said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
     result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
     _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}
             | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended")} for f in files]}, said)
@@ -146,11 +147,11 @@ def _books(ledger):
     if len(assumed):
         paired = pd.concat([paired, assumed], ignore_index=True)
     effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
-    aliases = _read(ledger, "category_aliases")
+    aliases = compute.latest(_read(ledger, "category_aliases"), ["alias"])
     effective = compute.apply_aliases(effective, aliases)
     return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
             "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
-            "categories": _read(ledger, "categories"), "parameters": parameters,
+            "categories": compute.latest(_read(ledger, "categories"), ["category"]), "parameters": parameters,
             "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items"),
             "aliases": aliases}
 
@@ -183,7 +184,7 @@ def review(session, folder_id, log=print, now=None):
 def _review(ledger, log=print, now=None):
     review_table = schema.table(schema.LEDGER, "review")
     typed = _read(ledger, "review")
-    categories = _read(ledger, "categories")["category"].astype(str).str.strip()
+    categories = compute.latest(_read(ledger, "categories"), ["category"])["category"].astype(str).str.strip()
     decisions, corrections, left = categorize.harvest(typed, set(categories), now=now)
     sheets.append_rows(ledger, schema.table(schema.LEDGER, "proposal_decisions"), decisions)
     sheets.append_rows(ledger, schema.table(schema.LEDGER, "txn_corrections"), corrections)
@@ -241,6 +242,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
     today = computed_at[:10]
     rules = _read(ledger, "budget_rules")
+    planned = pd.DataFrame(columns=budget.TARGET_COLUMNS)
     if not rules.empty:
         planned = budget.targets(rules, actuals, today[:7])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
@@ -258,6 +260,11 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             _say(log, f"  budget line {line}: {warnings.loc[warnings['line'] == line, 'basis'].iloc[-1]}")
     else:
         _say(log, "budget: no budget_rules yet")
+    published = editor.publish(books, _read(ledger, "review"), rules, planned, actuals, today[:7])
+    for name, df in published.items():
+        sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
+    _say(log, "editor: " + ", ".join(f"{len(df)} {name[len('editor_'):].replace('_', ' ')}"
+                                     for name, df in published.items()) + " for the views")
     due = checks.coverage(books["accounts"], effective, _read(ledger, "balances"),
                           _read(ledger, "source_documents"), categorized, books["coverage"], today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "coverage"), due.assign(run_id=run_id))

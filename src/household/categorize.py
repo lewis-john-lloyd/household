@@ -192,14 +192,17 @@ def rule_for(payee, date, rules):
     """The payee rule in force on date for this payee, or None.
 
     Rows sharing a pattern are one rule over time: the latest effective on or
-    before the date is in force. Among patterns that match, the lowest
-    precedence wins.
+    before the date is in force (of two rows on one date, the later in the
+    sheet), and a row with no category that does not ask stops the rule from
+    its date (a rule that asks may leave the guess blank: paper checks). Among
+    patterns that match, the lowest precedence wins.
     """
     live = {}
     for r in rules:
         if r["effective"] <= date and r["regex"].search(payee):
-            if r["pattern"] not in live or r["effective"] > live[r["pattern"]]["effective"]:
+            if r["pattern"] not in live or r["effective"] >= live[r["pattern"]]["effective"]:
                 live[r["pattern"]] = r
+    live = {p: r for p, r in live.items() if r["category"] or r["ask"]}
     if not live:
         return None
     return min(live.values(), key=lambda r: (r["precedence"], r["pattern"]))

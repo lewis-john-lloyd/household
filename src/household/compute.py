@@ -36,6 +36,15 @@ def effective_transactions(transactions, corrections=None):
     return df.reset_index(drop=True)
 
 
+def latest(df, keys):
+    """The last row per key, in sheet order: a later row for the same thing supersedes an earlier one
+    (a category regrouped, an alias pointed elsewhere)."""
+    if df is None or df.empty:
+        return df
+    key = df[keys].astype(str).apply(lambda c: c.str.strip())
+    return df[~key.duplicated(keep="last")].reset_index(drop=True)
+
+
 TRANSFER = "transfer"
 
 

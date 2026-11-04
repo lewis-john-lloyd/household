@@ -12,16 +12,18 @@ price plus its share of the tax (taxed items only), scaled so the items add to w
 Food (an F flag) is grocery; a taxed item that is not food is alcohol when its name says so
 (ALCOHOL), toys and games when its name says so (TOYS), and otherwise left to the default
 (candles, medicine, soap). Weight and quantity lines, coupon lines and the store's own
-contributions (not charged) are skipped. Checks: the items add to Net Sales and the taxed ones to
-the tax base.
+contributions (not charged) are skipped. A "** Voided" line cancels the next priced entry (a re-rung
+item, a bag credit, a contribution), passing over the weight, quantity and Ref lines that go with it. A charity round-up is its own item (charity). Checks: the items add to Net
+Sales and the taxed ones to the tax base, or to more by no more than the coupons the totals take off
+(a vendor or store coupon that no item line shows).
 
 Bookseller point-of-sale receipts (service "bookseller", the receipt emailed from the register):
 each item is its name, a line with its barcode and tax code (T1), then one line per discount and a
 last "(qty @ price)  net" line with what it came to. The items add to Subtotal, the tax lines (by
 tax code) and Subtotal add to TOTAL, and the card was charged TOTAL. Tax goes to the items with that
-tax code, by amount. An item whose name says toys, games, puzzles or the like is toys and games, and
-anything else is books (the store prints book-like codes on everything, snacks included, so the
-barcode cannot tell them apart).
+tax code, by amount. An item whose name says toys, games, puzzles or the like is toys and games, a
+membership is a membership (subscriptions), and anything else is books (the store prints book-like
+codes on everything, snacks included, so the barcode cannot tell them apart).
 
 Bookseller online billing summaries (the same service): the charge for what shipped, with item
 names and quantities but no prices. A summary for one item reads as that item, at what the cards
@@ -59,6 +61,7 @@ TOYS = re.compile(r"\b(puzzles?|stickers?|games?|toys?|lego|crayons?|coloring|pl
                   r"books?|activity)\b", re.I)
 TOY_NAMES = re.compile(r"\b(puzzles?|jigsaw|stickers?|games?|toys?|lego|playmobil|plush|crayons?|coloring|"
                        r"playing cards|kite|figures?|building set)\b", re.I)
+MEMBERSHIP = re.compile(r"\bmembership\b", re.I)
 HTML = re.compile(r"<(table|td|tr|div|br|pre)\b", re.I)
 ENTITIES = {"nbsp": " ", "amp": "&", "quot": '"', "apos": "'", "rsquo": "'", "lsquo": "'", "lt": "<", "gt": ">",
             "zwnj": "", "shy": "", "copy": ""}
@@ -139,45 +142,66 @@ def co_op(message_id, headers, body):
     sections = re.split(r"^-{20,}", receipt, flags=re.M)
     if len(sections) < 3:
         raise ParseError(f"{NAME}: co-op receipt {message_id}: no item list")
-    items = []
+    items, charity, voided = [], [], False
     for line in sections[1].splitlines():
-        if not line.strip() or SKIP.match(line):
+        if not line.strip():
+            continue
+        if line.strip() in VOID_MARKS:
+            voided = True  # the line right after is cancelled, whatever it is
+            continue
+        if voided:
+            if not ITEM_INFO.match(line):  # a weight, quantity or Ref line belongs to the entry after it
+                voided = False
+            continue
+        if SKIP.match(line):
             continue
         m = ITEM.match(line)
         if not m:
             continue  # a line with no price (a free item)
+        name = " ".join(m["name"].split())
         cents = round(float(m["price"]) * 100) * (-1 if m["minus"] else 1)
-        items.append((" ".join(m["name"].split()), cents, m["flags"]))
+        if CHARITY.match(name):
+            charity.append((name.rstrip(":"), cents, ""))
+            continue
+        items.append((name, cents, m["flags"]))
     totals = "\n".join(sections[2:])
     net = _money(totals, r"Net Sales \$(-?[\d,]+\.\d\d)", "Net Sales")
     charged = _money(totals, r"SUB TOTAL \$(-?[\d,]+\.\d\d)", "SUB TOTAL")
     taxes = [(round(float(b) * 100), round(float(t) * 100))
              for b, t in re.findall(r"Tax \d+ \[\$(-?[\d.]+)\] \$(-?[\d.]+)", totals)]
+    coupons = sum(_cents(c) for c in re.findall(COUPONS, totals, re.M))
     if not items or charged <= 0:
         return []
-    if sum(c for _, c, _ in items) != net:
+    over = sum(c for _, c, _ in items) - net
+    if not 0 <= over <= coupons:  # a coupon in the totals can take its amount off Net Sales, never more
         raise ParseError(f"{NAME}: co-op receipt {message_id}: items add to {sum(c for _, c, _ in items) / 100:.2f}, "
-                         f"Net Sales is {net / 100:.2f}")
+                         f"Net Sales is {net / 100:.2f}" + (f" (coupons {coupons / 100:.2f})" if coupons else ""))
     base = sum(c for _, c, f in items if "T" in f)
-    if taxes and sum(b for b, _ in taxes) != base:
+    if taxes and not 0 <= base - sum(b for b, _ in taxes) <= coupons:
         raise ParseError(f"{NAME}: co-op receipt {message_id}: taxed items add to {base / 100:.2f}, "
                          f"the tax base is {sum(b for b, _ in taxes) / 100:.2f}")
     tax = sum(t for _, t in taxes)
     with_tax = [c + (round(tax * c / base) if base and "T" in f else 0) for _, c, f in items]
-    amounts = _scale(with_tax, charged)
+    lines = items + charity
+    amounts = _scale(with_tax + [c for _, c, _ in charity], charged)
     day = re.search(r"^#\S+ (\d{4}-\d{2}-\d{2}) ", body, re.M)
     day = day.group(1) if day else headers.get("date", "")[:10]
     store = re.search(r"^\s*\*([^*\n]+)\*\s*$", body, re.M)
     rows = []
-    for n, ((name, _, flags), amount) in enumerate(zip(items, amounts)):
+    for n, ((name, _, flags), amount) in enumerate(zip(lines, amounts)):
+        department = "charity" if (name, _, flags) in charity else _department(name, flags)
         rows.append({"item_id": hashlib.sha256(f"{CO_OP}|{message_id}|{n}".encode()).hexdigest()[:16],
                      "service": CO_OP, "order_id": message_id, "kind": "item", "order_date": day,
-                     "date": day, "amount": amount / 100, "card": "", "department": _department(name, flags),
+                     "date": day, "amount": amount / 100, "card": "", "department": department,
                      "item": name, "website": store.group(1).strip() if store else CO_OP})
     return rows
 
 
 CO_OP = "co_op"
+VOID_MARKS = ("** Voided", "** Corrected")
+ITEM_INFO = re.compile(r"^(\s*\d+(\.\d+)? lb @|\s*\d+ @ \$|\s*Ref:)")
+CHARITY = re.compile(r"^charity:?$", re.I)
+COUPONS = r"^\s*(?:Vendor coupon|Electronic store coupon)\s+\$(-?[\d,]+\.\d\d)"
 BOOKSELLER = "bookseller"
 REGISTER = re.compile(r"^\s*STR:\d+ REG:\d+ TRN:\d+", re.M)
 SUBTOTAL = re.compile(r"^\s*Subtotal\s+-?[\d,]+\.\d\d", re.M)
@@ -191,6 +215,12 @@ def _row(service, message_id, n, day, amount, department, name, website):
     return {"item_id": hashlib.sha256(f"{service}|{message_id}|{n}".encode()).hexdigest()[:16],
             "service": service, "order_id": message_id, "kind": "item", "order_date": day, "date": day,
             "amount": amount / 100, "card": "", "department": department, "item": name, "website": website}
+
+
+def _book_department(name):
+    if MEMBERSHIP.search(name):
+        return "membership"
+    return "toys & games" if TOY_NAMES.search(name) else "books"
 
 
 def bookseller(message_id, headers, body):
@@ -240,7 +270,7 @@ def bookseller(message_id, headers, body):
     website = store[0] if store else BOOKSELLER
     rows = []
     for n, ((name, _, _, _), amount) in enumerate(zip(items, amounts)):
-        department = "toys & games" if TOY_NAMES.search(name) else "books"
+        department = _book_department(name)
         rows.append(_row(BOOKSELLER, message_id, n, day, amount, department, name, website))
     return rows
 
@@ -252,18 +282,26 @@ def bookseller_online(message_id, headers, body):
     end = next((i for i in range(start, len(lines)) if lines[i].startswith("Order Subtotal:")), None)
     if end is None:
         raise ParseError(f"{NAME}: bookseller billing summary {message_id}: no Order Subtotal")
-    items = []
-    for line in lines[start + 1:end]:
+    items, name = [], ""
+    for line in lines[start + 1:end]:  # a name and its quantity, on one line or two
+        if not line or line == "Qty":
+            continue
+        if line.isdigit() and name:
+            items.append(name)
+            name = ""
+            continue
         m = re.match(r"^(?P<name>.*\S)\s+(?P<qty>\d+)$", line)
-        if m:
+        if m and not name:
             items.append(" ".join(m["name"].split()))
+        else:
+            name = " ".join(line.split())
     charged = sum(_cents(c) for c in re.findall(r"\(ending in\)\s*\d+:\s*\$([\d,]+\.\d\d)", body))
     if not items or charged <= 0:
         return []
     if len(items) > 1:
         raise Unpriced(BOOKSELLER)
     name = items[0]
-    department = "toys & games" if TOY_NAMES.search(name) else "books"
+    department = _book_department(name)
     return [_row(BOOKSELLER, message_id, 0, headers.get("date", "")[:10], charged, department, name, BOOKSELLER)]
 
 
@@ -283,7 +321,7 @@ READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_onl
 
 
 def parse(text):
-    rows, skipped, unpriced = [], {}, {}
+    rows, skipped, unpriced, empty = [], {}, {}, 0
     for message_id, headers, body in _messages(text):
         body = _text(body)
         reader = next((r for recognizes, r in READERS if recognizes(body)), None)
@@ -292,15 +330,21 @@ def parse(text):
             skipped[key] = skipped.get(key, 0) + 1
             continue
         try:
-            rows += reader(message_id, headers, body)
+            found = reader(message_id, headers, body)
         except Unpriced as e:
             unpriced[str(e)] = unpriced.get(str(e), 0) + 1
+            continue
+        rows += found
+        if not found:
+            empty += 1
     df = pd.DataFrame(rows, columns=COLUMNS)
     dates = sorted(d for d in df["date"] if d)
     notes = [f"receipts: {df['order_id'].nunique()} read, {len(df)} items"]
     notes += [f"receipts: {n} from {k} left for a reader not written yet" for k, n in sorted(skipped.items())]
     notes += [f"receipts: {n} {k} charges for several items without prices left as one charge"
               for k, n in sorted(unpriced.items())]
+    if empty:
+        notes.append(f"receipts: {empty} that charged nothing (a return, a free order) left out")
     return Result(kind=KIND, parser=NAME, label=f"receipts_{dates[-1] if dates else 'none'}",
                   covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
                   tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]}, notes=notes)

@@ -15,13 +15,16 @@ account; those pair too, as a reversal.
 
 A line that reads like a move between the household's own accounts but finds
 no partner is reported: usually the other side lies
-outside the downloaded dates, sometimes a download is missing. A payment received
-on a credit card is the exception when the household names, in the parameter
-card_payment_from, the account card payments come from: one with no partner is
-taken to have come from that account (its statements for those dates are the
-missing ones), paired with it as an assumed card payment, and not reported. Payments to
-people and services (NOT_OWN: Venmo, PayPal, Zelle, a mortgage, taxes) are not
-reported; categorization handles them.
+outside the downloaded dates, sometimes a download is missing. Banks let you
+download different lengths of history, so for the months before an account's
+history begins its side of a transfer is simply not there. A line with no partner
+dated before the other account's first downloaded line is taken to be a transfer
+with that account (ASSUMED) rather than reported: the other account is the one
+whose transfer_payee:<account> parameter matches the line's payee, or else the
+household's main account, named in the parameter transfer_account. Within an
+account's history a transfer still has to pair, so a missing statement shows.
+Payments to people and services (NOT_OWN: Venmo, PayPal, Zelle, a mortgage,
+taxes) are not reported; categorization handles them.
 """
 
 import re
@@ -86,23 +89,42 @@ def unmatched(transactions, accounts, paired):
         ["date", "account_id"]).reset_index(drop=True)
 
 
-CARD_SOURCE = "card_payment_from"  # household parameter: the account an unpaired card payment came from
-ASSUMED = "card_payment_assumed"
+MAIN_ACCOUNT = "transfer_account"  # household parameter: the account a transfer from before its history was with
+PAYEE_PREFIX = "transfer_payee:"   # household parameter transfer_payee:<account>: payees that name that account
+ASSUMED = "assumed_before_history"
 
 
-def assume_card_payments(lonely, accounts, source):
-    """(assumed pairs, still unmatched): each payment received on a credit card with no partner, taken
-    to have come from the account source; the pair's side a is that account, with no line of its own.
-    Nothing is assumed when source names no household account."""
-    if not source or lonely.empty or source not in set(accounts["account_id"]):
-        return pd.DataFrame(columns=COLUMNS), lonely
-    kinds = dict(zip(accounts["account_id"], accounts["type"]))
-    hit = lonely["account_id"].map(kinds).eq("credit_card") & (pd.to_numeric(lonely["amount"]) > 0)
-    rows = [{"txn_a": "", "date_a": str(r.date), "account_a": source,
-             "payee_a": "assumed: no statement for these dates", "txn_b": r.txn_id, "date_b": str(r.date),
-             "account_b": r.account_id, "payee_b": r.payee_raw, "amount": round(float(r.amount), 2), "kind": ASSUMED}
-            for r in lonely[hit].itertuples(index=False)]
-    return pd.DataFrame(rows, columns=COLUMNS), lonely[~hit].reset_index(drop=True)
+def history_starts(transactions):
+    """{account_id: its first downloaded line's date}, the legacy era left out."""
+    df = transactions if "era" not in transactions else transactions[transactions["era"] != "legacy"]
+    if df.empty:
+        return {}
+    return df.assign(day=df["date"].astype(str).str[:10]).groupby("account_id")["day"].min().to_dict()
+
+
+def assume_before_history(lonely, accounts, starts, main="", payees=None):
+    """(assumed pairs, still unmatched): each line with no partner dated before the other account's
+    history began, taken to be a transfer with that account. The other account is the one whose payee
+    pattern (payees: {account_id: pattern}) matches the line, or else main. The pair's other side
+    has no line of its own (blank txn id); the line's own account is side a when money leaves it."""
+    payees = {a: re.compile(p, re.I) for a, p in (payees or {}).items() if p}
+    known = set(accounts["account_id"])
+    rows, took = [], []
+    for r in lonely.itertuples(index=False):
+        other = next((a for a, pattern in payees.items() if pattern.search(str(r.payee_raw))), main)
+        if other not in known or other == r.account_id or not starts.get(other):
+            continue
+        if str(r.date)[:10] >= starts[other]:
+            continue  # the other account's history covers this date: the pair should be there
+        amount = round(abs(float(r.amount)), 2)
+        mine = {"txn": r.txn_id, "date": str(r.date), "account": r.account_id, "payee": r.payee_raw}
+        theirs = {"txn": "", "date": str(r.date), "account": other, "payee": "assumed: before this account's history"}
+        a, b = (mine, theirs) if float(r.amount) < 0 else (theirs, mine)
+        rows.append({"txn_a": a["txn"], "date_a": a["date"], "account_a": a["account"], "payee_a": a["payee"],
+                     "txn_b": b["txn"], "date_b": b["date"], "account_b": b["account"], "payee_b": b["payee"],
+                     "amount": amount, "kind": ASSUMED})
+        took.append(r.txn_id)
+    return pd.DataFrame(rows, columns=COLUMNS), lonely[~lonely["txn_id"].isin(took)].reset_index(drop=True)
 
 
 def paired_ids(paired):

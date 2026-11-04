@@ -134,8 +134,12 @@ def _books(ledger):
     parameters = _read(ledger, "parameters")
     paired = transfers.pairs(effective, accounts)
     lonely = transfers.unmatched(effective, accounts, paired)
-    source = categorize.household_parameter(parameters, transfers.CARD_SOURCE)
-    assumed, lonely = transfers.assume_card_payments(lonely, accounts, source)
+    household = parameters[parameters["jurisdiction"] == "household"] if len(parameters) else parameters
+    payees = {str(k)[len(transfers.PAYEE_PREFIX):]: str(v) for k, v in zip(household.get("key", []), household.get("value", []))
+              if str(k).startswith(transfers.PAYEE_PREFIX)}
+    assumed, lonely = transfers.assume_before_history(
+        lonely, accounts, transfers.history_starts(effective),
+        categorize.household_parameter(parameters, transfers.MAIN_ACCOUNT), payees)
     if len(assumed):
         paired = pd.concat([paired, assumed], ignore_index=True)
     effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
@@ -212,9 +216,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, name), df.assign(run_id=run_id))
     assumed = int((paired["kind"] == transfers.ASSUMED).sum())
     _say(log, f"transfers: {len(paired) - assumed} pairs between your accounts, {len(lonely)} transfer lines "
-              "with no partner" + (f", {assumed} card payments with no partner taken as from "
-                                   f"{categorize.household_parameter(books['parameters'], transfers.CARD_SOURCE)}"
-                                   if assumed else ""))
+              "with no partner" + (f", {assumed} more from before the other account's downloaded history, "
+                                   "taken as transfers with it" if assumed else ""))
     legacy_checked, legacy_blank = compute.legacy_rows(txns)
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
 

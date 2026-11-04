@@ -56,7 +56,7 @@ The ledger's `comp_events` tab is the history of pay changes in one place: each 
 
 ## Receipts from email
 
-Some stores email a receipt for every purchase. `exporter/` is a separate, small Apps Script (one file, `Code.js`) that copies new receipts into the Drive inbox once a day, as one text file per run (`receipts_<time>.txt`). It runs only the Gmail searches in its `SENDERS` script property (kept there, not in the repo, so no store is named here), holds the only Gmail permission in the system, read-only, and never changes Gmail. Its Drive permission is `drive.file`, which reaches only what the exporter itself created: it makes a folder of its own, `receipts from email`, on its first run, and you move that folder into the inbox once. The engine reads the inbox and the folders directly inside it. The engine keeps its Sheets and Drive access only and reads the file like any other export: `parsers/email_receipts.py` recognizes each receipt layout by its body and reads it item by item into `order_items` (one order per receipt, keyed by the message id, so a receipt exported twice is read once). A layout with no reader yet is counted in the ingest notes and left for later.
+Some stores email a receipt for every purchase. `exporter/` is a separate, small Apps Script (one file, `Code.js`) that copies new receipts into the Drive inbox once a day, as one text file per run (`receipts_<time>.txt`). It runs only the Gmail searches in its `SENDERS` script property (kept there, not in the repo, so no store is named here), holds the only Gmail permission in the system, read-only, and never changes Gmail. Its Drive permission is `drive.file`, which reaches only what the exporter itself created: it makes a folder of its own, `email_receipts`, on its first run, and you move that folder into the inbox once. The engine reads the inbox and the folders directly inside it. The engine keeps its Sheets and Drive access only and reads the file like any other export: `parsers/email_receipts.py` recognizes each receipt layout by its body and reads it item by item into `order_items` (one order per receipt, keyed by the message id, so a receipt exported twice is read once). A layout with no reader yet is counted in the ingest notes and left for later.
 
 The first layout is a co-op's point-of-sale receipt (service `co_op`), which marks each item's tax class, so food, alcohol, toys and games and everything else (candles, medicine) separate, and tax and coupons are shared out so the items add to the charge. The household names the store's card lines with a ledger parameter, jurisdiction `household`, key `order_payee:co_op`, value a pattern for the payee; any store with an order history can be added the same way (`explain.order_services`), and its charges then split by what was bought like Amazon's.
 
@@ -66,8 +66,8 @@ To set it up (`npm i -g @google/clasp`, logged in):
 
 1. `cd exporter && clasp create-script --type standalone --title "Household receipt exporter" --rootDir .`, then `clasp push`
 2. In the script editor, Project Settings, Script properties: `SENDERS` (a JSON list of Gmail searches, one per store)
-3. Run `exportReceipts` once. It asks for Gmail read access and access to its own Drive files, makes `receipts from email` in My Drive, and exports every receipt so far into it
-4. Move `receipts from email` into the household inbox folder
+3. Run `exportReceipts` once. It asks for Gmail read access and access to its own Drive files, makes `email_receipts` in My Drive, and exports every receipt so far into it
+4. Move `email_receipts` into the household inbox folder
 5. Run `installTrigger` once to run it every morning
 
 ## Views

@@ -319,12 +319,12 @@ def test_a_file_filed_unread_is_read_again_once_a_parser_knows_it(setup, monkeyp
 
 def test_files_in_a_folder_inside_the_inbox_are_read_and_filed_out_of_it(setup):
     drive, ledger, box, record = setup
-    exporter = drive.folder("receipts from email", box)
+    exporter = drive.folder("email_receipts", box)
     drop(drive, exporter, "pay_statement.txt")
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["appended"] == {"paystubs": 18}
     assert drive.names_in(exporter) == []
-    assert drive.names_in(box) == ["receipts from email"]  # the folder itself stays
+    assert drive.names_in(box) == ["email_receipts"]  # the folder itself stays
     assert any(n.startswith("paystub_alex_") for n in drive.names_in(record))
 
 

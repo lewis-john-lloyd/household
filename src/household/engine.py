@@ -71,6 +71,9 @@ def _recording(log):
     return say, lines
 
 
+STAGES = {"ingest", "compute"}
+
+
 def _record(reports, stage, run_id, at, summary, lines):
     """Keep this run of this stage in Reports (run_log: its summary as JSON; run_notes: every line it
     printed), replacing that stage's last run and leaving the other stages' alone."""
@@ -81,7 +84,7 @@ def _record(reports, stage, run_id, at, summary, lines):
                            for n, m in enumerate(lines)])):
         t = schema.table(schema.REPORTS, name)
         kept = sheets.read_table(reports, t)
-        kept = kept[kept["stage"].astype(str) != stage] if len(kept) else kept
+        kept = kept[kept["stage"].astype(str).isin(STAGES - {stage})] if len(kept) else kept
         sheets.replace_table(reports, t, pd.concat([kept, pd.DataFrame(rows, columns=t.columns)], ignore_index=True))
 
 
@@ -92,7 +95,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     """
     run_id = run_id or new_run_id()
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    log, lines = _recording(log)
+    log, said = _recording(log)
     _say(log, f"run {run_id}: opening the ledger")
     _say(log, f"versions: {versions()}")
     ledger, reports, _ = bootstrap(session, folder_id)
@@ -111,10 +114,10 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
     for f in files:  # a parser's notes, kept with the run (the notebook prints them itself)
-        lines += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
+        said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
     result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
     _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}
-            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended")} for f in files]}, lines)
+            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended")} for f in files]}, said)
     return result
 
 
@@ -204,7 +207,7 @@ def _review(ledger, log=print, now=None):
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
-    log, lines = _recording(log)
+    log, said = _recording(log)
     _say(log, f"run {run_id}: reading the ledger")
     _say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -396,5 +399,5 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             _say(log, f"  not in the old rollup (no category): {row['date']} {row['payee_raw']} "
                       f"{-float(row['amount']):.2f}")
 
-    _record(reports, "compute", run_id, computed_at, result | {"versions": versions()}, lines)
+    _record(reports, "compute", run_id, computed_at, result | {"versions": versions()}, said)
     return result

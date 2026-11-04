@@ -315,3 +315,41 @@ def test_a_file_filed_unread_is_read_again_once_a_parser_knows_it(setup, monkeyp
     assert len(rows(ledger, "paystubs")) > 0
     docs = rows(ledger, "source_documents")
     assert docs["kind"].tolist() == ["paystub_unparsed", "paystub"]  # the newer row supersedes
+
+
+def test_files_in_a_folder_inside_the_inbox_are_read_and_filed_out_of_it(setup):
+    drive, ledger, box, record = setup
+    exporter = drive.folder("receipts from email", box)
+    drop(drive, exporter, "pay_statement.txt")
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["appended"] == {"paystubs": 18}
+    assert drive.names_in(exporter) == []
+    assert drive.names_in(box) == ["receipts from email"]  # the folder itself stays
+    assert any(n.startswith("paystub_alex_") for n in drive.names_in(record))
+
+
+def test_a_file_too_big_to_download_is_left_in_the_inbox(setup, monkeypatch):
+    drive, ledger, box, record = setup
+    fid = drop(drive, box, "pay_statement.txt")
+    drive.items[fid]["size"] = str(inbox.MAX_FILE_BYTES + 1)
+    monkeypatch.setattr(inbox, "download", lambda d, f: pytest.fail("downloaded a file over the limit"))
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "error" and "more than" in summary["reason"]
+    assert drive.names_in(box) == ["pay_statement.txt"]
+
+
+def test_a_zip_past_its_limits_is_refused_before_it_is_unpacked(monkeypatch):
+    import io as _io
+    import zipfile as _zipfile
+    buffer = _io.BytesIO()
+    with _zipfile.ZipFile(buffer, "w") as z:
+        for n in range(3):
+            z.writestr(f"part{n}.csv", "a,b\n1,2\n")
+    data = buffer.getvalue()
+    monkeypatch.setitem(inbox.ZIP_LIMITS, "members", 2)
+    with pytest.raises(inbox.ParseError, match="3 files"):
+        inbox.parse_zip(data)
+    monkeypatch.setitem(inbox.ZIP_LIMITS, "members", 10)
+    monkeypatch.setitem(inbox.ZIP_LIMITS, "total_bytes", 10)
+    with pytest.raises(inbox.ParseError, match="unpacks to"):
+        inbox.parse_zip(data)

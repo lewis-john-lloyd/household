@@ -18,6 +18,7 @@ window.__answers = {
   getStatus: { stages: [{ stage: "compute", runId: "r1", at: "2001-03-02T07:00:00Z", summary: {}, lines: ["run r1"] }],
                attention: [], stale: false, projection: [], projectionYear: "", wiProjection: null, categories: null },
   getWaiting: [],
+  getAppliedAnyway: [],
   findSave: null,
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
@@ -300,7 +301,8 @@ test("Discard all after a save that didn't confirm finds it saved, and offers to
   assert.match(await page.textContent("#pending-msg"), /its 1 changes are saved and ingest will apply them/);
   assert.deepEqual(await staged(page), []);
   await page.click("#pending-msg button:has-text('Discard that change set too')");
-  await page.waitForFunction(() => /ingest won't read it/.test(document.getElementById("pending-msg").textContent));
+  await page.waitForFunction(() => /no ingest from now on will read it/.test(document.getElementById("pending-msg").textContent));
+  assert.match(await page.textContent("#pending-msg"), /An ingest already running may have read it first/);
   const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "discardWaiting"));
   assert.deepEqual(calls.map((c) => c.args), [["f1"]]);
   assert.equal(await leaving(page), false);
@@ -340,5 +342,20 @@ test("a save that didn't confirm keeps Save and the leave warning even with noth
   await page.click("#pending-save");  // findSave answers null: nothing to save
   await page.waitForFunction(() => /nothing to save/.test(document.getElementById("pending-msg").textContent));
   assert.equal(await leaving(page), false);
+  await page.close();
+});
+
+test("a discarded change set an ingest applied anyway is told on the status page, until Got it", async () => {
+  const page = await open("window.__answers.getAppliedAnyway = [{ id: 'e5', name: 'changes_2001-03-02T060000.000Z_e5.json', " +
+    "savedAt: '', discardedAt: '2001-03-02T06:00:30Z', edits: ['payee ACME GROCER: food'], more: 0, runId: 'r9', appliedAt: '' }];");
+  await page.waitForSelector("#status-attention .attention");
+  const text = await page.textContent("#status-attention");
+  assert.match(text, /discarded change set was applied anyway/);
+  assert.match(text, /applied by ingest r9: payee ACME GROCER: food/);
+  await page.click("#status-attention button:has-text('Got it')");
+  const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "forgetDiscarded").map((c) => c.args));
+  assert.deepEqual(calls, [["e5"]]);
+  assert.doesNotMatch(await page.textContent("#status-attention"), /applied anyway/);
+  assert.deepEqual(page.errors, []);
   await page.close();
 });

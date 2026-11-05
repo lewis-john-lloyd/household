@@ -254,3 +254,31 @@ function waitingChangeSets(files: { id: string; name: string; createdTime?: stri
     return { id: f.id, name: f.name, savedAt, edits, refused: reasons[f.name] || "", unseen };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
+
+interface Discarded extends Saved {
+  discardedAt: string;
+}
+
+interface AppliedAnyway extends Discarded {
+  runId: string;      // the ingest that applied it
+  appliedAt: string;  // when that ingest started
+}
+
+/**
+ * Discarded change sets an ingest applied anyway. Trashing a file stops every ingest from then on, but one
+ * already running may have read it first: its run_log row then lists the file as ingested.
+ */
+function appliedAnyway(discarded: Record<string, Discarded>, runLog: unknown[][]): AppliedAnyway[] {
+  const ingested: Record<string, Row> = {};
+  for (const r of records(runLog).filter((x) => x.stage === "ingest")) {
+    try {
+      const detail = JSON.parse(r.detail) as { files?: { file?: string; status?: string }[] };
+      for (const f of detail.files || []) if (f.file && f.status === "ingested") ingested[f.file] = r;
+    } catch (e) {
+      // an older run_log row: nothing to tell
+    }
+  }
+  return Object.values(discarded).filter((d) => ingested[d.name])
+    .map((d) => ({ ...d, runId: ingested[d.name].run_id, appliedAt: ingested[d.name].computed_at }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}

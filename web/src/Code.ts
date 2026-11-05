@@ -305,14 +305,63 @@ function getWaiting(): Waiting[] {
   return waitingChangeSets(files, saved, readTabIfAny_("run_log"));
 }
 
-/** Move one of the views' own change sets to the trash (a refused one, or one saved by mistake). */
+const DISCARDED_PREFIX = "DISCARDED_";  // one user property per discarded change set, its edits in words
+const DISCARDED_KEEP = 20;
+const DISCARDED_DAYS = 30;  // long enough for the next ingest to say whether it had read the file already
+
+/**
+ * Move one of the views' own change sets to the trash (a refused one, or one saved by mistake). No ingest
+ * from then on reads it, but one already running may have read it first and will still apply it; the
+ * discard is remembered, so the status page can say so (getAppliedAnyway) once that ingest is logged.
+ */
 function discardWaiting(id: string): void {
   const folder = editsFolder_(false);
   if (!folder) throw new Error("No change sets saved yet.");
   const file = drive_().Files.get(id, { fields: "id,name,parents" });
   if ((file.parents || []).indexOf(folder.id) < 0) throw new Error("That file is not waiting in the views' folder.");
+  const known = saved_()[id];
   drive_().Files.update({ trashed: true }, id);
   console.log(`discarded ${file.name}`);
+  try {
+    const props = PropertiesService.getUserProperties();
+    const record = JSON.parse(savedRecord(id, String(file.name), known ? known.savedAt : "", known ? known.edits : [])) as Discarded;
+    if (known && known.more) record.more = (record.more || 0) + known.more;
+    record.discardedAt = new Date().toISOString();
+    props.setProperty(DISCARDED_PREFIX + id, JSON.stringify(record));
+    const older = Object.values(discarded_()).sort((a, b) => b.discardedAt.localeCompare(a.discardedAt)).slice(DISCARDED_KEEP);
+    for (const d of older) props.deleteProperty(DISCARDED_PREFIX + d.id);  // the newest DISCARDED_KEEP stay
+  } catch (e) {
+    console.log(`discarded ${file.name}, but could not remember it: ${e}`);
+  }
+}
+
+/** Discarded change sets still remembered, by file id; older than DISCARDED_DAYS, or unreadable, are dropped. */
+function discarded_(): Record<string, Discarded> {
+  const props = PropertiesService.getUserProperties();
+  const all = props.getProperties();
+  const out: Record<string, Discarded> = {};
+  const oldest = Date.now() - DISCARDED_DAYS * 24 * 60 * 60 * 1000;
+  for (const key of Object.keys(all)) {
+    if (key.indexOf(DISCARDED_PREFIX) !== 0) continue;
+    try {
+      const record = JSON.parse(all[key]) as Discarded;
+      if (Date.parse(record.discardedAt) >= oldest) { out[record.id] = record; continue; }
+    } catch (e) {
+      // unreadable: dropped below
+    }
+    try { props.deleteProperty(key); } catch (e) { /* tidied next time */ }
+  }
+  return out;
+}
+
+/** Discarded change sets an ingest applied anyway (appliedAnyway in edits.ts). */
+function getAppliedAnyway(): AppliedAnyway[] {
+  return appliedAnyway(discarded_(), readTabIfAny_("run_log"));
+}
+
+/** Stop telling about a discarded change set an ingest applied anyway, once its settings are seen to. */
+function forgetDiscarded(id: string): void {
+  PropertiesService.getUserProperties().deleteProperty(DISCARDED_PREFIX + String(id));
 }
 
 /** One transaction, whole, for the transaction page (null when Reports has no such line). */

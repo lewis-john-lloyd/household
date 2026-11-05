@@ -12,7 +12,8 @@ const CODE = ["shape.js", "edits.js", "taxes.js", "Code.js"].map((f) => fs.readF
 const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
 
 function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
-                  props: start = {} } = {}) {
+                  props: start = {},
+                  runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]] } = {}) {
   const props = { ...start };
   const files = [];
   let uuid = 0;
@@ -40,7 +41,7 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
     Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest` },
     Sheets: { Spreadsheets: {
       get: () => ({ sheets: [{ properties: { title: "run_log" } }] }),
-      Values: { get: () => ({ values: [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]] }) },
+      Values: { get: () => ({ values: runLog }) },
     } },
     Drive: { Files: {
       create: (meta, blob) => {
@@ -69,7 +70,7 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
-  return { context, props, files };
+  return { context, props, files, runLog };
 }
 
 const EDIT = { kind: "parameter", key: "transfer_account", value: "savings", was: { value: "checking" } };
@@ -175,4 +176,30 @@ test("a record whose file Drive no longer has falls back to Drive's search", () 
   assert.equal(s.context.findSave(REQUEST), null);
   assert.equal(s.context.saveChanges([EDIT], [], REQUEST).again, false);
   assert.notEqual(s.files[1].id, a.id);
+});
+
+test("a discarded change set is remembered, and told as applied anyway once an ingest lists it as ingested", () => {
+  const s = server();
+  const a = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
+  s.context.discardWaiting(a.id);
+  assert.equal(s.files[0].trashed, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []);  // no ingest has read it
+  // an ingest that had downloaded it before the discard wrote it all the same
+  s.runLog.push(["r2", "2026-01-31T11:59:00Z", "ingest", JSON.stringify({ files: [{ file: a.name, status: "ingested" }] })]);
+  const told = s.context.getAppliedAnyway();
+  assert.deepEqual(told.map((d) => [d.id, d.runId, d.edits]), [[a.id, "r2", ["setting transfer_account = savings"]]]);
+  s.context.forgetDiscarded(a.id);
+  assert.equal(s.context.getAppliedAnyway().length, 0);
+});
+
+test("only the newest discards are remembered, and none past thirty days", () => {
+  const s = server();
+  for (let n = 0; n < 25; n++) {
+    const a = s.context.saveChanges([EDIT], ["x"], `req-${String(n).padStart(6, "0")}`);
+    s.context.discardWaiting(a.id);
+  }
+  assert.equal(Object.keys(s.props).filter((k) => k.startsWith("DISCARDED_")).length, 20);
+  s.props.DISCARDED_old = JSON.stringify({ id: "old", name: "n", savedAt: "", edits: [], discardedAt: "2025-01-01T00:00:00Z" });
+  s.context.getAppliedAnyway();
+  assert.equal("DISCARDED_old" in s.props, false);
 });

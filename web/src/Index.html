@@ -860,7 +860,8 @@
             this.disabled = true;
             google.script.run.withSuccessHandler(function () {
               msg.className = "";
-              msg.textContent = "Discarded " + r.name + " too: ingest won't read it. Nothing from it will be applied.";
+              msg.textContent = "Discarded " + r.name + " too: no ingest from now on will read it. An ingest already " +
+                "running may have read it first; if one did, the status page will say so, and you can edit those settings back.";
               drawPending();
             }).withFailureHandler(function (error) {
               msg.className = "error";
@@ -1919,6 +1920,35 @@
         }, "edit-body");
       }
 
+      // Discarded change sets an ingest applied anyway: it was already reading them when they were discarded.
+      function loadAppliedAnywayCard() {
+        google.script.run.withSuccessHandler(function (list) {
+          if (!list.length) return;
+          var cards = document.getElementById("status-attention");
+          var clear = cards.querySelector(".card.clear");
+          if (clear) clear.remove();
+          var card = attentionCard({
+            key: "applied_anyway", count: list.length, action: "", flags: [], detail: [],
+            label: list.length === 1 ? "discarded change set was applied anyway" : "discarded change sets were applied anyway",
+            note: "An ingest was already reading " + (list.length === 1 ? "it" : "them") + " when " +
+              (list.length === 1 ? "it was" : "they were") + " discarded, and wrote the changes. Edit those settings back if you didn't want them.",
+            items: list.map(function (d) {
+              return { title: d.name, detail: "applied by ingest " + d.runId + (d.edits.length ? ": " + d.edits.join("; ") : "") +
+                                                (d.more ? " and " + d.more + " more" : "") };
+            }),
+          }, false);
+          var actions = el("div", null, "actions");
+          actions.appendChild(button("Got it", function () {
+            list.forEach(function (d) { google.script.run.forgetDiscarded(d.id); });
+            card.remove();
+          }, "filled"));
+          card.lastChild.appendChild(actions);
+          cards.insertBefore(card, cards.firstChild);
+        }).withFailureHandler(function (error) {
+          console.log("could not check discarded change sets: " + (error && error.message || error));
+        }).getAppliedAnyway();
+      }
+
       function loadWaitingCard() {
         google.script.run.withSuccessHandler(function (list) {
           if (!list.length) return;
@@ -2152,7 +2182,7 @@
         document.getElementById("controls").hidden = view === "status" || view === "edit" || view === "taxes";
         if (view === "status") {
           document.getElementById("status-title").textContent = "Loading…";
-          call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); }, "status-title");
+          call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); loadAppliedAnywayCard(); }, "status-title");
           return;
         }
         if (view === "edit") {

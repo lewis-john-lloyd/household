@@ -11,7 +11,8 @@ const DIST = path.join(__dirname, "..", "..", "dist");
 const CODE = ["shape.js", "edits.js", "taxes.js", "Code.js"].map((f) => fs.readFileSync(path.join(DIST, f), "utf8")).join("\n");
 const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
 
-function server({ refuseProperties = false, now = () => new Date("2026-01-31T12:00:00.123Z"), props: start = {} } = {}) {
+function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
+                  props: start = {} } = {}) {
   const props = { ...start };
   const files = [];
   let uuid = 0;
@@ -43,12 +44,20 @@ function server({ refuseProperties = false, now = () => new Date("2026-01-31T12:
     } },
     Drive: { Files: {
       create: (meta, blob) => {
+        if (failCreate) throw new Error("Drive is not answering");
         const id = meta.mimeType === "application/vnd.google-apps.folder" ? "folder" : `f${files.length + 1}`;
-        if (id !== "folder") files.push({ id, name: meta.name, text: blob.text, parents: meta.parents });
+        if (id !== "folder") files.push({ id, name: meta.name, text: blob.text, parents: meta.parents, appProperties: meta.appProperties || {} });
         return { id };
       },
       get: (id) => ({ id, trashed: false, parents: ["folder"], name: "x" }),
-      list: () => ({ files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) }),
+      list: ({ q }) => {
+        const asked = /appProperties has \{ key='(\w+)' and value='([^']*)' \}/.exec(q);
+        if (asked) {  // every file the views made, wherever ingest has moved it
+          return { files: files.filter((f) => f.appProperties[asked[1]] === asked[2])
+                             .map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties })) };
+        }
+        return { files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) };
+      },
       update: () => ({}),
     } },
   };
@@ -102,4 +111,37 @@ test("two saves in the same millisecond get distinct names in the order they wer
   assert.ok(a.name < b.name, `${a.name} before ${b.name}`);
   const at = s.files.map((f) => JSON.parse(f.text).created_at);
   assert.deepEqual(at, ["2026-01-31T12:00:00.123Z", "2026-01-31T12:00:00.124Z"]);
+});
+
+const REQUEST = "0b9d6e4a-1c2f-4b7e-9a10-3d5e7f9a1b2c";
+
+test("the same request saved twice writes one file and answers with it both times", () => {
+  const s = server();
+  const a = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
+  const b = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
+  assert.equal(s.files.length, 1);
+  assert.equal(b.id, a.id);
+  assert.equal(b.name, a.name);
+  assert.equal(b.again, true);
+  assert.equal(a.again, false);
+  assert.deepEqual(s.context.findSave(REQUEST), b);
+});
+
+test("a request is found on its file when its record was never kept or was tidied after ingest", () => {
+  const s = server({ refuseProperties: true, props: { EDITS_FOLDER_ID: "folder" } });
+  const a = s.context.saveChanges([EDIT, { ...EDIT, key: "target_refund", value: "90", was: { value: "50" } }], [], REQUEST);
+  assert.match(a.warning, /could not be kept/);
+  s.files[0].filed = true;  // ingest moved it out of the views' folder
+  const found = s.context.findSave(REQUEST);
+  assert.equal(found.id, a.id);
+  assert.equal(found.count, 2);
+  assert.equal(s.context.saveChanges([EDIT], [], REQUEST).again, true);
+  assert.equal(s.files.length, 1);
+});
+
+test("a request that never reached Drive is not found, and saving it then writes it", () => {
+  const s = server({ failCreate: true, props: { EDITS_FOLDER_ID: "folder" } });
+  assert.throws(() => s.context.saveChanges([EDIT], [], REQUEST), /not answering/);
+  assert.equal(s.context.findSave(REQUEST), null);
+  assert.throws(() => s.context.findSave("x' or trashed = true or name contains '"), /Not a request id/);
 });

@@ -15,14 +15,19 @@ const LINES: unknown[][] = [
   [2000, "as is", 0, "Form 1040", "24", "24", "Total tax", 9000, 9100, "r2"],
 ];
 
-test("the tax page groups lines by year, scenario and form, in order, with filed values", () => {
+test("the tax page groups each year's lines by form, in order, with filed values", () => {
   const page = taxes.taxPage({ tax_lines: LINES });
-  assert.deepEqual(page.years.map((y) => [y.year, y.scenarios, y.filed]),
-                   [["2001", ["as is", "stock 20% lower"], false], ["2000", ["as is"], true]]);
-  assert.deepEqual(page.years[0].forms["as is"]["Form 1040"].map((l) => l.line), ["1z", "11"]);
-  assert.equal(page.years[0].forms["as is"]["Wisconsin Form 1"][0].value, 4000);
-  assert.equal(page.years[1].forms["as is"]["Form 1040"][0].filed, 9100);
-  assert.equal(page.years[0].forms["as is"]["Form 1040"][0].filed, null);
+  assert.deepEqual(page.years.map((y) => [y.year, y.filed]), [["2001", false], ["2000", true]]);
+  assert.deepEqual(page.years[0].forms["Form 1040"].map((l) => l.line), ["1z", "11"]);
+  assert.equal(page.years[0].forms["Wisconsin Form 1"][0].value, 4000);
+  assert.equal(page.years[1].forms["Form 1040"][0].filed, 9100);
+  assert.equal(page.years[0].forms["Form 1040"][0].filed, null);
+});
+
+test("the forms show a year as it stands, whatever scenarios an older compute left", () => {
+  const page = taxes.taxPage({ tax_lines: LINES });
+  assert.deepEqual(page.years[0].forms["Form 1040"].map((l) => l.value), [90000, 90000]);
+  assert.equal("scenarios" in page.years[0], false);
 });
 
 test("the plan, accounts and notes come from the latest year and the latest compute", () => {

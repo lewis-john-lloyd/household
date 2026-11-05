@@ -179,6 +179,7 @@ interface Saved {
   id: string;
   name: string;
   savedAt: string;
+  request?: string;  // the browser's id for the Save that wrote it (see saveChanges)
   edits: string[];  // each edit in words, as the browser described it at Save, as many as fit
   more?: number;  // edits left out of edits to keep the record small
 }
@@ -190,9 +191,10 @@ const SAVED_TEXT_CHARS = 200;     // one edit's words, at most
  * The saved change set's record for its own user property: its edits in words, each cut to
  * SAVED_TEXT_CHARS and as many as fit in maxBytes, with how many more there were.
  */
-function savedRecord(id: string, name: string, savedAt: string, described: string[], maxBytes = SAVED_RECORD_BYTES): string {
+function savedRecord(id: string, name: string, savedAt: string, described: string[], request = "",
+                     maxBytes = SAVED_RECORD_BYTES): string {
   const texts = (described || []).map((d) => String(d).slice(0, SAVED_TEXT_CHARS));
-  const record: Saved = { id, name, savedAt, edits: [], more: 0 };
+  const record: Saved = { id, name, savedAt, request, edits: [], more: 0 };
   const bytes = (s: string): number => unescape(encodeURIComponent(s)).length;
   for (const text of texts) {
     record.edits.push(text);
@@ -204,6 +206,14 @@ function savedRecord(id: string, name: string, savedAt: string, described: strin
   }
   record.more = texts.length - record.edits.length;
   return JSON.stringify(record);
+}
+
+/**
+ * A Save's request id, as the browser made it: letters, digits and dashes, 8 to 64 of them, so it is safe
+ * inside a Drive query. "" when it is not one.
+ */
+function requestId(request: unknown): string {
+  return typeof request === "string" && /^[A-Za-z0-9-]{8,64}$/.test(request) ? request : "";
 }
 
 interface Waiting extends Saved {

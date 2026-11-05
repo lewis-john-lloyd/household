@@ -414,7 +414,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                       f"{abs(wi_row['wi_owe_or_refund']):,.0f} (tax {wi_row['wi_tax']:,.0f}, "
                       f"paid {wi_row['wi_withheld']:,.0f})")
             result["wi_projection"] = int(wi_row["wi_owe_or_refund"])
-            plans = projection.elections(year, stubs)
+            converts = categorize.household_parameter(books["parameters"], "after_tax_401k_converts_to_roth").upper() == "TRUE"
+            plans = projection.elections(year, stubs, after_tax_converts=converts)
             plans["run_id"] = run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "elections"), plans)
             for row in plans[plans["status"] != "at limit"].to_dict("records"):

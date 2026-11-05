@@ -407,12 +407,14 @@ MEGA_BACKDOOR = "Mega backdoor Roth (after-tax 401(k))"
 BACKDOOR_ROTH = "Backdoor Roth IRA"
 
 
-def elections(year, paystubs):
+def elections(year, paystubs, after_tax_converts=False):
     """401(k), HSA and dependent-care FSA so far and projected to year end against the year's limits.
 
     The mega backdoor Roth row is the after-tax 401(k): its limit is what 415(c) leaves after elective
-    deferrals and the employer's contributions, projected. A backdoor Roth IRA is not on a pay stub, so
-    each person gets a row saying it is not tracked yet.
+    deferrals and the employer's contributions, projected. Its status says whether the plan converts
+    after-tax money to Roth on its own (after_tax_converts, the household setting
+    after_tax_401k_converts_to_roth), since the stubs can't show a conversion. A backdoor Roth IRA is not
+    on a pay stub, so each person gets a row saying it is not tracked yet.
     """
     p = taxdata.params(year)
     pos = positions(paystubs, year)
@@ -425,7 +427,10 @@ def elections(year, paystubs):
                                  p["elective_deferral_402g"]))
         if v["after_tax"]:
             room = p["annual_additions_415c"] - v["elective"] - v["employer_401k"]
-            out.append(_election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room))
+            mega = _election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room)
+            mega["status"] += ("; the plan converts it to Roth automatically" if after_tax_converts
+                               else "; conversion to Roth not tracked (set after_tax_401k_converts_to_roth if the plan does it)")
+            out.append(mega)
             out.append(_election(year, person, employer, "401(k) total additions (415(c))",
                                  y["elective"] + y["after_tax"] + y["employer_401k"],
                                  v["elective"] + v["after_tax"] + v["employer_401k"], p["annual_additions_415c"]))

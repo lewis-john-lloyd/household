@@ -313,7 +313,10 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
               "review_open_lines": counts["open_lines"], "downloads_due": len(to_get),
               "balances_off": len(off), "stubs_missing": len(forgot), "pay_not_deposited": len(lost),
               "possible_duplicates": len(dupes), "transfer_pairs": len(paired),
-              "transfers_unmatched": len(waiting), "transfers_unmatched_answered": len(lonely) - len(waiting)}
+              "transfers_unmatched": len(waiting), "transfers_unmatched_answered": len(lonely) - len(waiting),
+              # how lines since REVIEW_FROM were categorized, for the status page's breakdown
+              "categories": {"since": categorize.REVIEW_FROM, "decided": counts["decided"], "waiting": counts["waiting"],
+                             "open_lines": counts["open_lines"]}}
 
     facts = sheets.read_table(ledger, schema.table(schema.LEDGER, "return_facts"))
     if not facts.empty:
@@ -391,6 +394,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                 _say(log, f"elections {year}: {row['person']} {row['plan']}: {row['status']} "
                           f"({row['gap']:+,.2f})")
             result["projection"] = dict(zip(lines["scenario"], lines["owe_or_refund"]))
+            result["projection_year"] = year
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)

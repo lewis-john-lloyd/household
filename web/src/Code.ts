@@ -76,7 +76,8 @@ function readTabIfAny_(name: string): unknown[][] {
 
 /** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
 function getStatus(): Status {
-  return parseStatus(readTabIfAny_("run_log"), readTabIfAny_("run_notes"));
+  return parseStatus(readTabIfAny_("run_log"), readTabIfAny_("run_notes"), readTabIfAny_("coverage"),
+                     readTabIfAny_("editor_review"));
 }
 
 // --- editing ------------------------------------------------------------------------------------------

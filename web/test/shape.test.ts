@@ -16,7 +16,7 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   budgetLines: (rows: BudgetRow[], period: string, level: string) => BudgetLine[];
   parseTransactions: (values: unknown[][]) => Txn[];
   transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
-  parseStatus: (runLog: unknown[][], notes: unknown[][]) => Status;
+  parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
 };
 
 const VALUES: unknown[][] = [
@@ -156,8 +156,10 @@ test("transactions: a charge an order history explains carries its items, each p
 const RUN_LOG: unknown[][] = [
   ["run_id", "computed_at", "stage", "detail"],
   ["r2", "2001-03-02T07:00:00+00:00", "compute",
-   JSON.stringify({ review_open_lines: 4, downloads_due: 0, balances_off: 0, transfers_unmatched: 2,
-                    projection: { "as is": -1500, "no extra withholding": 300 } })],
+   JSON.stringify({ review_open_lines: 4, downloads_due: 1, balances_off: 0, transfers_unmatched: 2,
+                    projection: { "as is": -1500, "no extra withholding": 300 }, projection_year: 2001,
+                    categories: { since: "2001-01-01", decided: { "your decision": 30, you: 5, rule: 20, amazon: 8, co_op: 4 },
+                                  waiting: { "waiting for amazon": 3 }, open_lines: 4 } })],
   ["r1", "2001-03-02T06:00:00+00:00", "ingest",
    JSON.stringify({ counts: { ingested: 1, unrecognized: 1 },
                     files: [{ file: "a.csv", status: "ingested" }, { file: "notes.txt", status: "unrecognized" }] })],
@@ -168,26 +170,55 @@ const RUN_NOTES: unknown[][] = [
   ["r2", "compute", "2001-03-02T07:00:00+00:00", 1, "transfers: 9 pairs between your accounts, 2 transfer lines with no partner"],
   ["r2", "compute", "2001-03-02T07:00:00+00:00", 0, "run r2: reading the ledger"],
   ["r2", "compute", "2001-03-02T07:00:00+00:00", 2, "categories since 2001-01-01: decided {}; 4 lines open in review"],
+  ["r2", "compute", "2001-03-02T07:00:00+00:00", 3, "coverage: 1 downloads due: amazon"],
   ["r1", "ingest", "2001-03-02T06:00:00+00:00", 0, "run r1: opening the ledger"],
   ["old", "ingest", "2001-02-01T06:00:00+00:00", 0, "an earlier run, not shown"],
 ];
 
+const COVERAGE: unknown[][] = [
+  ["source", "kind", "newest", "age_days", "due_after_days", "waiting_lines", "status", "run_id"],
+  ["checking", "account", "2001-02-28", 2, 45, "", "ok", "r2"],
+  ["amazon", "explanation", "2001-01-31", 30, "", 3, "due", "r2"],
+  ["paypal", "explanation", "", "", "", 0, "not used", "r2"],
+];
+const REVIEW: unknown[][] = [
+  ["key", "guess", "lines", "kind", "run_id"],
+  ["ACME GROCER", "food", 3, "payee", "r2"],
+  ["t9", "hobby", 1, "line", "r2"],
+];
+
 test("the status page shows each stage's latest run, its lines in order, and what needs the owner", () => {
-  const status = shape.parseStatus(RUN_LOG, RUN_NOTES);
+  const status = shape.parseStatus(RUN_LOG, RUN_NOTES, COVERAGE, REVIEW);
   assert.deepEqual(status.stages.map((s) => [s.stage, s.runId]), [["ingest", "r1"], ["compute", "r2"]]);
-  assert.deepEqual(status.stages[1].lines, ["run r2: reading the ledger",
-    "transfers: 9 pairs between your accounts, 2 transfer lines with no partner",
-    "categories since 2001-01-01: decided {}; 4 lines open in review"]);
-  assert.deepEqual(status.attention.map((a) => [a.label, a.count]), [
-    ["inbox files not read", 1], ["lines waiting in the review tab", 4], ["transfer lines with no partner, not yet answered", 2]]);
-  assert.deepEqual(status.attention[1].detail, ["categories since 2001-01-01: decided {}; 4 lines open in review"]);
+  assert.equal(status.stages[1].lines.length, 4);
+  assert.equal(status.stages[1].lines[1], "transfers: 9 pairs between your accounts, 2 transfer lines with no partner");
+  assert.deepEqual(status.attention.map((a) => [a.label, a.count, a.action]), [
+    ["inbox files were not read", 1, ""], ["lines need a category", 4, "review"], ["downloads due", 1, ""],
+    ["transfers have no partner", 2, "review"]]);
+  const [unread, review, downloads, transfers] = status.attention;
+  assert.deepEqual(unread.items, [{ title: "notes.txt", detail: "unrecognized" }]);
+  assert.equal(review.note, "2 questions: 1 merchant answered once for all their lines, 1 single line. 3 more lines wait for a download.");
+  assert.deepEqual(review.detail, []);  // said in words, not as the log line
+  assert.deepEqual(downloads.items, [{ title: "Amazon", detail: "Has everything through 2001-01-31, 30 days ago; 3 lines wait for it" }]);
+  assert.deepEqual(transfers.detail, ["transfers: 9 pairs between your accounts, 2 transfer lines with no partner"]);
   assert.equal(status.stale, false);
   assert.deepEqual(status.projection, [["as is", -1500], ["no extra withholding", 300]]);
+  assert.equal(status.projectionYear, "2001");
+});
+
+test("the categorization breakdown groups who decided, then what waits", () => {
+  const { categories } = shape.parseStatus(RUN_LOG, RUN_NOTES);
+  assert.ok(categories);
+  assert.equal(categories.since, "2001-01-01");
+  assert.equal(categories.total, 74);
+  assert.deepEqual(categories.segments.map((s) => [s.label, s.count, s.kind]), [
+    ["Your answers", 35, "decided"], ["Payee rules", 20, "decided"], ["Receipts and order histories", 12, "decided"],
+    ["Waiting for a download", 3, "waiting"], ["Waiting for you", 4, "open"]]);
 });
 
 test("the status page flags a compute older than the last ingest, and copes with no runs yet", () => {
   const later = RUN_LOG.map((r, n) => (n === 2 ? ["r3", "2001-03-02T08:00:00+00:00", "ingest", "{}"] : r));
   assert.equal(shape.parseStatus(later, []).stale, true);
   const empty = shape.parseStatus([], []);
-  assert.deepEqual([empty.stages, empty.attention, empty.projection, empty.stale], [[], [], [], false]);
+  assert.deepEqual([empty.stages, empty.attention, empty.projection, empty.stale, empty.categories], [[], [], [], false, null]);
 });

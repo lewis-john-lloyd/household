@@ -186,7 +186,7 @@ def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(se
               "edits": [{"kind": "budget_line", "line": "groceries", "effective": "2026-01-01", "rule": "fixed",
                          "category": "food", "amount": "50", "per": "weekly", "was": None},
                         {"kind": "category", "category": "food", "group": "groceries", "priority": "high",
-                         "was": {"group": "living"}},
+                         "was": {"group": "living", "priority": "high"}},
                         {"kind": "parameter", "key": "transfer_account", "value": "checking", "was": None}]}
     session._drive.add("changes_2026-01-31T120000Z.json", edits, "application/json", json.dumps(change).encode())
     lines = []

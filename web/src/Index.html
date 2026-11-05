@@ -695,9 +695,11 @@
         });
       }
 
+      // Every field an edit can change, as the page showed it (WAS_FIELDS in edits.ts and changes.py).
       function budgetWas(l) {
         return l.in_force === "scheduled only" ? null
-          : { effective: l.effective, rule: l.rule, amount: l.amount, per: l.per, category: l.category };
+          : { effective: l.effective, category: l.category, account: l.account, priority: l.priority, rule: l.rule,
+              amount: l.amount, per: l.per, note: l.note };
       }
 
       function budgetForm(l, done) {
@@ -871,7 +873,7 @@
         var actions = el("div", null, "actions");
         actions.appendChild(button(isNew ? "Add alias" : "Keep this change", function () {
           var e = { kind: "alias", alias: isNew ? name.value.trim() : a.alias, category: category.value, note: note.value.trim(),
-                    was: isNew ? null : { category: a.category } };
+                    was: isNew ? null : { category: a.category, note: a.note } };
           if (!e.alias || !e.category) { error.textContent = "An alias needs a name and a category."; return; }
           stage(e, "alias " + e.alias + " counts as " + e.category);
           done();

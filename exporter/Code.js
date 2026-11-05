@@ -18,7 +18,8 @@
  *
  * A message it can't read is never lost to the moving search window: it goes in FAILED and is fetched
  * again by its id at the start of every run until it reads (after a fix to this script, say), however
- * far SINCE has moved on. The first time a message fails, the run's file says so (an "Unreadable"
+ * far SINCE has moved on; only a message deleted from Gmail, or past FAILED_KEEP of them the oldest, is
+ * dropped, with a log line. The first time a message fails, the run's file says so (an "Unreadable"
  * entry with the Gmail id and the error), so the engine's ingest notes, and the status page, show it.
  *
  * Its Gmail permission, gmail.readonly, lets it read the whole mailbox: Gmail has no narrower scope that

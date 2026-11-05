@@ -49,6 +49,15 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   not_duplicate: [["txn_a", "txn_b"], []],
 };
 
+// every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
+const WAS_FIELDS: Record<string, string[]> = {
+  budget_line: ["effective", "category", "account", "priority", "rule", "amount", "per", "note"],
+  payee_rule: ["category", "precedence", "effective", "ask"],
+  category: ["group", "priority"],
+  alias: ["category", "note"],
+  parameter: ["value"],
+};
+
 /** A tab's values (header first) as rows of text by column name; blank rows are skipped. */
 function records(values: unknown[][]): Row[] {
   if (!values.length) return [];
@@ -104,6 +113,9 @@ function editProblems(edit: Edit): string[] {
     else if (f === "was") {
       if (value !== null && (typeof value !== "object" || Object.values(value as Row).some((v) => typeof v !== "string"))) {
         out.push("was must be null or an object of strings");
+      } else if (value !== null && WAS_FIELDS[edit.kind]) {
+        const missing = WAS_FIELDS[edit.kind].filter((w) => !(w in (value as Row)));
+        if (missing.length) out.push(`was must give every field the edit replaces; missing ${missing.join(", ")}`);
       }
     } else if (typeof value !== "string") out.push(`${f} must be text`);
     else if (value.length > MAX_CHANGE_TEXT) out.push(`${f} is longer than ${MAX_CHANGE_TEXT} characters`);

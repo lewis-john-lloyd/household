@@ -165,3 +165,18 @@ test("bodies decode from bytes or unpadded base64url, and HTML in the plain part
   const html = "<table><tr><td>Oats</td><td>4.00</td></tr></table>";
   assert.equal(run.body({ mimeType: "text/plain", body: { data: b64url(html) } }).trim(), "Oats 4.00");
 });
+
+test("past the retry cap the oldest unreadable messages are dropped, each logged", () => {
+  const failed = {};
+  for (let n = 0; n < 202; n++) {
+    failed["x" + String(n).padStart(3, "0")] = { when: Date.parse("2026-01-01T00:00:00Z") + n * DAY, tries: 1, error: "TypeError" };
+  }
+  const mailbox = {};
+  for (const id of Object.keys(failed)) mailbox[id] = { id, internalDate: String(failed[id].when), payload: null };
+  const run = exporter(mailbox, { FAILED: JSON.stringify(failed) });
+  run.run();
+  const kept = Object.keys(JSON.parse(run.store.FAILED));
+  assert.equal(kept.length, 200);
+  assert.deepEqual(["x000", "x001"].filter((id) => kept.includes(id)), []);  // the two oldest
+  assert.ok(run.logs.some((l) => /giving up on message x000 after 2 tries: more than 200 unreadable/.test(l)));
+});

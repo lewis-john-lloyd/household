@@ -13,7 +13,9 @@ const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
 
 function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
                   props: start = {},
-                  runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]] } = {}) {
+                  runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]],
+                  changesWritten = [["file", "written_at"]] } = {}) {
+  const tabs = { run_log: runLog, changes_written: changesWritten };
   const props = { ...start };
   const files = [];
   let uuid = 0;
@@ -21,7 +23,7 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
     getProperty: (k) => (k in props ? props[k] : null),
     getProperties: () => ({ ...props }),
     setProperty: (k, v) => {
-      if (refuseProperties) throw new Error("Service invoked too many times: properties");
+      if (refuseProperties || props.__refuse) throw new Error("Service invoked too many times: properties");
       if (Buffer.byteLength(String(v), "utf8") > VALUE_LIMIT) throw new Error("Argument too large: value");
       const total = Object.entries({ ...props, [k]: String(v) }).reduce((a, [kk, vv]) => a + kk.length + vv.length, 0);
       if (total > STORE_LIMIT) throw new Error("You have exceeded the property storage quota");
@@ -40,8 +42,8 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
     LockService: { getUserLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest` },
     Sheets: { Spreadsheets: {
-      get: () => ({ sheets: [{ properties: { title: "run_log" } }] }),
-      Values: { get: () => ({ values: runLog }) },
+      get: () => ({ sheets: Object.keys(tabs).map((title) => ({ properties: { title } })) }),
+      Values: { get: (_, name) => ({ values: tabs[name] }) },
     } },
     Drive: { Files: {
       create: (meta, blob) => {
@@ -70,7 +72,7 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
-  return { context, props, files, runLog };
+  return { context, props, files, runLog, changesWritten };
 }
 
 const EDIT = { kind: "parameter", key: "transfer_account", value: "savings", was: { value: "checking" } };
@@ -178,18 +180,28 @@ test("a record whose file Drive no longer has falls back to Drive's search", () 
   assert.notEqual(s.files[1].id, a.id);
 });
 
-test("a discarded change set is remembered, and told as applied anyway once an ingest lists it as ingested", () => {
+test("a discarded change set is remembered, and told as applied anyway once the ledger holds it", () => {
   const s = server();
   const a = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
-  s.context.discardWaiting(a.id);
+  assert.equal(s.context.discardWaiting(a.id).remembered, true);
   assert.equal(s.files[0].trashed, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []);  // no ingest has read it
-  // an ingest that had downloaded it before the discard wrote it all the same
-  s.runLog.push(["r2", "2026-01-31T11:59:00Z", "ingest", JSON.stringify({ files: [{ file: a.name, status: "ingested" }] })]);
+  assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []);  // the ledger doesn't hold it
+  // an ingest that had downloaded it before the discard wrote it all the same, whatever its run_log row says
+  s.changesWritten.push([a.name, "2026-01-31T12:00:05+00:00"]);
   const told = s.context.getAppliedAnyway();
-  assert.deepEqual(told.map((d) => [d.id, d.runId, d.edits]), [[a.id, "r2", ["setting transfer_account = savings"]]]);
+  assert.deepEqual(told.map((d) => [d.id, d.writtenAt, d.edits]), [[a.id, "2026-01-31T12:00:05+00:00", ["setting transfer_account = savings"]]]);
   s.context.forgetDiscarded(a.id);
   assert.equal(s.context.getAppliedAnyway().length, 0);
+});
+
+test("a discard that can't be remembered says so, and the file is discarded all the same", () => {
+  const s = server();
+  const a = s.context.saveChanges([EDIT], [], REQUEST);
+  s.props.__refuse = "1";
+  const out = s.context.discardWaiting(a.id);
+  assert.equal(s.files[0].trashed, true);
+  assert.equal(out.remembered, false);
+  assert.match(out.warning, /could not remember this discard/);
 });
 
 test("only the newest discards are remembered, and none past thirty days", () => {

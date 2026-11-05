@@ -9,5 +9,5 @@
     "rootDir": ".",
     "outDir": "build"
   },
-  "include": ["src/shape.ts", "src/edits.ts", "test/**/*.ts"]
+  "include": ["src/shape.ts", "src/edits.ts", "src/taxes.ts", "test/**/*.ts"]
 }

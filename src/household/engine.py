@@ -368,9 +368,36 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         year = int(stubs["pay_date"].astype(str).max()[:4])
         sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))
         if year in tax.taxdata.PARAMS:
-            lines, notes = projection.project(year, stubs, sales, facts)
+            lines, notes, detail = projection.project(year, stubs, sales, facts)
             lines["year"], lines["run_id"] = year, run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)
+            # last year too while its stubs are here: the whole year from stubs, beside the filed return once it is in
+            details = [detail.assign(year=year)]
+            last = year - 1
+            if last in tax.taxdata.PARAMS and (stubs["pay_date"].astype(str).str[:4] == str(last)).any():
+                details.append(projection.project(last, stubs, sales, facts)[2].assign(year=last))
+            every = pd.concat(details, ignore_index=True)
+            sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_lines"), every.assign(run_id=run_id))
+            compared = every[every["filed"].notna()]
+            if len(compared):
+                off = compared[(compared["value"] - compared["filed"]).abs() > 1]
+                _say(log, f"tax_lines: {len(compared)} projected lines beside a filed return, {len(off)} off by more than 1")
+            params = books["parameters"]
+            setting = lambda key, default: float(categorize.household_parameter(params, key, default) or default)  # noqa: E731
+            target, wi_target = setting("target_refund", 2000), setting("wi_target_refund", 0)
+            rate = setting("planned_supplemental_rate", 0.35)
+            plan = projection.withholding_plan(year, stubs, sales, facts, target, wi_target, rate)
+            sheets.replace_table(reports, schema.table(schema.REPORTS, "withholding_plan"),
+                                 plan.assign(year=year, run_id=run_id))
+            for row in plan.to_dict("records"):
+                if pd.isna(row["suggested_extra"]):
+                    _say(log, f"withholding plan {year}, {row['return']}: {row['note']}")
+                    continue
+                _say(log, f"withholding plan {year}, {row['return']}: with vests at {rate:.0%}, "
+                          f"{'refund' if row['projected'] >= 0 else 'owe'} {abs(row['projected']):,.0f}; for "
+                          f"{'a refund of ' + format(row['target'], ',.0f') if row['target'] else 'no balance'}, "
+                          f"{row['person']} ({row['employer']}) withholds {row['suggested_extra']:,.2f} extra a "
+                          f"paycheck (now {row['current_extra']:,.2f}) for {row['paychecks_left']} paychecks")
             for note in notes:
                 _say(log, f"projection {year}: {note}")
             for row in lines.to_dict("records"):

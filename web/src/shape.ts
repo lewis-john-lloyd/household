@@ -353,6 +353,7 @@ interface Status {
   stale: boolean;  // compute has not run since the last ingest
   projection: [string, number][];  // scenario, owe (positive) or refund (negative)
   projectionYear: string;
+  wiProjection: number | null;  // Wisconsin, owed (positive) or refund (negative)
   categories: { since: string; total: number; segments: Breakdown[] } | null;  // how lines were categorized
 }
 
@@ -499,6 +500,7 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
     : [];
   return { stages: runs, attention, stale: !!(ingest && compute && ingest.at > compute.at), projection,
            projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
+           wiProjection: compute && typeof compute.summary.wi_projection === "number" ? Number(compute.summary.wi_projection) : null,
            categories: compute ? categoryBreakdown(compute.summary) : null };
 }
 

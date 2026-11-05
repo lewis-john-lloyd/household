@@ -147,6 +147,49 @@
       .logs li.indent { color: var(--on-surface-variant); }
       .logs li.flag { background: var(--error-container); color: var(--on-error-container); }
 
+      /* taxes */
+      #taxes-body { display: grid; gap: 16px; padding-top: 8px; }
+      .tax-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+      .tax-head h2 { font-size: 28px; line-height: 36px; font-weight: 400; }
+      #taxes-body > .support { margin: -8px 0 0; }
+      .tax-scenarios { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+      .tax-scenarios .segmented { flex-wrap: wrap; border-radius: 12px; }
+      .card.total .big { font-size: 32px; line-height: 40px; font-weight: 400; margin-top: 4px; font-variant-numeric: tabular-nums; }
+      .card.total.refund { background: var(--success-container); color: var(--on-success-container); }
+      .card.total.owe { background: var(--error-container); color: var(--on-error-container); }
+      .card.total .support { color: inherit; }
+      .card.plan { grid-column: span 2; background: var(--primary-container); color: var(--on-primary-container); }
+      .card.plan .support { color: inherit; opacity: 0.85; }
+      .card.plan h2 { margin-bottom: 8px; }
+      .plan-row + .plan-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid currentColor; border-top-color: rgba(127, 127, 127, 0.35); }
+      .plan-title { font-weight: 500; }
+      .plan-row p { margin: 4px 0 0; }
+      .small-print { font-size: 12px; margin-top: 12px; }
+      table.form-lines { width: 100%; }
+      table.form-lines td.line-no { color: var(--on-surface-variant); font-size: 12px; white-space: nowrap; }
+      table.form-lines tr.sub td.text { padding-left: 20px; color: var(--on-surface-variant); }
+      table.form-lines tr.key-line td { font-weight: 500; }
+      td.off { color: var(--error); font-weight: 500; }
+      h3.account-person { font-size: 14px; font-weight: 500; margin: 16px 0 8px; text-transform: capitalize; }
+      .account { padding: 8px 0; border-bottom: 1px solid var(--outline-variant); }
+      .account-top { display: flex; justify-content: space-between; gap: 12px; }
+      .account-name { font-weight: 500; }
+      .account-status { color: var(--on-surface-variant); text-align: right; }
+      .account-status.off { color: var(--error); }
+      .account-status.done { color: var(--success); }
+      .meter { position: relative; height: 8px; border-radius: 4px; background: var(--surface-high); margin: 8px 0 4px; overflow: hidden; }
+      .meter span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+      .meter .by-year-end { background: var(--seg-4); }
+      .meter .so-far { background: var(--primary); }
+      ul.notes { margin: 8px 0 0; padding-left: 18px; color: var(--on-surface-variant); display: grid; gap: 4px; }
+      .scenario .amount.wi { font-weight: 400; font-size: 13px; }
+      #taxes .scenario { grid-template-columns: minmax(8em, 1.2fr) 2fr minmax(7em, auto) minmax(7em, auto); }
+      dl.tax-glance dd.amount { font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+      dl.tax-glance { align-items: baseline; margin-top: 12px; }
+      dd.amount.refund { color: var(--success); }
+      dd.amount.owe { color: var(--error); }
+      @media (max-width: 700px) { .card.plan { grid-column: auto; } }
+
       /* tables */
       .scroll { overflow-x: auto; }
       table { border-collapse: collapse; margin-top: 8px; }
@@ -273,6 +316,7 @@
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
+        <button id="view-taxes" aria-pressed="false">Taxes</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
       </nav>
     </header>
@@ -299,8 +343,7 @@
           <div id="status-categories"></div>
         </section>
         <section class="panel">
-          <h2 id="status-projection-title">Tax projection</h2>
-          <div class="support">What the year's return comes to under each scenario</div>
+          <h2 id="status-projection-title">Taxes</h2>
           <div id="status-projection"></div>
         </section>
       </div>
@@ -337,6 +380,10 @@
         <tbody></tbody>
       </table></div>
       <div class="note">Click a line for its transactions, and "edit" on one to correct it. Transfers and income are left out; a line with no budget shows what was spent.</div>
+    </section>
+
+    <section id="taxes" hidden>
+      <div id="taxes-body">Loading…</div>
     </section>
 
     <section id="edit" hidden>
@@ -1392,6 +1439,220 @@
         loadTransaction(txnPage.id, page, function () { redrawEditor(); });
       }
 
+      // --- taxes ------------------------------------------------------------------------------------------
+      var taxes = null, taxYear = "", taxScenario = "as is";
+      var PLAN_NAME = { federal: "Federal", wisconsin: "Wisconsin" };
+
+      function loadTaxes() {
+        if (taxes) { drawTaxes(); return; }
+        document.getElementById("taxes-body").textContent = "Loading…";
+        call("getTaxes", [], function (data) { taxes = data; drawTaxes(); }, "taxes-body");
+      }
+
+      function signed(n) { return (n > 0 ? "Owe " : n < 0 ? "Refund " : "") + money.format(Math.abs(n)); }
+
+      function pill(options, value, onpick, label) {
+        var group = el("span", null, "segmented");
+        group.setAttribute("role", "group");
+        group.setAttribute("aria-label", label);
+        options.forEach(function (o) {
+          var b = button(o.charAt(0).toUpperCase() + o.slice(1), function () { onpick(o); });
+          b.setAttribute("aria-pressed", String(o === value));
+          group.appendChild(b);
+        });
+        return group;
+      }
+
+      function drawTaxes() {
+        var body = document.getElementById("taxes-body");
+        body.textContent = "";
+        if (!taxes.years.length) {
+          body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
+          return;
+        }
+        var years = taxes.years.map(function (y) { return y.year; });
+        if (years.indexOf(taxYear) < 0) taxYear = years[0];
+        var year = taxes.years.filter(function (y) { return y.year === taxYear; })[0];
+        if (year.scenarios.indexOf(taxScenario) < 0) taxScenario = year.scenarios[0];
+        var current = taxYear === years[0];
+
+        var head = el("div", null, "tax-head");
+        head.appendChild(el("h2", "Taxes for " + taxYear));
+        if (years.length > 1) head.appendChild(pill(years, taxYear, function (y) { taxYear = y; drawTaxes(); }, "Year"));
+        body.appendChild(head);
+        body.appendChild(el("p", current ? "Projected from this year's pay stubs, vests and sales, and your estimates."
+          : "The whole year from its pay stubs" + (year.filed ? ", beside the return you filed." : "; the filed return appears beside it once its lines are in the ledger."),
+          "support"));
+        if (year.scenarios.length > 1) {
+          var choose = el("div", null, "tax-scenarios");
+          choose.appendChild(el("span", "Scenario", "support"));
+          choose.appendChild(pill(year.scenarios, taxScenario, function (s) { taxScenario = s; drawTaxes(); }, "Scenario"));
+          body.appendChild(choose);
+        }
+
+        var forms = year.forms[taxScenario] || {};
+        var bottom = function (form) {
+          var lines = forms[form] || [];
+          var last = lines[lines.length - 1];
+          return last ? (last.label === "Refund" ? -last.value : last.value) : null;
+        };
+        var summary = el("div", null, "cards tax-summary");
+        [["Federal", bottom("Form 1040")], ["Wisconsin", bottom("Wisconsin Form 1")]].forEach(function (x) {
+          if (x[1] === null) return;
+          var card = el("article", null, "card total " + (x[1] > 0 ? "owe" : "refund"));
+          card.appendChild(el("div", x[0], "support"));
+          card.appendChild(el("div", signed(x[1]), "big"));
+          summary.appendChild(card);
+        });
+        if (current && taxes.plan.length) summary.appendChild(planCard(taxes.plan));
+        body.appendChild(summary);
+
+        var two = el("div", null, "two");
+        ["Form 1040", "Wisconsin Form 1"].forEach(function (form) {
+          if (!forms[form]) return;
+          var panel = el("section", null, "panel");
+          panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
+          panel.appendChild(formTable(forms[form], year.filed && taxScenario === "as is"));
+          two.appendChild(panel);
+        });
+        body.appendChild(two);
+
+        var lower = el("div", null, "two");
+        if (current && taxes.accounts.length) lower.appendChild(accountsPanel(taxes.accounts));
+        if (current && taxes.totals.length > 1) lower.appendChild(scenariosPanel(taxes.totals));
+        body.appendChild(lower);
+        if (current && taxes.notes.length) {
+          var notes = el("section", null, "panel");
+          notes.appendChild(el("h2", "What the projection assumes"));
+          var list = el("ul", null, "notes");
+          taxes.notes.forEach(function (n) { list.appendChild(el("li", n)); });
+          notes.appendChild(list);
+          body.appendChild(notes);
+        }
+      }
+
+      // The withholding that lands the year near the target refund, for each return.
+      function planCard(plan) {
+        var card = el("article", null, "card plan");
+        card.appendChild(el("h2", "To land near your target"));
+        plan.forEach(function (p) {
+          var row = el("div", null, "plan-row");
+          var name = PLAN_NAME[p["return"]] || p["return"];
+          if (p.suggested_extra === "") { row.appendChild(el("p", name + ": " + p.note, "support")); card.appendChild(row); return; }
+          var target = Number(p.target);
+          var change = Number(p.suggested_extra) - Number(p.current_extra);
+          row.appendChild(el("div", name + (target ? ": a " + money.format(target) + " refund" : ": no balance either way"), "plan-title"));
+          var what = el("p");
+          what.textContent = (change === 0 ? "Keep " : "Change ") + (p["return"] === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") +
+            " for " + p.person + " (" + p.employer + ") " + (change === 0 ? "at " : "from " + cents.format(Number(p.current_extra)) + " to ") +
+            cents.format(Number(p.suggested_extra)) + " a paycheck, for the " + p.paychecks_left + " paychecks left.";
+          row.appendChild(what);
+          var now = Number(p.projected), lands = Number(p.lands_at);
+          var balance = function (n) { return Math.abs(n) < 1 ? "nothing owed or refunded" : (n > 0 ? "refund " : "owe ") + money.format(Math.abs(n)); };
+          row.appendChild(el("p", "As things stand: " + balance(now) + "; with the change: " + balance(lands) + "." +
+            (p.vest_rate ? " Vests withheld at " + Math.round(Number(p.vest_rate) * 100) + "%." : ""), "support"));
+          if (Math.abs(lands - target) > 1) {
+            row.appendChild(el("p", "Even with no extra withholding the refund stays at " + money.format(lands) +
+              ", above the target: the rest is in how the vests and the regular withholding run.", "support"));
+          }
+          card.appendChild(row);
+        });
+        card.appendChild(el("p", "Targets and the vest rate are household settings (target_refund, wi_target_refund, planned_supplemental_rate) in Edit.", "support small-print"));
+        return card;
+      }
+
+      function formTable(lines, withFiled) {
+        var wrap = el("div", null, "scroll");
+        var table = el("table", null, "form-lines");
+        var head = el("tr");
+        ["Line", "", withFiled ? "From stubs" : "Amount"].concat(withFiled ? ["Filed", "Off by"] : []).forEach(function (h) { head.appendChild(el("th", h)); });
+        table.appendChild(el("thead")).appendChild(head);
+        var tbody = el("tbody");
+        lines.forEach(function (l) {
+          var row = el("tr", null, /^of which|^state and|^mortgage|^gifts/.test(l.label) ? "sub" :
+            /^(Total tax|Adjusted gross income|Taxable income|Refund|Amount owed|Net tax|Total payments)$/.test(l.label) ? "key-line" : "");
+          cell(row, l.line, "line-no");
+          cell(row, l.label, "text");
+          cell(row, cents.format(l.value));
+          if (withFiled) {
+            cell(row, l.filed === null ? "" : cents.format(l.filed));
+            var off = l.filed === null || Math.abs(l.value - l.filed) <= 1 ? "" : cents.format(l.value - l.filed);
+            cell(row, off, l.filed !== null && Math.abs(l.value - l.filed) > 1 ? "off" : "");
+          }
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        return wrap;
+      }
+
+      // 401(k), the mega backdoor, HSA and the rest: so far, by December 31, and against the limit.
+      function accountsPanel(accounts) {
+        var panel = el("section", null, "panel");
+        panel.appendChild(el("h2", "Retirement and health accounts"));
+        panel.appendChild(el("p", "So far this year from the pay stubs, and by December 31 at the same contributions.", "support"));
+        var people = {};
+        accounts.forEach(function (a) { (people[a.person] = people[a.person] || []).push(a); });
+        Object.keys(people).sort(function (a, b) { return (a === "household") - (b === "household") || a.localeCompare(b); }).forEach(function (person) {
+          panel.appendChild(el("h3", person === "household" ? "Household" : person, "account-person"));
+          people[person].forEach(function (a) {
+            var row = el("div", null, "account");
+            var top = el("div", null, "account-top");
+            top.appendChild(el("span", a.plan + (a.employer ? ", " + a.employer : ""), "account-name"));
+            top.appendChild(el("span", a.status, "account-status " + (a.status === "over limit" ? "off" : a.status === "at limit" ? "done" : "")));
+            row.appendChild(top);
+            if (a.limit !== "") {
+              var limit = Number(a.limit) || 1, ytd = Number(a.ytd) || 0, projected = Number(a.projected) || 0;
+              var meter = el("div", null, "meter");
+              var by = el("span", null, "by-year-end");
+              by.style.width = Math.min(100, 100 * projected / limit) + "%";
+              var so = el("span", null, "so-far");
+              so.style.width = Math.min(100, 100 * ytd / limit) + "%";
+              meter.appendChild(by);
+              meter.appendChild(so);
+              meter.setAttribute("role", "img");
+              meter.setAttribute("aria-label", money.format(ytd) + " so far, " + money.format(projected) + " by year end, of " + money.format(limit));
+              row.appendChild(meter);
+              row.appendChild(el("div", money.format(ytd) + " so far, " + money.format(projected) + " by December 31, of " +
+                money.format(limit) + (Number(a.gap) > 0 ? "; " + money.format(Number(a.gap)) + " of room left" : ""), "support"));
+            }
+            panel.appendChild(row);
+          });
+        });
+        return panel;
+      }
+
+      function scenariosPanel(totals) {
+        var panel = el("section", null, "panel");
+        panel.appendChild(el("h2", "Every scenario"));
+        panel.appendChild(el("p", "Federal as a bar from zero (refund left, owed right), Wisconsin beside it.", "support"));
+        var box = el("div");
+        box.id = "tax-scenarios-chart";
+        panel.appendChild(box);
+        drawScenarioBars(box, totals);
+        return panel;
+      }
+
+      function drawScenarioBars(box, totals) {
+        var biggest = Math.max.apply(null, totals.map(function (r) { return Math.abs(r.federal); })) || 1;
+        var list = el("div", null, "scenarios");
+        list.style.marginTop = "12px";
+        totals.forEach(function (r) {
+          var owe = r.federal > 0;
+          var row = el("div", null, "scenario");
+          row.appendChild(el("span", r.scenario.charAt(0).toUpperCase() + r.scenario.slice(1)));
+          var axis = el("div", null, "axis");
+          var bar = el("span", null, owe ? "owe" : "refund");
+          bar.style.width = (50 * Math.abs(r.federal) / biggest) + "%";
+          axis.appendChild(bar);
+          row.appendChild(axis);
+          row.appendChild(el("span", signed(r.federal), "amount " + (owe ? "owe" : "refund")));
+          row.appendChild(el("span", "WI " + signed(r.wisconsin), "amount wi " + (r.wisconsin > 0 ? "owe" : "refund")));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+      }
+
       // Change sets saved and not yet read by ingest, and any it refused.
       function drawWaiting(body) {
         body.textContent = "Loading…";
@@ -1554,7 +1815,7 @@
           cards.appendChild(clear);
         }
         drawBreakdown(status.categories);
-        drawProjection(status.projection, status.projectionYear);
+        drawProjection(status.projection, status.projectionYear, status.wiProjection);
         status.stages.forEach(function (s) {
           var panel = el("section", null, "panel");
           var head = el("div", null, "head");
@@ -1609,40 +1870,29 @@
         box.appendChild(legend);
       }
 
-      // Each scenario as a bar from zero: a refund to the left, an amount owed to the right.
-      function drawProjection(rows, year) {
+      // The tax projection in a line, with the way to the tax page.
+      function drawProjection(rows, year, wi) {
         var box = document.getElementById("status-projection");
-        document.getElementById("status-projection-title").textContent = "Tax projection" + (year ? " for " + year : "");
+        document.getElementById("status-projection-title").textContent = "Taxes" + (year ? " for " + year : "");
         box.textContent = "";
-        if (!rows.length) { box.appendChild(el("p", "No projection in the last compute.", "support")); return; }
-        var biggest = Math.max.apply(null, rows.map(function (r) { return Math.abs(r[1]); })) || 1;
-        var list = el("div", null, "scenarios");
-        list.style.marginTop = "16px";
-        rows.forEach(function (r) {
-          var owe = r[1] > 0;
-          var row = el("div", null, "scenario");
-          row.appendChild(el("span", r[0].charAt(0).toUpperCase() + r[0].slice(1)));
-          var axis = el("div", null, "axis");
-          var bar = el("span", null, owe ? "owe" : "refund");
-          bar.style.width = (50 * Math.abs(r[1]) / biggest) + "%";
-          axis.appendChild(bar);
-          row.appendChild(axis);
-          row.appendChild(el("span", (owe ? "Owe " : "Refund ") + money.format(Math.abs(r[1])), "amount " + (owe ? "owe" : "refund")));
-          list.appendChild(row);
-        });
-        box.appendChild(list);
-        var scale = el("div", null, "scale");
-        scale.appendChild(el("span"));
-        var ends = el("div");
-        ends.appendChild(el("span", "Refund " + money.format(biggest)));
-        ends.appendChild(el("span", "0"));
-        ends.appendChild(el("span", "Owe " + money.format(biggest)));
-        scale.appendChild(ends);
-        box.appendChild(scale);
+        var asIs = rows.filter(function (r) { return r[0] === "as is"; })[0];
+        if (!asIs) { box.appendChild(el("p", "No projection in the last compute.", "support")); return; }
+        var facts = el("dl", null, "facts tax-glance");
+        facts.appendChild(el("dt", "Federal"));
+        facts.appendChild(el("dd", signed(asIs[1]), "amount " + (asIs[1] > 0 ? "owe" : "refund")));
+        if (wi !== null && wi !== undefined) {
+          facts.appendChild(el("dt", "Wisconsin"));
+          facts.appendChild(el("dd", signed(wi), "amount " + (wi > 0 ? "owe" : "refund")));
+        }
+        box.appendChild(facts);
+        box.appendChild(el("p", "As things stand, projected from this year's pay stubs.", "support"));
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Open Taxes", function () { setView("taxes"); }, "filled"));
+        box.appendChild(actions);
       }
 
       function load() {
-        document.getElementById("controls").hidden = view === "status" || view === "edit";
+        document.getElementById("controls").hidden = view === "status" || view === "edit" || view === "taxes";
         if (view === "status") {
           document.getElementById("status-title").textContent = "Loading…";
           call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); }, "status-title");
@@ -1650,6 +1900,10 @@
         }
         if (view === "edit") {
           loadEditor();
+          return;
+        }
+        if (view === "taxes") {
+          loadTaxes();
           return;
         }
         if (!periods[view]) {
@@ -1681,11 +1935,12 @@
 
       function setView(next) {
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-edit"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-edit"], "view-" + view);
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
         document.getElementById("edit").hidden = view !== "edit";
+        document.getElementById("taxes").hidden = view !== "taxes";
         load();
       }
 
@@ -1705,6 +1960,7 @@
         document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
         document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
+        document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
         document.querySelectorAll("#edit-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
         });

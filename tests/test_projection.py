@@ -94,3 +94,15 @@ def test_elections_show_the_year_so_far_and_say_a_backdoor_roth_is_not_tracked()
     plans = projection.elections(2026, stubs_through(24)).set_index("plan")
     assert plans.loc["401(k) elective deferral", "ytd"] == 300 * 24
     assert plans.loc["Backdoor Roth IRA", "status"].startswith("not tracked")
+
+
+def test_the_mega_backdoor_row_says_whether_the_plan_converts_after_tax_money():
+    rows = stubs_through(10).to_dict("records")
+    for stub in {r["stub_id"]: r for r in rows}.values():  # an after-tax 401(k) contribution on every stub
+        rows.append({**stub, "line_item": "401k After-Tax", "kind": "post_tax", "amount": 50.0,
+                     "ytd_amount": 50.0 * int(stub["stub_id"])})
+    stubs = pd.DataFrame(rows)
+    plain = projection.elections(2026, stubs).set_index("plan").loc["Mega backdoor Roth (after-tax 401(k))"]
+    assert plain["ytd"] == 500 and plain["status"].endswith("(set after_tax_401k_converts_to_roth if the plan does it)")
+    auto = projection.elections(2026, stubs, after_tax_converts=True).set_index("plan")
+    assert auto.loc["Mega backdoor Roth (after-tax 401(k))", "status"].endswith("converts it to Roth automatically")

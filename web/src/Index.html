@@ -1599,7 +1599,7 @@
             var row = el("div", null, "account");
             var top = el("div", null, "account-top");
             top.appendChild(el("span", a.plan + (a.employer ? ", " + a.employer : ""), "account-name"));
-            top.appendChild(el("span", a.status, "account-status " + (a.status === "over limit" ? "off" : a.status === "at limit" ? "done" : "")));
+            top.appendChild(el("span", a.status, "account-status " + (a.status.indexOf("over limit") === 0 ? "off" : a.status.indexOf("at limit") === 0 ? "done" : "")));
             row.appendChild(top);
             if (a.limit !== "") {
               var limit = Number(a.limit) || 1, ytd = Number(a.ytd) || 0, projected = Number(a.projected) || 0;

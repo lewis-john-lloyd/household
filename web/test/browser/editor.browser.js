@@ -18,6 +18,7 @@ window.__answers = {
   getStatus: { stages: [{ stage: "compute", runId: "r1", at: "2001-03-02T07:00:00Z", summary: {}, lines: ["run r1"] }],
                attention: [], stale: false, projection: [], projectionYear: "", wiProjection: null, categories: null },
   getWaiting: [],
+  findSave: null,
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
     parameters: [{ key: "transfer_account", value: "checking", source: "seed" }, { key: "target_refund", value: "2000", source: "web" }] },
@@ -86,7 +87,7 @@ test("a change made while Save runs stays for the next save; only what was sent 
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
   assert.deepEqual(sent.map((e) => e.key), ["transfer_account"]);
   assert.deepEqual(await staged(page), ["setting target_refund = 1500"]);
-  assert.match(await page.textContent("#pending-msg"), /1 change made while it saved is still here/);
+  assert.match(await page.textContent("#pending-msg"), /1 change made since is still here/);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -111,7 +112,7 @@ test("a save that fails keeps every change and says so", async () => {
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.error");
-  assert.match(await page.textContent("#pending-msg"), /Not saved \(your changes are still here\): .*Drive said no/);
+  assert.match(await page.textContent("#pending-msg"), /Save did not confirm \(your changes are still here\): .*Drive said no/);
   assert.deepEqual(await staged(page), ["setting transfer_account = savings"]);
   await page.close();
 });
@@ -139,5 +140,61 @@ test("a save whose bookkeeping failed reads as saved, with the warning, and clea
   assert.match(text, /the change set itself is saved/);
   assert.doesNotMatch(text, /Not saved/);
   assert.deepEqual(await staged(page), []);
+  await page.close();
+});
+
+test("after a save whose answer was lost, Save finds the file it wrote and writes nothing twice", async () => {
+  const page = await open("window.__fail.saveChanges = 'The connection was lost';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await page.evaluate(() => {  // Drive had it after all
+    window.__answers.findSave = { id: "f1", name: "changes_2001-03-02T070000.000Z_a1.json", count: 1, madeFolder: false,
+                                  warning: "", again: true };
+  });
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges" || c.name === "findSave"));
+  assert.deepEqual(calls.map((c) => c.name), ["saveChanges", "findSave"]);
+  assert.equal(calls[1].args[0], calls[0].args[2]);  // asked about the very request that failed
+  assert.match(await page.textContent("#pending-msg"), /^The last save did go through\. Saved 1 changes/);
+  assert.deepEqual(await staged(page), []);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("after a save that did not land, Save saves what is staged as a new request", async () => {
+  const page = await open("window.__fail.saveChanges = 'Drive said no';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await page.evaluate(() => { window.__fail.saveChanges = ""; });  // findSave answers null: it did not land
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges" || c.name === "findSave"));
+  assert.deepEqual(calls.map((c) => c.name), ["saveChanges", "findSave", "saveChanges"]);
+  assert.notEqual(calls[2].args[2], calls[0].args[2]);
+  assert.deepEqual(calls[2].args[0].map((e) => e.key), ["transfer_account"]);
+  assert.deepEqual(await staged(page), []);
+  await page.close();
+});
+
+test("a past year shows its forms as they were, with no scenario to choose", async () => {
+  const line = (key, label, value, filed) => ({ form: "Form 1040", line: key, key, label, value, filed });
+  const year = (y, filed) => ({ year: y, filed: !!filed, forms: { "Form 1040": [line("24", "Total tax", 90, filed ? 90 : null)] } });
+  const page = await open("window.__answers.getTaxes = " + JSON.stringify({
+    years: [year("2002"), year("2001", true)], plan: [], accounts: [], notes: [],
+    totals: [{ scenario: "as is", federal: 10, wisconsin: 5 }, { scenario: "stock 20% lower", federal: 0, wisconsin: 0 }] }) + ";");
+  await page.click("#view-taxes");
+  await page.waitForSelector("#taxes-body .panel");
+  await page.click("#taxes-body [aria-label=Year] button:has-text('2001')");
+  assert.equal(await page.$("#taxes-body [aria-label=Scenario]"), null);
+  assert.doesNotMatch(await page.textContent("#taxes-body"), /Scenarios for this year|stock 20%/i);
+  assert.match(await page.textContent("#taxes-body"), /Total tax/);
+  assert.deepEqual(page.errors, []);
   await page.close();
 });

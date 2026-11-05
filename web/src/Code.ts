@@ -179,38 +179,88 @@ function getEditor(): EditorData {
   return data;
 }
 
+interface SaveResult {
+  id: string;
+  name: string;
+  count: number;
+  madeFolder: boolean;
+  warning: string;
+  again: boolean;  // this request had already saved: this is that file, and nothing new was written
+}
+
+const REQUEST_PROPERTY = "household_request";  // on each change set file: the Save that wrote it
+
 /**
- * Save: one change set file with these edits, written into the views' folder. described holds each edit
- * in words, kept for the waiting list. Returns the file and whether the folder was just made.
+ * The change set an earlier call with this request wrote, or null. Its saved record answers first; a file
+ * whose record was never kept, or was tidied after ingest filed it, is found by the request on the file.
  */
+function savedFor_(request: string): SaveResult | null {
+  const known = Object.values(saved_()).filter((r) => r.request === request)[0];
+  if (known) {
+    return { id: known.id, name: known.name, count: known.edits.length + (known.more || 0), madeFolder: false, warning: "", again: true };
+  }
+  const listed = drive_().Files.list({ q: `appProperties has { key='${REQUEST_PROPERTY}' and value='${request}' }`,
+                                       pageSize: 1, fields: "files(id,name,appProperties)" });
+  const file = ((listed.files || []) as { id?: string; name?: string; appProperties?: Record<string, string> }[])[0];
+  if (!file) return null;
+  const count = Number((file.appProperties || {}).household_edits) || 0;
+  return { id: String(file.id), name: String(file.name), count, madeFolder: false, warning: "", again: true };
+}
+
 /**
  * Save: one change set file with these edits, written into the views' folder. described holds each edit in
- * words, kept for the waiting list. Once the file is in Drive the save has happened: keeping its record is
- * best effort, and a failure there comes back as a warning, never as "not saved" (a retry would write the
- * change set twice).
+ * words, kept for the waiting list. request is the browser's id for this Save: a call with a request that
+ * already saved returns that file and writes nothing, so a Save whose answer was lost is never written twice.
+ * Once the file is in Drive the save has happened: keeping its record is best effort, and a failure there
+ * comes back as a warning, never as "not saved".
  */
-function saveChanges(edits: Edit[], described: string[]): { id: string; name: string; count: number; madeFolder: boolean; warning: string } {
+function saveChanges(edits: Edit[], described: string[], request?: string): SaveResult {
   const lock = LockService.getUserLock();
   lock.waitLock(20000);
   try {
+    const req = requestId(request);
+    const before = req ? savedFor_(req) : null;
+    if (before) {
+      console.log(`request ${req} saved already, as ${before.name}: nothing new written`);
+      return before;
+    }
     const props = PropertiesService.getUserProperties();
     const base = latestComputeRun(readTabIfAny_("run_log"));
     const now = laterThan(new Date().toISOString(), props.getProperty("LAST_SAVED_AT") || "");  // strictly in order
     const file = changeSet(edits, now, base, Utilities.getUuid().slice(0, 8));
     const folder = editsFolder_(true) as { id: string; made: boolean };
-    const made = drive_().Files.create({ name: file.name, mimeType: "application/json", parents: [folder.id] },
-                                       Utilities.newBlob(file.text, "application/json", file.name));
+    const meta: Record<string, unknown> = { name: file.name, mimeType: "application/json", parents: [folder.id] };
+    if (req) meta.appProperties = { [REQUEST_PROPERTY]: req, household_edits: String(edits.length) };
+    const made = drive_().Files.create(meta, Utilities.newBlob(file.text, "application/json", file.name));
     const id = String(made.id);
-    console.log(`saved ${file.name} (${id}): ${edits.length} edits on run ${base || "(none)"}`);
+    console.log(`saved ${file.name} (${id}): ${edits.length} edits on run ${base || "(none)"}, request ${req || "(none)"}`);
     let warning = "";
     try {
       props.setProperty("LAST_SAVED_AT", now);
-      keepSaved_(id, savedRecord(id, file.name, now, described || []));
+      keepSaved_(id, savedRecord(id, file.name, now, described || [], req));
     } catch (e) {
       warning = "Its list of edits for the Saved tab could not be kept (" + e + "); the change set itself is saved.";
       console.log(`saved ${file.name}, but not its record: ${e}`);
     }
-    return { id, name: file.name, count: edits.length, madeFolder: folder.made, warning };
+    return { id, name: file.name, count: edits.length, madeFolder: folder.made, warning, again: false };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Whether the Save with this request wrote its change set: the file, or null when it did not. Asked after a
+ * Save whose answer never came. It waits for any Save still running, so a slow one is not missed.
+ */
+function findSave(request: string): SaveResult | null {
+  const req = requestId(request);
+  if (!req) throw new Error("Not a request id: " + JSON.stringify(request));
+  const lock = LockService.getUserLock();
+  lock.waitLock(20000);
+  try {
+    const found = savedFor_(req);
+    console.log(`request ${req}: ${found ? "saved as " + found.name : "not saved"}`);
+    return found;
   } finally {
     lock.releaseLock();
   }

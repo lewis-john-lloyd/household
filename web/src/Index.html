@@ -173,8 +173,6 @@
       .tax-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
       .tax-head h2 { font-size: 28px; line-height: 36px; font-weight: 400; }
       #taxes-body > .support { margin: -8px 0 0; }
-      .tax-scenarios { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-      .tax-scenarios .segmented { flex-wrap: wrap; border-radius: 12px; }
       .card.total .big { font-size: 32px; line-height: 40px; font-weight: 400; margin-top: 4px; font-variant-numeric: tabular-nums; }
       .card.total.refund { background: var(--success-container); color: var(--on-success-container); }
       .card.total.owe { background: var(--error-container); color: var(--on-error-container); }
@@ -734,33 +732,76 @@
         if (!n) list.hidden = true;
       }
 
-      // Save sends what is staged now. Editing stays open while it runs, so on success only the entries sent, and
-      // still the same entries, are cleared: one staged or changed meanwhile stays, to go in the next save.
+      // Save sends what is staged now, with an id for this request. Editing stays open while it runs, so on
+      // success only the entries sent, and still the same entries, are cleared: one staged or changed meanwhile
+      // stays, to go in the next save. When Save fails the change set may still have been written (its answer
+      // can be lost after Drive has it), so the request is kept: the next Save first asks whether it landed,
+      // and writes nothing twice.
+      var unconfirmed = null;  // { request, sent } of a Save that failed
+
+      function newRequest() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return "r" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12);
+      }
+
       function saveStaged() {
         var msg = document.getElementById("pending-msg");
+        var button = document.getElementById("pending-save");
+        msg.className = "";
+        button.disabled = true;
+        if (unconfirmed) {
+          var u = unconfirmed;
+          msg.textContent = "Checking whether the last save went through…";
+          google.script.run.withSuccessHandler(function (r) {
+            unconfirmed = null;
+            if (!r) { saveNow(); return; }  // it did not: save what is staged now
+            button.disabled = false;
+            saved(u.sent, r, "The last save did go through. ");
+          }).withFailureHandler(function (error) {
+            button.disabled = false;
+            msg.className = "error";
+            msg.textContent = "Could not check the last save (your changes are still here): " + (error && error.message || error) +
+              ". Save again to check once more; nothing is saved twice.";
+          }).findSave(u.request);
+          return;
+        }
+        saveNow();
+      }
+
+      function saveNow() {
+        var msg = document.getElementById("pending-msg");
+        var button = document.getElementById("pending-save");
         var sent = stagedOrder.map(function (t) { return { target: t, entry: staged[t] }; });
+        var request = newRequest();
         var edits = sent.map(function (s) { return s.entry.edit; });
         var texts = sent.map(function (s) { return s.entry.text; });
         msg.className = "";
         msg.textContent = "Saving " + edits.length + " changes…";
-        document.getElementById("pending-save").disabled = true;
+        button.disabled = true;
         google.script.run.withSuccessHandler(function (r) {
-          document.getElementById("pending-save").disabled = false;
-          sent.forEach(function (s) { if (staged[s.target] === s.entry) unstage(s.target); });
-          var left = stagedOrder.length;
-          msg.className = "saved";
-          msg.textContent = "Saved " + r.count + " changes as " + r.name + ". Run ingest, then compute, to apply them." +
-            (left ? " " + left + (left === 1 ? " change" : " changes") + " made while it saved " + (left === 1 ? "is" : "are") +
-                    " still here, for the next save." : "") +
-            (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "") +
-            (r.warning ? " " + r.warning : "");
-          drawPending();
-          redrawEditor();
+          button.disabled = false;
+          saved(sent, r, "");
         }).withFailureHandler(function (error) {
-          document.getElementById("pending-save").disabled = false;
+          button.disabled = false;
+          unconfirmed = { request: request, sent: sent };
           msg.className = "error";
-          msg.textContent = "Not saved (your changes are still here): " + (error && error.message || error);
-        }).saveChanges(edits, texts);
+          msg.textContent = "Save did not confirm (your changes are still here): " + (error && error.message || error) +
+            ". Saving again first checks whether it went through, so nothing is saved twice.";
+        }).saveChanges(edits, texts, request);
+      }
+
+      function saved(sent, r, lead) {
+        var msg = document.getElementById("pending-msg");
+        sent.forEach(function (s) { if (staged[s.target] === s.entry) unstage(s.target); });
+        var left = stagedOrder.length;
+        msg.className = "saved";
+        msg.textContent = lead + "Saved " + r.count + " changes as " + r.name + ". Run ingest, then compute, to apply them." +
+          (left ? " " + left + (left === 1 ? " change" : " changes") + " made since " + (left === 1 ? "is" : "are") +
+                  " still here, for the next save." : "") +
+          (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "") +
+          (r.warning ? " " + r.warning : "");
+        drawPending();
+        redrawEditor();
       }
 
       // Small builders for the editor's forms.
@@ -1533,7 +1574,7 @@
       }
 
       // --- taxes ------------------------------------------------------------------------------------------
-      var taxes = null, taxYear = "", taxScenario = "as is";
+      var taxes = null, taxYear = "";
       var PLAN_NAME = { federal: "Federal", wisconsin: "Wisconsin" };
 
       function loadTaxes() {
@@ -1566,7 +1607,6 @@
         var years = taxes.years.map(function (y) { return y.year; });
         if (years.indexOf(taxYear) < 0) taxYear = years[0];
         var year = taxes.years.filter(function (y) { return y.year === taxYear; })[0];
-        if (year.scenarios.indexOf(taxScenario) < 0) taxScenario = year.scenarios[0];
         var current = taxYear === years[0];
 
         var head = el("div", null, "tax-head");
@@ -1576,14 +1616,8 @@
         body.appendChild(el("p", current ? "Projected from this year's pay stubs, vests and sales, and your estimates."
           : "The whole year from its pay stubs" + (year.filed ? ", beside the return you filed." : "; the filed return appears beside it once its lines are in the ledger."),
           "support"));
-        if (year.scenarios.length > 1) {
-          var choose = el("div", null, "tax-scenarios");
-          choose.appendChild(el("span", "Scenario", "support"));
-          choose.appendChild(pill(year.scenarios, taxScenario, function (s) { taxScenario = s; drawTaxes(); }, "Scenario"));
-          body.appendChild(choose);
-        }
 
-        var forms = year.forms[taxScenario] || {};
+        var forms = year.forms;
         var bottom = function (form) {
           var lines = forms[form] || [];
           var last = lines[lines.length - 1];
@@ -1605,7 +1639,7 @@
           if (!forms[form]) return;
           var panel = el("section", null, "panel");
           panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
-          panel.appendChild(formTable(forms[form], year.filed && taxScenario === "as is"));
+          panel.appendChild(formTable(forms[form], year.filed));
           two.appendChild(panel);
         });
         body.appendChild(two);

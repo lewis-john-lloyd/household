@@ -254,18 +254,22 @@ def _values(kind, e):
 
 
 def _target(e):
-    """The setting an edit replaces, so one change set cannot edit it twice."""
+    """The setting an edit replaces, so one change set cannot edit it twice: the same rule as editTarget in
+    the views (web/src/edits.ts), which keeps one staged edit per target."""
     kind = e["kind"]
-    if kind == "budget_line":
-        return None if e["rule"] == "scheduled" else ("budget_line", e["line"])
+    if kind == "budget_line":  # a scheduled amount belongs to its line and month; any other rule, to the line
+        return ("budget_line", e["line"], "scheduled", e["effective"]) if e["rule"] == "scheduled" \
+            else ("budget_line", e["line"])
+    if kind == "not_duplicate":  # a pair is the same pair either way round
+        return ("not_duplicate",) + tuple(sorted((e["txn_a"], e["txn_b"])))
     if kind == "line":
         field = "category" if e["field"] == "split" else e["field"]  # a category and a split replace each other
         return ("line", e["txn_id"], field)
     if kind == "payee":
         return ("payee", categorize.payee_key(e["key"]) or e["key"].upper())
     key = {"payee_rule": "pattern", "category": "category", "alias": "alias", "parameter": "key",
-           "explanation": "stub_id", "not_duplicate": "txn_a", "item": "item_id"}[kind]
-    extra = (e["jurisdiction"],) if kind == "explanation" else (e["txn_b"],) if kind == "not_duplicate" else ()
+           "explanation": "stub_id", "item": "item_id"}[kind]
+    extra = (e["jurisdiction"],) if kind == "explanation" else ()
     return (kind, e[key]) + extra
 
 
@@ -301,9 +305,9 @@ def parse(text):
         if wrong:
             continue
         target = _target(edit)
-        if target is not None and target in seen:
+        if target in seen:
             problems.append(f"{_label(n, edit)}: edits the same thing as edit {seen[target]}")
-        elif target is not None:
+        else:
             seen[target] = n
     _refuse(problems)
 

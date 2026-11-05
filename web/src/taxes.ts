@@ -1,5 +1,5 @@
 /**
- * The tax page's data from Reports: both returns line by line per scenario and year (tax_lines), the
+ * The tax page's data from Reports: both returns line by line per year as things stand (tax_lines), the
  * withholding that lands the year near the target refund (withholding_plan), retirement accounts so far
  * and by year end (elections), each scenario's bottom lines (projection), and compute's notes about
  * them. Pure functions, tested under Node like shape.ts.
@@ -16,10 +16,13 @@ interface TaxLine {
 
 interface TaxYear {
   year: string;
-  scenarios: string[];
-  forms: Record<string, Record<string, TaxLine[]>>;  // scenario -> form -> lines in order
+  forms: Record<string, TaxLine[]>;  // form -> lines in order, the year as it stands
   filed: boolean;  // whether any line has a filed value
 }
+
+// The forms show each year as it stands: a past year is as it happened, and this year's scenarios differ
+// only in their totals (projection). Rows for any other scenario, left by an older compute, are ignored.
+const AS_IS = "as is";
 
 interface ScenarioTotals {
   scenario: string;
@@ -53,10 +56,10 @@ function taxPage(tabs: Record<string, unknown[][]>): TaxPage {
   const years = new Map<string, TaxYear>();
   const lines = rowsOf(tabs.tax_lines || []).sort((a, b) => Number(a.order) - Number(b.order));
   for (const r of lines) {
+    if ((r.scenario || AS_IS) !== AS_IS) continue;
     let y = years.get(r.year);
-    if (!y) { y = { year: r.year, scenarios: [], forms: {}, filed: false }; years.set(r.year, y); }
-    if (y.scenarios.indexOf(r.scenario) < 0) y.scenarios.push(r.scenario);
-    const forms = y.forms[r.scenario] || (y.forms[r.scenario] = {});
+    if (!y) { y = { year: r.year, forms: {}, filed: false }; years.set(r.year, y); }
+    const forms = y.forms;
     const filed = numberOr(r.filed, null);
     if (filed !== null) y.filed = true;
     (forms[r.form] || (forms[r.form] = [])).push({ form: r.form, line: r.line, key: r.key, label: r.label,

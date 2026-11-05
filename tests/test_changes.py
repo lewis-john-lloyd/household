@@ -152,6 +152,21 @@ def test_one_thing_edited_twice_in_one_change_set_is_refused():
     assert "edit 2 (line t1): edits the same thing as edit 1" in why
 
 
+def test_a_pair_either_way_round_is_one_target():
+    why = refused(doc({"kind": "not_duplicate", "txn_a": "t1", "txn_b": "t2"},
+                      {"kind": "not_duplicate", "txn_a": "t2", "txn_b": "t1"}))
+    assert "edit 2 (not_duplicate" in why and "edits the same thing as edit 1" in why
+
+
+def test_a_scheduled_amount_is_one_per_line_and_month():
+    def scheduled(effective, amount):
+        return {"kind": "budget_line", "line": "camp", "effective": effective, "rule": "scheduled",
+                "category": "kids", "amount": amount, "was": None}
+    why = refused(doc(scheduled("2026-06-01", "90"), scheduled("2026-06-01", "50")))
+    assert "edits the same thing as edit 1" in why
+    assert len(changes.parse(doc(scheduled("2026-06-01", "90"), scheduled("2026-07-01", "90"))).tables) >= 1
+
+
 def test_edits_that_do_not_fit_the_ledger_are_refused_with_every_reason():
     why = refused(doc({"kind": "line", "txn_id": "t9", "field": "category", "value": "food"},
                       {"kind": "line", "txn_id": "t1", "field": "split", "value": "food 30; kids 20"},

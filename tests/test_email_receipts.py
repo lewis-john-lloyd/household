@@ -111,3 +111,15 @@ def test_an_online_summary_reads_a_name_and_quantity_on_separate_lines_and_a_mem
     got = df[df["order_id"] == "m007"]
     assert got[["item", "amount", "department"]].values.tolist() == [["Premium Membership", 42.0, "membership"]]
     assert explain.DEPARTMENTS["membership"] == "subscriptions"
+
+
+def test_a_message_the_exporter_could_not_read_is_noted_and_reads_no_rows():
+    text = ("===== RECEIPT m101 =====\nUnreadable: TypeError: Cannot read properties of null (reading 'headers')\n"
+            "Date: 2026-03-01T10:00:00.000Z\n\n\n")
+    assert identify(text) is email_receipts
+    result = email_receipts.parse(RECEIPTS + "\n" + text)
+    assert len(result.tables["order_items"]) == len(email_receipts.parse(RECEIPTS).tables["order_items"])
+    assert result.notes[-1] == ("receipts: 1 the exporter could not read, tried again on its every run (look in Gmail "
+                                "by id): m101 (TypeError: Cannot read properties of null (reading 'headers'))")
+    alone = email_receipts.parse(text)
+    assert alone.tables == {} and "1 the exporter could not read" in alone.notes[-1]

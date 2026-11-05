@@ -321,8 +321,11 @@ READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_onl
 
 
 def parse(text):
-    rows, skipped, unpriced, empty = [], {}, {}, 0
+    rows, skipped, unpriced, empty, unreadable = [], {}, {}, 0, []
     for message_id, headers, body in _messages(text):
+        if "unreadable" in headers:  # the exporter could not read it; it tries again every run
+            unreadable.append(f"{message_id} ({headers['unreadable']})")
+            continue
         body = _text(body)
         reader = next((r for recognizes, r in READERS if recognizes(body)), None)
         if reader is None:
@@ -345,6 +348,9 @@ def parse(text):
               for k, n in sorted(unpriced.items())]
     if empty:
         notes.append(f"receipts: {empty} that charged nothing (a return, a free order) left out")
+    if unreadable:
+        notes.append(f"receipts: {len(unreadable)} the exporter could not read, tried again on its every run "
+                     "(look in Gmail by id): " + "; ".join(unreadable))
     return Result(kind=KIND, parser=NAME, label=f"receipts_{dates[-1] if dates else 'none'}",
                   covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
                   tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]}, notes=notes)

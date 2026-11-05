@@ -182,3 +182,8 @@ function discardWaiting(id: string): void {
   drive_().Files.update({ trashed: true }, id);
   console.log(`discarded ${file.name}`);
 }
+
+/** One transaction, whole, for the transaction page (null when Reports has no such line). */
+function getTransaction(id: string): Line | null {
+  return findLine(readTab_("categorized"), String(id || "").trim());
+}

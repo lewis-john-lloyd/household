@@ -501,3 +501,42 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
            projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
            categories: compute ? categoryBreakdown(compute.summary) : null };
 }
+
+/** One whole line from the categorized tab, for the transaction page: a split charge with all its parts. */
+interface Line {
+  id: string;
+  date: string;
+  account: string;
+  payee: string;  // the name an explanation gave it, else the bank's
+  payeeRaw: string;
+  amount: number;  // the whole line, signed as the ledger has it (money out is negative)
+  category: string;
+  parts: [string, number][];  // a split's parts, signed; [] for a whole line
+  items: { category: string; name: string; amount: number }[];
+  decidedBy: string;
+  status: string;
+  note: string;
+  key: string;
+  oneOff: boolean;
+}
+
+function findLine(values: unknown[][], id: string): Line | null {
+  if (!values.length || !id) return null;
+  const header = values[0].map((h) => String(h).trim());
+  const at = (name: string): number => header.indexOf(name);
+  if (at("txn_id") < 0) throw new Error("categorized tab is missing columns: txn_id");
+  const row = values.slice(1).find((v) => String(v[at("txn_id")] ?? "").trim() === id);
+  if (!row) return null;
+  const col = (name: string): string => (at(name) < 0 ? "" : String(row[at(name)] ?? "").trim());
+  const parts: [string, number][] = col("splits") ? col("splits").split("; ").map((piece) => {
+    const cut = piece.lastIndexOf(" ");
+    return [piece.slice(0, cut), Number(piece.slice(cut + 1)) || 0] as [string, number];
+  }) : [];
+  return {
+    id, date: col("date").slice(0, 10), account: col("account_id"), payee: col("payee_text") || col("payee_raw"),
+    payeeRaw: col("payee_raw"), amount: Number(col("amount")) || 0, category: col("category"), parts,
+    items: parseItems(col("items")).map((i) => ({ category: i[0], name: i[1], amount: i[2] })),
+    decidedBy: col("decided_by"), status: col("status"), note: col("note"), key: col("key"),
+    oneOff: col("one_off").toUpperCase() === "TRUE",
+  };
+}

@@ -76,6 +76,20 @@ def budget_lines(rules, targets, actuals, month):
     return pd.DataFrame(out, columns=columns)
 
 
+def scheduled(rules):
+    """Each scheduled amount in force: the last row per line and date, as the budget reads them (budget.py),
+    with its fields exactly as the ledger holds them, since a new amount on that date replaces it and sends
+    this row back as its `was`."""
+    columns = _columns("editor_scheduled")
+    if rules is None or rules.empty:
+        return pd.DataFrame(columns=columns)
+    r = rules[rules["rule"].astype(str).str.strip() == "scheduled"].copy()
+    r["line"] = r["line"].astype(str).str.strip()
+    r["day"] = r["effective"].astype(str).str[:10]
+    out = r.drop_duplicates(["line", "day"], keep="last").sort_values(["line", "day"], kind="stable")
+    return out.reindex(columns=columns, fill_value="").reset_index(drop=True)
+
+
 def in_force(df, keys, name):
     """The last row per key of a settings table, in the Reports table's columns."""
     columns = _columns(name)
@@ -118,6 +132,7 @@ def publish(books, review, rules, targets, actuals, month):
     """Every editor table, by Reports table name."""
     return {
         "editor_budget_lines": budget_lines(rules, targets, actuals, month),
+        "editor_scheduled": scheduled(rules),
         "editor_payee_rules": payee_rules(books["rules"]),
         "editor_categories": in_force(books["categories"], ["category"], "editor_categories"),
         "editor_aliases": in_force(books["aliases"], ["alias"], "editor_aliases"),

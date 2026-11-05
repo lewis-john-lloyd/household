@@ -756,6 +756,12 @@
             unconfirmed = null;
             if (!r) { saveNow(); return; }  // it did not: save what is staged now
             button.disabled = false;
+            if (r.discarded) {  // it did, but that file is in the trash: nothing of it will be applied
+              msg.className = "error";
+              msg.textContent = "The last save went through as " + r.name + ", but that change set has been discarded since, " +
+                "so ingest won't read it. Your changes are still here: Save again to send them.";
+              return;
+            }
             saved(u.sent, r, "The last save did go through. ");
           }).withFailureHandler(function (error) {
             button.disabled = false;
@@ -908,9 +914,17 @@
 
       // Every field an edit can change, as the page showed it (WAS_FIELDS in edits.ts and changes.py).
       function budgetWas(l) {
-        return l.in_force === "scheduled only" ? null
-          : { effective: l.effective, category: l.category, account: l.account, priority: l.priority, rule: l.rule,
-              amount: l.amount, per: l.per, note: l.note };
+        return l.in_force === "scheduled only" ? null : rowWas(l);
+      }
+
+      function rowWas(l) {
+        return { effective: l.effective, category: l.category, account: l.account, priority: l.priority, rule: l.rule,
+                 amount: l.amount, per: l.per, note: l.note };
+      }
+
+      // The scheduled amount in force on this line and date (editor_scheduled), which a new one replaces, or null.
+      function scheduledOn(line, date) {
+        return (editor.scheduled || []).filter(function (x) { return x.line === line && x.effective.slice(0, 10) === date; })[0] || null;
       }
 
       function budgetForm(l, done) {
@@ -955,8 +969,11 @@
           var add = el("div", null, "actions");
           add.appendChild(button("Add scheduled amount", function () {
             if (!isDate(on.value) || !isAmount(much.value.trim())) { error.textContent = "A scheduled amount needs a date and an amount."; return; }
+            var before = scheduledOn(l.line, on.value);  // a new amount on a date replaces the one there
             stage({ kind: "budget_line", line: l.line, effective: on.value, rule: "scheduled", category: l.category || l.spends_from,
-                    amount: much.value.trim().replace(/,/g, "") }, "budget line " + l.line + ": " + much.value.trim() + " scheduled " + on.value);
+                    amount: much.value.trim().replace(/,/g, ""), was: before ? rowWas(before) : null },
+                  "budget line " + l.line + ": " + much.value.trim() + " scheduled " + on.value +
+                  (before ? ", replacing " + before.amount : ""));
             done();
           }));
           form.appendChild(add);
@@ -1795,6 +1812,9 @@
         box.appendChild(list);
       }
 
+      var UNSEEN_NOTE = "Ingest ran after it was saved and didn't find it, so the views' folder, web_edits, isn't in the " +
+        "household inbox: it starts in My Drive. Move web_edits into the inbox once, then run ingest.";
+
       // Change sets saved and not yet read by ingest, and any it refused.
       function drawWaiting(body) {
         body.textContent = "Loading…";
@@ -1805,8 +1825,9 @@
             var card = el("div", null, "card" + (w.refused ? "" : " clear"));
             card.appendChild(el("strong", w.name));
             card.appendChild(el("div", (w.savedAt ? "saved " + when(w.savedAt) + ", " : "") +
-              (w.refused ? "refused by the last ingest" : "waiting for ingest"), "detail"));
+              (w.refused ? "refused by the last ingest" : w.unseen ? "not seen by the last ingest" : "waiting for ingest"), "detail"));
             if (w.refused) card.appendChild(el("div", w.refused, "detail refused"));
+            else if (w.unseen) card.appendChild(el("div", UNSEEN_NOTE, "detail refused"));
             w.edits.forEach(function (text) { card.appendChild(el("div", text, "detail")); });
             card.appendChild(button("Discard", function () {
               call("discardWaiting", [w.id], function () { drawWaiting(body); }, "edit-body");
@@ -1820,16 +1841,24 @@
         google.script.run.withSuccessHandler(function (list) {
           if (!list.length) return;
           var refused = list.filter(function (w) { return w.refused; });
+          var unseen = list.filter(function (w) { return w.unseen && !w.refused; });
           var cards = document.getElementById("status-attention");
           var clear = cards.querySelector(".card.clear");
-          if (clear && refused.length) clear.remove();
-          var card = attentionCard({
-            key: "waiting_changes", count: refused.length || list.length, action: "waiting", flags: [], detail: [],
-            label: refused.length ? (refused.length === 1 ? "saved change set was refused" : "saved change sets were refused")
-                                  : (list.length === 1 ? "saved change set waits for ingest" : "saved change sets wait for ingest"),
-            note: refused.length ? "Ingest wrote nothing from it. Fix the reason, or discard it and edit again." : "Run ingest, then compute, to apply it.",
+          if (clear && (refused.length || unseen.length)) clear.remove();
+          var card = attentionCard(refused.length ? {
+            key: "waiting_changes", count: refused.length, action: "waiting", flags: [], detail: [],
+            label: refused.length === 1 ? "saved change set was refused" : "saved change sets were refused",
+            note: "Ingest wrote nothing from it. Fix the reason, or discard it and edit again.",
             items: refused.map(function (w) { return { title: w.name, detail: w.refused }; }),
-          }, !refused.length);
+          } : unseen.length ? {
+            key: "waiting_changes", count: unseen.length, action: "waiting", flags: [], detail: [],
+            label: unseen.length === 1 ? "saved change set ingest hasn't seen" : "saved change sets ingest hasn't seen",
+            note: UNSEEN_NOTE, items: [],
+          } : {
+            key: "waiting_changes", count: list.length, action: "waiting", flags: [], detail: [],
+            label: list.length === 1 ? "saved change set waits for ingest" : "saved change sets wait for ingest",
+            note: "Run ingest, then compute, to apply it.", items: [],
+          }, !refused.length && !unseen.length);
           cards.insertBefore(card, cards.firstChild);
         }).withFailureHandler(function (error) {  // no folder yet is not an error (getWaiting gives []): this is one
           var cards = document.getElementById("status-attention");

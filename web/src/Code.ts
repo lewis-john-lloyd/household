@@ -169,7 +169,7 @@ function keepSaved_(id: string, record: string): void {
 
 /** Everything the editors show: the settings in force, the review queue, duplicates and unexplained stubs. */
 function getEditor(): EditorData {
-  const names = ["run_log", "editor_budget_lines", "editor_payee_rules", "editor_categories", "editor_aliases",
+  const names = ["run_log", "editor_budget_lines", "editor_scheduled", "editor_payee_rules", "editor_categories", "editor_aliases",
                  "editor_parameters", "editor_review", "possible_duplicates", "withholding_backtest",
                  "wi_withholding_backtest"];
   const tabs: Record<string, unknown[][]> = {};
@@ -186,25 +186,39 @@ interface SaveResult {
   madeFolder: boolean;
   warning: string;
   again: boolean;  // this request had already saved: this is that file, and nothing new was written
+  discarded: boolean;  // that file is in the trash since: ingest will never read it
 }
 
 const REQUEST_PROPERTY = "household_request";  // on each change set file: the Save that wrote it
 
 /**
- * The change set an earlier call with this request wrote, or null. Its saved record answers first; a file
- * whose record was never kept, or was tidied after ingest filed it, is found by the request on the file.
+ * The change set an earlier call with this request wrote, or null. Its saved record answers first, once
+ * Drive confirms the file is there; a file whose record was never kept, or was tidied after ingest filed it,
+ * is found by the request on the file. A file in the trash comes back as discarded, never as saved.
  */
 function savedFor_(request: string): SaveResult | null {
+  const result = (id: string, name: string, count: number, discarded: boolean): SaveResult =>
+    ({ id, name, count, madeFolder: false, warning: "", again: true, discarded });
   const known = Object.values(saved_()).filter((r) => r.request === request)[0];
   if (known) {
-    return { id: known.id, name: known.name, count: known.edits.length + (known.more || 0), madeFolder: false, warning: "", again: true };
+    let trashed: boolean | null = null;
+    try {
+      trashed = !!drive_().Files.get(known.id, { fields: "id,trashed" }).trashed;
+    } catch (e) {
+      console.log(`the record for ${known.name} names a file Drive no longer has: ${e}`);  // deleted: search below
+    }
+    if (trashed !== null) return result(known.id, known.name, known.edits.length + (known.more || 0), trashed);
   }
-  const listed = drive_().Files.list({ q: `appProperties has { key='${REQUEST_PROPERTY}' and value='${request}' }`,
-                                       pageSize: 1, fields: "files(id,name,appProperties)" });
-  const file = ((listed.files || []) as { id?: string; name?: string; appProperties?: Record<string, string> }[])[0];
+  const search = (trashed: boolean) => {
+    const listed = drive_().Files.list({
+      q: `appProperties has { key='${REQUEST_PROPERTY}' and value='${request}' } and trashed = ${trashed}`,
+      pageSize: 1, fields: "files(id,name,appProperties)" });
+    return ((listed.files || []) as { id?: string; name?: string; appProperties?: Record<string, string> }[])[0];
+  };
+  const live = search(false);
+  const file = live || search(true);
   if (!file) return null;
-  const count = Number((file.appProperties || {}).household_edits) || 0;
-  return { id: String(file.id), name: String(file.name), count, madeFolder: false, warning: "", again: true };
+  return result(String(file.id), String(file.name), Number((file.appProperties || {}).household_edits) || 0, !live);
 }
 
 /**
@@ -220,7 +234,7 @@ function saveChanges(edits: Edit[], described: string[], request?: string): Save
   try {
     const req = requestId(request);
     const before = req ? savedFor_(req) : null;
-    if (before) {
+    if (before && !before.discarded) {
       console.log(`request ${req} saved already, as ${before.name}: nothing new written`);
       return before;
     }
@@ -242,15 +256,15 @@ function saveChanges(edits: Edit[], described: string[], request?: string): Save
       warning = "Its list of edits for the Saved tab could not be kept (" + e + "); the change set itself is saved.";
       console.log(`saved ${file.name}, but not its record: ${e}`);
     }
-    return { id, name: file.name, count: edits.length, madeFolder: folder.made, warning, again: false };
+    return { id, name: file.name, count: edits.length, madeFolder: folder.made, warning, again: false, discarded: false };
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * Whether the Save with this request wrote its change set: the file, or null when it did not. Asked after a
- * Save whose answer never came. It waits for any Save still running, so a slow one is not missed.
+ * Whether the Save with this request wrote its change set: the file (marked discarded if it is in the trash
+ * since), or null when it did not. Asked after a Save whose answer never came. It waits for any Save still running, so a slow one is not missed.
  */
 function findSave(request: string): SaveResult | null {
   const req = requestId(request);
@@ -259,7 +273,7 @@ function findSave(request: string): SaveResult | null {
   lock.waitLock(20000);
   try {
     const found = savedFor_(req);
-    console.log(`request ${req}: ${found ? "saved as " + found.name : "not saved"}`);
+    console.log(`request ${req}: ${found ? (found.discarded ? "saved as " + found.name + ", since discarded" : "saved as " + found.name) : "not saved"}`);
     return found;
   } finally {
     lock.releaseLock();

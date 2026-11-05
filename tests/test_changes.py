@@ -114,7 +114,7 @@ def test_shape_problems_are_all_listed_and_nothing_is_written():
                       {"kind": "explode"},
                       {"kind": "payee", "key": "ACME", "category": "food", "extra": "1"}))
     for reason in ("edit 1 (budget_line camp): effective 'June' is not a date",
-                   "a scheduled line needs an amount", "was must be null",
+                   "a scheduled line needs an amount", "was must give every field the edit replaces",
                    "edit 2 (payee_rule ACME (): pattern", "field must be one of",
                    "category 'Big Spend': use lower case", "unknown kind 'explode'", "unknown field extra"):
         assert reason in why
@@ -158,7 +158,7 @@ def test_a_pair_either_way_round_is_one_target():
     assert "edit 2 (not_duplicate" in why and "edits the same thing as edit 1" in why
 
 
-def test_a_scheduled_amount_is_one_per_line_and_month():
+def test_a_scheduled_amount_is_one_per_line_and_date():
     def scheduled(effective, amount):
         return {"kind": "budget_line", "line": "camp", "effective": effective, "rule": "scheduled",
                 "category": "kids", "amount": amount, "was": None}
@@ -194,7 +194,7 @@ def test_an_edit_made_on_an_older_view_of_a_setting_is_refused():
     assert "the ledger already has it" in refused(doc(new_but_exists))
     gone = {"kind": "alias", "alias": "nosh", "category": "food", "was": {"category": "food", "note": ""}}
     assert "replaces a row the ledger does not have" in refused(doc(gone))
-    # a scheduled amount adds to its month, so it carries no was even on a line that exists
+    # a scheduled amount on a date with none yet is new, even on a line that exists
     changes.parse(doc({"kind": "budget_line", "line": "groceries", "effective": "2026-12-01", "rule": "scheduled",
                        "category": "food", "amount": "80"})).check(ledger_reader(**LEDGER))
 
@@ -207,6 +207,24 @@ def test_the_setting_in_force_is_the_last_row_for_it():
             "was": GROCERIES_WAS | {"effective": "2025-01-15", "priority": "", "amount": "550"}}
     changes.parse(doc(edit)).check(ledger_reader(**later))
     assert "amount is '550'" in refused(doc(edit | {"was": edit["was"] | {"amount": "500"}}), ledger_reader(**later))
+
+
+CAMP = {"line": "camp", "effective": "2026-06-01", "category": "kids", "rule": "scheduled", "amount": "90"}
+CAMP_WAS = {"effective": "2026-06-01", "category": "kids", "account": "", "priority": "", "rule": "scheduled",
+            "amount": "90", "per": "", "note": ""}
+
+
+def test_a_scheduled_amount_replaces_the_one_on_its_date_and_says_what_it_replaced():
+    # the budget keeps the last row on a date (budget.py), so a new amount there replaces the old one
+    camp = LEDGER | {"budget_rules": pd.concat([LEDGER["budget_rules"], table("budget_rules", CAMP)], ignore_index=True)}
+    edit = {"kind": "budget_line", "line": "camp", "effective": "2026-06-01", "rule": "scheduled", "category": "kids",
+            "amount": "100", "was": CAMP_WAS}
+    changes.parse(doc(edit)).check(ledger_reader(**camp))
+    assert "replacing 90" in changes.parse(doc(edit)).notes[1]
+    assert "the ledger already has it" in refused(doc(edit | {"was": None}), ledger_reader(**camp))
+    assert "amount is '90'" in refused(doc(edit | {"was": CAMP_WAS | {"amount": "120"}}), ledger_reader(**camp))
+    assert "replaces a row the ledger does not have" in refused(doc(edit | {"effective": "2026-07-01"}),
+                                                                ledger_reader(**camp))
 
 
 # --- the ledger's rules for later rows ----------------------------------------------------------------
@@ -353,3 +371,20 @@ def test_two_saves_in_one_second_stay_in_order(box):
     assert times[1:] == ["web", "web"]
     assert changes.parse(doc(first, created_at="2026-01-31T12:00:00.125Z")).label != \
         changes.parse(doc(first, created_at="2026-01-31T12:00:00.250Z")).label
+
+
+def test_two_people_scheduling_the_same_date_from_one_view_the_second_is_refused(box):
+    # both pages showed 90 on June 1; one moves it to 120, the other, saved later, to 100
+    drive, ledger, edits, _ = box
+    sheets.append_rows(ledger, schema.table(schema.LEDGER, "budget_rules"), table("budget_rules", CAMP))
+    mine = {"kind": "budget_line", "line": "camp", "effective": "2026-06-01", "rule": "scheduled", "category": "kids",
+            "amount": "120", "was": CAMP_WAS}
+    save(drive, edits, "changes_2026-01-31T120000Z.json", doc(mine))
+    save(drive, edits, "changes_2026-01-31T120500Z.json", doc(mine | {"amount": "100"},
+                                                             created_at="2026-01-31T12:05:00Z"))
+    first, second = inbox.process(ledger, drive, "root")
+    assert first["status"] == "ingested"
+    assert second["status"] == "failed" and "amount is '120'" in second["reason"]
+    target = budget.targets(rows(ledger, "budget_rules"), pd.DataFrame(columns=["month", "category", "spend"]),
+                            "2026-06")
+    assert target.set_index(["month", "line"]).at[("2026-06", "camp"), "target"] == 120

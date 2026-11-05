@@ -51,6 +51,7 @@ test("editorData gathers the editor tabs and only the stubs still unexplained", 
   assert.equal("run_id" in data.categories[0], false);
   assert.deepEqual(data.withholding.map((w) => [w.stub_id, w.jurisdiction]), [["s1", "federal"], ["s1", "wi"]]);
   assert.deepEqual(data.budgetLines, []);
+  assert.deepEqual(data.scheduled, []);
 });
 
 test("an edit's shape is checked as the engine checks it", () => {
@@ -136,4 +137,13 @@ test("a request id is letters, digits and dashes, safe in a Drive query", () => 
   assert.equal(edits.requestId("abc' or name contains '"), "");
   assert.equal(edits.requestId("short"), "");
   assert.equal(edits.requestId(undefined), "");
+});
+
+test("a change set saved before the last ingest that the ingest never listed is unseen: its folder isn't in the inbox", () => {
+  const files = [{ id: "f3", name: "changes_2026-01-31T090000.000Z_c3.json", createdTime: "2026-01-31T09:00:00.000Z" },
+                 { id: "f4", name: "changes_2026-01-31T103000.000Z_d4.json", createdTime: "2026-01-31T10:30:00.000Z" },
+                 { id: "f1", name: "changes_2026-01-30T090000Z.json", createdTime: "2026-01-30T09:00:00Z" }];
+  const out = edits.waitingChangeSets(files, {}, RUN_LOG);  // the last ingest ran at 10:00 and listed only f1
+  assert.deepEqual(out.map((w) => [w.id, w.unseen, w.refused !== ""]), [["f1", false, true], ["f3", true, false], ["f4", false, false]]);
+  assert.equal(edits.waitingChangeSets(files, {}, [RUN_LOG[0], RUN_LOG[2]]).some((w) => w.unseen), false);  // no ingest yet
 });

@@ -142,6 +142,9 @@ REPORTS = (
     Table("editor_budget_lines", ("line", "effective", "category", "account", "priority", "rule", "amount", "per",
                                   "note", "in_force", "in_words", "this_month", "last_12_months", "scheduled",
                                   "spends_from", "run_id")),
+    # each scheduled amount in force, one per line and date: a new amount on that date replaces it
+    Table("editor_scheduled", ("line", "effective", "category", "account", "priority", "rule", "amount", "per", "note",
+                               "run_id")),
     Table("editor_payee_rules", ("pattern", "category", "precedence", "effective", "ask", "status", "run_id")),
     Table("editor_categories", ("category", "group", "priority", "run_id")),
     Table("editor_aliases", ("alias", "category", "note", "run_id")),

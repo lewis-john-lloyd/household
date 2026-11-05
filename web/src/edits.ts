@@ -21,6 +21,7 @@ interface Edit {
 interface EditorData {
   baseRun: string;
   budgetLines: Row[];
+  scheduled: Row[];  // each scheduled amount in force, one per line and date
   payeeRules: Row[];
   categories: Row[];
   aliases: Row[];
@@ -90,6 +91,7 @@ function editorData(tabs: Record<string, unknown[][]>): EditorData {
   return {
     baseRun: latestComputeRun(tabs.run_log || []),
     budgetLines: drop(tab("editor_budget_lines")),
+    scheduled: drop(tab("editor_scheduled")),
     payeeRules: drop(tab("editor_payee_rules")),
     categories: drop(tab("editor_categories")).sort((a, b) => a.category.localeCompare(b.category)),
     aliases: drop(tab("editor_aliases")),
@@ -218,6 +220,7 @@ function requestId(request: unknown): string {
 
 interface Waiting extends Saved {
   refused: string;  // why the last ingest refused it, or ""
+  unseen: boolean;  // ingest ran after it was saved and never listed it: ingest can't see the views' folder
 }
 
 /**
@@ -228,12 +231,17 @@ function waitingChangeSets(files: { id: string; name: string; createdTime?: stri
                            runLog: unknown[][]): Waiting[] {
   const ingests = records(runLog).filter((r) => r.stage === "ingest").sort((a, b) => a.computed_at.localeCompare(b.computed_at));
   const reasons: Record<string, string> = {};
+  const listed = new Set<string>();
+  let lastIngest = 0;  // when the last ingest ran, if its row lists the files it read
   if (ingests.length) {
     try {
-      const detail = JSON.parse(ingests[ingests.length - 1].detail) as { files?: { file?: string; status?: string; reason?: string }[] };
+      const last = ingests[ingests.length - 1];
+      const detail = JSON.parse(last.detail) as { files?: { file?: string; status?: string; reason?: string }[] };
       for (const f of detail.files || []) {
+        if (f.file) listed.add(f.file);
         if (f.file && f.status && f.status !== "ingested" && f.status !== "already_present") reasons[f.file] = f.reason || f.status;
       }
+      if (Array.isArray(detail.files)) lastIngest = Date.parse(last.computed_at) || 0;
     } catch (e) {
       // an older run_log row: no reasons to show
     }
@@ -241,6 +249,8 @@ function waitingChangeSets(files: { id: string; name: string; createdTime?: stri
   return files.map((f) => {
     const known = saved[f.id];
     const edits = known ? known.edits.concat(known.more ? [`and ${known.more} more`] : []) : [];
-    return { id: f.id, name: f.name, savedAt: known ? known.savedAt : f.createdTime || "", edits, refused: reasons[f.name] || "" };
+    const savedAt = known ? known.savedAt : f.createdTime || "";
+    const unseen = !!lastIngest && !!savedAt && Date.parse(savedAt) < lastIngest && !listed.has(f.name);
+    return { id: f.id, name: f.name, savedAt, edits, refused: reasons[f.name] || "", unseen };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }

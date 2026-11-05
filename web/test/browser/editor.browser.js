@@ -198,3 +198,61 @@ test("a past year shows its forms as they were, with no scenario to choose", asy
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("after a save whose file was discarded since, Save says so and keeps every change", async () => {
+  const page = await open("window.__fail.saveChanges = 'The connection was lost';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await page.evaluate(() => {
+    window.__answers.findSave = { id: "f1", name: "changes_2001-03-02T070000.000Z_a1.json", count: 1, madeFolder: false,
+                                  warning: "", again: true, discarded: true };
+  });
+  await page.click("#pending-save");
+  await page.waitForFunction(() => /discarded since/.test(document.getElementById("pending-msg").textContent));
+  assert.deepEqual(await staged(page), ["setting transfer_account = savings"]);
+  const names = await page.evaluate(() => window.__calls.map((c) => c.name).filter((n) => n === "saveChanges" || n === "findSave"));
+  assert.deepEqual(names, ["saveChanges", "findSave"]);
+  await page.evaluate(() => { window.__fail.saveChanges = ""; });
+  await page.click("#pending-save");  // the next Save sends them as a new request
+  await page.waitForSelector("#pending-msg.saved");
+  assert.deepEqual(await staged(page), []);
+  await page.close();
+});
+
+test("a scheduled amount on a date that has one says what it replaces, so ingest can tell if it moved", async () => {
+  const line = { line: "camp", effective: "2001-06-01", category: "kids", account: "", priority: "", rule: "scheduled",
+                 amount: "90", per: "", note: "", in_force: "scheduled only", in_words: "scheduled amounts only",
+                 this_month: "0", last_12_months: "0", scheduled: "2001-06-01 90.00", spends_from: "kids" };
+  const page = await open("window.__answers.getEditor.budgetLines = [" + JSON.stringify(line) + "];" +
+    "window.__answers.getEditor.scheduled = [" + JSON.stringify({ line: "camp", effective: "2001-06-01", category: "kids",
+      account: "", priority: "", rule: "scheduled", amount: "90", per: "", note: "" }) + "];");
+  await page.click("#view-edit");
+  await page.click("#edit-tabs button[data-tab=budget]");
+  await page.click(".md-row:has-text('camp')");
+  for (const [date, amount] of [["2001-06-01", "100"], ["2001-07-01", "40"]]) {
+    await page.fill(".md-detail label:has-text('Scheduled on') input", date);
+    await page.fill(".md-detail label:has-text('Scheduled amount') input", amount);
+    await page.click(".md-detail button:has-text('Add scheduled amount')");
+    if (date === "2001-06-01") await page.click(".md-row:has-text('camp')");
+  }
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent.map((e) => [e.effective, e.amount, e.was && e.was.amount]), [["2001-06-01", "100", "90"], ["2001-07-01", "40", null]]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("change sets the last ingest never saw say the views' folder isn't in the inbox, not to run ingest", async () => {
+  const page = await open("window.__answers.getWaiting = [{ id: 'f2', name: 'changes_2001-03-02T060000.000Z_b2.json', " +
+    "savedAt: '2001-03-02T06:00:00.000Z', edits: ['payee ACME GROCER: food'], refused: '', unseen: true }];");
+  await page.waitForSelector("#status-attention .attention");
+  const text = await page.textContent("#status-attention");
+  assert.match(text, /saved change set ingest hasn't seen/);
+  assert.match(text, /Move web_edits into the inbox once/);
+  assert.doesNotMatch(text, /Run ingest, then compute, to apply it/);
+  await page.close();
+});

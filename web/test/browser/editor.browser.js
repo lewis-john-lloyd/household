@@ -256,3 +256,89 @@ test("change sets the last ingest never saw say the views' folder isn't in the i
   assert.doesNotMatch(text, /Run ingest, then compute, to apply it/);
   await page.close();
 });
+
+const leaving = (page) => page.evaluate(() => {
+  const e = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(e);
+  return e.defaultPrevented;
+});
+
+test("while a save runs, Discard all and undo of what it sent wait for its answer", async () => {
+  const page = await open("window.__hold.saveChanges = true;");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForFunction(() => window.__held.length === 1);
+  assert.equal(await page.isDisabled("#pending-discard"), true);
+  assert.equal(await page.isDisabled("#pending-save"), true);
+  assert.equal(await page.isDisabled("#pending-list li button"), true);
+  assert.equal(await leaving(page), true);
+  await page.click("#pending-discard", { force: true });  // a click that lands anyway does nothing
+  assert.deepEqual(await staged(page), ["setting transfer_account = savings"]);
+  await page.evaluate(() => window.__release("saveChanges"));
+  await page.waitForSelector("#pending-msg.saved");
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await leaving(page), false);
+  await page.close();
+});
+
+test("Discard all after a save that didn't confirm finds it saved, and offers to discard its file too", async () => {
+  const page = await open("window.__fail.saveChanges = 'The connection was lost';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  assert.equal(await page.isDisabled("#pending-list li button"), true);  // undo waits until the save is settled
+  await page.evaluate(() => {
+    window.__answers.findSave = { id: "f1", name: "changes_2001-03-02T070000.000Z_a1.json", count: 1, madeFolder: false,
+                                  warning: "", again: true, discarded: false };
+  });
+  await page.click("#pending-discard");
+  await page.waitForFunction(() => /did go through/.test(document.getElementById("pending-msg").textContent));
+  assert.match(await page.textContent("#pending-msg"), /its 1 changes are saved and ingest will apply them/);
+  assert.deepEqual(await staged(page), []);
+  await page.click("#pending-msg button:has-text('Discard that change set too')");
+  await page.waitForFunction(() => /ingest won't read it/.test(document.getElementById("pending-msg").textContent));
+  const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "discardWaiting"));
+  assert.deepEqual(calls.map((c) => c.args), [["f1"]]);
+  assert.equal(await leaving(page), false);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("Discard all after a save that didn't land discards here and touches nothing in Drive", async () => {
+  const page = await open("window.__fail.saveChanges = 'Drive said no';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await page.click("#pending-discard");  // findSave answers null
+  await page.waitForFunction(() => /hadn't gone through/.test(document.getElementById("pending-msg").textContent));
+  assert.deepEqual(await staged(page), []);
+  const names = await page.evaluate(() => window.__calls.map((c) => c.name));
+  assert.equal(names.indexOf("discardWaiting"), -1);
+  assert.equal(names.filter((n) => n === "findSave").length, 1);
+  await page.close();
+});
+
+test("a save that didn't confirm keeps Save and the leave warning even with nothing staged", async () => {
+  const page = await open("window.__fail.saveChanges = 'The connection was lost';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await changeSetting(page, "transfer_account", "brokerage");  // a newer edit replaces the one sent; it can be undone
+  await page.click("#pending-show");
+  await page.click("#pending-list li button");
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await page.isVisible("#pending-save"), true);
+  assert.equal(await leaving(page), true);
+  await page.click("#pending-save");  // findSave answers null: nothing to save
+  await page.waitForFunction(() => /nothing to save/.test(document.getElementById("pending-msg").textContent));
+  assert.equal(await leaving(page), false);
+  await page.close();
+});

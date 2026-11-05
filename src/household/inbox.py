@@ -246,8 +246,10 @@ class _Tables:
         source_documents row land together or not at all, so a failure leaves the ledger as it was and the
         files in the inbox to be read again."""
         names = sorted(self.pending, key=lambda n: n == "source_documents")
-        counts = sheets.append_tables(self.ledger, [(self.spec[n], self.pending[n]) for n in names])
+        size = {}
+        counts = sheets.append_tables(self.ledger, [(self.spec[n], self.pending[n]) for n in names], size)
         self.pending.clear()
+        self.bytes = size.get("bytes", 0)
         return counts
 
 
@@ -325,7 +327,9 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
             summary["written"] = True
     clock.add("write ledger", started)
     if pending:
-        log(f"written ({time.perf_counter() - started:.1f}s)")
+        size = getattr(ledger_tables, "bytes", 0)
+        log(f"written in one write of {size / 1e6:.2f} MB ({time.perf_counter() - started:.1f}s)"
+            + ("; over the 2 MB Google suggests for one request" if size > 2e6 else ""))
     if moves:
         log(f"filing {len(moves)} files in Drive")
 

@@ -182,6 +182,38 @@ def append_rows(spreadsheet, t, df):
     return len(values)
 
 
+def _cell(value):
+    """One cell for appendCells, typed as values.append with RAW would write it."""
+    if value is None or (isinstance(value, str) and value == ""):
+        return {}
+    if isinstance(value, bool):
+        return {"userEnteredValue": {"boolValue": value}}
+    if isinstance(value, (int, float)):
+        return {"userEnteredValue": {"numberValue": value}}
+    return {"userEnteredValue": {"stringValue": str(value)}}
+
+
+def append_tables(spreadsheet, tables):
+    """Append records to several tables as one write: every table's rows land, or none do.
+
+    tables is a list of (Table, DataFrame). One spreadsheets.batchUpdate of appendCells requests, which
+    Sheets applies atomically, so a file's rows and its source_documents row can't be split by a failure
+    between them (an ingest that writes the rows but not the record of them would read the file again).
+    Returns rows appended by table name.
+    """
+    requests, counts = [], {}
+    for t, df in tables:
+        counts[t.name] = 0 if df is None else len(df)
+        if df is None or df.empty:
+            continue
+        values = df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
+        requests.append({"appendCells": {"sheetId": spreadsheet.worksheet(t.name).id, "fields": "userEnteredValue",
+                                         "rows": [{"values": [_cell(v) for v in row]} for row in values]}})
+    if requests:
+        spreadsheet.batch_update({"requests": requests})
+    return counts
+
+
 REVIEW = "review"
 
 

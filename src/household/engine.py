@@ -92,7 +92,8 @@ CHANGES_WRITTEN_DAYS = 45  # longer than the views remember a discard (30 days)
 
 
 def changes_written(sources, now=None):
-    """The change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS, by file name.
+    """The change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS, by Drive file id (the
+    id the views keep for a discard) and name.
 
     The ledger is the record of what was written: a run_log row says only what its own run did, and the
     next ingest replaces it, so the views check a discarded change set against this instead.
@@ -103,8 +104,9 @@ def changes_written(sources, now=None):
     since = (now or datetime.now(timezone.utc)) - timedelta(days=CHANGES_WRITTEN_DAYS)
     s = sources[sources["kind"].astype(str) == "changes"]
     at = pd.to_datetime(s["received_at"], utc=True, errors="coerce")
-    s = s[at >= since].assign(file=s["original_name"].astype(str), written_at=s["received_at"].astype(str))
-    return s.drop_duplicates("file", keep="first").sort_values("file")[columns].reset_index(drop=True)
+    s = s[at >= since].assign(file_id=s["drive_link"].astype(str).str.rstrip("/").str.rsplit("/", n=1).str[-1],
+                              file=s["original_name"].astype(str), written_at=s["received_at"].astype(str))
+    return s.drop_duplicates("file_id", keep="first").sort_values("file")[columns].reset_index(drop=True)
 
 
 def ingest_inbox(session, folder_id, run_id=None, log=print):
@@ -221,8 +223,8 @@ def _review(ledger, log=print, now=None):
     typed = _read(ledger, "review")
     categories = compute.latest(_read(ledger, "categories"), ["category"])["category"].astype(str).str.strip()
     decisions, corrections, left = categorize.harvest(typed, set(categories), now=now)
-    sheets.append_rows(ledger, schema.table(schema.LEDGER, "proposal_decisions"), decisions)
-    sheets.append_rows(ledger, schema.table(schema.LEDGER, "txn_corrections"), corrections)
+    sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "proposal_decisions"), decisions),
+                                  (schema.table(schema.LEDGER, "txn_corrections"), corrections)])
     if len(decisions) or len(corrections):
         _say(log, f"review: read {len(decisions)} payee answers and {len(corrections)} line answers")
     for row in left.to_dict("records"):

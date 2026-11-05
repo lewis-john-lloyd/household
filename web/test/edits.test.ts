@@ -150,9 +150,10 @@ test("a change set saved before the last ingest that the ingest never listed is 
 });
 
 test("a discarded change set the ledger holds was applied anyway, whichever run wrote it", () => {
-  const written = [["file", "written_at"],
-                   ["changes_2026-01-31T115900.000Z_e5.json", "2026-01-31T12:00:00+00:00"],
-                   ["changes_2026-01-30T090000.000Z_a1.json", "2026-01-30T10:00:00+00:00"]];
+  const written = [["file_id", "file", "written_at"],
+                   ["e5", "changes_2026-01-31T115900.000Z_e5.json", "2026-01-31T12:00:00+00:00"],
+                   ["a1", "changes_2026-01-30T090000.000Z_a1.json", "2026-01-30T10:00:00+00:00"],
+                   ["h8", "changes_2026-01-31T115700.000Z_g7.json", "2026-01-31T12:00:00+00:00"]];  // g7's name, another file
   const discarded = {
     e5: { id: "e5", name: "changes_2026-01-31T115900.000Z_e5.json", savedAt: "", discardedAt: "2026-01-31T12:00:30Z", edits: ["payee ACME GROCER: food"] },
     g7: { id: "g7", name: "changes_2026-01-31T115700.000Z_g7.json", savedAt: "", discardedAt: "2026-01-31T11:58:00Z", edits: [] },

@@ -5,7 +5,7 @@ import json
 import pandas as pd
 import pytest
 
-from household import budget, categorize, compute, inbox, schema, sheets
+from household import budget, categorize, compute, engine, inbox, schema, sheets
 from household.parsers import ParseError, changes, identify
 from test_inbox import FakeDrive, rows
 from test_sheets import FakeSpreadsheet
@@ -428,3 +428,20 @@ def test_a_refused_change_set_is_not_marked_written(box):
          doc({"kind": "line", "txn_id": "t9", "field": "category", "value": "food"}))
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["status"] == "failed" and "written" not in summary
+
+
+def test_a_ledger_write_that_fails_leaves_nothing_and_the_next_ingest_writes_the_change_set_and_its_record(box):
+    # the edit rows and the source_documents row are one write: a failure can't leave the edits without
+    # the record of them, which would make the next run refuse the file as stale
+    drive, ledger, edits, _ = box
+    fid = save(drive, edits, "changes_2026-01-31T120000.000Z_e5.json", doc(EVERY_KIND[7]))
+    ledger.fail_batch = RuntimeError("503: the service is unavailable")
+    with pytest.raises(RuntimeError):
+        inbox.process(ledger, drive, "root")
+    assert rows(ledger, "parameters")["value"].tolist() == ["checking"]
+    assert rows(ledger, "source_documents").empty
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "ingested" and summary["written"] is True
+    assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]
+    written = engine.changes_written(rows(ledger, "source_documents"))
+    assert written[["file_id", "file"]].values.tolist() == [[fid, "changes_2026-01-31T120000.000Z_e5.json"]]

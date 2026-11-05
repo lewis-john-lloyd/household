@@ -233,13 +233,15 @@ def test_one_append_per_table_however_many_files(setup, monkeypatch):
     drive, ledger, box, record = setup
     for name in ("pay_statement.txt", "earnings_statement.txt", "schwab_equity.csv", "accounts_seed.csv"):
         drop(drive, box, name)
-    calls = []
-    real = sheets.append_rows
-    monkeypatch.setattr(sheets, "append_rows", lambda s, t, df: calls.append(t.name) or real(s, t, df))
+    before = len(ledger.batch_updates)
     timing = {}
     inbox.process(ledger, drive, "root", timing=timing)
-    assert sorted(calls) == ["accounts", "equity_sales", "equity_vests", "paystubs", "source_documents"]
-    assert calls[-1] == "source_documents"
+    writes = [b for b in ledger.batch_updates[before:] if any("appendCells" in r for r in b["requests"])]
+    assert len(writes) == 1  # every table in one atomic write
+    by_id = {ws.id: ws.title for ws in ledger.worksheets()}
+    tables = [by_id[r["appendCells"]["sheetId"]] for r in writes[0]["requests"]]
+    assert sorted(tables) == ["accounts", "equity_sales", "equity_vests", "paystubs", "source_documents"]
+    assert tables[-1] == "source_documents"
     assert {"download", "parse", "write ledger", "file in Drive"} <= set(timing)
 
 

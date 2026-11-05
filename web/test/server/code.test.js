@@ -49,16 +49,22 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
         if (id !== "folder") files.push({ id, name: meta.name, text: blob.text, parents: meta.parents, appProperties: meta.appProperties || {} });
         return { id };
       },
-      get: (id) => ({ id, trashed: false, parents: ["folder"], name: "x" }),
+      get: (id) => {
+        if (id === "folder") return { id, trashed: false };
+        const f = files.find((x) => x.id === id);
+        if (!f || f.deleted) throw new Error("File not found: " + id);
+        return { id, trashed: !!f.trashed, parents: f.parents, name: f.name };
+      },
       list: ({ q }) => {
-        const asked = /appProperties has \{ key='(\w+)' and value='([^']*)' \}/.exec(q);
-        if (asked) {  // every file the views made, wherever ingest has moved it
-          return { files: files.filter((f) => f.appProperties[asked[1]] === asked[2])
+        const asked = /appProperties has \{ key='(\w+)' and value='([^']*)' \}(?: and trashed = (true|false))?/.exec(q);
+        if (asked) {  // every file the views made, wherever ingest has moved it (Drive's default includes the trash)
+          return { files: files.filter((f) => !f.deleted && f.appProperties[asked[1]] === asked[2] &&
+                                              (asked[3] === undefined || String(!!f.trashed) === asked[3]))
                              .map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties })) };
         }
         return { files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) };
       },
-      update: () => ({}),
+      update: (meta, id) => { const f = files.find((x) => x.id === id); if (f && meta.trashed) f.trashed = true; return {}; },
     } },
   };
   vm.createContext(context);
@@ -144,4 +150,29 @@ test("a request that never reached Drive is not found, and saving it then writes
   assert.throws(() => s.context.saveChanges([EDIT], [], REQUEST), /not answering/);
   assert.equal(s.context.findSave(REQUEST), null);
   assert.throws(() => s.context.findSave("x' or trashed = true or name contains '"), /Not a request id/);
+});
+
+test("a request whose file was discarded since reads as discarded, by its record and by Drive's search", () => {
+  const s = server();
+  const a = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
+  s.context.discardWaiting(a.id);
+  const byRecord = s.context.findSave(REQUEST);
+  assert.equal(byRecord.discarded, true);
+  assert.equal(byRecord.id, a.id);
+  for (const k of Object.keys(s.props)) if (k.startsWith("SAVED_")) delete s.props[k];  // the record is gone
+  assert.equal(s.context.findSave(REQUEST).discarded, true);
+  const again = s.context.saveChanges([EDIT], [], REQUEST);  // saving it again writes it anew
+  assert.equal(again.again, false);
+  assert.equal(s.files.length, 2);
+  assert.equal(s.context.findSave(REQUEST).discarded, false);
+  assert.equal(s.context.findSave(REQUEST).id, again.id);
+});
+
+test("a record whose file Drive no longer has falls back to Drive's search", () => {
+  const s = server();
+  const a = s.context.saveChanges([EDIT], [], REQUEST);
+  s.files[0].deleted = true;
+  assert.equal(s.context.findSave(REQUEST), null);
+  assert.equal(s.context.saveChanges([EDIT], [], REQUEST).again, false);
+  assert.notEqual(s.files[1].id, a.id);
 });

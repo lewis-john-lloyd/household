@@ -60,3 +60,14 @@ def test_no_settings_yet_publishes_empty_tables_with_their_columns():
                          actuals(), "2026-01")
     for name, df in out.items():
         assert list(df.columns) == [c for c in schema.table(schema.REPORTS, name).columns if c != "run_id"]
+
+
+def test_each_scheduled_amount_in_force_is_published_once_per_line_and_date():
+    rules = pd.DataFrame([
+        {"line": "camp", "effective": "2026-06-01", "category": "kids", "rule": "scheduled", "amount": "90"},
+        {"line": "camp ", "effective": "2026-06-01", "category": "kids", "rule": "scheduled", "amount": "0"},
+        {"line": "camp", "effective": "2026-07-01", "category": "kids", "rule": "scheduled", "amount": "40"},
+        {"line": "groceries", "effective": "2026-01-01", "category": "food", "rule": "fixed", "amount": "500"}])
+    out = editor.scheduled(rules)
+    assert out[["line", "effective", "amount"]].values.tolist() == [["camp", "2026-06-01", "0"], ["camp", "2026-07-01", "40"]]
+    assert list(out.columns) == [c for c in schema.table(schema.REPORTS, "editor_scheduled").columns if c != "run_id"]

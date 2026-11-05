@@ -25,8 +25,8 @@ no unknown fields, sizes, enums, dates, regexes), and check then holds each edit
 (categories that exist, lines and stubs that exist, splits that add up to the line). One bad edit
 refuses the whole file, which stays in the inbox with every reason, so nothing is half applied.
 
-An edit that replaces a setting (a budget line, a payee rule, a category, an alias, a parameter) says
-in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
+An edit that replaces a setting (a budget line, a scheduled amount on its date, a payee rule, a
+category, an alias, a parameter) says in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
 it was when the person edited it, or null for a new one; a `was` missing any of them is refused. If the ledger no longer agrees (another change set or a seed got there first), the file is
 refused rather than written over what the person never saw.
 
@@ -212,8 +212,6 @@ def _values(kind, e):
             out.append(f"amount {amount!r} is not a number")
         if e["rule"] in AMOUNT_RULES and not amount:
             out.append(f"a {e['rule']} line needs an amount")
-        if e["rule"] == "scheduled" and e.get("was") is not None:
-            out.append("a scheduled amount adds to its month and replaces nothing: was must be null")
     if kind == "payee_rule":
         out += _pattern(e["pattern"], "pattern")
         if not _date(e["effective"]):
@@ -257,7 +255,7 @@ def _target(e):
     """The setting an edit replaces, so one change set cannot edit it twice: the same rule as editTarget in
     the views (web/src/edits.ts), which keeps one staged edit per target."""
     kind = e["kind"]
-    if kind == "budget_line":  # a scheduled amount belongs to its line and month; any other rule, to the line
+    if kind == "budget_line":  # a scheduled amount belongs to its line and date; any other rule, to the line
         return ("budget_line", e["line"], "scheduled", e["effective"]) if e["rule"] == "scheduled" \
             else ("budget_line", e["line"])
     if kind == "not_duplicate":  # a pair is the same pair either way round
@@ -336,7 +334,10 @@ def _describe(e):
         if e["rule"] == "end":
             return f"budget line {e['line']}: ends {e['effective']}"
         if e["rule"] == "scheduled":
-            return f"budget line {e['line']}: {e.get('amount')} scheduled for {e['effective']} ({e.get('category')})"
+            was = e.get("was")
+            replacing = f", replacing {was.get('amount')}" if isinstance(was, dict) else ""
+            return (f"budget line {e['line']}: {e.get('amount')} scheduled for {e['effective']} "
+                    f"({e.get('category')}){replacing}")
         amount = f" {e.get('amount')} {e.get('per') or 'monthly'}" if e.get("amount") else ""
         return f"budget line {e['line']}: {e['rule']}{amount} for {e.get('category')} from {e['effective']}"
     if kind == "payee_rule":
@@ -428,9 +429,13 @@ def _current(e, read):
     kind = e["kind"]
     if kind == "budget_line":
         rules = read("budget_rules")
-        if not rules.empty:
-            rules = rules[rules["rule"].astype(str).str.strip() != "scheduled"].assign(
-                month=rules["effective"].astype(str).str[:7])
+        if rules.empty:
+            return None
+        is_scheduled = rules["rule"].astype(str).str.strip() == "scheduled"
+        if e["rule"] == "scheduled":  # the amount on that date, which a new one replaces (budget.py)
+            on_day = rules[is_scheduled].assign(day=rules["effective"].astype(str).str[:10])
+            return _in_force(on_day, ["line", "day"], [e["line"], e["effective"][:10]])
+        rules = rules[~is_scheduled].assign(month=rules["effective"].astype(str).str[:7])
         return _in_force(rules, ["line"], [e["line"]], order="month")
     if kind == "payee_rule":
         return _in_force(read("payee_rules"), ["pattern"], [e["pattern"]], order="effective")
@@ -444,8 +449,6 @@ def _current(e, read):
 
 def _conflict(e, read):
     """Why the ledger no longer matches what the edit says it replaced, or ""."""
-    if e["kind"] == "budget_line" and e["rule"] == "scheduled":
-        return ""  # adds an amount to its month, replacing nothing
     was = e.get("was")
     current = _current(e, read)
     if was is None:

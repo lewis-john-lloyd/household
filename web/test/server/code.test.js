@@ -14,7 +14,7 @@ const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
 function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
                   props: start = {},
                   runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]],
-                  changesWritten = [["file", "written_at"]] } = {}) {
+                  changesWritten = [["file_id", "file", "written_at"]] } = {}) {
   const tabs = { run_log: runLog, changes_written: changesWritten };
   const props = { ...start };
   const files = [];
@@ -187,7 +187,9 @@ test("a discarded change set is remembered, and told as applied anyway once the 
   assert.equal(s.files[0].trashed, true);
   assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []);  // the ledger doesn't hold it
   // an ingest that had downloaded it before the discard wrote it all the same, whatever its run_log row says
-  s.changesWritten.push([a.name, "2026-01-31T12:00:05+00:00"]);
+  s.changesWritten.push(["another-file", a.name, "2026-01-31T12:00:01+00:00"]);  // the same name is not the same file
+  assert.equal(s.context.getAppliedAnyway().length, 0);
+  s.changesWritten.push([a.id, a.name, "2026-01-31T12:00:05+00:00"]);
   const told = s.context.getAppliedAnyway();
   assert.deepEqual(told.map((d) => [d.id, d.writtenAt, d.edits]), [[a.id, "2026-01-31T12:00:05+00:00", ["setting transfer_account = savings"]]]);
   s.context.forgetDiscarded(a.id);

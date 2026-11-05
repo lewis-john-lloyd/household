@@ -270,9 +270,9 @@ interface AppliedAnyway extends Discarded {
  * one whose filing in Drive failed after its rows were written is there too.
  */
 function appliedAnyway(discarded: Record<string, Discarded>, changesWritten: unknown[][]): AppliedAnyway[] {
-  const written: Record<string, string> = {};
-  for (const r of records(changesWritten)) if (r.file) written[r.file] = r.written_at;
-  return Object.values(discarded).filter((d) => d.name in written)
-    .map((d) => ({ ...d, writtenAt: written[d.name] }))
+  const written: Record<string, string> = {};  // by Drive file id: names need not be unique, ids are
+  for (const r of records(changesWritten)) if (r.file_id) written[r.file_id] = r.written_at;
+  return Object.values(discarded).filter((d) => d.id in written)
+    .map((d) => ({ ...d, writtenAt: written[d.id] }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

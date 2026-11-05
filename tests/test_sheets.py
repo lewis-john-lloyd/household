@@ -37,6 +37,12 @@ class FakeWorksheet:
         pass
 
 
+def _value(cell):
+    """What a cell written by appendCells reads back as."""
+    v = cell.get("userEnteredValue", {})
+    return v.get("stringValue", v.get("numberValue", v.get("boolValue", "")))
+
+
 class FakeSpreadsheet:
     def __init__(self, title):
         self.title = title
@@ -57,6 +63,17 @@ class FakeSpreadsheet:
         del self.tabs[ws.title]
 
     def batch_update(self, body):
+        # Sheets applies a batchUpdate atomically: a failure (fail_batch, or a sheet that isn't there) writes nothing
+        if getattr(self, "fail_batch", None) and any("appendCells" in r for r in body["requests"]):
+            error, self.fail_batch = self.fail_batch, None
+            raise error
+        by_id = {ws.id: ws for ws in self.tabs.values()}
+        appends = [r["appendCells"] for r in body["requests"] if "appendCells" in r]
+        for a in appends:
+            if a["sheetId"] not in by_id:
+                raise ValueError(f"no sheet {a['sheetId']}")
+        for a in appends:
+            by_id[a["sheetId"]].rows += [[_value(c) for c in row["values"]] for row in a["rows"]]
         self.batch_updates.append(body)
         replies = []
         for request in body["requests"]:
@@ -226,3 +243,34 @@ def test_the_review_tab_takes_a_new_layout_without_losing_typed_answers():
     assert "rule" not in requests[0]  # every old dropdown cleared first
     columns = {r["range"]["startColumnIndex"]: r["rule"].get("strict") for r in requests[1:]}
     assert columns == {t.columns.index("kind"): True, t.columns.index("answer"): False}
+
+
+def test_append_tables_is_one_atomic_write_with_values_typed_as_raw():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    params = schema.table(schema.LEDGER, "parameters")
+    sources = schema.table(schema.LEDGER, "source_documents")
+    before = len(ledger.batch_updates)
+    counts = sheets.append_tables(ledger, [
+        (params, pd.DataFrame([{"jurisdiction": "household", "key": "target_refund", "value": "50"}]).reindex(columns=params.columns, fill_value="")),
+        (sources, pd.DataFrame([{"doc_id": "d1", "kind": "changes", "original_name": "c.json", "precedence": 2}]).reindex(columns=sources.columns, fill_value="")),
+        (TXNS, pd.DataFrame(columns=TXNS.columns))])
+    assert counts == {"parameters": 1, "source_documents": 1, "transactions": 0}
+    assert len(ledger.batch_updates) == before + 1
+    assert ledger.worksheet("parameters").rows[1][:list(params.columns).index("value") + 1][-1] == "50"
+    row = ledger.worksheet("source_documents").rows[1]
+    assert row[0] == "d1" and row[list(sources.columns).index("precedence")] == 2
+    assert row[list(sources.columns).index("sha256")] == ""
+
+
+def test_a_failed_append_tables_writes_nothing():
+    ledger = FakeSpreadsheet("ledger")
+    sheets.ensure_tables(ledger, schema.LEDGER)
+    ledger.fail_batch = RuntimeError("503: the service is unavailable")
+    with pytest.raises(RuntimeError):
+        sheets.append_tables(ledger, [
+            (schema.table(schema.LEDGER, "parameters"), pd.DataFrame([{"jurisdiction": "household", "key": "k", "value": "v"}])
+             .reindex(columns=schema.table(schema.LEDGER, "parameters").columns, fill_value="")),
+            (schema.table(schema.LEDGER, "source_documents"), pd.DataFrame([{"doc_id": "d1"}])
+             .reindex(columns=schema.table(schema.LEDGER, "source_documents").columns, fill_value=""))])
+    assert len(ledger.worksheet("parameters").rows) == 1 and len(ledger.worksheet("source_documents").rows) == 1

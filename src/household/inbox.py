@@ -242,10 +242,13 @@ class _Tables:
         self.pending[name] = _concat(self.pending.get(name), rows)
 
     def flush(self):
-        """Write staged rows: one append per table, source_documents last."""
-        order = sorted(self.pending, key=lambda n: n == "source_documents")
-        return {name: sheets.append_rows(self.ledger, self.spec[name], self.pending.pop(name))
-                for name in order}
+        """Write every staged row in one atomic write (sheets.append_tables): each file's rows and its
+        source_documents row land together or not at all, so a failure leaves the ledger as it was and the
+        files in the inbox to be read again."""
+        names = sorted(self.pending, key=lambda n: n == "source_documents")
+        counts = sheets.append_tables(self.ledger, [(self.spec[n], self.pending[n]) for n in names])
+        self.pending.clear()
+        return counts
 
 
 class _Clock:

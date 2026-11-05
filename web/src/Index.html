@@ -277,7 +277,9 @@
       .editor-section h3 { font-size: 16px; line-height: 24px; font-weight: 500; margin: 0; }
       .editor-section > .support { margin: 2px 0 4px; }
       ul.bought { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
-      ul.bought li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; }
+      ul.bought li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center; }
+      ul.bought select { min-height: 32px; padding: 0 8px; }
+      ul.bought li.changed select { border-color: var(--primary); color: var(--primary); }
       ul.bought .n { font-variant-numeric: tabular-nums; text-align: right; }
       .split-rows { display: grid; gap: 8px; margin: 12px 0 4px; }
       .split-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -683,6 +685,7 @@
           case "parameter": return "parameter|" + e.key;
           case "explanation": return "explanation|" + e.jurisdiction + "|" + e.stub_id;
           case "not_duplicate": return "not_duplicate|" + [e.txn_a, e.txn_b].sort().join("|");
+          case "item": return "item|" + e.item_id;
         }
         return e.kind + "|" + JSON.stringify(e);
       }
@@ -1142,13 +1145,37 @@
         facts(panel, [["Date", t.date], ["Account", t.account], ["Amount", cents.format(t.amount)],
                       ["Category", t.parts.length ? "split" : t.category], ["Decided by", t.decidedBy],
                       ["Bank's name", t.payeeRaw !== t.payee ? t.payeeRaw : ""], ["Note", t.note], ["Transaction", id]]);
+        // each item's category as it stands, a change not yet saved included; the split below follows them
+        var itemCats = t.items.map(function (i) {
+          var s = i.id && staged["item|" + i.id];
+          return s ? s.edit.category : i.category;
+        });
+        var splitter = null;
         if (t.items.length) {
-          var bought = section(panel, "What it bought", "From the store's order history or receipt.");
+          var personSplit = /^you, split/.test(t.decidedBy);
+          var bought = section(panel, "What it bought", "From the store's order history or receipt. Change an item's category " +
+            "and the split below follows; the category is kept with the item, so this line splits by it once ingest and compute run." +
+            (personSplit ? " This line has a split you set, which wins over its items: keep the split below to replace it." : ""));
           var list = el("ul", null, "bought");
-          t.items.forEach(function (i) {
+          t.items.forEach(function (i, n) {
             var li = el("li");
             li.appendChild(el("span", i.name));
-            li.appendChild(el("span", i.category, "support"));
+            if (i.id) {
+              var pick = categoryChoice(itemCats[n], "(category)");
+              pick.setAttribute("aria-label", "Category for " + i.name);
+              pick.onchange = function () {
+                if (!pick.value) { pick.value = itemCats[n]; return; }
+                itemCats[n] = pick.value;
+                if (pick.value === i.category) unstage("item|" + i.id);
+                else stage({ kind: "item", item_id: i.id, category: pick.value }, i.name + ": " + pick.value);
+                li.classList.toggle("changed", pick.value !== i.category);
+                if (splitter) splitter.fromItems();
+              };
+              li.classList.toggle("changed", itemCats[n] !== i.category);
+              li.appendChild(pick);
+            } else {
+              li.appendChild(el("span", i.category, "support"));
+            }
             li.appendChild(el("span", cents.format(i.amount), "n"));
             list.appendChild(li);
           });
@@ -1176,7 +1203,8 @@
         one.appendChild(oneForm);
 
         var split = section(panel, "Split", "Give each part a category and an amount. One part may leave its amount blank to take what's left.");
-        splitEditor(split, t, said, done);
+        splitter = splitEditor(split, t, said, done, function () { return itemCats; });
+        if (itemCats.some(function (c, n) { return c !== t.items[n].category; })) splitter.fromItems();
 
         var more = section(panel, "Note and flags");
         var moreForm = el("form", null, "edit");
@@ -1205,7 +1233,7 @@
       }
 
       // Rows of category and amount, adding up live against the line.
-      function splitEditor(box, t, said, done) {
+      function splitEditor(box, t, said, done, itemCategories) {
         var total = Math.round(Math.abs(t.amount) * 100);
         var current = staged["line|" + t.id + "|category"];
         var start = current && current.edit.field === "split"
@@ -1264,17 +1292,18 @@
         box.appendChild(table);
         var actions = el("div", null, "actions");
         actions.appendChild(button("Add a part", function () { addRow("", ""); check(); }, "text"));
-        var byCategory = {};
-        t.items.forEach(function (i) { byCategory[i.category] = (byCategory[i.category] || 0) + Math.round(Math.abs(i.amount) * 100); });
-        var itemCategories = Object.keys(byCategory).filter(Boolean);
-        if (itemCategories.length > 1) {
-          actions.appendChild(button("Split by what it bought", function () {
-            table.textContent = "";
-            rows.length = 0;
-            itemCategories.forEach(function (c, n) { addRow(c, n === itemCategories.length - 1 ? "" : amountText(byCategory[c])); });
-            check();
-          }, "text"));
+        // the parts the items' categories make, biggest first; the last takes what's left (tax, shipping, rounding)
+        function fromItems() {
+          var cats = itemCategories ? itemCategories() : t.items.map(function (i) { return i.category; });
+          var byCategory = {};
+          t.items.forEach(function (i, n) { byCategory[cats[n]] = (byCategory[cats[n]] || 0) + Math.round(Math.abs(i.amount) * 100); });
+          var names = Object.keys(byCategory).filter(Boolean).sort(function (a, b) { return byCategory[b] - byCategory[a]; });
+          table.textContent = "";
+          rows.length = 0;
+          names.forEach(function (c, n) { addRow(c, n === names.length - 1 && names.length > 1 ? "" : amountText(byCategory[c])); });
+          check();
         }
+        if (t.items.length) actions.appendChild(button("Split by what it bought", fromItems, "text"));
         var keep = button("Keep split", function () {
           var value = check();
           if (!value) return;
@@ -1285,6 +1314,7 @@
         box.appendChild(status);
         box.appendChild(actions);
         check();
+        return { fromItems: fromItems };
       }
 
       // --- the tabs ---------------------------------------------------------------------------------------

@@ -73,6 +73,11 @@ test("an edit's target says which setting it changes", () => {
                edits.editTarget({ kind: "not_duplicate", txn_a: "t1", txn_b: "t2" }));
 });
 
+test("an item's category is its own edit", () => {
+  assert.deepEqual(edits.editProblems({ kind: "item", item_id: "i1", category: "kids" }), []);
+  assert.equal(edits.editTarget({ kind: "item", item_id: "i1", category: "kids" }), "item|i1");
+});
+
 test("changeSet writes the engine's format, named by when it was saved", () => {
   const out = edits.changeSet([{ kind: "payee", key: "ACME GROCER", category: "food" }], "2026-01-31T12:00:00.123Z", "r3");
   assert.equal(out.name, "changes_2026-01-31T120000Z.json");

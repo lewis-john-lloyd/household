@@ -104,6 +104,9 @@ def match_paypal(lines, details):
 
 
 def _category(item):
+    chosen = str(item.get("category", "") or "").strip()  # a person's category for this item (item_categories)
+    if chosen and chosen != "nan":
+        return chosen
     if str(item["website"]).strip().lower() == WHOLE_FOODS:
         return "food"
     return DEPARTMENTS.get(str(item["department"]).strip().lower(), DEFAULT)
@@ -176,7 +179,8 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
             order = same.head(1) if len(same) else order
         if contents is not None:
             contents[r["txn_id"]] = [(_category(i), " ".join(str(i["item"]).split())[:ITEM_CHARS],
-                                      round(float(i["amount"]), 2)) for i in order.to_dict("records")]
+                                      round(float(i["amount"]), 2), str(i.get("item_id", "")))
+                                     for i in order.to_dict("records")]
         weights = order.assign(category=order.apply(_category, axis=1)).groupby("category")["amount"].sum()
         weights = weights[weights > 0]
         if weights.empty:

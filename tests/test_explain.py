@@ -85,9 +85,10 @@ def test_what_a_matched_charge_bought_goes_along():
                           line(5, "2025-08-22", "AMAZON MKTPLACE PMTS", 10.00)])
     contents = {}
     explain.match_amazon(lines, items(), cards={"1111"}, contents=contents)
-    assert sorted(c for c, _, _ in contents["t1"]) == ["clothing", "household"]
-    assert sum(a for _, _, a in contents["t1"]) == 30.0
-    assert [(c, a) for c, _, a in contents["t5"]] == [("clothing", 10.0)]
+    assert sorted(c for c, _, _, _ in contents["t1"]) == ["clothing", "household"]
+    assert sum(a for _, _, a, _ in contents["t1"]) == 30.0
+    assert [(c, a) for c, _, a, _ in contents["t5"]] == [("clothing", 10.0)]
+    assert all(i for *_, i in contents["t1"])  # each item carries its item_id, for correcting its category
     out = explain.explain(lines, items=items(), cards={"1111"})
     assert json.loads(out["items"]["t1"]) == [list(i) for i in contents["t1"]]
 
@@ -334,3 +335,16 @@ def test_a_free_target_order_is_left_out():
     from household.parsers import target
     text = TARGET + "C-3,2025-08-10,,0.00,Replacement part,0.00,1,\n"
     assert set(target.parse(text).tables["order_items"]["order_id"]) == {"A-1", "B-2"}
+
+
+def test_a_person_s_category_for_an_item_decides_its_share_of_the_split():
+    from household import engine
+    lines = pd.DataFrame([line(1, "2025-08-03", "AMAZON MKTPL*AB12", -30.00)])
+    bought = items()
+    contents = {}
+    explain.match_amazon(lines, bought, cards={"1111"}, contents=contents)
+    clothing = next(i for c, _, _, i in contents["t1"] if c == "clothing")
+    chosen = pd.DataFrame([{"item_id": clothing, "category": "gifts", "recorded_at": "2025-09-01T00:00:00+00:00",
+                            "source": "web"}])
+    split = explain.match_amazon(lines, engine.with_item_categories(bought, chosen), cards={"1111"})["t1"]
+    assert sorted(c for c, _ in split) == ["gifts", "household"]

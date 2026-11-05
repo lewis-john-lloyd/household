@@ -16,6 +16,9 @@ row a person would otherwise have typed:
   parameter        a household setting                 -> parameters (jurisdiction household)
   explanation      why a stub's withholding is off     -> proposal_decisions (kind withholding)
   not_duplicate    two lines that are both real        -> proposal_decisions (kind duplicate)
+  item             one item's category, from an order  -> item_categories
+                   history or receipt (the line it
+                   explains splits by it)
 
 A change set fails closed: parse checks its shape and every value it can check alone (strict JSON,
 no unknown fields, sizes, enums, dates, regexes), and check then holds each edit against the ledger
@@ -68,6 +71,7 @@ KINDS = {
     "parameter": ({"key", "value"}, {"was"}),
     "explanation": ({"jurisdiction", "stub_id", "note"}, set()),
     "not_duplicate": ({"txn_a", "txn_b"}, set()),
+    "item": ({"item_id", "category"}, set()),
 }
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
@@ -131,7 +135,7 @@ def _label(n, edit):
     name = ""
     if isinstance(edit, dict):
         name = next((str(edit[f]) for f in ("line", "pattern", "alias", "key", "txn_id", "stub_id", "txn_a",
-                                            "category") if isinstance(edit.get(f), str)), "")
+                                            "item_id", "category") if isinstance(edit.get(f), str)), "")
     return f"edit {n} ({kind}{' ' + name if name else ''})"
 
 
@@ -234,6 +238,8 @@ def _values(kind, e):
             out.append(f"jurisdiction must be one of {', '.join(JURISDICTIONS)}")
         if not e["note"]:
             out.append("an explanation needs a note")
+    if kind == "item" and not e["item_id"]:
+        out.append("item_id is empty")
     if kind == "not_duplicate" and e["txn_a"] == e["txn_b"]:
         out.append("a line is not a duplicate of itself")
     if kind in WAS_FIELDS and isinstance(e.get("was"), dict):
@@ -257,7 +263,7 @@ def _target(e):
     if kind == "payee":
         return ("payee", categorize.payee_key(e["key"]) or e["key"].upper())
     key = {"payee_rule": "pattern", "category": "category", "alias": "alias", "parameter": "key",
-           "explanation": "stub_id", "not_duplicate": "txn_a"}[kind]
+           "explanation": "stub_id", "not_duplicate": "txn_a", "item": "item_id"}[kind]
     extra = (e["jurisdiction"],) if kind == "explanation" else (e["txn_b"],) if kind == "not_duplicate" else ()
     return (kind, e[key]) + extra
 
@@ -341,6 +347,8 @@ def _describe(e):
         return f"parameter {e['key']} = {e['value']!r}"
     if kind == "explanation":
         return f"{e['jurisdiction']} withholding on stub {e['stub_id']} explained"
+    if kind == "item":
+        return f"item {e['item_id']}: {e['category']}"
     return f"{e['txn_a']} and {e['txn_b']} are not duplicates"
 
 
@@ -371,6 +379,8 @@ def _rows(edits, at):
         elif kind == "parameter":
             add("parameters", {"year": "", "jurisdiction": "household", "key": e["key"], "value": e["value"],
                                "source": SOURCE})
+        elif kind == "item":
+            add("item_categories", {"item_id": e["item_id"], "category": e["category"], "recorded_at": at, "source": SOURCE})
         elif kind == "explanation":
             add("proposal_decisions", {"proposal_key": f"{e['jurisdiction']}:{e['stub_id']}", "kind": "withholding",
                                        "decided_at": at, "decision": "approve", "note": e["note"]})
@@ -458,6 +468,8 @@ def check(edits, read):
     amounts = dict(zip(txns["txn_id"].astype(str), txns["amount"])) if len(txns) else {}
     stubs = read("paystubs")
     stub_ids = set(stubs["stub_id"].astype(str)) if len(stubs) else set()
+    bought = read("order_items")
+    item_ids = set(bought["item_id"].astype(str)) if len(bought) else set()
     problems = []
     for n, e in enumerate(edits, start=1):
         kind, wrong = e["kind"], []
@@ -472,6 +484,11 @@ def check(edits, read):
                     categorize.parse_split(e["value"], amounts[e["txn_id"]], known)
                 except ValueError as err:
                     wrong.append(f"split: {err}")
+        elif kind == "item":
+            if e["item_id"] not in item_ids:
+                wrong.append("no such item")
+            elif category not in known:
+                wrong.append(f"not a category: {category}")
         elif kind in ("payee", "alias") and category not in known:
             wrong.append(f"not a category: {category}")
         elif kind in ("budget_line", "payee_rule") and category and category not in known:

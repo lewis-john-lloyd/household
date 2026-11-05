@@ -6,7 +6,8 @@
     "build": "tsc -p tsconfig.json && node scripts/copy.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \"build/test/**/*.test.js\"",
-    "push": "npm run build && clasp push"
+    "push": "npm run build && clasp push",
+    "test:browser": "node --test test/browser/editor.browser.js"
   },
   "devDependencies": {
     "@types/google-apps-script": "2.0.14",

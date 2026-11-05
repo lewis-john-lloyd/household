@@ -144,15 +144,20 @@ function editTarget(edit: Edit): string {
 }
 
 /** "changes_2026-01-31T120000Z.json": named by when it was saved, so ingest reads change sets in order. */
-function changeSetName(createdAt: string): string {
-  return "changes_" + createdAt.slice(0, 19).replace(/:/g, "") + "Z.json";
+function changeSetName(createdAt: string, suffix = ""): string {
+  return "changes_" + createdAt.slice(0, 23).replace(/:/g, "") + "Z" + (suffix ? "_" + suffix : "") + ".json";
+}
+
+/** createdAt made later than the last save's, so one person's change sets are strictly in order. */
+function laterThan(createdAt: string, last: string): string {
+  return last && createdAt <= last ? new Date(Date.parse(last) + 1).toISOString() : createdAt;
 }
 
 /**
  * The change set file for these edits, or an error listing every problem. createdAt is an ISO time in
  * UTC ("2026-01-31T12:00:00.000Z").
  */
-function changeSet(edits: Edit[], createdAt: string, baseRun: string): { name: string; text: string } {
+function changeSet(edits: Edit[], createdAt: string, baseRun: string, suffix = ""): { name: string; text: string } {
   const problems: string[] = [];
   if (!Array.isArray(edits) || !edits.length) problems.push("nothing to save");
   else if (edits.length > MAX_CHANGE_EDITS) problems.push(`${edits.length} edits, more than ${MAX_CHANGE_EDITS}`);
@@ -163,18 +168,42 @@ function changeSet(edits: Edit[], createdAt: string, baseRun: string): { name: s
     if (seen[target]) problems.push(`edit ${n + 1} (${e.kind}): edits the same thing as edit ${seen[target]}`);
     seen[target] = n + 1;
   });
-  const at = createdAt.slice(0, 19) + "Z";
+  const at = createdAt.slice(0, 23) + "Z";  // milliseconds: two saves in one second stay in order
   const text = JSON.stringify({ format: CHANGE_FORMAT, version: CHANGE_VERSION, created_at: at, base_run: baseRun, edits }, null, 1);
   if (text.length > MAX_CHANGE_BYTES) problems.push(`the change set is over ${MAX_CHANGE_BYTES} bytes`);
   if (problems.length) throw new Error("Not saved: " + problems.join("; "));
-  return { name: changeSetName(createdAt), text };
+  return { name: changeSetName(createdAt, suffix), text };
 }
 
 interface Saved {
   id: string;
   name: string;
   savedAt: string;
-  edits: string[];  // each edit in words, as the browser described it at Save
+  edits: string[];  // each edit in words, as the browser described it at Save, as many as fit
+  more?: number;  // edits left out of edits to keep the record small
+}
+
+const SAVED_RECORD_BYTES = 8000;  // under Apps Script's 9 KB a property
+const SAVED_TEXT_CHARS = 200;     // one edit's words, at most
+
+/**
+ * The saved change set's record for its own user property: its edits in words, each cut to
+ * SAVED_TEXT_CHARS and as many as fit in maxBytes, with how many more there were.
+ */
+function savedRecord(id: string, name: string, savedAt: string, described: string[], maxBytes = SAVED_RECORD_BYTES): string {
+  const texts = (described || []).map((d) => String(d).slice(0, SAVED_TEXT_CHARS));
+  const record: Saved = { id, name, savedAt, edits: [], more: 0 };
+  const bytes = (s: string): number => unescape(encodeURIComponent(s)).length;
+  for (const text of texts) {
+    record.edits.push(text);
+    record.more = texts.length - record.edits.length;
+    if (bytes(JSON.stringify(record)) > maxBytes) {
+      record.edits.pop();
+      break;
+    }
+  }
+  record.more = texts.length - record.edits.length;
+  return JSON.stringify(record);
 }
 
 interface Waiting extends Saved {
@@ -201,7 +230,7 @@ function waitingChangeSets(files: { id: string; name: string; createdTime?: stri
   }
   return files.map((f) => {
     const known = saved[f.id];
-    return { id: f.id, name: f.name, savedAt: known ? known.savedAt : f.createdTime || "", edits: known ? known.edits : [],
-             refused: reasons[f.name] || "" };
+    const edits = known ? known.edits.concat(known.more ? [`and ${known.more} more`] : []) : [];
+    return { id: f.id, name: f.name, savedAt: known ? known.savedAt : f.createdTime || "", edits, refused: reasons[f.name] || "" };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }

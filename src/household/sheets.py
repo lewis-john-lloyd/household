@@ -188,8 +188,8 @@ def _cell(value):
         return {}
     if isinstance(value, bool):
         return {"userEnteredValue": {"boolValue": value}}
-    if isinstance(value, (int, float)):
-        return {"userEnteredValue": {"numberValue": value}}
+    if pd.api.types.is_number(value):  # numpy's too
+        return {"userEnteredValue": {"numberValue": int(value) if pd.api.types.is_integer(value) else float(value)}}
     return {"userEnteredValue": {"stringValue": str(value)}}
 
 

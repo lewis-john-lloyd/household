@@ -274,3 +274,13 @@ def test_a_failed_append_tables_writes_nothing():
             (schema.table(schema.LEDGER, "source_documents"), pd.DataFrame([{"doc_id": "d1"}])
              .reindex(columns=schema.table(schema.LEDGER, "source_documents").columns, fill_value=""))])
     assert len(ledger.worksheet("parameters").rows) == 1 and len(ledger.worksheet("source_documents").rows) == 1
+
+
+def test_cells_are_typed_as_a_raw_append_would_write_them():
+    import numpy as np
+    assert sheets._cell("") == {} and sheets._cell(None) == {}
+    assert sheets._cell(True) == {"userEnteredValue": {"boolValue": True}}
+    assert sheets._cell(np.int64(5)) == {"userEnteredValue": {"numberValue": 5}}
+    assert sheets._cell(np.float64(2.5)) == {"userEnteredValue": {"numberValue": 2.5}}
+    assert sheets._cell("500.00") == {"userEnteredValue": {"stringValue": "500.00"}}  # text stays text
+    assert sheets._cell("=1+1") == {"userEnteredValue": {"stringValue": "=1+1"}}  # never a formula

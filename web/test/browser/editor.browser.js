@@ -19,6 +19,7 @@ window.__answers = {
                attention: [], stale: false, projection: [], projectionYear: "", wiProjection: null, categories: null },
   getWaiting: [],
   getAppliedAnyway: [],
+  discardWaiting: { remembered: true, warning: "" },
   findSave: null,
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
@@ -347,15 +348,34 @@ test("a save that didn't confirm keeps Save and the leave warning even with noth
 
 test("a discarded change set an ingest applied anyway is told on the status page, until Got it", async () => {
   const page = await open("window.__answers.getAppliedAnyway = [{ id: 'e5', name: 'changes_2001-03-02T060000.000Z_e5.json', " +
-    "savedAt: '', discardedAt: '2001-03-02T06:00:30Z', edits: ['payee ACME GROCER: food'], more: 0, runId: 'r9', appliedAt: '' }];");
+    "savedAt: '', discardedAt: '2001-03-02T06:00:30Z', edits: ['payee ACME GROCER: food'], more: 0, writtenAt: '2001-03-02T06:01:00Z' }];");
   await page.waitForSelector("#status-attention .attention");
   const text = await page.textContent("#status-attention");
   assert.match(text, /discarded change set was applied anyway/);
-  assert.match(text, /applied by ingest r9: payee ACME GROCER: food/);
+  assert.match(text, /written .*: payee ACME GROCER: food/);
   await page.click("#status-attention button:has-text('Got it')");
   const calls = await page.evaluate(() => window.__calls.filter((c) => c.name === "forgetDiscarded").map((c) => c.args));
   assert.deepEqual(calls, [["e5"]]);
   assert.doesNotMatch(await page.textContent("#status-attention"), /applied anyway/);
   assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a discard the views couldn't remember says the status page can't tell, instead of promising it will", async () => {
+  const page = await open("window.__fail.saveChanges = 'The connection was lost';" +
+    "window.__answers.discardWaiting = { remembered: false, warning: 'The views could not remember this discard (quota), so check the next ingest.' };");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.error");
+  await page.evaluate(() => {
+    window.__answers.findSave = { id: "f1", name: "changes_2001-03-02T070000.000Z_a1.json", count: 1, madeFolder: false,
+                                  warning: "", again: true, discarded: false };
+  });
+  await page.click("#pending-discard");
+  await page.click("#pending-msg button:has-text('Discard that change set too')");
+  await page.waitForFunction(() => /could not remember this discard/.test(document.getElementById("pending-msg").textContent));
+  assert.doesNotMatch(await page.textContent("#pending-msg"), /the status page will say so/);
   await page.close();
 });

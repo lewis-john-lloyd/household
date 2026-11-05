@@ -858,10 +858,12 @@
             " changes are saved and ingest will apply them. Everything else on this page is discarded. ";
           msg.appendChild(button("Discard that change set too", function () {
             this.disabled = true;
-            google.script.run.withSuccessHandler(function () {
-              msg.className = "";
+            google.script.run.withSuccessHandler(function (d) {
+              msg.className = d && d.remembered ? "" : "error";
               msg.textContent = "Discarded " + r.name + " too: no ingest from now on will read it. An ingest already " +
-                "running may have read it first; if one did, the status page will say so, and you can edit those settings back.";
+                "running may have read it first; " + (d && d.remembered
+                  ? "if one did, the status page will say so, and you can edit those settings back."
+                  : "and " + ((d && d.warning) || "the views could not remember this discard, so check the next ingest's file list."));
               drawPending();
             }).withFailureHandler(function (error) {
               msg.className = "error";
@@ -1913,7 +1915,15 @@
             else if (w.unseen) card.appendChild(el("div", UNSEEN_NOTE, "detail refused"));
             w.edits.forEach(function (text) { card.appendChild(el("div", text, "detail")); });
             card.appendChild(button("Discard", function () {
-              call("discardWaiting", [w.id], function () { drawWaiting(body); }, "edit-body");
+              call("discardWaiting", [w.id], function (d) {
+                drawWaiting(body);
+                if (d && !d.remembered) {  // discarded, but the status page won't be able to tell if it was written anyway
+                  var msg = document.getElementById("pending-msg");
+                  msg.className = "error";
+                  msg.textContent = d.warning;
+                  drawPending();
+                }
+              }, "edit-body");
             }, "small"));
             body.appendChild(card);
           });
@@ -1933,7 +1943,7 @@
             note: "An ingest was already reading " + (list.length === 1 ? "it" : "them") + " when " +
               (list.length === 1 ? "it was" : "they were") + " discarded, and wrote the changes. Edit those settings back if you didn't want them.",
             items: list.map(function (d) {
-              return { title: d.name, detail: "applied by ingest " + d.runId + (d.edits.length ? ": " + d.edits.join("; ") : "") +
+              return { title: d.name, detail: "written " + when(d.writtenAt) + (d.edits.length ? ": " + d.edits.join("; ") : "") +
                                                 (d.more ? " and " + d.more + " more" : "") };
             }),
           }, false);

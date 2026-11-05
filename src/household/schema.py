@@ -92,6 +92,9 @@ LEDGER = (
 REPORTS = (
     Table("run_log", ("run_id", "computed_at", "stage", "detail")),
     Table("run_notes", ("run_id", "stage", "at", "n", "message")),
+    # change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS: written by ingest, from
+    # source_documents, so a later run never hides one (the views check discards against it)
+    Table("changes_written", ("file", "written_at")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),
     Table("tax_check", ("year", "line", "filed", "computed", "diff", "match", "run_id")),

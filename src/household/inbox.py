@@ -317,6 +317,9 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
         log("writing to ledger: " + ", ".join(f"{n} rows to {t}" for t, n in pending.items()))
     started = time.perf_counter()
     ledger_tables.flush()
+    for summary in summaries:  # its rows are in the ledger now, whatever filing it in Drive says below
+        if any((summary.get("appended") or {}).values()):
+            summary["written"] = True
     clock.add("write ledger", started)
     if pending:
         log(f"written ({time.perf_counter() - started:.1f}s)")

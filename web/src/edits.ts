@@ -260,25 +260,19 @@ interface Discarded extends Saved {
 }
 
 interface AppliedAnyway extends Discarded {
-  runId: string;      // the ingest that applied it
-  appliedAt: string;  // when that ingest started
+  writtenAt: string;  // when the ingest that wrote it received it
 }
 
 /**
- * Discarded change sets an ingest applied anyway. Trashing a file stops every ingest from then on, but one
- * already running may have read it first: its run_log row then lists the file as ingested.
+ * Discarded change sets the ledger holds anyway. Trashing a file stops every ingest from then on, but one
+ * already running may have read it first. changes_written (compute's Reports, written by each ingest from
+ * the ledger's source_documents) lists every change set written lately, so a later run never hides one, and
+ * one whose filing in Drive failed after its rows were written is there too.
  */
-function appliedAnyway(discarded: Record<string, Discarded>, runLog: unknown[][]): AppliedAnyway[] {
-  const ingested: Record<string, Row> = {};
-  for (const r of records(runLog).filter((x) => x.stage === "ingest")) {
-    try {
-      const detail = JSON.parse(r.detail) as { files?: { file?: string; status?: string }[] };
-      for (const f of detail.files || []) if (f.file && f.status === "ingested") ingested[f.file] = r;
-    } catch (e) {
-      // an older run_log row: nothing to tell
-    }
-  }
-  return Object.values(discarded).filter((d) => ingested[d.name])
-    .map((d) => ({ ...d, runId: ingested[d.name].run_id, appliedAt: ingested[d.name].computed_at }))
+function appliedAnyway(discarded: Record<string, Discarded>, changesWritten: unknown[][]): AppliedAnyway[] {
+  const written: Record<string, string> = {};
+  for (const r of records(changesWritten)) if (r.file) written[r.file] = r.written_at;
+  return Object.values(discarded).filter((d) => d.name in written)
+    .map((d) => ({ ...d, writtenAt: written[d.name] }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

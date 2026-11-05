@@ -6,7 +6,7 @@ the folder ID (and, for migration, the legacy workbook ID).
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -88,6 +88,25 @@ def _record(reports, stage, run_id, at, summary, lines):
         sheets.replace_table(reports, t, pd.concat([kept, pd.DataFrame(rows, columns=t.columns)], ignore_index=True))
 
 
+CHANGES_WRITTEN_DAYS = 45  # longer than the views remember a discard (30 days)
+
+
+def changes_written(sources, now=None):
+    """The change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS, by file name.
+
+    The ledger is the record of what was written: a run_log row says only what its own run did, and the
+    next ingest replaces it, so the views check a discarded change set against this instead.
+    """
+    columns = list(schema.table(schema.REPORTS, "changes_written").columns)
+    if sources is None or sources.empty:
+        return pd.DataFrame(columns=columns)
+    since = (now or datetime.now(timezone.utc)) - timedelta(days=CHANGES_WRITTEN_DAYS)
+    s = sources[sources["kind"].astype(str) == "changes"]
+    at = pd.to_datetime(s["received_at"], utc=True, errors="coerce")
+    s = s[at >= since].assign(file=s["original_name"].astype(str), written_at=s["received_at"].astype(str))
+    return s.drop_duplicates("file", keep="first").sort_values("file")[columns].reset_index(drop=True)
+
+
 def ingest_inbox(session, folder_id, run_id=None, log=print):
     """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py).
 
@@ -113,12 +132,15 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     started = time.perf_counter()
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
+    written = changes_written(_read(ledger, "source_documents"))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
+    _say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
     for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are printed above)
         if f.get("parser") != "changes":
             said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
     result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
     _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}
-            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended")} for f in files]}, said)
+            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended", "written")} for f in files]}, said)
     return result
 
 

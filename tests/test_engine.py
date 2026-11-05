@@ -155,6 +155,10 @@ def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session)
     assert dict(zip(runs["stage"], runs["run_id"])) == {"compute": "run-2", "ingest": "run-3"}
     summary = json.loads(runs.loc[runs["stage"] == "compute", "detail"].item())
     assert "review_open_lines" in summary and "versions" in summary
+    ingest = json.loads(runs.loc[runs["stage"] == "ingest", "detail"].item())
+    assert all(set(f) == {"file", "status", "reason", "appended", "written"} for f in ingest["files"])
+    written = sheets.read_table(reports, schema.table(schema.REPORTS, "changes_written"))
+    assert list(written.columns) == ["file", "written_at"]  # no change sets in this inbox: empty, but there
     notes = sheets.read_table(reports, schema.table(schema.REPORTS, "run_notes"))
     assert set(notes["run_id"]) == {"run-2", "run-3"}
     compute_lines = notes[notes["stage"] == "compute"]["message"].tolist()
@@ -202,3 +206,16 @@ def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(se
     assert (line["line"], line["in_words"], line["in_force"]) == ("groceries", "50.00 a week", "yes")
     assert read("editor_categories").set_index("category").at["food", "group"] == "groceries"
     assert read("editor_parameters")[["key", "value"]].values.tolist() == [["transfer_account", "checking"]]
+
+
+def test_change_sets_written_come_from_the_ledger_and_reach_back_further_than_a_discard_is_remembered():
+    import pandas as pd
+    from datetime import datetime, timezone
+    sources = pd.DataFrame([
+        {"kind": "changes", "original_name": "changes_2026-01-31T120000.000Z_e5.json", "received_at": "2026-01-31T12:10:00+00:00"},
+        {"kind": "changes", "original_name": "changes_2025-11-01T120000.000Z_a1.json", "received_at": "2025-11-01T12:10:00+00:00"},
+        {"kind": "paystub", "original_name": "pay_statement.pdf", "received_at": "2026-01-31T12:10:00+00:00"}])
+    out = engine.changes_written(sources, now=datetime(2026, 2, 1, tzinfo=timezone.utc))
+    assert out.values.tolist() == [["changes_2026-01-31T120000.000Z_e5.json", "2026-01-31T12:10:00+00:00"]]
+    assert engine.CHANGES_WRITTEN_DAYS > 30
+    assert engine.changes_written(sources.iloc[0:0]).empty

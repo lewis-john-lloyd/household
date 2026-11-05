@@ -17,7 +17,7 @@ const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, edi
   savedRecord: (id: string, name: string, savedAt: string, described: string[], request?: string, maxBytes?: number) => string;
   laterThan: (createdAt: string, last: string) => string;
   requestId: (request: unknown) => string;
-  appliedAnyway: (discarded: Record<string, Discarded>, runLog: unknown[][]) => AppliedAnyway[];
+  appliedAnyway: (discarded: Record<string, Discarded>, changesWritten: unknown[][]) => AppliedAnyway[];
 };
 
 const RUN_LOG: unknown[][] = [
@@ -149,16 +149,15 @@ test("a change set saved before the last ingest that the ingest never listed is 
   assert.equal(edits.waitingChangeSets(files, {}, [RUN_LOG[0], RUN_LOG[2]]).some((w) => w.unseen), false);  // no ingest yet
 });
 
-test("a discarded change set an ingest listed as ingested was applied anyway, by that run", () => {
-  const log = RUN_LOG.concat([["r4", "2026-01-31T12:00:00+00:00", "ingest", JSON.stringify({ files: [
-    { file: "changes_2026-01-31T115900.000Z_e5.json", status: "ingested" },
-    { file: "changes_2026-01-31T115800.000Z_f6.json", status: "failed", reason: "stale" }] })]]);
+test("a discarded change set the ledger holds was applied anyway, whichever run wrote it", () => {
+  const written = [["file", "written_at"],
+                   ["changes_2026-01-31T115900.000Z_e5.json", "2026-01-31T12:00:00+00:00"],
+                   ["changes_2026-01-30T090000.000Z_a1.json", "2026-01-30T10:00:00+00:00"]];
   const discarded = {
     e5: { id: "e5", name: "changes_2026-01-31T115900.000Z_e5.json", savedAt: "", discardedAt: "2026-01-31T12:00:30Z", edits: ["payee ACME GROCER: food"] },
-    f6: { id: "f6", name: "changes_2026-01-31T115800.000Z_f6.json", savedAt: "", discardedAt: "2026-01-31T12:00:40Z", edits: [] },
     g7: { id: "g7", name: "changes_2026-01-31T115700.000Z_g7.json", savedAt: "", discardedAt: "2026-01-31T11:58:00Z", edits: [] },
   };
-  const out = edits.appliedAnyway(discarded, log);
-  assert.deepEqual(out.map((d) => [d.id, d.runId, d.edits]), [["e5", "r4", ["payee ACME GROCER: food"]]]);
+  const out = edits.appliedAnyway(discarded, written);
+  assert.deepEqual(out.map((d) => [d.id, d.writtenAt, d.edits]), [["e5", "2026-01-31T12:00:00+00:00", ["payee ACME GROCER: food"]]]);
   assert.deepEqual(edits.appliedAnyway(discarded, []), []);
 });

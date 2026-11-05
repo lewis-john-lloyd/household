@@ -407,3 +407,24 @@ def test_a_change_set_discarded_after_ingest_read_it_is_still_applied_and_logged
     assert summary["file"] == "changes_2026-01-31T120000.000Z_e5.json"
     assert summary["status"] == "ingested"
     assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]
+
+
+def test_a_change_set_written_whose_filing_failed_is_still_marked_written(box, monkeypatch):
+    # its rows reach the ledger, then moving it into record_store fails: the status becomes "error", but the
+    # run says the rows were written, so the views can tell a discarded change set was applied anyway
+    drive, ledger, edits, _ = box
+    fid = save(drive, edits, "changes_2026-01-31T120000.000Z_e5.json", doc(EVERY_KIND[7]))
+    monkeypatch.setattr(inbox, "move_all", lambda d, moves: {m[0]: RuntimeError("Drive is not answering") for m in moves})
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "error" and "not moved" in summary["reason"]
+    assert summary["written"] is True
+    assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]
+    assert drive.names_in(edits) == ["changes_2026-01-31T120000.000Z_e5.json"] and fid
+
+
+def test_a_refused_change_set_is_not_marked_written(box):
+    drive, ledger, edits, _ = box
+    save(drive, edits, "changes_2026-01-31T120000Z.json",
+         doc({"kind": "line", "txn_id": "t9", "field": "category", "value": "food"}))
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["status"] == "failed" and "written" not in summary

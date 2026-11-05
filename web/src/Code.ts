@@ -312,9 +312,10 @@ const DISCARDED_DAYS = 30;  // long enough for the next ingest to say whether it
 /**
  * Move one of the views' own change sets to the trash (a refused one, or one saved by mistake). No ingest
  * from then on reads it, but one already running may have read it first and will still apply it; the
- * discard is remembered, so the status page can say so (getAppliedAnyway) once that ingest is logged.
+ * discard is remembered, so the status page can say so (getAppliedAnyway) once the ledger holds it; when it
+ * can't be remembered, the answer says so.
  */
-function discardWaiting(id: string): void {
+function discardWaiting(id: string): { remembered: boolean; warning: string } {
   const folder = editsFolder_(false);
   if (!folder) throw new Error("No change sets saved yet.");
   const file = drive_().Files.get(id, { fields: "id,name,parents" });
@@ -332,7 +333,10 @@ function discardWaiting(id: string): void {
     for (const d of older) props.deleteProperty(DISCARDED_PREFIX + d.id);  // the newest DISCARDED_KEEP stay
   } catch (e) {
     console.log(`discarded ${file.name}, but could not remember it: ${e}`);
+    return { remembered: false, warning: `The views could not remember this discard (${e}), so the status page can't ` +
+      `tell you if an ingest already running wrote it: after the next ingest, look for ${file.name} in its file list.` };
   }
+  return { remembered: true, warning: "" };
 }
 
 /** Discarded change sets still remembered, by file id; older than DISCARDED_DAYS, or unreadable, are dropped. */
@@ -356,7 +360,7 @@ function discarded_(): Record<string, Discarded> {
 
 /** Discarded change sets an ingest applied anyway (appliedAnyway in edits.ts). */
 function getAppliedAnyway(): AppliedAnyway[] {
-  return appliedAnyway(discarded_(), readTabIfAny_("run_log"));
+  return appliedAnyway(discarded_(), readTabIfAny_("changes_written"));
 }
 
 /** Stop telling about a discarded change set an ingest applied anyway, once its settings are seen to. */

@@ -86,8 +86,8 @@ def test_every_kind_becomes_its_ledger_row():
     assert t["categories"].values.tolist() == [["gifts", "family", "medium"]]
     assert t["category_aliases"].values.tolist() == [["presents", "gifts", ""]]
     assert t["parameters"].values.tolist() == [["", "household", "transfer_account", "savings", "web"]]
-    assert set(t["proposal_decisions"]["decided_at"]) == {"2026-01-31T12:00:00+00:00"}
-    assert result.label == "changes_2026-01-31T120000"
+    assert set(t["proposal_decisions"]["decided_at"]) == {"2026-01-31T12:00:00.000+00:00"}
+    assert result.label == "changes_2026-01-31T120000.000"
     assert "payee rule 'ACME GROCER' stopped from 2026-02-01" in result.notes
     assert len(result.notes) == len(EVERY_KIND) + 1
 
@@ -255,7 +255,7 @@ def test_a_change_set_in_the_views_folder_is_written_and_filed(box):
     assert summary["appended"]["budget_rules"] == 2
     assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]
     assert drive.names_in(edits) == []
-    assert any(n.startswith("changes_2026-01-31T120000_") for n in drive.names_in(record))
+    assert any(n.startswith("changes_2026-01-31T120000.000_") for n in drive.names_in(record))
     assert rows(ledger, "source_documents")["kind"].tolist() == ["changes"]
 
 
@@ -321,3 +321,20 @@ def test_an_item_s_category_becomes_an_item_categories_row_and_is_checked():
     assert result.tables["item_categories"][["item_id", "category", "source"]].values.tolist() == [["i1", "kids", "web"]]
     why = refused(doc({"kind": "item", "item_id": "i9", "category": "kids"}, {"kind": "item", "item_id": "i1", "category": "petrol"}))
     assert "edit 1 (item i9): no such item" in why and "edit 2 (item i1): not a category: petrol" in why
+
+
+def test_two_saves_in_one_second_stay_in_order(box):
+    # milliseconds keep them apart: the later one's rows supersede the earlier's, and it is read second
+    drive, ledger, edits, _ = box
+    first = {"kind": "parameter", "key": "transfer_account", "value": "savings", "was": {"value": "checking"}}
+    second = {"kind": "parameter", "key": "transfer_account", "value": "brokerage", "was": {"value": "savings"}}
+    save(drive, edits, "changes_2026-01-31T120000.250Z_b2.json", doc(second, created_at="2026-01-31T12:00:00.250Z"))
+    save(drive, edits, "changes_2026-01-31T120000.125Z_a1.json", doc(first, created_at="2026-01-31T12:00:00.125Z"))
+    out = inbox.process(ledger, drive, "root")
+    assert [s["status"] for s in out] == ["ingested", "ingested"]
+    rows = sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters"))
+    assert rows["value"].tolist() == ["checking", "savings", "brokerage"]
+    times = rows["source"].tolist()  # parameters carry no time; the decisions table shows the recorded order
+    assert times[1:] == ["web", "web"]
+    assert changes.parse(doc(first, created_at="2026-01-31T12:00:00.125Z")).label != \
+        changes.parse(doc(first, created_at="2026-01-31T12:00:00.250Z")).label

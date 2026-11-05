@@ -36,7 +36,8 @@ function runner(ok, fail) {
       window.__calls.push({ name: name, args: JSON.parse(JSON.stringify(args)) });
       var answer = function () {
         if (window.__fail[name]) { fail && fail(new Error(window.__fail[name])); return; }
-        var value = name === "saveChanges" ? { id: "f1", name: "changes_2001-03-02T070000Z.json", count: args[0].length, madeFolder: false }
+        var value = name === "saveChanges" ? { id: "f1", name: "changes_2001-03-02T070000.000Z_a1.json", count: args[0].length,
+                                               madeFolder: false, warning: window.__saveWarning || "" }
                                            : window.__answers[name];
         ok && ok(value);
       };
@@ -123,5 +124,20 @@ test("a load that fails says so instead of showing nothing", async () => {
   await page.click("#view-edit");
   await page.click("#edit-tabs button[data-tab=waiting]");
   await page.waitForFunction(() => /Could not load/.test(document.getElementById("edit-body").textContent));
+  await page.close();
+});
+
+test("a save whose bookkeeping failed reads as saved, with the warning, and clears what it sent", async () => {
+  const page = await open("window.__saveWarning = 'Its list of edits for the Saved tab could not be kept (quota); the change set itself is saved.';");
+  await page.click("#view-edit");
+  await page.waitForSelector(".md-list");
+  await changeSetting(page, "transfer_account", "savings");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const text = await page.textContent("#pending-msg");
+  assert.match(text, /^Saved 1 changes/);
+  assert.match(text, /the change set itself is saved/);
+  assert.doesNotMatch(text, /Not saved/);
+  assert.deepEqual(await staged(page), []);
   await page.close();
 });

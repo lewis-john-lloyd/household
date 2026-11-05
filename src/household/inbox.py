@@ -63,8 +63,8 @@ def list_inbox(drive, inbox):
     Each folder's files come in name order, so change sets (named by the time they were saved) are read
     oldest first and a later one's edits supersede an earlier one's.
     """
-    def by_name(found):
-        return sorted(found, key=lambda f: f["name"])
+    def by_name(found):  # Drive allows two files one name: the file id settles the order between them
+        return sorted(found, key=lambda f: (f["name"], f.get("id", "")))
 
     files = [dict(f, parent=inbox) for f in by_name(list_files(drive, inbox))]
     for folder in by_name(list_files(drive, inbox, folders=True)):

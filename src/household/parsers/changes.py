@@ -120,14 +120,15 @@ def _number(text):
 
 
 def _instant(text):
-    """created_at as UTC to the second ("2026-11-04T19:41:00+00:00"), or None."""
+    """created_at as UTC to the millisecond ("2026-11-04T19:41:00.123+00:00"), or None. Milliseconds keep two
+    saves in one second in order, as the rows they become are superseded by recorded time."""
     try:
         when = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
     if when.tzinfo is None:
         return None
-    return when.astimezone(timezone.utc).isoformat(timespec="seconds")
+    return when.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _label(n, edit):
@@ -308,7 +309,7 @@ def parse(text):
 
     tables, notes = _rows(edits, at)
     keys = {name: list(schema.table(schema.LEDGER, name).columns) for name in tables}  # an exact repeat adds nothing
-    stamp = at[:19].replace(":", "")
+    stamp = at[:23].replace(":", "")  # "2026-01-31T120000.123": the dot keeps the digits apart
     notes.insert(0, f"change set from {at}, {len(edits)} edits, based on run {doc.get('base_run') or '(none)'}")
     return Result(kind="changes", parser=NAME, label=f"changes_{stamp}", covers_from=at[:10], covers_to=at[:10],
                   tables=tables, keys=keys, notes=notes, check=lambda read: check(edits, read))

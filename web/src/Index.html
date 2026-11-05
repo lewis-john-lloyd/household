@@ -752,7 +752,8 @@
           msg.textContent = "Saved " + r.count + " changes as " + r.name + ". Run ingest, then compute, to apply them." +
             (left ? " " + left + (left === 1 ? " change" : " changes") + " made while it saved " + (left === 1 ? "is" : "are") +
                     " still here, for the next save." : "") +
-            (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "");
+            (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "") +
+            (r.warning ? " " + r.warning : "");
           drawPending();
           redrawEditor();
         }).withFailureHandler(function (error) {

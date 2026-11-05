@@ -5,15 +5,17 @@ import { join } from "node:path";
 
 // edits.ts is an Apps Script file like shape.ts: evaluate the compiled file and pick its functions out.
 const compiled = readFileSync(join(__dirname, "..", "src", "edits.js"), "utf8");
-const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, editorData, editProblems, editTarget, changeSet, waitingChangeSets };`)() as {
+const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, editorData, editProblems, editTarget, changeSet, waitingChangeSets, savedRecord, laterThan };`)() as {
   records: (values: unknown[][]) => Row[];
   latestComputeRun: (runLog: unknown[][]) => string;
   editorData: (tabs: Record<string, unknown[][]>) => EditorData;
   editProblems: (edit: Edit) => string[];
   editTarget: (edit: Edit) => string;
-  changeSet: (list: Edit[], createdAt: string, baseRun: string) => { name: string; text: string };
+  changeSet: (list: Edit[], createdAt: string, baseRun: string, suffix?: string) => { name: string; text: string };
   waitingChangeSets: (files: { id: string; name: string; createdTime?: string }[], saved: Record<string, Saved>,
                       runLog: unknown[][]) => Waiting[];
+  savedRecord: (id: string, name: string, savedAt: string, described: string[], maxBytes?: number) => string;
+  laterThan: (createdAt: string, last: string) => string;
 };
 
 const RUN_LOG: unknown[][] = [
@@ -79,9 +81,9 @@ test("an item's category is its own edit", () => {
 });
 
 test("changeSet writes the engine's format, named by when it was saved", () => {
-  const out = edits.changeSet([{ kind: "payee", key: "ACME GROCER", category: "food" }], "2026-01-31T12:00:00.123Z", "r3");
-  assert.equal(out.name, "changes_2026-01-31T120000Z.json");
-  assert.deepEqual(JSON.parse(out.text), { format: "household_changes", version: 1, created_at: "2026-01-31T12:00:00Z",
+  const out = edits.changeSet([{ kind: "payee", key: "ACME GROCER", category: "food" }], "2026-01-31T12:00:00.123Z", "r3", "a1b2");
+  assert.equal(out.name, "changes_2026-01-31T120000.123Z_a1b2.json");
+  assert.deepEqual(JSON.parse(out.text), { format: "household_changes", version: 1, created_at: "2026-01-31T12:00:00.123Z",
                                            base_run: "r3", edits: [{ kind: "payee", key: "ACME GROCER", category: "food" }] });
 });
 
@@ -103,4 +105,23 @@ test("waiting change sets carry what they held and why the last ingest refused o
   assert.match(out[0].refused, /no such transaction/);
   assert.deepEqual(out[1].edits, ["payee ACME GROCER: food"]);
   assert.equal(out[1].refused, "");
+});
+
+test("a save in the same millisecond as the last moves just after it", () => {
+  assert.equal(edits.laterThan("2026-01-31T12:00:00.123Z", "2026-01-31T12:00:00.123Z"), "2026-01-31T12:00:00.124Z");
+  assert.equal(edits.laterThan("2026-01-31T12:00:00.100Z", "2026-01-31T12:00:00.123Z"), "2026-01-31T12:00:00.124Z");
+  assert.equal(edits.laterThan("2026-01-31T12:00:01.000Z", "2026-01-31T12:00:00.123Z"), "2026-01-31T12:00:01.000Z");
+  assert.equal(edits.laterThan("2026-01-31T12:00:01.000Z", ""), "2026-01-31T12:00:01.000Z");
+});
+
+test("a saved record stays under the size it is given, and counts what it left out", () => {
+  const many = Array.from({ length: 1000 }, (_, n) => `budget line line_${n}: fixed 100 monthly for food from 2026-11-01`);
+  const text = edits.savedRecord("f1", "changes_x.json", "2026-01-31T12:00:00.123Z", many);
+  assert.ok(Buffer.byteLength(text, "utf8") <= 8000);
+  const record = JSON.parse(text) as Saved;
+  assert.equal(record.edits.length + (record.more || 0), 1000);
+  assert.ok(record.edits.length > 10 && (record.more || 0) > 0);
+  const long = JSON.parse(edits.savedRecord("f1", "n", "t", ["x".repeat(5000)])) as Saved;
+  assert.equal(long.edits[0].length, 200);
+  assert.equal((JSON.parse(edits.savedRecord("f1", "n", "t", ["a", "b"])) as Saved).more, 0);
 });

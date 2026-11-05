@@ -1,0 +1,105 @@
+// The views' server code (dist/Code.js and the files it shares a scope with) under Node, with Apps Script's
+// services faked: the user property store enforces Apps Script's limits (9 KB a value, 500 KB in all), so a
+// save's bookkeeping meets the same walls it would in Apps Script. Run after `npm run build`.
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const DIST = path.join(__dirname, "..", "..", "dist");
+const CODE = ["shape.js", "edits.js", "taxes.js", "Code.js"].map((f) => fs.readFileSync(path.join(DIST, f), "utf8")).join("\n");
+const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
+
+function server({ refuseProperties = false, now = () => new Date("2026-01-31T12:00:00.123Z"), props: start = {} } = {}) {
+  const props = { ...start };
+  const files = [];
+  let uuid = 0;
+  const store = {
+    getProperty: (k) => (k in props ? props[k] : null),
+    getProperties: () => ({ ...props }),
+    setProperty: (k, v) => {
+      if (refuseProperties) throw new Error("Service invoked too many times: properties");
+      if (Buffer.byteLength(String(v), "utf8") > VALUE_LIMIT) throw new Error("Argument too large: value");
+      const total = Object.entries({ ...props, [k]: String(v) }).reduce((a, [kk, vv]) => a + kk.length + vv.length, 0);
+      if (total > STORE_LIMIT) throw new Error("You have exceeded the property storage quota");
+      props[k] = String(v);
+    },
+    deleteProperty: (k) => { delete props[k]; },
+  };
+  const FakeDate = class extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(now().getTime()); }
+    static now() { return now().getTime(); }
+  };
+  const context = {
+    console: { log: () => {} }, JSON, Math, Object, Array, String, Number, Error, RegExp, Set, Map, Buffer, unescape, encodeURIComponent,
+    Date: FakeDate,
+    PropertiesService: { getUserProperties: () => store, getScriptProperties: () => ({ getProperty: () => "reports-id" }) },
+    LockService: { getUserLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest` },
+    Sheets: { Spreadsheets: {
+      get: () => ({ sheets: [{ properties: { title: "run_log" } }] }),
+      Values: { get: () => ({ values: [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]] }) },
+    } },
+    Drive: { Files: {
+      create: (meta, blob) => {
+        const id = meta.mimeType === "application/vnd.google-apps.folder" ? "folder" : `f${files.length + 1}`;
+        if (id !== "folder") files.push({ id, name: meta.name, text: blob.text, parents: meta.parents });
+        return { id };
+      },
+      get: (id) => ({ id, trashed: false, parents: ["folder"], name: "x" }),
+      list: () => ({ files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) }),
+      update: () => ({}),
+    } },
+  };
+  vm.createContext(context);
+  vm.runInContext(CODE, context);
+  return { context, props, files };
+}
+
+const EDIT = { kind: "parameter", key: "transfer_account", value: "savings", was: { value: "checking" } };
+
+test("a save with a thousand edits keeps a record under the 9 KB limit and says so in the Saved tab", () => {
+  const s = server();
+  const described = Array.from({ length: 1000 }, (_, n) => `budget line line_${n}: fixed 100 monthly for food from 2026-11-01`);
+  const r = s.context.saveChanges([EDIT], described);
+  assert.equal(r.warning, "");
+  assert.equal(s.files.length, 1);
+  const record = Object.entries(s.props).filter(([k]) => k.startsWith("SAVED_"));
+  assert.equal(record.length, 1);
+  assert.ok(Buffer.byteLength(record[0][1], "utf8") <= 8000);
+  const waiting = s.context.getWaiting();
+  assert.equal(waiting[0].edits[waiting[0].edits.length - 1].startsWith("and "), true);
+});
+
+test("when the record can't be kept the save still succeeds, once, with a warning", () => {
+  // the folder is made already (a first save that can't record its folder fails before any file is written,
+  // so "not saved" is true there)
+  const s = server({ refuseProperties: true, props: { EDITS_FOLDER_ID: "folder" } });
+  const r = s.context.saveChanges([EDIT], ["setting transfer_account = savings"]);
+  assert.equal(s.files.length, 1);  // the change set is in Drive: a retry would write it twice
+  assert.match(r.warning, /could not be kept .*the change set itself is saved/);
+  assert.equal(r.name, s.files[0].name);
+});
+
+test("many saves stay inside the store: old records are dropped, and filed ones tidied", () => {
+  let t = Date.parse("2026-01-31T12:00:00.000Z");
+  const s = server({ now: () => new Date(t += 1000) });
+  const described = Array.from({ length: 400 }, (_, n) => `a long description of edit ${n} `.repeat(3));
+  for (let n = 0; n < 60; n++) s.context.saveChanges([EDIT], described);
+  const kept = Object.keys(s.props).filter((k) => k.startsWith("SAVED_"));
+  assert.equal(kept.length, 40);
+  s.files.slice(0, 55).forEach((f) => { f.filed = true; });  // ingest moved them out
+  s.context.getWaiting();
+  assert.equal(Object.keys(s.props).filter((k) => k.startsWith("SAVED_")).length, 5);
+});
+
+test("two saves in the same millisecond get distinct names in the order they were made", () => {
+  const s = server();  // the clock never moves
+  const a = s.context.saveChanges([EDIT], []);
+  const b = s.context.saveChanges([EDIT], []);
+  assert.notEqual(a.name, b.name);
+  assert.ok(a.name < b.name, `${a.name} before ${b.name}`);
+  const at = s.files.map((f) => JSON.parse(f.text).created_at);
+  assert.deepEqual(at, ["2026-01-31T12:00:00.123Z", "2026-01-31T12:00:00.124Z"]);
+});

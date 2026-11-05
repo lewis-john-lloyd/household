@@ -113,7 +113,8 @@ function getStatus(): Status {
 
 const EDITS_FOLDER_NAME = "web_edits";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
-const SAVED_KEEP = 50;  // saved change sets remembered for the waiting list
+const SAVED_KEEP = 40;  // saved change sets remembered for the waiting list: 40 records of 8 KB stay well inside 500 KB
+const SAVED_PREFIX = "SAVED_";  // one user property per saved change set, its record (savedRecord, under 9 KB)
 
 function drive_(): GoogleAppsScript.Drive {
   if (!Drive || !Drive.Files) throw new Error("The Drive advanced service is not enabled: push appsscript.json again.");
@@ -141,12 +142,29 @@ function editsFolder_(make: boolean): { id: string; made: boolean } | null {
   return { id: String(made.id), made: true };
 }
 
+/** The saved change sets' records, by file id; an unreadable one is left out. */
 function saved_(): Record<string, Saved> {
-  try {
-    return JSON.parse(PropertiesService.getUserProperties().getProperty("SAVED_CHANGES") || "{}") as Record<string, Saved>;
-  } catch (e) {
-    return {};
+  const all = PropertiesService.getUserProperties().getProperties();
+  const out: Record<string, Saved> = {};
+  for (const key of Object.keys(all)) {
+    if (key.indexOf(SAVED_PREFIX) !== 0) continue;
+    try {
+      const record = JSON.parse(all[key]) as Saved;
+      out[record.id] = record;
+    } catch (e) {
+      console.log(`a saved record (${key}) could not be read; it is skipped`);
+    }
   }
+  return out;
+}
+
+/** Keep this change set's record, and drop the oldest past SAVED_KEEP (and the one-property record of 0.9.x). */
+function keepSaved_(id: string, record: string): void {
+  const props = PropertiesService.getUserProperties();
+  props.setProperty(SAVED_PREFIX + id, record);
+  props.deleteProperty("SAVED_CHANGES");
+  const old = Object.values(saved_()).sort((a, b) => b.savedAt.localeCompare(a.savedAt)).slice(SAVED_KEEP);
+  for (const s of old) props.deleteProperty(SAVED_PREFIX + s.id);
 }
 
 /** Everything the editors show: the settings in force, the review queue, duplicates and unexplained stubs. */
@@ -165,23 +183,34 @@ function getEditor(): EditorData {
  * Save: one change set file with these edits, written into the views' folder. described holds each edit
  * in words, kept for the waiting list. Returns the file and whether the folder was just made.
  */
-function saveChanges(edits: Edit[], described: string[]): { id: string; name: string; count: number; madeFolder: boolean } {
+/**
+ * Save: one change set file with these edits, written into the views' folder. described holds each edit in
+ * words, kept for the waiting list. Once the file is in Drive the save has happened: keeping its record is
+ * best effort, and a failure there comes back as a warning, never as "not saved" (a retry would write the
+ * change set twice).
+ */
+function saveChanges(edits: Edit[], described: string[]): { id: string; name: string; count: number; madeFolder: boolean; warning: string } {
   const lock = LockService.getUserLock();
   lock.waitLock(20000);
   try {
+    const props = PropertiesService.getUserProperties();
     const base = latestComputeRun(readTabIfAny_("run_log"));
-    const now = new Date().toISOString();
-    const file = changeSet(edits, now, base);
+    const now = laterThan(new Date().toISOString(), props.getProperty("LAST_SAVED_AT") || "");  // strictly in order
+    const file = changeSet(edits, now, base, Utilities.getUuid().slice(0, 8));
     const folder = editsFolder_(true) as { id: string; made: boolean };
     const made = drive_().Files.create({ name: file.name, mimeType: "application/json", parents: [folder.id] },
                                        Utilities.newBlob(file.text, "application/json", file.name));
-    const saved = saved_();
-    saved[String(made.id)] = { id: String(made.id), name: file.name, savedAt: now, edits: (described || []).slice(0, MAX_CHANGE_EDITS) };
-    const keep = Object.values(saved).sort((a, b) => b.savedAt.localeCompare(a.savedAt)).slice(0, SAVED_KEEP);
-    PropertiesService.getUserProperties().setProperty("SAVED_CHANGES", JSON.stringify(
-      Object.fromEntries(keep.map((s) => [s.id, s]))));
-    console.log(`saved ${file.name}: ${edits.length} edits on run ${base || "(none)"}`);
-    return { id: String(made.id), name: file.name, count: edits.length, madeFolder: folder.made };
+    const id = String(made.id);
+    console.log(`saved ${file.name} (${id}): ${edits.length} edits on run ${base || "(none)"}`);
+    let warning = "";
+    try {
+      props.setProperty("LAST_SAVED_AT", now);
+      keepSaved_(id, savedRecord(id, file.name, now, described || []));
+    } catch (e) {
+      warning = "Its list of edits for the Saved tab could not be kept (" + e + "); the change set itself is saved.";
+      console.log(`saved ${file.name}, but not its record: ${e}`);
+    }
+    return { id, name: file.name, count: edits.length, madeFolder: folder.made, warning };
   } finally {
     lock.releaseLock();
   }
@@ -201,7 +230,15 @@ function getWaiting(): Waiting[] {
     }
     pageToken = listed.nextPageToken || undefined;
   } while (pageToken);
-  return waitingChangeSets(files, saved_(), readTabIfAny_("run_log"));
+  const saved = saved_();
+  const here = new Set(files.map((f) => f.id));
+  try {  // a record for a file ingest has filed (or one discarded) is no longer needed
+    const props = PropertiesService.getUserProperties();
+    for (const id of Object.keys(saved)) if (!here.has(id)) props.deleteProperty(SAVED_PREFIX + id);
+  } catch (e) {
+    console.log("could not tidy saved records: " + e);
+  }
+  return waitingChangeSets(files, saved, readTabIfAny_("run_log"));
 }
 
 /** Move one of the views' own change sets to the trash (a refused one, or one saved by mistake). */

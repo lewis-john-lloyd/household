@@ -177,8 +177,59 @@
       ul.items li.more { cursor: pointer; text-decoration: underline dotted; }
       span.badge { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--secondary-container);
         color: var(--on-secondary-container); cursor: help; }
-      td.txn-id code { visibility: hidden; user-select: all; cursor: copy; font: 12px "Roboto Mono", monospace; color: var(--on-surface-variant); }
-      tr:hover > td.txn-id code, td.txn-id code.copied { visibility: visible; }
+      button.link { all: unset; cursor: pointer; color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+      button.link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+      button.txn-link { font: 12px "Roboto Mono", ui-monospace, monospace; }
+
+      /* the list and the editor */
+      .md { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+      .md-list { background: var(--surface-container); border-radius: 16px; padding: 12px; position: sticky; top: 112px;
+        max-height: calc(100vh - 128px); display: flex; flex-direction: column; }
+      .md-head { display: grid; gap: 8px; padding: 4px 4px 8px; }
+      .md-count { font-weight: 500; }
+      .md-filter { width: 100%; background: var(--surface-low) !important; }
+      .md-adds { padding: 0 4px 8px; }
+      .md-items { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+      .md-section { padding: 12px 8px 4px; font-size: 12px; font-weight: 500; color: var(--on-surface-variant); }
+      button.md-row { display: grid; gap: 2px; width: 100%; text-align: left; height: auto; min-height: 0; padding: 10px 12px;
+        border-radius: 12px; background: transparent; color: var(--on-surface); font-weight: 400; }
+      button.md-row:hover { background: var(--surface-high); box-shadow: none; }
+      button.md-row[aria-current="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
+      .md-title { font-size: clamp(14px, 0.35vw + 12.5px, 16px); line-height: 1.35; font-weight: 500; overflow-wrap: anywhere; }
+      .md-sub { font-size: 13px; color: var(--on-surface-variant); overflow-wrap: anywhere; }
+      button.md-row[aria-current="true"] .md-sub { color: inherit; }
+      .md-staged { font-size: 12px; color: var(--primary); }
+      .md-staged::before { content: "Not saved: "; font-weight: 500; }
+      .md-detail { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 16px; padding: 20px 24px;
+        min-height: 240px; }
+      .md-heading { font-size: 22px; line-height: 28px; font-weight: 400; margin-bottom: 12px; overflow-wrap: anywhere; }
+      .md-back { display: none; margin: -8px 0 8px -12px; }
+      .md-empty { max-width: 46em; }
+      dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 24px; margin: 0 0 8px; }
+      dl.facts dt { color: var(--on-surface-variant); }
+      dl.facts dd { margin: 0; overflow-wrap: anywhere; }
+      dl.facts code { font: 12px "Roboto Mono", ui-monospace, monospace; user-select: all; }
+      .editor-section { border-top: 1px solid var(--outline-variant); margin-top: 20px; padding-top: 16px; }
+      .editor-section h3 { font-size: 16px; line-height: 24px; font-weight: 500; margin: 0; }
+      .editor-section > .support { margin: 2px 0 4px; }
+      ul.bought { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+      ul.bought li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; }
+      ul.bought .n { font-variant-numeric: tabular-nums; text-align: right; }
+      .split-rows { display: grid; gap: 8px; margin: 12px 0 4px; }
+      .split-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .split-row select { min-width: 12em; }
+      .split-status { margin: 8px 0; }
+      .split-status.ok { color: var(--success); }
+      .staged-banner { padding: 8px 12px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); }
+      button.danger { color: var(--error); }
+      .txn-page { max-width: 880px; }
+      @media (max-width: 800px) {
+        .md { grid-template-columns: 1fr; }
+        .md-list { position: static; max-height: none; }
+        .md.showing .md-list { display: none; }
+        .md:not(.showing) .md-detail { display: none; }
+        .md-back { display: inline-flex; }
+      }
 
       /* editing */
       body.editing { padding-bottom: 88px; }
@@ -475,34 +526,6 @@
         return list;
       }
 
-      // A txn_id shown when the row is hovered: one click selects it and copies it where the browser allows.
-      function copyable(id) {
-        var code = document.createElement("code");
-        code.textContent = id;
-        code.title = "txn_id: click to copy";
-        code.onclick = function (e) {
-          e.stopPropagation();
-          var range = document.createRange();
-          range.selectNodeContents(code);
-          var selection = window.getSelection();
-          selection.removeAllRanges();
-          selection.addRange(range);
-          var done = function () {
-            code.classList.add("copied");
-            code.textContent = "copied";
-            setTimeout(function () { code.textContent = id; code.classList.remove("copied"); }, 900);
-          };
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(id).then(done, function () { document.execCommand("copy") && done(); });
-            } else if (document.execCommand("copy")) {
-              done();
-            }
-          } catch (err) { /* selected; copy by hand */ }
-        };
-        return code;
-      }
-
       function toggleDetail(row, line) {
         var next = row.nextSibling;
         if (next && next.classList && next.classList.contains("detail")) { next.remove(); return; }
@@ -532,13 +555,10 @@
             cell(r, line.categories.length > 1 ? t.category : "", "text");
             cell(r, t.account, "text");
             cell(r, cents.format(t.amount));
-            cell(r, "", "txn-id").appendChild(copyable(t.id));
-            var edit = document.createElement("button");
-            edit.className = "small";
-            edit.textContent = "edit";
-            edit.onclick = function (e) { e.stopPropagation(); toggleLineForm(r, t, 6); };
-            cell(r, "").appendChild(edit);
-            if (staged["line|" + t.id + "|category"] || staged["line|" + t.id + "|void"]) r.className = "staged";
+            var open = button(t.id, function (e) { e.stopPropagation(); openTransaction(t.id); }, "link txn-link");
+            open.title = "Edit this transaction: its category, split, note and flags";
+            cell(r, "", "text").appendChild(open);
+            if (stagedText("line|" + t.id)) r.className = "staged";
             table.appendChild(r);
           });
           td.appendChild(table);
@@ -674,7 +694,12 @@
 
       function categoryChoice(value, blank) {
         var names = (editor ? editor.categories : []).map(function (c) { return c.category; });
-        return choice([""].concat(names), value, { "": blank || "(choose)" });
+        var labels = { "": blank || "(choose)" };
+        if (value && names.indexOf(value) < 0) {  // shown as it is, so a name that isn't a category is seen, not dropped
+          names.push(value);
+          labels[value] = value + " (not a category)";
+        }
+        return choice([""].concat(names), value, labels);
       }
 
       function button(text, onclick, cls) {
@@ -695,55 +720,6 @@
 
       function isAmount(text) { return /^-?\d+(\.\d{1,2})?$/.test(text.replace(/,/g, "")); }
 
-      // The txn row's form: category, split, note, drop it; or answer its whole merchant.
-      function toggleLineForm(row, t, span) {
-        var next = row.nextSibling;
-        if (next && next.classList && next.classList.contains("form-row")) { next.remove(); return; }
-        var tr = el("tr", null, "form-row");
-        var td = cell(tr, "");
-        td.colSpan = span + 1;
-        var form = el("form", null, "edit");
-        var category = field(form, "Category", categoryChoice(t.split ? "" : t.category, "(as it is)"));
-        var split = field(form, "Split (kids 20; food)", textInput("", "wide", t.split ? t.split : ""));
-        var note = field(form, "Note", textInput(t.note, "wide"));
-        var merchant = document.createElement("input");
-        merchant.type = "checkbox";
-        if (t.key) field(form, "Every line from " + t.key, merchant);
-        var error = el("div", "", "error");
-        var actions = el("div", null, "actions");
-        actions.appendChild(button("Keep", function () {
-          error.textContent = "";
-          var said = t.date + " " + t.payee + " " + cents.format(t.amount);
-          var any = false;
-          if (split.value.trim()) {
-            stage({ kind: "line", txn_id: t.id, field: "split", value: split.value.trim() }, said + ": split " + split.value.trim());
-            any = true;
-          } else if (category.value && merchant.checked && t.key) {
-            stage({ kind: "payee", key: t.key, category: category.value }, "every " + t.key + " line: " + category.value);
-            any = true;
-          } else if (category.value && category.value !== t.category) {
-            stage({ kind: "line", txn_id: t.id, field: "category", value: category.value }, said + ": " + category.value);
-            any = true;
-          }
-          if (note.value.trim() !== t.note) {
-            stage({ kind: "line", txn_id: t.id, field: "note", value: note.value.trim() }, said + ": note " + (note.value.trim() || "(cleared)"));
-            any = true;
-          }
-          if (!any) { error.textContent = "Nothing changed."; return; }
-          row.className = "staged";
-          tr.remove();
-        }));
-        actions.appendChild(button("Drop this line (a duplicate)", function () {
-          stage({ kind: "line", txn_id: t.id, field: "void", value: "TRUE" }, t.date + " " + t.payee + " " + cents.format(t.amount) + ": dropped");
-          row.className = "staged";
-          tr.remove();
-        }));
-        form.appendChild(actions);
-        form.appendChild(error);
-        td.appendChild(form);
-        row.parentNode.insertBefore(tr, row.nextSibling);
-      }
-
       function setEditTab(tab) {
         editTab = tab;
         document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); });
@@ -761,6 +737,7 @@
         var body = document.getElementById("edit-body");
         body.textContent = "";
         if (editTab === "waiting") { drawWaiting(body); return; }
+        if (editTab === "transaction") { drawTransactionPage(body); return; }
         if (!editor.baseRun) {
           body.appendChild(el("div", "No compute run with editor tables yet: run ingest and compute once with this release.", "note"));
           return;
@@ -769,80 +746,10 @@
            withholding: drawWithholding, duplicates: drawDuplicates })[editTab](body);
       }
 
-      // A table: headers, then one row per item; click opens a form under the row. fill returns what is staged
-      // for the item, in words (shown in the last column), or true when it is staged and its row says so itself.
-      function grid(body, headers, items, fill, form) {
-        if (!items.length) { body.appendChild(el("div", "Nothing here.", "note")); return; }
-        var wrap = el("div", null, "scroll");
-        var table = el("table");
-        var head = el("tr");
-        headers.concat(["Not saved yet"]).forEach(function (h) { head.appendChild(el("th", h)); });
-        table.appendChild(el("thead")).appendChild(head);
-        var tbody = el("tbody");
-        items.forEach(function (item) {
-          var row = el("tr", null, form ? "line" : "");
-          var mark = fill(row, item);
-          cell(row, typeof mark === "string" ? mark : "", "staged-note");
-          if (mark) row.classList.add("staged");
-          if (form) row.addEventListener("click", function (e) {
-            if (e.target.closest("select, input, button")) return;
-            var next = row.nextSibling;
-            if (next && next.classList.contains("form-row")) { next.remove(); return; }
-            var tr = el("tr", null, "form-row");
-            var td = cell(tr, "");
-            td.colSpan = headers.length + 1;
-            td.appendChild(form(item, function () { tr.remove(); redrawEditor(); }));
-            row.parentNode.insertBefore(tr, row.nextSibling);
-          });
-          tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        wrap.appendChild(table);
-        body.appendChild(wrap);
-      }
-
       // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
       function stagedText(t) {
         return stagedOrder.filter(function (k) { return k === t || k.indexOf(t + "|") === 0; })
           .map(function (k) { return staged[k].text; }).join("; ");
-      }
-
-      function drawReview(body) {
-        body.appendChild(el("div", editor.review.length + " questions from the review queue. Answer a merchant once for all its lines; a single line can be split.", "note"));
-        grid(body, ["Merchant or line", "Lines", "Total", "Dates", "Guess", "Answer"], editor.review, function (row, r) {
-          var first = cell(row, r.example, "text");
-          first.title = r.key;
-          if (r.note) first.appendChild(el("div", r.note, "error"));
-          cell(row, r.lines);
-          cell(row, cents.format(Number(r.total) || 0));
-          cell(row, r.first === r.last ? r.first : r.first + " to " + r.last, "text");
-          cell(row, r.guess + (r.guessed_by ? " (" + r.guessed_by + ")" : ""), "text");
-          var answer = cell(row, "", "text");
-          var line = r.kind === "line";
-          var target = line ? "line|" + r.key + "|category" : "payee|" + r.key.toUpperCase();
-          var current = staged[target] ? staged[target].edit : null;
-          var pick = categoryChoice(current && current.field !== "split" ? (current.category || current.value) : "", "(answer)");
-          pick.onchange = function () {
-            if (!pick.value) { unstage(target); row.classList.remove("staged"); return; }
-            stage(line ? { kind: "line", txn_id: r.key, field: "category", value: pick.value }
-                       : { kind: "payee", key: r.key, category: pick.value },
-                  (line ? r.example + " " + r.first : "every " + r.key + " line") + ": " + pick.value);
-            row.classList.add("staged");
-          };
-          answer.appendChild(pick);
-          if (r.guess) answer.appendChild(button("use guess", function () { pick.value = r.guess; pick.onchange(); }, "small"));
-          if (line) {
-            var split = textInput(current && current.field === "split" ? current.value : "", "", "or split: kids 20; food");
-            split.onchange = function () {
-              if (!split.value.trim()) { unstage(target); row.classList.remove("staged"); return; }
-              stage({ kind: "line", txn_id: r.key, field: "split", value: split.value.trim() }, r.example + " " + r.first + ": split " + split.value.trim());
-              pick.value = "";
-              row.classList.add("staged");
-            };
-            answer.appendChild(split);
-          }
-          return !!current;
-        });
       }
 
       // Every field an edit can change, as the page showed it (WAS_FIELDS in edits.ts and changes.py).
@@ -904,31 +811,6 @@
         return form;
       }
 
-      function drawBudgetLines(body) {
-        var top = el("div", null, "actions");
-        var holder = el("div");
-        top.appendChild(button("New budget line", function () {
-          holder.textContent = "";
-          holder.appendChild(budgetForm(null, function () { holder.textContent = ""; redrawEditor(); }));
-        }));
-        body.appendChild(top);
-        body.appendChild(holder);
-        body.appendChild(el("div", "Click a line to change it from a date, end it, or schedule a one-off amount. A change counts for the whole month it is dated in.", "note"));
-        var lines = editor.budgetLines.slice().sort(function (a, b) {
-          return (a.in_force === "ended") - (b.in_force === "ended") || a.line.localeCompare(b.line);
-        });
-        grid(body, ["Line", "Category", "Rule", "This month", "Last 12 months", "Priority", "Scheduled"], lines, function (row, l) {
-          cell(row, l.line + (l.in_force === "ended" ? " (ended)" : ""));
-          cell(row, l.category || l.spends_from, "text");
-          cell(row, l.in_words, "text");
-          cell(row, money.format(Number(l.this_month) || 0));
-          cell(row, money.format(Number(l.last_12_months) || 0));
-          cell(row, l.priority, "text");
-          cell(row, l.scheduled, "text");
-          return stagedText("budget_line|" + l.line);  // its change, and any scheduled amounts
-        }, budgetForm);
-      }
-
       function ruleWas(r) { return { category: r.category, precedence: r.precedence, effective: r.effective, ask: r.ask }; }
 
       function ruleForm(r, done) {
@@ -968,26 +850,6 @@
         form.appendChild(actions);
         form.appendChild(error);
         return form;
-      }
-
-      function drawRules(body) {
-        var top = el("div", null, "actions");
-        var holder = el("div");
-        top.appendChild(button("New payee rule", function () {
-          holder.textContent = "";
-          holder.appendChild(ruleForm(null, function () { holder.textContent = ""; redrawEditor(); }));
-        }));
-        body.appendChild(top);
-        body.appendChild(holder);
-        grid(body, ["Pattern", "Category", "Precedence", "Since", "Asks", "Status"], editor.payeeRules, function (row, r) {
-          cell(row, r.pattern);
-          cell(row, r.category, "text");
-          cell(row, r.precedence);
-          cell(row, r.effective, "text");
-          cell(row, r.ask === "TRUE" ? "yes" : "", "text");
-          cell(row, r.status, "text");
-          return stagedText("payee_rule|" + r.pattern);
-        }, ruleForm);
       }
 
       function categoryForm(c, done) {
@@ -1033,34 +895,6 @@
         return form;
       }
 
-      function drawCategories(body) {
-        var top = el("div", null, "actions");
-        var holder = el("div");
-        top.appendChild(button("New category", function () {
-          holder.textContent = "";
-          holder.appendChild(categoryForm(null, function () { holder.textContent = ""; redrawEditor(); }));
-        }));
-        top.appendChild(button("New alias", function () {
-          holder.textContent = "";
-          holder.appendChild(aliasForm(null, function () { holder.textContent = ""; redrawEditor(); }));
-        }));
-        body.appendChild(top);
-        body.appendChild(holder);
-        grid(body, ["Category", "Group", "Priority"], editor.categories, function (row, c) {
-          cell(row, c.category);
-          cell(row, c.group, "text");
-          cell(row, c.priority, "text");
-          return stagedText("category|" + c.category);
-        }, categoryForm);
-        body.appendChild(el("h3", "Old names (aliases)"));
-        grid(body, ["Old name", "Counts as", "Note"], editor.aliases, function (row, a) {
-          cell(row, a.alias);
-          cell(row, a.category, "text");
-          cell(row, a.note, "text");
-          return stagedText("alias|" + a.alias);
-        }, aliasForm);
-      }
-
       function parameterForm(p, done) {
         var form = el("form", null, "edit");
         var isNew = !p;
@@ -1080,73 +914,482 @@
         return form;
       }
 
-      function drawSettings(body) {
-        var top = el("div", null, "actions");
-        var holder = el("div");
-        top.appendChild(button("New setting", function () {
-          holder.textContent = "";
-          holder.appendChild(parameterForm(null, function () { holder.textContent = ""; redrawEditor(); }));
+      // --- the list and the editor ---------------------------------------------------------------------
+      // Every Edit tab is a list on the left, one row per item (its name, a line about it, and what is staged
+      // for it), and the chosen item's editor on the right. On a phone the editor replaces the list, with Back.
+      var selected = {};  // the item chosen in each tab, by key
+      var txnPage = null;  // the transaction the transaction page shows, and the view it was opened from
+
+      function facts(panel, pairs) {
+        var dl = el("dl", null, "facts");
+        pairs.forEach(function (p) {
+          if (p[1] === "" || p[1] === null || p[1] === undefined) return;
+          dl.appendChild(el("dt", p[0]));
+          var dd = el("dd");
+          if (typeof p[1] === "object") dd.appendChild(p[1]); else dd.textContent = String(p[1]);
+          dl.appendChild(dd);
+        });
+        panel.appendChild(dl);
+      }
+
+      function section(panel, title, help) {
+        var s = el("section", null, "editor-section");
+        s.appendChild(el("h3", title));
+        if (help) s.appendChild(el("p", help, "support"));
+        panel.appendChild(s);
+        return s;
+      }
+
+      function masterDetail(body, opts) {
+        var wrap = el("div", null, "md");
+        var side = el("section", null, "md-list");
+        var panel = el("section", null, "md-detail");
+        var head = el("div", null, "md-head");
+        var count = el("div", null, "md-count");
+        head.appendChild(count);
+        var filter = textInput("", "md-filter", "Filter");
+        filter.setAttribute("aria-label", "Filter the list");
+        if (opts.items.length > 8) head.appendChild(filter);
+        side.appendChild(head);
+        if (opts.add) {
+          var adds = el("div", null, "actions md-adds");
+          opts.add.forEach(function (a) {
+            adds.appendChild(button(a.label, function () {
+              selected[editTab] = null;
+              mark();
+              open(a.label, function () { a.form(panel, done); });
+            }, "small"));
+          });
+          side.appendChild(adds);
+        }
+        var list = el("ul", null, "md-items");
+        var rows = [];
+        var lastSection = null;
+        opts.items.forEach(function (item) {
+          var name = opts.section ? opts.section(item) : null;
+          if (name && name !== lastSection) { list.appendChild(el("li", name, "md-section")); lastSection = name; }
+          var li = el("li");
+          var row = button("", function () { selected[editTab] = opts.key(item); mark(); show(item); }, "md-row");
+          row.appendChild(el("span", opts.title(item), "md-title"));
+          var sub = opts.sub ? opts.sub(item) : "";
+          if (sub) row.appendChild(el("span", sub, "md-sub"));
+          var said = opts.staged ? opts.staged(item) : "";
+          if (said) row.appendChild(el("span", said, "md-staged"));
+          li.appendChild(row);
+          list.appendChild(li);
+          rows.push({ item: item, li: li, row: row, text: (opts.title(item) + " " + sub).toLowerCase() });
+        });
+        side.appendChild(list);
+        function counted() {
+          var shown = rows.filter(function (r) { return !r.li.hidden; }).length;
+          count.textContent = (shown === rows.length ? "" : shown.toLocaleString() + " of ") + rows.length.toLocaleString() + " " + opts.noun;
+        }
+        filter.oninput = function () {
+          var q = filter.value.trim().toLowerCase();
+          rows.forEach(function (r) { r.li.hidden = !!q && r.text.indexOf(q) < 0; });
+          list.querySelectorAll(".md-section").forEach(function (s) {
+            var next = s.nextElementSibling, any = false;
+            while (next && !next.classList.contains("md-section")) { if (!next.hidden) any = true; next = next.nextElementSibling; }
+            s.hidden = !any;
+          });
+          counted();
+        };
+        function mark() {
+          rows.forEach(function (r) { r.row.setAttribute("aria-current", String(opts.key(r.item) === selected[editTab])); });
+        }
+        function open(title, fill) {
+          panel.textContent = "";
+          var back = button("Back to the list", function () { wrap.classList.remove("showing"); }, "text md-back");
+          panel.appendChild(back);
+          panel.appendChild(el("h2", title, "md-heading"));
+          fill();
+          wrap.classList.add("showing");
+        }
+        function show(item) { open(opts.title(item), function () { opts.detail(item, panel, done); }); }
+        function done() { redrawEditor(); }
+        counted();
+        wrap.appendChild(side);
+        wrap.appendChild(panel);
+        body.appendChild(wrap);
+        var chosen = rows.filter(function (r) { return opts.key(r.item) === selected[editTab]; })[0];
+        if (chosen) { mark(); show(chosen.item); wrap.classList.remove("showing"); }
+        else if (!rows.length) panel.appendChild(el("p", opts.none || "Nothing here.", "support"));
+        else panel.appendChild(el("p", opts.empty, "support md-empty"));
+      }
+
+      // --- one transaction -------------------------------------------------------------------------------
+      function openTransaction(id) {
+        txnPage = { id: id, from: view };
+        setView("edit");
+        setEditTab("transaction");
+      }
+
+      function loadTransaction(id, panel, done) {
+        var where = el("p", "Loading…", "support");
+        where.id = "txn-" + Math.random().toString(36).slice(2);
+        panel.appendChild(where);
+        call("getTransaction", [id], function (t) {
+          where.remove();
+          if (!t) { panel.appendChild(el("p", "No transaction " + id + " in the last compute.", "error")); return; }
+          transactionEditor(panel, t, done);
+        }, where.id);
+      }
+
+      function amountText(cents) { return (cents / 100).toFixed(2); }
+
+      // Category, split, note and flags for one line, each kept as its own change.
+      function transactionEditor(panel, t, done) {
+        var said = t.date + " " + t.payee + " " + cents.format(t.amount);
+        var id = el("code", t.id);
+        id.title = "the line's txn_id";
+        facts(panel, [["Date", t.date], ["Account", t.account], ["Amount", cents.format(t.amount)],
+                      ["Category", t.parts.length ? "split" : t.category], ["Decided by", t.decidedBy],
+                      ["Bank's name", t.payeeRaw !== t.payee ? t.payeeRaw : ""], ["Note", t.note], ["Transaction", id]]);
+        if (t.items.length) {
+          var bought = section(panel, "What it bought", "From the store's order history or receipt.");
+          var list = el("ul", null, "bought");
+          t.items.forEach(function (i) {
+            var li = el("li");
+            li.appendChild(el("span", i.name));
+            li.appendChild(el("span", i.category, "support"));
+            li.appendChild(el("span", cents.format(i.amount), "n"));
+            list.appendChild(li);
+          });
+          bought.appendChild(list);
+        }
+        var pending = stagedText("line|" + t.id);
+        if (pending) panel.appendChild(el("p", "Not saved yet: " + pending, "staged-banner"));
+
+        var one = section(panel, "One category");
+        var oneForm = el("form", null, "edit");
+        var category = field(oneForm, "Category", categoryChoice(t.parts.length ? "" : t.category));
+        var merchant = document.createElement("input");
+        merchant.type = "checkbox";
+        if (t.key) field(oneForm, "For every line from " + t.key, merchant);
+        var oneActions = el("div", null, "actions");
+        var oneError = el("div", "", "error");
+        oneActions.appendChild(button("Keep category", function () {
+          if (!category.value) { oneError.textContent = "Pick a category."; return; }
+          if (merchant.checked && t.key) stage({ kind: "payee", key: t.key, category: category.value }, "every " + t.key + " line: " + category.value);
+          else stage({ kind: "line", txn_id: t.id, field: "category", value: category.value }, said + ": " + category.value);
+          done();
+        }, "filled"));
+        oneForm.appendChild(oneActions);
+        oneForm.appendChild(oneError);
+        one.appendChild(oneForm);
+
+        var split = section(panel, "Split", "Give each part a category and an amount. One part may leave its amount blank to take what's left.");
+        splitEditor(split, t, said, done);
+
+        var more = section(panel, "Note and flags");
+        var moreForm = el("form", null, "edit");
+        var note = field(moreForm, "Note", textInput(t.note, "wide"));
+        var oneOff = document.createElement("input");
+        oneOff.type = "checkbox";
+        oneOff.checked = t.oneOff;
+        field(moreForm, "One-off (left out of averages)", oneOff);
+        var moreActions = el("div", null, "actions");
+        moreActions.appendChild(button("Keep note and flags", function () {
+          if (note.value.trim() !== t.note) {
+            stage({ kind: "line", txn_id: t.id, field: "note", value: note.value.trim() }, said + ": note " + (note.value.trim() || "(cleared)"));
+          }
+          if (oneOff.checked !== t.oneOff) {
+            stage({ kind: "line", txn_id: t.id, field: "one_off", value: oneOff.checked ? "TRUE" : "FALSE" },
+                  said + ": " + (oneOff.checked ? "one-off" : "not a one-off"));
+          }
+          done();
         }));
-        body.appendChild(top);
-        body.appendChild(holder);
-        body.appendChild(el("div", "Household settings, such as the account transfers come from and the stores with order histories.", "note"));
-        grid(body, ["Setting", "Value", "Source"], editor.parameters, function (row, p) {
-          cell(row, p.key);
-          cell(row, p.value, "text");
-          cell(row, p.source, "text");
-          return stagedText("parameter|" + p.key);
-        }, parameterForm);
+        moreActions.appendChild(button("Drop this line (a duplicate)", function () {
+          stage({ kind: "line", txn_id: t.id, field: "void", value: "TRUE" }, said + ": dropped");
+          done();
+        }, "text danger"));
+        moreForm.appendChild(moreActions);
+        more.appendChild(moreForm);
+      }
+
+      // Rows of category and amount, adding up live against the line.
+      function splitEditor(box, t, said, done) {
+        var total = Math.round(Math.abs(t.amount) * 100);
+        var current = staged["line|" + t.id + "|category"];
+        var start = current && current.edit.field === "split"
+          ? current.edit.value.split("; ").map(function (p) { var m = /^(\S+)(?: (\S+))?$/.exec(p) || []; return [m[1] || "", m[2] || ""]; })
+          : t.parts.length ? t.parts.map(function (p) { return [p[0], amountText(Math.round(Math.abs(p[1]) * 100))]; })
+          : [[t.category, ""], ["", ""]];
+        var table = el("div", null, "split-rows");
+        var status = el("p", "", "split-status");
+        var rows = [];
+        function addRow(category, amount) {
+          var r = el("div", null, "split-row");
+          var pick = categoryChoice(category, "(category)");
+          pick.setAttribute("aria-label", "Category");
+          var much = textInput(amount, "amount", "the rest");
+          much.setAttribute("aria-label", "Amount");
+          var remove = button("Remove", function () { rows.splice(rows.indexOf(entry), 1); r.remove(); check(); }, "text");
+          var entry = { pick: pick, much: much };
+          pick.onchange = check;
+          much.oninput = check;
+          r.appendChild(pick);
+          r.appendChild(much);
+          r.appendChild(remove);
+          table.appendChild(r);
+          rows.push(entry);
+        }
+        function parts() {
+          return rows.map(function (r) {
+            var text = r.much.value.trim().replace(/,/g, "").replace(/^-/, "");
+            return { category: r.pick.value, cents: text === "" ? null : (isAmount(text) ? Math.round(Number(text) * 100) : NaN) };
+          });
+        }
+        function check() {
+          var p = parts(), wrong = "";
+          var given = p.reduce(function (a, x) { return a + (x.cents || 0); }, 0);
+          var blanks = p.filter(function (x) { return x.cents === null; }).length;
+          var names = p.map(function (x) { return x.category; });
+          if (p.length < 2) wrong = "A split needs two parts or more.";
+          else if (names.indexOf("") >= 0) wrong = "Give every part a category.";
+          else if (names.some(function (n) { return !known(n); })) wrong = names.filter(function (n) { return !known(n); })[0] + " is not a category.";
+          else if (names.some(function (n, i) { return names.indexOf(n) !== i; })) wrong = "Each category can be one part only.";
+          else if (p.some(function (x) { return isNaN(x.cents); })) wrong = "An amount is not a number.";
+          else if (p.some(function (x) { return x.cents === 0; })) wrong = "A part can't be zero.";
+          else if (blanks > 1) wrong = "Only one part can leave its amount blank.";
+          else if (blanks === 1 && given >= total) wrong = "The parts come to " + money2(given) + ", leaving nothing for the blank one.";
+          else if (blanks === 0 && given !== total) wrong = "The parts come to " + money2(given) + " of " + money2(total) +
+            (given < total ? "; " + money2(total - given) + " is left to place." : "; that's " + money2(given - total) + " too much.");
+          status.className = "split-status" + (wrong ? " error" : " ok");
+          status.textContent = wrong || ("The parts come to the line's " + money2(total) +
+            (blanks ? ", with " + money2(total - given) + " in the blank one." : "."));
+          keep.disabled = !!wrong;
+          return wrong ? null : p.map(function (x) { return x.category + (x.cents === null ? "" : " " + amountText(x.cents)); }).join("; ");
+        }
+        function money2(c) { return cents.format(c / 100); }
+        function known(n) { return (editor ? editor.categories : []).some(function (c) { return c.category === n; }); }
+        start.forEach(function (s) { addRow(s[0], s[1]); });
+        box.appendChild(table);
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Add a part", function () { addRow("", ""); check(); }, "text"));
+        var byCategory = {};
+        t.items.forEach(function (i) { byCategory[i.category] = (byCategory[i.category] || 0) + Math.round(Math.abs(i.amount) * 100); });
+        var itemCategories = Object.keys(byCategory).filter(Boolean);
+        if (itemCategories.length > 1) {
+          actions.appendChild(button("Split by what it bought", function () {
+            table.textContent = "";
+            rows.length = 0;
+            itemCategories.forEach(function (c, n) { addRow(c, n === itemCategories.length - 1 ? "" : amountText(byCategory[c])); });
+            check();
+          }, "text"));
+        }
+        var keep = button("Keep split", function () {
+          var value = check();
+          if (!value) return;
+          stage({ kind: "line", txn_id: t.id, field: "split", value: value }, said + ": split " + value);
+          done();
+        }, "filled");
+        actions.appendChild(keep);
+        box.appendChild(status);
+        box.appendChild(actions);
+        check();
+      }
+
+      // --- the tabs ---------------------------------------------------------------------------------------
+      function drawReview(body) {
+        masterDetail(body, {
+          items: editor.review, noun: "questions", key: function (r) { return r.key; },
+          title: function (r) { return r.kind === "line" ? r.example : r.key; },
+          sub: function (r) {
+            return (r.kind === "line" ? "one line, " + r.first : r.lines + " lines") + ", " + cents.format(Number(r.total) || 0) +
+              (r.guess ? ", guess " + r.guess : "");
+          },
+          staged: function (r) { return stagedText(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase()); },
+          empty: "Choose a question on the left to answer it. A merchant is answered once for all its lines; a single line can also be split.",
+          none: "No questions: every line has a category.",
+          detail: function (r, panel, done) {
+            if (r.kind === "line") { loadTransaction(r.key, panel, done); return; }
+            facts(panel, [["Lines", r.lines], ["Total", cents.format(Number(r.total) || 0)],
+                          ["Dates", r.first === r.last ? r.first : r.first + " to " + r.last], ["Accounts", r.accounts],
+                          ["Spelled", r.example], ["Guess", r.guess ? r.guess + " (" + r.guessed_by + ")" : ""]]);
+            if (r.note) panel.appendChild(el("p", r.note, "error"));
+            var target = "payee|" + r.key.toUpperCase();
+            var now = staged[target] ? staged[target].edit : null;
+            var form = el("form", null, "edit");
+            var key = field(form, "Merchant (shorten it to cover more spellings)", textInput(now ? now.key : r.key, "wide"));
+            var pick = field(form, "Category for all its lines", categoryChoice(now ? now.category : r.guess));
+            var error = el("div", "", "error");
+            var actions = el("div", null, "actions");
+            actions.appendChild(button("Keep answer", function () {
+              if (!pick.value || !key.value.trim()) { error.textContent = "Give the merchant and a category."; return; }
+              unstage(target);
+              stage({ kind: "payee", key: key.value.trim(), category: pick.value }, "every " + key.value.trim() + " line: " + pick.value);
+              done();
+            }, "filled"));
+            if (now) actions.appendChild(button("Undo", function () { unstage(target); done(); }, "text"));
+            form.appendChild(actions);
+            form.appendChild(error);
+            panel.appendChild(form);
+          },
+        });
+      }
+
+      function drawBudgetLines(body) {
+        var lines = editor.budgetLines.slice().sort(function (a, b) {
+          return (a.in_force === "ended") - (b.in_force === "ended") || a.line.localeCompare(b.line);
+        });
+        masterDetail(body, {
+          items: lines, noun: "budget lines", key: function (l) { return l.line; },
+          title: function (l) { return l.line; },
+          sub: function (l) {
+            return (l.category || l.spends_from) + ", " + (l.in_force === "ended" ? "ended" : l.in_words) +
+              (l.in_force === "yes" ? ", " + money.format(Number(l.this_month) || 0) + " this month" : "");
+          },
+          section: function (l) { return l.in_force === "ended" ? "Ended" : "In force"; },
+          staged: function (l) { return stagedText("budget_line|" + l.line); },
+          empty: "Choose a budget line to change it from a date, end it, or schedule a one-off amount. A change counts for the whole month it is dated in.",
+          add: [{ label: "New budget line", form: function (panel, done) { panel.appendChild(budgetForm(null, done)); } }],
+          detail: function (l, panel, done) {
+            facts(panel, [["Category", l.category || l.spends_from], ["Rule", l.in_words], ["Since", l.effective],
+                          ["This month", money.format(Number(l.this_month) || 0)],
+                          ["Last 12 months", money.format(Number(l.last_12_months) || 0)], ["Priority", l.priority],
+                          ["Paid from", l.account], ["Scheduled", l.scheduled], ["Note", l.note]]);
+            panel.appendChild(budgetForm(l, done));
+          },
+        });
+      }
+
+      function drawRules(body) {
+        masterDetail(body, {
+          items: editor.payeeRules, noun: "payee rules", key: function (r) { return r.pattern; },
+          title: function (r) { return r.pattern; },
+          sub: function (r) { return (r.category || "no guess") + (r.ask === "TRUE" ? ", asks each line" : "") + ", since " + r.effective; },
+          section: function (r) { return r.status === "stopped" ? "Stopped" : "In force"; },
+          staged: function (r) { return stagedText("payee_rule|" + r.pattern); },
+          empty: "Choose a payee rule to change or stop it.",
+          add: [{ label: "New payee rule", form: function (panel, done) { panel.appendChild(ruleForm(null, done)); } }],
+          detail: function (r, panel, done) {
+            facts(panel, [["Category", r.category || "(none)"], ["Precedence", r.precedence], ["Since", r.effective],
+                          ["Asks each line", r.ask === "TRUE" ? "yes" : "no"], ["Status", r.status]]);
+            panel.appendChild(ruleForm(r, done));
+          },
+        });
+      }
+
+      function drawCategories(body) {
+        var items = editor.categories.map(function (c) { return { kind: "category", row: c }; })
+          .concat(editor.aliases.map(function (a) { return { kind: "alias", row: a }; }));
+        masterDetail(body, {
+          items: items, noun: "categories and old names",
+          key: function (i) { return i.kind + "|" + (i.row.category && i.kind === "category" ? i.row.category : i.row.alias); },
+          title: function (i) { return i.kind === "category" ? i.row.category : i.row.alias; },
+          sub: function (i) {
+            return i.kind === "category" ? [i.row.group, i.row.priority].filter(Boolean).join(", ") : "counts as " + i.row.category;
+          },
+          section: function (i) { return i.kind === "category" ? "Categories" : "Old names"; },
+          staged: function (i) { return stagedText(i.kind === "category" ? "category|" + i.row.category : "alias|" + i.row.alias); },
+          empty: "Choose a category to regroup it, or an old name to point it elsewhere.",
+          add: [{ label: "New category", form: function (panel, done) { panel.appendChild(categoryForm(null, done)); } },
+                { label: "New old name", form: function (panel, done) { panel.appendChild(aliasForm(null, done)); } }],
+          detail: function (i, panel, done) {
+            if (i.kind === "category") {
+              facts(panel, [["Group", i.row.group], ["Priority", i.row.priority]]);
+              panel.appendChild(categoryForm(i.row, done));
+            } else {
+              facts(panel, [["Counts as", i.row.category], ["Note", i.row.note]]);
+              panel.appendChild(aliasForm(i.row, done));
+            }
+          },
+        });
+      }
+
+      function drawSettings(body) {
+        masterDetail(body, {
+          items: editor.parameters, noun: "settings", key: function (p) { return p.key; },
+          title: function (p) { return p.key; }, sub: function (p) { return p.value; },
+          staged: function (p) { return stagedText("parameter|" + p.key); },
+          empty: "Household settings, such as the account transfers come from and the stores with order histories. Choose one to change it.",
+          add: [{ label: "New setting", form: function (panel, done) { panel.appendChild(parameterForm(null, done)); } }],
+          detail: function (p, panel, done) {
+            facts(panel, [["Value", p.value], ["Source", p.source]]);
+            panel.appendChild(parameterForm(p, done));
+          },
+        });
       }
 
       function drawWithholding(body) {
-        body.appendChild(el("div", "Stubs whose withholding the tables don't explain. Say why (an extra amount you asked for, a bonus) and they stop being flagged.", "note"));
-        grid(body, ["Pay date", "Person", "Employer", "Tax", "Withheld", "Expected", "Why"], editor.withholding, function (row, w) {
-          cell(row, w.pay_date);
-          cell(row, w.person, "text");
-          cell(row, w.employer, "text");
-          cell(row, w.jurisdiction, "text");
-          cell(row, cents.format(Number(w.withheld) || 0));
-          cell(row, cents.format(Number(w.expected) || 0));
-          var target = "explanation|" + w.jurisdiction + "|" + w.stub_id;
-          var why = textInput(staged[target] ? staged[target].edit.note : "", "wide", w.explanation);
-          why.onchange = function () {
-            if (!why.value.trim()) { unstage(target); row.classList.remove("staged"); return; }
-            stage({ kind: "explanation", jurisdiction: w.jurisdiction, stub_id: w.stub_id, note: why.value.trim() },
-                  w.jurisdiction + " withholding " + w.pay_date + " " + w.person + ": " + why.value.trim());
-            row.classList.add("staged");
-          };
-          cell(row, "", "text").appendChild(why);
-          return !!staged[target];
+        masterDetail(body, {
+          items: editor.withholding, noun: "stubs unexplained", key: function (w) { return w.jurisdiction + "|" + w.stub_id; },
+          title: function (w) { return w.pay_date + ", " + w.person; },
+          sub: function (w) {
+            return (w.jurisdiction === "wi" ? "Wisconsin" : "Federal") + ", withheld " + cents.format(Number(w.withheld) || 0) +
+              " of " + cents.format(Number(w.expected) || 0) + " expected";
+          },
+          staged: function (w) { return stagedText("explanation|" + w.jurisdiction + "|" + w.stub_id); },
+          empty: "Choose a stub to say why its withholding differs from the tables (an extra amount asked for, a bonus).",
+          none: "Every stub's withholding is explained.",
+          detail: function (w, panel, done) {
+            facts(panel, [["Employer", w.employer], ["Tax", w.jurisdiction === "wi" ? "Wisconsin" : "Federal"],
+                          ["Withheld", cents.format(Number(w.withheld) || 0)], ["Expected", cents.format(Number(w.expected) || 0)],
+                          ["Off by", cents.format(Number(w.residual) || 0)], ["The check says", w.explanation]]);
+            var target = "explanation|" + w.jurisdiction + "|" + w.stub_id;
+            var form = el("form", null, "edit");
+            var why = field(form, "Why", textInput(staged[target] ? staged[target].edit.note : "", "wide", "extra withholding asked for"));
+            var error = el("div", "", "error");
+            var actions = el("div", null, "actions");
+            actions.appendChild(button("Keep explanation", function () {
+              if (!why.value.trim()) { error.textContent = "Say why."; return; }
+              stage({ kind: "explanation", jurisdiction: w.jurisdiction, stub_id: w.stub_id, note: why.value.trim() },
+                    w.jurisdiction + " withholding " + w.pay_date + " " + w.person + ": " + why.value.trim());
+              done();
+            }, "filled"));
+            form.appendChild(actions);
+            form.appendChild(error);
+            panel.appendChild(form);
+          },
         });
       }
 
       function drawDuplicates(body) {
-        body.appendChild(el("div", "Pairs that look like one charge recorded twice. Keep both, or drop one.", "note"));
-        grid(body, ["Account", "Amount", "First", "Second", ""], editor.duplicates, function (row, d) {
-          cell(row, d.account_id);
-          cell(row, cents.format(Number(d.amount) || 0));
-          cell(row, d.date_a + " " + d.payee_a, "text");
-          cell(row, d.date_b + " " + d.payee_b, "text");
-          var targets = ["not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|"), "line|" + d.txn_a + "|void", "line|" + d.txn_b + "|void"];
-          var choices = cell(row, "", "text");
-          function only(edit, text) {
-            targets.forEach(unstage);
-            stage(edit, text);
-            row.lastChild.textContent = text;
-            row.classList.add("staged");
-          }
-          choices.appendChild(button("both are real", function () {
-            only({ kind: "not_duplicate", txn_a: d.txn_a, txn_b: d.txn_b }, d.payee_a + " " + d.date_a + " and " + d.date_b + ": both real");
-          }, "small"));
-          choices.appendChild(button("drop first", function () {
-            only({ kind: "line", txn_id: d.txn_a, field: "void", value: "TRUE" }, d.payee_a + " " + d.date_a + ": dropped as a duplicate");
-          }, "small"));
-          choices.appendChild(button("drop second", function () {
-            only({ kind: "line", txn_id: d.txn_b, field: "void", value: "TRUE" }, d.payee_b + " " + d.date_b + ": dropped as a duplicate");
-          }, "small"));
-          var already = targets.filter(function (t) { return staged[t]; })[0];
-          return already ? staged[already].text : "";
+        masterDetail(body, {
+          items: editor.duplicates, noun: "possible duplicates", key: function (d) { return d.txn_a + "|" + d.txn_b; },
+          title: function (d) { return d.payee_a; },
+          sub: function (d) { return cents.format(Number(d.amount) || 0) + ", " + d.date_a + " and " + d.date_b + ", " + d.account_id; },
+          staged: function (d) {
+            return [stagedText("not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|")), stagedText("line|" + d.txn_a + "|void"),
+                    stagedText("line|" + d.txn_b + "|void")].filter(Boolean).join("; ");
+          },
+          empty: "Choose a pair that looks like one charge recorded twice, then keep both or drop one.",
+          none: "No possible duplicates.",
+          detail: function (d, panel, done) {
+            [["First", d.txn_a, d.date_a, d.payee_a], ["Second", d.txn_b, d.date_b, d.payee_b]].forEach(function (x) {
+              var link = button(x[2] + " " + x[3], function () { openTransaction(x[1]); }, "link");
+              facts(panel, [[x[0], link]]);
+            });
+            facts(panel, [["Account", d.account_id], ["Amount", cents.format(Number(d.amount) || 0)]]);
+            var targets = ["not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|"), "line|" + d.txn_a + "|void", "line|" + d.txn_b + "|void"];
+            function only(edit, text) { targets.forEach(unstage); stage(edit, text); done(); }
+            var actions = el("div", null, "actions");
+            actions.appendChild(button("Both are real", function () {
+              only({ kind: "not_duplicate", txn_a: d.txn_a, txn_b: d.txn_b }, d.payee_a + " " + d.date_a + " and " + d.date_b + ": both real");
+            }, "filled"));
+            actions.appendChild(button("Drop the first", function () {
+              only({ kind: "line", txn_id: d.txn_a, field: "void", value: "TRUE" }, d.payee_a + " " + d.date_a + ": dropped as a duplicate");
+            }));
+            actions.appendChild(button("Drop the second", function () {
+              only({ kind: "line", txn_id: d.txn_b, field: "void", value: "TRUE" }, d.payee_b + " " + d.date_b + ": dropped as a duplicate");
+            }));
+            panel.appendChild(actions);
+          },
         });
+      }
+
+      function drawTransactionPage(body) {
+        var page = el("section", null, "panel txn-page");
+        if (txnPage && txnPage.from && txnPage.from !== "edit") {
+          var from = txnPage.from;
+          page.appendChild(button("Back to " + ({ budget: "Budget against actual", flows: "Where the money went", status: "Status" })[from],
+                                  function () { setView(from); }, "text"));
+        }
+        if (!txnPage) { page.appendChild(el("p", "Open a transaction from Budget against actual.", "support")); body.appendChild(page); return; }
+        page.appendChild(el("h2", "Transaction", "md-heading"));
+        body.appendChild(page);
+        loadTransaction(txnPage.id, page, function () { redrawEditor(); });
       }
 
       // Change sets saved and not yet read by ingest, and any it refused.

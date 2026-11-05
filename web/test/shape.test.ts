@@ -6,7 +6,7 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -17,6 +17,7 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   parseTransactions: (values: unknown[][]) => Txn[];
   transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
   parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
+  findLine: (values: unknown[][], id: string) => Line | null;
 };
 
 const VALUES: unknown[][] = [
@@ -221,4 +222,21 @@ test("the status page flags a compute older than the last ingest, and copes with
   assert.equal(shape.parseStatus(later, []).stale, true);
   const empty = shape.parseStatus([], []);
   assert.deepEqual([empty.stages, empty.attention, empty.projection, empty.stale, empty.categories], [[], [], [], false, null]);
+});
+
+test("findLine gives one whole line, a split with all its parts and the items it bought", () => {
+  const values: unknown[][] = [
+    ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits", "items", "decided_by",
+     "status", "note", "one_off", "run_id"],
+    ["t1", "2001-03-04", "card", -50, "ACME GROCER #2", "", "ACME GROCER", "food", "food -30.00; household -20.00",
+     JSON.stringify([["food", "Oats", 30], ["household", "Candle", 20]]), "you, split", "decided", "for the party", "TRUE", "r1"],
+    ["t2", "2001-03-05", "card", -12, "QUILL & INK", "", "QUILL & INK", "hobby", "", "", "rule", "decided", "", "", "r1"],
+  ];
+  const line = shape.findLine(values, "t1");
+  assert.ok(line);
+  assert.deepEqual([line.amount, line.payee, line.parts, line.note, line.oneOff, line.key],
+                   [-50, "ACME GROCER #2", [["food", -30], ["household", -20]], "for the party", true, "ACME GROCER"]);
+  assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20 });
+  assert.deepEqual(shape.findLine(values, "t2")?.parts, []);
+  assert.equal(shape.findLine(values, "t9"), null);
 });

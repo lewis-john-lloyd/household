@@ -388,3 +388,22 @@ def test_two_people_scheduling_the_same_date_from_one_view_the_second_is_refused
     target = budget.targets(rows(ledger, "budget_rules"), pd.DataFrame(columns=["month", "category", "spend"]),
                             "2026-06")
     assert target.set_index(["month", "line"]).at[("2026-06", "camp"), "target"] == 120
+
+
+def test_a_change_set_discarded_after_ingest_read_it_is_still_applied_and_logged_as_ingested(box, monkeypatch):
+    # The views trash a discarded file, but an ingest that has already downloaded it holds its own copy and
+    # writes it. Nothing here can stop that; what the views rely on is that the run says so: the file is
+    # listed by name as ingested, and the views tell a discard the run_log lists as applied anyway.
+    drive, ledger, edits, _ = box
+    fid = save(drive, edits, "changes_2026-01-31T120000.000Z_e5.json", doc(EVERY_KIND[7]))
+
+    def download_then_discard(d, file_id):
+        data = d.content[file_id]
+        if file_id == fid:
+            d.items[file_id]["trashed"] = True  # Discard lands between the download and the ledger write
+        return data
+    monkeypatch.setattr(inbox, "download", download_then_discard)
+    [summary] = inbox.process(ledger, drive, "root")
+    assert summary["file"] == "changes_2026-01-31T120000.000Z_e5.json"
+    assert summary["status"] == "ingested"
+    assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]

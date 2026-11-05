@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 // edits.ts is an Apps Script file like shape.ts: evaluate the compiled file and pick its functions out.
 const compiled = readFileSync(join(__dirname, "..", "src", "edits.js"), "utf8");
-const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, editorData, editProblems, editTarget, changeSet, waitingChangeSets, savedRecord, laterThan, requestId };`)() as {
+const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, editorData, editProblems, editTarget, changeSet, waitingChangeSets, savedRecord, laterThan, requestId, appliedAnyway };`)() as {
   records: (values: unknown[][]) => Row[];
   latestComputeRun: (runLog: unknown[][]) => string;
   editorData: (tabs: Record<string, unknown[][]>) => EditorData;
@@ -17,6 +17,7 @@ const edits = new Function(`${compiled}\nreturn { records, latestComputeRun, edi
   savedRecord: (id: string, name: string, savedAt: string, described: string[], request?: string, maxBytes?: number) => string;
   laterThan: (createdAt: string, last: string) => string;
   requestId: (request: unknown) => string;
+  appliedAnyway: (discarded: Record<string, Discarded>, runLog: unknown[][]) => AppliedAnyway[];
 };
 
 const RUN_LOG: unknown[][] = [
@@ -146,4 +147,18 @@ test("a change set saved before the last ingest that the ingest never listed is 
   const out = edits.waitingChangeSets(files, {}, RUN_LOG);  // the last ingest ran at 10:00 and listed only f1
   assert.deepEqual(out.map((w) => [w.id, w.unseen, w.refused !== ""]), [["f1", false, true], ["f3", true, false], ["f4", false, false]]);
   assert.equal(edits.waitingChangeSets(files, {}, [RUN_LOG[0], RUN_LOG[2]]).some((w) => w.unseen), false);  // no ingest yet
+});
+
+test("a discarded change set an ingest listed as ingested was applied anyway, by that run", () => {
+  const log = RUN_LOG.concat([["r4", "2026-01-31T12:00:00+00:00", "ingest", JSON.stringify({ files: [
+    { file: "changes_2026-01-31T115900.000Z_e5.json", status: "ingested" },
+    { file: "changes_2026-01-31T115800.000Z_f6.json", status: "failed", reason: "stale" }] })]]);
+  const discarded = {
+    e5: { id: "e5", name: "changes_2026-01-31T115900.000Z_e5.json", savedAt: "", discardedAt: "2026-01-31T12:00:30Z", edits: ["payee ACME GROCER: food"] },
+    f6: { id: "f6", name: "changes_2026-01-31T115800.000Z_f6.json", savedAt: "", discardedAt: "2026-01-31T12:00:40Z", edits: [] },
+    g7: { id: "g7", name: "changes_2026-01-31T115700.000Z_g7.json", savedAt: "", discardedAt: "2026-01-31T11:58:00Z", edits: [] },
+  };
+  const out = edits.appliedAnyway(discarded, log);
+  assert.deepEqual(out.map((d) => [d.id, d.runId, d.edits]), [["e5", "r4", ["payee ACME GROCER: food"]]]);
+  assert.deepEqual(edits.appliedAnyway(discarded, []), []);
 });

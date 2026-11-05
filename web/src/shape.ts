@@ -542,3 +542,45 @@ function findLine(values: unknown[][], id: string): Line | null {
     oneOff: col("one_off").toUpperCase() === "TRUE",
   };
 }
+
+/**
+ * The flow chart's nodes by what they are to the household, for the summary beside the chart:
+ *   came     where money came from: pay, money back, shares sold, cash already in the accounts
+ *   taxes    taxes and the deductions taken from pay
+ *   went     where it ended up: each category, savings, the shares that vested, cash left in the accounts
+ *   through  the stops on the way (net pay, accounts), each with the amount that passed through
+ * A source only sends money on and an end only receives it, so a node's direction says which it is.
+ */
+interface FlowItem {
+  name: string;
+  amount: number;
+}
+
+interface FlowSummary {
+  came: FlowItem[];
+  taxes: FlowItem[];
+  went: FlowItem[];
+  through: FlowItem[];
+}
+
+const TAX_NODES = ["federal tax", "state tax", "social security", "medicare", "taxes", "pre-tax deductions",
+                   "post-tax deductions"];
+
+function isTaxOrDeduction(name: string): boolean {
+  return TAX_NODES.indexOf(name) >= 0 || name.indexOf("pre-tax: ") === 0 || name.indexOf("post-tax: ") === 0;
+}
+
+function flowSummary(totals: NodeTotal[]): FlowSummary {
+  const out: FlowSummary = { came: [], taxes: [], went: [], through: [] };
+  for (const t of totals) {
+    if (t.into > 0 && t.out > 0) out.through.push({ name: t.name, amount: roundCents(Math.max(t.into, t.out)) });
+    else if (t.out > 0) out.came.push({ name: t.name, amount: roundCents(t.out) });
+    else if (t.into > 0) (isTaxOrDeduction(t.name) ? out.taxes : out.went).push({ name: t.name, amount: roundCents(t.into) });
+  }
+  const biggest = (a: FlowItem, b: FlowItem): number => b.amount - a.amount || a.name.localeCompare(b.name);
+  out.came.sort(biggest);
+  out.taxes.sort(biggest);
+  out.went.sort(biggest);
+  out.through.sort(biggest);
+  return out;
+}

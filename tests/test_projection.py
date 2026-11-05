@@ -103,7 +103,7 @@ def test_the_mega_backdoor_row_says_whether_the_plan_converts_after_tax_money():
                      "ytd_amount": 50.0 * int(stub["stub_id"])})
     stubs = pd.DataFrame(rows)
     plain = projection.elections(2026, stubs).set_index("plan").loc["Mega backdoor Roth (after-tax 401(k))"]
-    assert plain["ytd"] == 500 and plain["status"].endswith("(set after_tax_401k_converts_to_roth if the plan does it)")
+    assert plain["ytd"] == 500 and plain["status"].endswith("; Roth conversion not tracked")
     auto = projection.elections(2026, stubs, after_tax_converts=True).set_index("plan")
     assert auto.loc["Mega backdoor Roth (after-tax 401(k))", "status"].endswith("converts it to Roth automatically")
 

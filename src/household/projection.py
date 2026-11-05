@@ -440,7 +440,7 @@ def elections(year, paystubs, after_tax_converts=False):
             room = p["annual_additions_415c"] - v["elective"] - v["employer_401k"]
             mega = _election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room)
             mega["status"] += ("; the plan converts it to Roth automatically" if after_tax_converts
-                               else "; conversion to Roth not tracked (set after_tax_401k_converts_to_roth if the plan does it)")
+                               else "; Roth conversion not tracked")
             out.append(mega)
             out.append(_election(year, person, employer, "401(k) total additions (415(c))",
                                  y["elective"] + y["after_tax"] + y["employer_401k"],

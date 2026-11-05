@@ -46,16 +46,20 @@ LEDGER = dict(
 )
 
 
+GROCERIES_WAS = {"effective": "2025-01-01", "category": "food", "account": "", "priority": "high", "rule": "fixed",
+                 "amount": "500.00", "per": "monthly", "note": ""}
+RULE_WAS = {"category": "food", "precedence": "10", "effective": "2025-01-01", "ask": "FALSE"}
+
 EVERY_KIND = [
     {"kind": "payee", "key": "ACME GROCER", "category": "food"},
     {"kind": "line", "txn_id": "t1", "field": "split", "value": "food 30; kids"},
     {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed", "category": "food",
      "priority": "high", "amount": "600", "per": "monthly",
-     "was": {"effective": "2025-01-01", "rule": "fixed", "amount": "500.00", "per": "monthly"}},
+     "was": GROCERIES_WAS},
     {"kind": "budget_line", "line": "camp", "effective": "2026-06-01", "rule": "scheduled", "category": "kids",
      "amount": "90"},
     {"kind": "payee_rule", "pattern": "ACME GROCER", "category": "", "effective": "2026-02-01",
-     "was": {"category": "food", "effective": "2025-01-01"}},
+     "was": RULE_WAS},
     {"kind": "category", "category": "gifts", "group": "family", "priority": "medium", "was": None},
     {"kind": "alias", "alias": "presents", "category": "gifts", "was": None},
     {"kind": "parameter", "key": "transfer_account", "value": "savings", "was": {"value": "checking"}},
@@ -167,11 +171,11 @@ def test_a_category_added_in_the_change_set_can_be_used_in_it():
 
 def test_an_edit_made_on_an_older_view_of_a_setting_is_refused():
     stale = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed",
-             "category": "food", "amount": "600", "was": {"effective": "2025-01-01", "amount": "450"}}
+             "category": "food", "amount": "600", "was": GROCERIES_WAS | {"amount": "450"}}
     assert "changed in the ledger since you edited it (amount is '500')" in refused(doc(stale))
     new_but_exists = {"kind": "category", "category": "food", "group": "living", "was": None}
     assert "the ledger already has it" in refused(doc(new_but_exists))
-    gone = {"kind": "alias", "alias": "nosh", "category": "food", "was": {"category": "food"}}
+    gone = {"kind": "alias", "alias": "nosh", "category": "food", "was": {"category": "food", "note": ""}}
     assert "replaces a row the ledger does not have" in refused(doc(gone))
     # a scheduled amount adds to its month, so it carries no was even on a line that exists
     changes.parse(doc({"kind": "budget_line", "line": "groceries", "effective": "2026-12-01", "rule": "scheduled",
@@ -183,9 +187,9 @@ def test_the_setting_in_force_is_the_last_row_for_it():
         "budget_rules", {"line": "groceries", "effective": "2025-01-15", "category": "food", "rule": "fixed",
                          "amount": "550", "per": "monthly"})], ignore_index=True)}
     edit = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "end",
-            "was": {"amount": "550"}}
+            "was": GROCERIES_WAS | {"effective": "2025-01-15", "priority": "", "amount": "550"}}
     changes.parse(doc(edit)).check(ledger_reader(**later))
-    assert "amount is '550'" in refused(doc(edit | {"was": {"amount": "500"}}), ledger_reader(**later))
+    assert "amount is '550'" in refused(doc(edit | {"was": edit["was"] | {"amount": "500"}}), ledger_reader(**later))
 
 
 # --- the ledger's rules for later rows ----------------------------------------------------------------
@@ -279,10 +283,31 @@ def test_change_sets_are_read_oldest_first_and_each_sees_the_last(box):
 def test_two_people_editing_the_same_line_the_second_is_refused(box):
     drive, ledger, edits, _ = box
     mine = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed",
-            "category": "food", "amount": "600", "per": "monthly", "was": {"amount": "500"}}
+            "category": "food", "amount": "600", "per": "monthly", "priority": "high", "was": GROCERIES_WAS}
     save(drive, edits, "changes_2026-01-31T120000Z.json", doc(mine))
     save(drive, edits, "changes_2026-01-31T120500Z.json", doc(mine | {"amount": "650"},
                                                              created_at="2026-01-31T12:05:00Z"))
     first, second = inbox.process(ledger, drive, "root")
     assert first["status"] == "ingested"
     assert second["status"] == "failed" and "amount is '600'" in second["reason"]
+
+
+def test_a_was_must_give_every_field_the_edit_replaces():
+    partial = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed", "category": "food",
+               "amount": "600", "was": {"effective": "2025-01-01", "rule": "fixed", "amount": "500", "per": "monthly",
+                                        "category": "food"}}
+    assert "was must give every field the edit replaces; missing account, priority, note" in refused(doc(partial))
+    assert "was has fields this edit does not replace: line" in refused(doc(
+        partial | {"was": GROCERIES_WAS | {"line": "groceries"}}))
+    alias = {"kind": "alias", "alias": "presents", "category": "gifts", "was": {"category": "hobby"}}
+    assert "missing note" in refused(doc(alias))
+
+
+def test_a_change_to_any_field_since_the_page_loaded_makes_the_edit_stale():
+    # the reviewer's case: someone changed only the account (or priority, or note) after the page loaded
+    moved = LEDGER | {"budget_rules": pd.concat([LEDGER["budget_rules"], table(
+        "budget_rules", {"line": "groceries", "effective": "2025-01-01", "category": "food", "priority": "high",
+                         "rule": "fixed", "amount": "500", "per": "monthly", "account": "savings"})], ignore_index=True)}
+    edit = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed", "category": "food",
+            "amount": "600", "per": "monthly", "was": GROCERIES_WAS}
+    assert "account is 'savings'" in refused(doc(edit), ledger_reader(**moved))

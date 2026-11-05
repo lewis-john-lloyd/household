@@ -52,12 +52,15 @@ test("editorData gathers the editor tabs and only the stubs still unexplained", 
 
 test("an edit's shape is checked as the engine checks it", () => {
   assert.deepEqual(edits.editProblems({ kind: "payee", key: "ACME GROCER", category: "food" }), []);
-  assert.deepEqual(edits.editProblems({ kind: "budget_line", line: "camp", effective: "2026-06-01", rule: "end", was: { amount: "90" } }), []);
+  const full = { effective: "2026-01-01", category: "kids", account: "", priority: "", rule: "fixed", amount: "90", per: "", note: "" };
+  assert.deepEqual(edits.editProblems({ kind: "budget_line", line: "camp", effective: "2026-06-01", rule: "end", was: full }), []);
+  assert.deepEqual(edits.editProblems({ kind: "budget_line", line: "camp", effective: "2026-06-01", rule: "end", was: { amount: "90" } }),
+                   ["was must give every field the edit replaces; missing effective, category, account, priority, rule, per, note"]);
   assert.deepEqual(edits.editProblems({ kind: "payee", key: "ACME", extra: "x" }),
                    ["missing category", "unknown field extra"]);
   assert.deepEqual(edits.editProblems({ kind: "line", txn_id: "t1", field: "note", value: " padded" }), ["value has spaces at its ends"]);
   assert.deepEqual(edits.editProblems({ kind: "explode" }), ['unknown kind "explode"']);
-  assert.deepEqual(edits.editProblems({ kind: "category", category: "gifts", was: { group: 3 } as unknown as Row }),
+  assert.deepEqual(edits.editProblems({ kind: "category", category: "gifts", was: { group: 3, priority: "" } as unknown as Row }),
                    ["was must be null or an object of strings"]);
 });
 

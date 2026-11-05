@@ -23,8 +23,8 @@ no unknown fields, sizes, enums, dates, regexes), and check then holds each edit
 refuses the whole file, which stays in the inbox with every reason, so nothing is half applied.
 
 An edit that replaces a setting (a budget line, a payee rule, a category, an alias, a parameter) says
-in `was` what it replaced: the fields of the row in force when the person edited it, or null for a
-new one. If the ledger no longer agrees (another change set or a seed got there first), the file is
+in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
+it was when the person edited it, or null for a new one; a `was` missing any of them is refused. If the ledger no longer agrees (another change set or a seed got there first), the file is
 refused rather than written over what the person never saw.
 
 Rows are recorded at the change set's created_at, so a later edit supersedes an earlier one by the
@@ -72,6 +72,14 @@ KINDS = {
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
 REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter"}  # edits that carry `was`
+# every field such an edit can change: `was` gives them all, so a change made since to any of them is seen
+WAS_FIELDS = {
+    "budget_line": ("effective", "category", "account", "priority", "rule", "amount", "per", "note"),
+    "payee_rule": ("category", "precedence", "effective", "ask"),
+    "category": ("group", "priority"),
+    "alias": ("category", "note"),
+    "parameter": ("value",),
+}
 
 BUDGET = schema.table(schema.LEDGER, "budget_rules")
 RULES = schema.table(schema.LEDGER, "payee_rules")
@@ -228,6 +236,13 @@ def _values(kind, e):
             out.append("an explanation needs a note")
     if kind == "not_duplicate" and e["txn_a"] == e["txn_b"]:
         out.append("a line is not a duplicate of itself")
+    if kind in WAS_FIELDS and isinstance(e.get("was"), dict):
+        missing = [f for f in WAS_FIELDS[kind] if f not in e["was"]]
+        extra = sorted(set(e["was"]) - set(WAS_FIELDS[kind]))
+        if missing:
+            out.append(f"was must give every field the edit replaces; missing {', '.join(missing)}")
+        if extra:
+            out.append(f"was has fields this edit does not replace: {', '.join(extra)}")
     return out
 
 

@@ -728,18 +728,24 @@
         if (!n) list.hidden = true;
       }
 
+      // Save sends what is staged now. Editing stays open while it runs, so on success only the entries sent, and
+      // still the same entries, are cleared: one staged or changed meanwhile stays, to go in the next save.
       function saveStaged() {
         var msg = document.getElementById("pending-msg");
-        var edits = stagedOrder.map(function (t) { return staged[t].edit; });
-        var texts = stagedOrder.map(function (t) { return staged[t].text; });
+        var sent = stagedOrder.map(function (t) { return { target: t, entry: staged[t] }; });
+        var edits = sent.map(function (s) { return s.entry.edit; });
+        var texts = sent.map(function (s) { return s.entry.text; });
         msg.className = "";
         msg.textContent = "Saving " + edits.length + " changes…";
         document.getElementById("pending-save").disabled = true;
         google.script.run.withSuccessHandler(function (r) {
           document.getElementById("pending-save").disabled = false;
-          stagedOrder.slice().forEach(unstage);
+          sent.forEach(function (s) { if (staged[s.target] === s.entry) unstage(s.target); });
+          var left = stagedOrder.length;
           msg.className = "saved";
           msg.textContent = "Saved " + r.count + " changes as " + r.name + ". Run ingest, then compute, to apply them." +
+            (left ? " " + left + (left === 1 ? " change" : " changes") + " made while it saved " + (left === 1 ? "is" : "are") +
+                    " still here, for the next save." : "") +
             (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "");
           drawPending();
           redrawEditor();
@@ -1769,7 +1775,11 @@
             items: refused.map(function (w) { return { title: w.name, detail: w.refused }; }),
           }, !refused.length);
           cards.insertBefore(card, cards.firstChild);
-        }).withFailureHandler(function () { /* no folder yet, or no Drive access: nothing to show */ }).getWaiting();
+        }).withFailureHandler(function (error) {  // no folder yet is not an error (getWaiting gives []): this is one
+          var cards = document.getElementById("status-attention");
+          cards.insertBefore(attentionCard({ key: "waiting_changes", count: 0, action: "", flags: [], detail: [], items: [],
+            label: "saved changes could not be checked", note: String(error && error.message || error) }), cards.firstChild);
+        }).getWaiting();
       }
 
       // The view, its period list and the level.

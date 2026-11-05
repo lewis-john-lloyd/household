@@ -17,21 +17,43 @@ function reportsId_(): string {
 }
 
 /**
- * The flows tab, read through the Sheets API (the advanced service in appsscript.json): it works under
- * the read-only spreadsheets scope, where SpreadsheetApp.openById demands full read and write access.
+ * A Reports tab's values, read through the Sheets API (the advanced service in appsscript.json): it works under
+ * the read-only spreadsheets scope, where SpreadsheetApp.openById demands full read and write access. Any
+ * failure (permissions, the API, a wrong REPORTS_ID) is thrown, never taken for an empty tab.
  */
-function readTab_(name: string): unknown[][] {
+function readValues_(name: string): unknown[][] {
   if (!Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
     throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
   }
-  let values: unknown[][] | undefined;
   try {
-    values = Sheets.Spreadsheets.Values.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" })
-      .values as unknown[][] | undefined;
+    return (Sheets.Spreadsheets.Values.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" })
+      .values as unknown[][] | undefined) || [];
   } catch (e) {
-    throw new Error(`Could not read the ${name} tab of Reports (run compute first, and check REPORTS_ID): ` + e);
+    throw new Error(`Could not read the ${name} tab of Reports (check REPORTS_ID and that you can open Reports): ` + e);
   }
-  if (!values || !values.length) throw new Error(`The Reports ${name} tab is empty: run compute first.`);
+}
+
+let tabTitles: string[] | null = null;  // Reports' tab names, read once per call from the page
+
+/** The names of Reports' tabs, so a tab not made yet can be told from a tab that could not be read. */
+function tabTitles_(): string[] {
+  if (tabTitles === null) {
+    if (!Sheets || !Sheets.Spreadsheets) throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
+    let sheets: { properties?: { title?: string } }[] | undefined;
+    try {
+      sheets = Sheets.Spreadsheets.get(reportsId_(), { fields: "sheets.properties.title" }).sheets;
+    } catch (e) {
+      throw new Error("Could not open Reports (check REPORTS_ID and that you can open it): " + e);
+    }
+    tabTitles = (sheets || []).map((s) => String((s.properties && s.properties.title) || ""));
+  }
+  return tabTitles;
+}
+
+/** A tab the page can't do without: missing or empty is an error that says to run compute. */
+function readTab_(name: string): unknown[][] {
+  const values = readValues_(name);
+  if (!values.length) throw new Error(`The Reports ${name} tab is empty: run compute first.`);
   return values;
 }
 
@@ -66,13 +88,14 @@ function getTransactions(period: string, categories: string[]): Txn[] {
   return transactionsFor(parseTransactions(readTab_("categorized")), period, categories);
 }
 
-/** A Reports tab's values, or [] when it is missing or empty (the status tabs start with the first run that writes them). */
+/**
+ * A tab that may not exist yet (each starts with the first run of the release that writes it): [] when Reports
+ * has no such tab or it is empty. Any other failure is thrown, so the page says it could not load rather than
+ * showing nothing as if there were nothing.
+ */
 function readTabIfAny_(name: string): unknown[][] {
-  try {
-    return readTab_(name);
-  } catch (e) {
-    return [];
-  }
+  if (tabTitles_().indexOf(name) < 0) return [];
+  return readValues_(name);
 }
 
 /** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
@@ -168,9 +191,16 @@ function saveChanges(edits: Edit[], described: string[]): { id: string; name: st
 function getWaiting(): Waiting[] {
   const folder = editsFolder_(false);
   if (!folder) return [];
-  const listed = drive_().Files.list({ q: `'${folder.id}' in parents and trashed = false`,
-                                       fields: "files(id,name,createdTime)", pageSize: 200 });
-  const files = (listed.files || []).map((f: { id?: string; name?: string; createdTime?: string }) => ({ id: String(f.id), name: String(f.name), createdTime: String(f.createdTime || "") }));
+  const files: { id: string; name: string; createdTime: string }[] = [];
+  let pageToken: string | undefined;
+  do {  // every page: Drive hands back at most a page of files at a time
+    const listed = drive_().Files.list({ q: `'${folder.id}' in parents and trashed = false`, pageSize: 200, pageToken,
+                                         fields: "nextPageToken,files(id,name,createdTime)" });
+    for (const f of (listed.files || []) as { id?: string; name?: string; createdTime?: string }[]) {
+      files.push({ id: String(f.id), name: String(f.name), createdTime: String(f.createdTime || "") });
+    }
+    pageToken = listed.nextPageToken || undefined;
+  } while (pageToken);
   return waitingChangeSets(files, saved_(), readTabIfAny_("run_log"));
 }
 

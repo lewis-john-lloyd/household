@@ -259,13 +259,15 @@ function budgetLines(rows: BudgetRow[], period: string, level: string): BudgetLi
     || a.remaining - b.remaining || a.name.localeCompare(b.name));
 }
 
-/** The items column: JSON [[category, name, amount], ...], or nothing (a line no order history explains). */
-function parseItems(text: string): [string, string, number][] {
+/** The items column: JSON [[category, name, amount, item_id], ...] (reports before item ids have three), or
+ * nothing (a line no order history explains). */
+function parseItems(text: string): [string, string, number, string][] {
   if (!text) return [];
   try {
     const parsed = JSON.parse(text);
     return Array.isArray(parsed)
-      ? parsed.filter((i) => Array.isArray(i) && i.length === 3).map((i) => [String(i[0]), String(i[1]), Number(i[2]) || 0])
+      ? parsed.filter((i) => Array.isArray(i) && i.length >= 3)
+        .map((i) => [String(i[0]), String(i[1]), Number(i[2]) || 0, String(i[3] ?? "")] as [string, string, number, string])
       : [];
   } catch {
     return [];
@@ -514,7 +516,7 @@ interface Line {
   amount: number;  // the whole line, signed as the ledger has it (money out is negative)
   category: string;
   parts: [string, number][];  // a split's parts, signed; [] for a whole line
-  items: { category: string; name: string; amount: number }[];
+  items: { category: string; name: string; amount: number; id: string }[];  // id "" in reports before item ids
   decidedBy: string;
   status: string;
   note: string;
@@ -537,7 +539,7 @@ function findLine(values: unknown[][], id: string): Line | null {
   return {
     id, date: col("date").slice(0, 10), account: col("account_id"), payee: col("payee_text") || col("payee_raw"),
     payeeRaw: col("payee_raw"), amount: Number(col("amount")) || 0, category: col("category"), parts,
-    items: parseItems(col("items")).map((i) => ({ category: i[0], name: i[1], amount: i[2] })),
+    items: parseItems(col("items")).map((i) => ({ category: i[0], name: i[1], amount: i[2], id: i[3] })),
     decidedBy: col("decided_by"), status: col("status"), note: col("note"), key: col("key"),
     oneOff: col("one_off").toUpperCase() === "TRUE",
   };

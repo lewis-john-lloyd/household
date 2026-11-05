@@ -43,6 +43,8 @@ LEDGER = dict(
     payee_rules=table("payee_rules", {"pattern": "ACME GROCER", "category": "food", "precedence": "10",
                                       "effective": "2025-01-01", "ask": "FALSE"}),
     parameters=table("parameters", {"jurisdiction": "household", "key": "transfer_account", "value": "checking"}),
+    order_items=table("order_items", {"item_id": "i1", "service": "amazon", "order_id": "o1", "kind": "item",
+                                      "item": "Jigsaw Puzzle", "amount": "20", "department": "toys"}),
 )
 
 
@@ -311,3 +313,11 @@ def test_a_change_to_any_field_since_the_page_loaded_makes_the_edit_stale():
     edit = {"kind": "budget_line", "line": "groceries", "effective": "2026-02-01", "rule": "fixed", "category": "food",
             "amount": "600", "per": "monthly", "was": GROCERIES_WAS}
     assert "account is 'savings'" in refused(doc(edit), ledger_reader(**moved))
+
+
+def test_an_item_s_category_becomes_an_item_categories_row_and_is_checked():
+    result = changes.parse(doc({"kind": "item", "item_id": "i1", "category": "kids"}))
+    result.check(ledger_reader(**LEDGER))
+    assert result.tables["item_categories"][["item_id", "category", "source"]].values.tolist() == [["i1", "kids", "web"]]
+    why = refused(doc({"kind": "item", "item_id": "i9", "category": "kids"}, {"kind": "item", "item_id": "i1", "category": "petrol"}))
+    assert "edit 1 (item i9): no such item" in why and "edit 2 (item i1): not a category: petrol" in why

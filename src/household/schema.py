@@ -41,6 +41,9 @@ LEDGER = (
     Table("order_items", ("item_id", "service", "order_id", "kind", "order_date", "date", "amount", "card",
                           "department", "item", "website", "doc_id"),
           {"kind": ("item", "refund")}),
+    # a person's category for one item an order history or receipt listed (the latest per item wins), so a
+    # line those items explain splits by it
+    Table("item_categories", ("item_id", "category", "recorded_at", "source")),
     Table("categories", ("category", "group", "priority"),
           {"priority": ("high", "medium", "low")}),
     # old category names (the 2017 to 2024 books) and the category each now counts as

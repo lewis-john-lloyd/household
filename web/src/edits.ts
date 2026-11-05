@@ -47,6 +47,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   parameter: [["key", "value"], ["was"]],
   explanation: [["jurisdiction", "stub_id", "note"], []],
   not_duplicate: [["txn_a", "txn_b"], []],
+  item: [["item_id", "category"], []],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -137,6 +138,7 @@ function editTarget(edit: Edit): string {
     case "parameter": return `parameter|${f("key")}`;
     case "explanation": return `explanation|${f("jurisdiction")}|${f("stub_id")}`;
     case "not_duplicate": return `not_duplicate|${[f("txn_a"), f("txn_b")].sort().join("|")}`;
+    case "item": return `item|${f("item_id")}`;
     default: return `${edit.kind}|${JSON.stringify(edit)}`;
   }
 }

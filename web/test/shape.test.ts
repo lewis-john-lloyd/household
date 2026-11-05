@@ -230,14 +230,15 @@ test("findLine gives one whole line, a split with all its parts and the items it
     ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits", "items", "decided_by",
      "status", "note", "one_off", "run_id"],
     ["t1", "2001-03-04", "card", -50, "ACME GROCER #2", "", "ACME GROCER", "food", "food -30.00; household -20.00",
-     JSON.stringify([["food", "Oats", 30], ["household", "Candle", 20]]), "you, split", "decided", "for the party", "TRUE", "r1"],
+     JSON.stringify([["food", "Oats", 30, "i1"], ["household", "Candle", 20]]), "you, split", "decided", "for the party", "TRUE", "r1"],
     ["t2", "2001-03-05", "card", -12, "QUILL & INK", "", "QUILL & INK", "hobby", "", "", "rule", "decided", "", "", "r1"],
   ];
   const line = shape.findLine(values, "t1");
   assert.ok(line);
   assert.deepEqual([line.amount, line.payee, line.parts, line.note, line.oneOff, line.key],
                    [-50, "ACME GROCER #2", [["food", -30], ["household", -20]], "for the party", true, "ACME GROCER"]);
-  assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20 });
+  assert.deepEqual(line.items[0], { category: "food", name: "Oats", amount: 30, id: "i1" });
+  assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20, id: "" });  // an older report
   assert.deepEqual(shape.findLine(values, "t2")?.parts, []);
   assert.equal(shape.findLine(values, "t9"), null);
 });

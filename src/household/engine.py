@@ -152,8 +152,21 @@ def _books(ledger):
     return {"txns": txns, "effective": effective, "accounts": accounts, "paired": paired, "lonely": lonely,
             "rules": _read(ledger, "payee_rules"), "decisions": _read(ledger, "proposal_decisions"),
             "categories": compute.latest(_read(ledger, "categories"), ["category"]), "parameters": parameters,
-            "details": _read(ledger, "payment_details"), "items": _read(ledger, "order_items"),
+            "details": _read(ledger, "payment_details"),
+            "items": with_item_categories(_read(ledger, "order_items"), _read(ledger, "item_categories")),
             "aliases": aliases}
+
+
+def with_item_categories(items, chosen):
+    """order_items with a category column: a person's category for an item (the latest row per item in
+    item_categories), else blank, which leaves the item to its department (explain._category)."""
+    items = items.copy()
+    items["category"] = ""
+    if chosen is None or chosen.empty or items.empty:
+        return items
+    latest = chosen.sort_values("recorded_at", kind="stable").groupby("item_id")["category"].last()
+    items["category"] = items["item_id"].astype(str).map(latest).fillna("")
+    return items
 
 
 def _categorized(books):

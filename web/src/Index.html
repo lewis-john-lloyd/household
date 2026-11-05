@@ -78,6 +78,11 @@
       .segmented button[aria-pressed="true"]:hover { background: var(--secondary-container); }
       select, input[type="text"], input[type="date"], input:not([type]) { min-height: 40px; padding: 0 12px;
         border: 1px solid var(--outline); border-radius: 4px; background: transparent; color: var(--on-surface); font: inherit; }
+      /* a dropdown's list is drawn by the browser: give it the page's colors, or dark mode shows light text on
+         the browser's white list */
+      select { background-color: var(--surface-low) !important; }
+      select option, select optgroup { background-color: var(--surface-low); color: var(--on-surface); }
+      select option:checked { background-color: var(--secondary-container); color: var(--on-secondary-container); }
       select:focus, input:focus { outline: none; border: 2px solid var(--primary); padding: 0 11px; }
       label { color: var(--on-surface-variant); }
       input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
@@ -503,7 +508,18 @@
         var height = Math.max(480, 28 * result.rows.length);
         chart.style.height = height + "px";
         chart.textContent = "";
-        new google.visualization.Sankey(chart).draw(data, { height: height, sankey: { node: { nodePadding: 18 } } });
+        // Google draws the chart in its own colors: hand it the page's, so labels read in dark mode too
+        var css = getComputedStyle(document.documentElement);
+        var token = function (name) { return css.getPropertyValue(name).trim(); };
+        new google.visualization.Sankey(chart).draw(data, {
+          height: height, backgroundColor: "transparent",
+          sankey: {
+            node: { nodePadding: 18, width: 8, label: { color: token("--on-surface"), fontName: "Roboto Flex", fontSize: 13 },
+                    colors: [token("--seg-1"), token("--seg-2"), token("--seg-3"), token("--seg-4"), token("--primary")] },
+            link: { color: { fill: token("--outline"), fillOpacity: 0.45 } },
+          },
+          tooltip: { textStyle: { color: "#1f1f1f" } },
+        });
         note.textContent = result.dropped.length
           ? "Left out to keep the chart drawable (they would loop back): " +
             result.dropped.map(function (r) { return r[0] + " → " + r[1]; }).join(", ")
@@ -1978,6 +1994,11 @@
           stagedOrder.slice().forEach(unstage);
           redrawEditor();
         });
+        if (window.matchMedia) {  // the chart takes its colors when drawn: redraw it when light and dark swap
+          var scheme = window.matchMedia("(prefers-color-scheme: dark)");
+          var redraw = function () { if (view === "flows") load(); };
+          if (scheme.addEventListener) scheme.addEventListener("change", redraw); else if (scheme.addListener) scheme.addListener(redraw);
+        }
         window.addEventListener("beforeunload", function (e) {  // unsaved changes live only in this page
           if (stagedOrder.length) { e.preventDefault(); e.returnValue = ""; }
         });

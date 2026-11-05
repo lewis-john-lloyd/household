@@ -23,7 +23,7 @@ Each scenario also reports the extra withholding per remaining paycheck (W-4
 Step 4(c)) that would bring the federal balance to zero, on the paychecks of the
 person and employer with the most paychecks left.
 
-Elections (401(k), HSA, dependent-care FSA) are projected the same way and
+Elections (401(k), HSA, limited-purpose or health FSA, dependent-care FSA) are projected the same way and
 compared with the year's limits, with what the stubs show so far: the after-tax
 401(k) room under 415(c) is the mega backdoor Roth's.
 
@@ -91,6 +91,7 @@ HSA_EMPLOYEE = _is("hsa employee")
 MEDICARE = _is("medicare", "med")
 HSA_EMPLOYER = _is("hsa er update")
 DEPENDENT_CARE = _is("fsa dependent", "dependent care")
+HEALTH_FSA = _is("purpose fsa", "limited purpose", "lpfsa", "health fsa", "healthcare fsa", "medical fsa")
 
 
 def _medicare_rate(wages_so_far, year):
@@ -137,8 +138,9 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
            "employer_401k": _ytd(rows, "employer", contains=_is("401k")),
            "hsa": _ytd(rows, "pre_tax", contains=HSA_EMPLOYEE) + _ytd(rows, "pre_tax", contains=HSA_EMPLOYER),
            "dependent_care": _ytd(rows, "pre_tax", contains=DEPENDENT_CARE),
+           "health_fsa": _ytd(rows, "pre_tax", contains=HEALTH_FSA),
            "paychecks_left": 0, "vests_left": 0, "extra_withholding": 0.0, "notes": []}
-    out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care")}
+    out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care", "health_fsa")}
     out["wi_settings"] = wi_settings
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
     if regular.empty:
@@ -167,6 +169,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
             out["employer_401k"] += _current(stub, "employer", contains=_is("401k"))
             out["hsa"] += _current(stub, "pre_tax", contains=HSA_EMPLOYEE)
             out["dependent_care"] += _current(stub, "pre_tax", contains=DEPENDENT_CARE)
+            out["health_fsa"] += _current(stub, "pre_tax", contains=HEALTH_FSA)
         state = _current(stub, "tax", contains=_is("state income", "wi"))
         if wi_settings is not None:
             wi = wisconsin.regular_withholding(wages - gtl, 26, year, *wi_settings)
@@ -408,6 +411,7 @@ def _wisconsin_notes(year):
 
 ELECTION_COLUMNS = ["year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status"]
 MEGA_BACKDOOR = "Mega backdoor Roth (after-tax 401(k))"
+HEALTH_FSA_PLAN = "Limited-purpose FSA"
 BACKDOOR_ROTH = "Backdoor Roth IRA"
 
 
@@ -429,6 +433,9 @@ def elections(year, paystubs, after_tax_converts=False):
         if v["elective"]:
             out.append(_election(year, person, employer, "401(k) elective deferral", y["elective"], v["elective"],
                                  p["elective_deferral_402g"]))
+        if v["health_fsa"]:  # the limit is per employee, per employer's plan
+            out.append(_election(year, person, employer, HEALTH_FSA_PLAN, y["health_fsa"], v["health_fsa"],
+                                 p["health_fsa"]))
         if v["after_tax"]:
             room = p["annual_additions_415c"] - v["elective"] - v["employer_401k"]
             mega = _election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room)

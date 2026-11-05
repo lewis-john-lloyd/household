@@ -117,3 +117,13 @@ def test_wisconsin_lines_carry_the_form_s_line_numbers_and_say_when_they_are_las
     assert wi.loc["wi_income", "line"] == "7" and wi.loc["wi_net_tax", "line"] == "22"
     assert wi.loc["wi_owe_or_refund", "line"] == ("40" if wi.loc["wi_owe_or_refund", "label"] == "Refund" else "45")
     assert "Wisconsin 2026: Form 1 line numbers are the 2025 form's until the 2026 form is on file" in notes
+
+
+def test_a_limited_purpose_fsa_is_projected_against_the_health_fsa_limit():
+    rows = stubs_through(24).to_dict("records")
+    for stub in {r["stub_id"]: r for r in rows}.values():
+        rows.append({**stub, "line_item": "Ltd Purpose FSA", "kind": "pre_tax", "amount": 50.0,
+                     "ytd_amount": 50.0 * int(stub["stub_id"])})
+    fsa = projection.elections(2026, pd.DataFrame(rows)).set_index("plan").loc["Limited-purpose FSA"]
+    assert (fsa["person"], fsa["ytd"], fsa["projected"], fsa["limit"]) == ("alex", 50 * 24, 50 * 26, 3_400)
+    assert fsa["status"] == "room left"

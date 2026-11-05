@@ -325,10 +325,26 @@ interface StageRun {
   lines: string[];
 }
 
+interface AttentionItem {
+  title: string;
+  detail: string;
+}
+
 interface Attention {
+  key: string;  // the summary count it comes from ("inbox_unread" for inbox files)
+  label: string;  // what the count counts, in words ("lines need a category")
+  count: number;
+  note: string;  // one sentence more, from the reports ("" when there is nothing to add)
+  items: AttentionItem[];  // the things themselves, when the reports list them (each download due)
+  detail: string[];  // the log lines that say more, for a check with no items
+  flags: string[];  // the log lines about it, marked in the run's log
+  action: string;  // the Edit tab that answers it, or ""
+}
+
+interface Breakdown {
   label: string;
   count: number;
-  detail: string[];  // the log lines that say more
+  kind: string;  // "decided", "waiting" or "open"
 }
 
 interface Status {
@@ -336,30 +352,96 @@ interface Status {
   attention: Attention[];
   stale: boolean;  // compute has not run since the last ingest
   projection: [string, number][];  // scenario, owe (positive) or refund (negative)
+  projectionYear: string;
+  categories: { since: string; total: number; segments: Breakdown[] } | null;  // how lines were categorized
 }
 
 const RUN_LOG_COLUMNS = ["run_id", "computed_at", "stage", "detail"];
 const RUN_NOTES_COLUMNS = ["run_id", "stage", "at", "n", "message"];
-// a compute summary count that needs the owner when it is not zero: key, what it counts, the line that says more
-const CHECKS: [string, string, string][] = [
-  ["review_open_lines", "lines waiting in the review tab", "categories since"],
-  ["downloads_due", "downloads due", "coverage:"],
-  ["balances_off", "balances that disagree with the ledger", "balance_check:"],
-  ["stubs_missing", "pay deposits with no stub", "paychecks:"],
-  ["pay_not_deposited", "pay stubs with no deposit", "paychecks:"],
-  ["possible_duplicates", "possible duplicate transactions", "possible_duplicates:"],
-  ["tax_check_mismatches", "filed tax lines that disagree", "tax_check:"],
-  ["tax_sources_unfiled", "tax values whose source PDF is not filed", "tax_sources:"],
-  ["withholding_unexplained", "federal withholding stubs unexplained", "withholding_backtest:"],
-  ["wi_withholding_unexplained", "state (wi) withholding stubs unexplained", "wi_withholding_backtest:"],
-  ["pa_withholding_unexplained", "state (pa) withholding stubs unexplained", "pa_withholding_backtest:"],
-  ["mismatches", "legacy check mismatches", "legacy check"],
-  ["legacy_uncategorized", "legacy lines with no category", "legacy check"],
-  ["transfers_unmatched", "transfer lines with no partner, not yet answered", "transfers:"],
+// a compute summary count that needs the owner when it is not zero: key, what it counts, the line that says
+// more, the Edit tab that answers it
+const CHECKS: [string, string, string, string][] = [
+  ["review_open_lines", "lines need a category", "categories since", "review"],
+  ["downloads_due", "downloads due", "coverage:", ""],
+  ["balances_off", "balances disagree with the ledger", "balance_check:", ""],
+  ["stubs_missing", "pay deposits have no stub", "paychecks:", ""],
+  ["pay_not_deposited", "pay stubs have no deposit", "paychecks:", ""],
+  ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
+  ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
+  ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
+  ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
+  ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],
+  ["pa_withholding_unexplained", "Pennsylvania withholding stubs are unexplained", "pa_withholding_backtest:", ""],
+  ["mismatches", "legacy months disagree", "legacy check", ""],
+  ["legacy_uncategorized", "legacy lines have no category", "legacy check", ""],
+  ["transfers_unmatched", "transfers have no partner", "transfers:", "review"],
 ];
 const UNREAD = ["error", "unrecognized", "failed"];  // inbox file statuses that leave a file in the inbox
+// who decided a line (categorize.py's decided_by), in the breakdown's words; any other is an order history
+const DECIDED_BY: Record<string, string> = {
+  "your decision": "Your answers", "you": "Your answers", "you, split": "Your answers", "rule": "Payee rules",
+  "transfer pair": "Transfers", "model": "Model", "old books": "Old books",
+};
+const DUE = ["due", "never downloaded"];
 
-function parseStatus(runLog: unknown[][], notes: unknown[][]): Status {
+function plural(n: number, one: string, many: string): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+}
+
+function sumOf(counts: unknown): number {
+  return counts && typeof counts === "object"
+    ? Object.values(counts as Record<string, unknown>).reduce((a: number, v) => a + (Number(v) || 0), 0) : 0;
+}
+
+/** Lines since REVIEW_FROM by how they were decided, waiting for a download, and open, biggest first. */
+function categoryBreakdown(summary: Record<string, unknown>): Status["categories"] {
+  const c = summary.categories as { since?: string; decided?: Record<string, number>; waiting?: Record<string, number>;
+                                    open_lines?: number } | undefined;
+  if (!c) return null;
+  const by = new Map<string, number>();
+  for (const [who, n] of Object.entries(c.decided || {})) {
+    const label = DECIDED_BY[who] ?? "Receipts and order histories";
+    by.set(label, (by.get(label) || 0) + Number(n));
+  }
+  const segments: Breakdown[] = Array.from(by.entries()).map(([label, count]) => ({ label, count, kind: "decided" }))
+    .sort((a, b) => b.count - a.count);
+  const waiting = sumOf(c.waiting);
+  if (waiting) segments.push({ label: "Waiting for a download", count: waiting, kind: "waiting" });
+  if (c.open_lines) segments.push({ label: "Waiting for you", count: Number(c.open_lines), kind: "open" });
+  return { since: String(c.since || ""), total: segments.reduce((a, s) => a + s.count, 0), segments };
+}
+
+/** The downloads due, from Reports coverage: each source with how far it reaches and what waits for it. */
+function downloadsDue(coverage: unknown[][]): AttentionItem[] {
+  if (!coverage.length) return [];
+  const header = coverage[0].map((h) => String(h).trim());
+  const col = (v: unknown[], name: string): string => String(v[header.indexOf(name)] ?? "").trim();
+  return coverage.slice(1).filter((v) => DUE.indexOf(col(v, "status")) >= 0).map((v) => {
+    const newest = col(v, "newest").slice(0, 10);
+    const age = Number(col(v, "age_days"));
+    const waiting = Number(col(v, "waiting_lines")) || 0;
+    const reach = newest ? `Has everything through ${newest}` + (age ? `, ${plural(age, "day", "days")} ago` : "") : "Never downloaded";
+    const source = col(v, "source");
+    return { title: source.charAt(0).toUpperCase() + source.slice(1), detail: reach + (waiting ? `; ${plural(waiting, "line waits", "lines wait")} for it` : "") };
+  });
+}
+
+/** The review queue's questions in words: how many, and how many are whole merchants. */
+function reviewNote(review: unknown[][]): string {
+  if (!review.length) return "";
+  const kind = review[0].map((h) => String(h).trim()).indexOf("kind");
+  const rows = review.slice(1);
+  if (!rows.length) return "";
+  const merchants = kind < 0 ? 0 : rows.filter((v) => String(v[kind]) === "payee").length;
+  return `${plural(rows.length, "question", "questions")}: ${plural(merchants, "merchant", "merchants")} answered once for all their lines, `
+    + `${plural(rows.length - merchants, "single line", "single lines")}.`;
+}
+
+/**
+ * The status page from run_log and run_notes, and, when given, Reports coverage (for the downloads due) and
+ * editor_review (for how the review questions split).
+ */
+function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[][] = [], review: unknown[][] = []): Status {
   const runs: StageRun[] = [];
   if (runLog.length) {
     const [id, at, stage, detail] = columnsAt(runLog, RUN_LOG_COLUMNS, "run_log");
@@ -391,18 +473,31 @@ function parseStatus(runLog: unknown[][], notes: unknown[][]): Status {
     const files = (ingest.summary.files as { file?: string; status?: string; reason?: string }[] | undefined) || [];
     const unread = files.filter((f) => UNREAD.indexOf(String(f.status)) >= 0);
     if (unread.length) {
-      attention.push({ label: "inbox files not read", count: unread.length,
-                       detail: unread.map((f) => `${f.file}: ${f.status}${f.reason ? " (" + f.reason + ")" : ""}`) });
+      attention.push({ key: "inbox_unread", label: "inbox files were not read", count: unread.length, note: "", detail: [],
+                       flags: ingest.lines.filter((l) => unread.some((f) => f.file && l.indexOf(String(f.file)) >= 0)),
+                       items: unread.map((f) => ({ title: String(f.file), detail: f.reason || String(f.status) })), action: "" });
     }
   }
   if (compute) {
-    for (const [key, label, prefix] of CHECKS) {
+    for (const [key, label, prefix, action] of CHECKS) {
       const count = Number(compute.summary[key] ?? 0);
-      if (count) attention.push({ label, count, detail: compute.lines.filter((l) => l.startsWith(prefix)) });
+      if (!count) continue;
+      const items = key === "downloads_due" ? downloadsDue(coverage) : [];
+      let note = "";
+      if (key === "review_open_lines") {
+        const waiting = sumOf((compute.summary.categories as { waiting?: unknown } | undefined)?.waiting);
+        note = [reviewNote(review), waiting ? `${plural(waiting, "more line waits", "more lines wait")} for a download.` : ""]
+          .filter(Boolean).join(" ");
+      }
+      const structured = items.length || key === "review_open_lines";
+      const lines = compute.lines.filter((l) => l.startsWith(prefix));
+      attention.push({ key, label, count, note, items, action, flags: lines, detail: structured ? [] : lines });
     }
   }
   const projection = compute && compute.summary.projection && typeof compute.summary.projection === "object"
     ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
     : [];
-  return { stages: runs, attention, stale: !!(ingest && compute && ingest.at > compute.at), projection };
+  return { stages: runs, attention, stale: !!(ingest && compute && ingest.at > compute.at), projection,
+           projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
+           categories: compute ? categoryBreakdown(compute.summary) : null };
 }

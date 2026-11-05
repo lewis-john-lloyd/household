@@ -3,110 +3,257 @@
   <head>
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,300..700&family=Roboto+Mono:wght@400;500&display=swap">
     <style>
-      :root { --ink: #1f2328; --muted: #59636e; --line: #d1d9e0; --bg: #ffffff; --track: #eaeef2;
-        --ok: #1a7f37; --over: #cf222e; }
-      @media (prefers-color-scheme: dark) {
-        :root { --ink: #e6edf3; --muted: #9198a1; --line: #3d444d; --bg: #0d1117; --track: #262c36;
-          --ok: #3fb950; --over: #f85149; }
+      /* Material 3 tokens, Google's baseline light and dark schemes. */
+      :root {
+        --primary: #0b57d0; --on-primary: #ffffff; --primary-container: #d3e3fd; --on-primary-container: #041e49;
+        --secondary-container: #c2e7ff; --on-secondary-container: #001d35;
+        --surface: #f8fafd; --surface-low: #ffffff; --surface-container: #f0f4f9; --surface-high: #e9eef6;
+        --on-surface: #1f1f1f; --on-surface-variant: #444746; --outline: #747775; --outline-variant: #c4c7c5;
+        --error: #b3261e; --error-container: #f9dedc; --on-error-container: #410e0b;
+        --success: #146c2e; --success-container: #c4eed0; --on-success-container: #072711;
+        --waiting: #8a5100; --waiting-container: #ffdcbe;
+        --seg-1: #0b57d0; --seg-2: #4c8df6; --seg-3: #7cacf8; --seg-4: #a8c7fa; --seg-5: #d3e3fd;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+        --ink: var(--on-surface); --muted: var(--on-surface-variant); --line: var(--outline-variant); --bg: var(--surface);
+        --track: var(--surface-high); --ok: var(--success); --over: var(--error);
+        color-scheme: light;
       }
-      body { margin: 0; padding: 16px; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
-      header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
-      h1 { font-size: 18px; margin: 0 12px 0 0; }
-      select, button { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px;
-        background: var(--bg); color: var(--ink); }
-      button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --primary: #a8c7fa; --on-primary: #062e6f; --primary-container: #0842a0; --on-primary-container: #d3e3fd;
+          --secondary-container: #004a77; --on-secondary-container: #c2e7ff;
+          --surface: #131314; --surface-low: #1b1b1c; --surface-container: #1e1f20; --surface-high: #282a2c;
+          --on-surface: #e3e3e3; --on-surface-variant: #c4c7c5; --outline: #8e918f; --outline-variant: #444746;
+          --error: #f2b8b5; --error-container: #8c1d18; --on-error-container: #f9dedc;
+          --success: #6dd58c; --success-container: #0f5223; --on-success-container: #c4eed0;
+          --waiting: #ffb870; --waiting-container: #6a3c00;
+          --seg-1: #d3e3fd; --seg-2: #a8c7fa; --seg-3: #7cacf8; --seg-4: #4c8df6; --seg-5: #0b57d0;
+          --shadow: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+          color-scheme: dark;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 400 14px/20px "Roboto Flex", "Google Sans", Roboto, system-ui, sans-serif; letter-spacing: 0.1px;
+        color: var(--on-surface); background: var(--surface); }
+      main { padding: 16px 24px 32px; max-width: 1280px; }
       [hidden] { display: none !important; }
-      #chart { width: 100%; min-height: 480px; }
-      .note { color: var(--muted); margin-top: 8px; }
-      details { margin-top: 16px; }
-      summary { cursor: pointer; font-weight: 600; }
+      :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+      h2 { font-size: 16px; line-height: 24px; font-weight: 500; margin: 0; }
+      .support, .note { color: var(--on-surface-variant); }
+      .note { margin-top: 8px; }
+      svg.icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
+
+      /* top app bar and its tabs */
+      header.top { position: sticky; top: 0; z-index: 4; background: var(--surface); padding: 12px 24px 0; }
+      header.top .appbar { display: flex; align-items: center; gap: 12px; height: 48px; }
+      header.top h1 { font-size: 22px; line-height: 28px; font-weight: 400; margin: 0; }
+      nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--outline-variant); overflow-x: auto; }
+      nav.tabs button { all: unset; cursor: pointer; padding: 14px 16px 12px; font-weight: 500; color: var(--on-surface-variant);
+        border-bottom: 3px solid transparent; border-radius: 3px 3px 0 0; white-space: nowrap; }
+      nav.tabs button:hover { background: var(--surface-container); color: var(--on-surface); }
+      nav.tabs button[aria-pressed="true"] { color: var(--primary); border-bottom-color: var(--primary); }
+      nav.tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+      #controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 0 4px; }
+
+      /* buttons: tonal by default, filled for the main action, text for small ones */
+      button, select { font: inherit; font-weight: 500; letter-spacing: 0.1px; }
+      button { min-height: 40px; padding: 0 20px; border-radius: 20px; border: 0; cursor: pointer;
+        background: var(--secondary-container); color: var(--on-secondary-container); }
+      button:hover { box-shadow: var(--shadow); }
+      button:disabled { opacity: 0.38; cursor: default; box-shadow: none; }
+      button.filled { background: var(--primary); color: var(--on-primary); }
+      button.text { background: transparent; color: var(--primary); padding: 0 12px; }
+      button.text:hover { background: var(--surface-container); box-shadow: none; }
+      button.small { min-height: 32px; padding: 0 12px; font-size: 13px; border-radius: 8px; background: transparent;
+        color: var(--on-surface-variant); border: 1px solid var(--outline); }
+      button.small:hover { background: var(--surface-container); box-shadow: none; }
+      .segmented { display: inline-flex; border: 1px solid var(--outline); border-radius: 20px; overflow: hidden; }
+      .segmented button { border-radius: 0; background: transparent; color: var(--on-surface); min-height: 38px; }
+      .segmented button + button { border-left: 1px solid var(--outline); }
+      .segmented button[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
+      .segmented button:hover { box-shadow: none; background: var(--surface-container); }
+      .segmented button[aria-pressed="true"]:hover { background: var(--secondary-container); }
+      select, input[type="text"], input[type="date"], input:not([type]) { min-height: 40px; padding: 0 12px;
+        border: 1px solid var(--outline); border-radius: 4px; background: transparent; color: var(--on-surface); font: inherit; }
+      select:focus, input:focus { outline: none; border: 2px solid var(--primary); padding: 0 11px; }
+      label { color: var(--on-surface-variant); }
+      input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+
+      /* cards */
+      .card { background: var(--surface-container); border-radius: 12px; padding: 16px; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+      .card .detail { margin-top: 4px; font-size: 13px; color: var(--on-surface-variant); overflow-wrap: anywhere; }
+      .card.clear { background: var(--success-container); color: var(--on-success-container); }
+      .card.clear .detail { color: inherit; }
+      .card > strong { display: block; }
+      .refused { color: var(--error); }
+      .error { color: var(--error); }
+      .saved { color: var(--success); }
+
+      /* status page */
+      #status { display: grid; gap: 24px; padding-top: 8px; }
+      .status-head { display: grid; gap: 8px; }
+      .status-head h2 { font-size: 28px; line-height: 36px; font-weight: 400; }
+      .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+      .chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px;
+        border: 1px solid var(--outline-variant); color: var(--on-surface-variant); font-weight: 500; }
+      .banner { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: 12px;
+        background: var(--waiting-container); color: var(--on-surface); }
+      .attention { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; align-content: start; }
+      .attention .badge-icon { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center;
+        background: var(--error-container); color: var(--on-error-container); }
+      .attention.waiting .badge-icon { background: var(--waiting-container); color: var(--on-surface); }
+      .attention .headline { font-size: 16px; line-height: 24px; font-weight: 500; }
+      .attention .headline .num { font-size: 28px; line-height: 36px; font-weight: 400; margin-right: 6px; font-variant-numeric: tabular-nums; }
+      .attention .support { margin: 4px 0 0; }
+      .attention ul.things { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+      .attention ul.things li { display: grid; padding-left: 12px; border-left: 2px solid var(--outline-variant); }
+      .attention ul.things strong { font-weight: 500; overflow-wrap: anywhere; }
+      .attention ul.things span { color: var(--on-surface-variant); font-size: 13px; }
+      .attention .actions { margin-top: 16px; display: flex; gap: 8px; }
+      .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
+      .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
+      .panel { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; padding: 16px 20px 20px; }
+      .panel h2 + .support { margin: 2px 0 16px; }
+      .stack { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface-high); }
+      .stack span { display: block; min-width: 3px; }
+      .legend { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+      .legend li { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 12px; align-items: center; }
+      .legend .swatch { width: 12px; height: 12px; border-radius: 3px; }
+      .legend .n { font-variant-numeric: tabular-nums; text-align: right; }
+      .legend .pct { font-variant-numeric: tabular-nums; color: var(--on-surface-variant); width: 3.5em; text-align: right; }
+      .scenarios { display: grid; gap: 10px; }
+      .scenario { display: grid; grid-template-columns: minmax(9em, 1.2fr) 2fr minmax(7.5em, auto); gap: 12px; align-items: center; }
+      .scenario .axis { position: relative; height: 24px; }
+      .scenario .axis::before { content: ""; position: absolute; left: 50%; top: -5px; bottom: -5px; width: 1px; background: var(--outline); }
+      .scenario .axis span { position: absolute; top: 4px; height: 16px; border-radius: 4px; }
+      .scenario .axis span.refund { right: 50%; background: var(--success); }
+      .scenario .axis span.owe { left: 50%; background: var(--error); }
+      .scenario .amount { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+      .scenario .amount.refund { color: var(--success); }
+      .scenario .amount.owe { color: var(--error); }
+      .scale { display: grid; grid-template-columns: minmax(9em, 1.2fr) 2fr minmax(7.5em, auto); gap: 12px; color: var(--on-surface-variant);
+        font-size: 12px; margin-top: 8px; }
+      .scale div { display: flex; justify-content: space-between; }
+      .logs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 12px; }
+      .logs .panel { padding: 0; overflow: hidden; }
+      .logs .head { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--outline-variant); }
+      .logs .head .support { font-size: 13px; }
+      .logs ol { list-style: none; margin: 0; padding: 8px 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; }
+      .logs li { padding: 1px 20px 1px 40px; text-indent: -20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .logs li.indent { color: var(--on-surface-variant); }
+      .logs li.flag { background: var(--error-container); color: var(--on-error-container); }
+
+      /* tables */
       .scroll { overflow-x: auto; }
       table { border-collapse: collapse; margin-top: 8px; }
-      th, td { padding: 4px 12px 4px 0; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
-      th:first-child, td:first-child { text-align: left; }
-      td { font-variant-numeric: tabular-nums; }
+      th { padding: 12px 16px 12px 0; text-align: right; font-weight: 500; color: var(--on-surface-variant);
+        border-bottom: 1px solid var(--outline-variant); white-space: nowrap; }
+      td { padding: 10px 16px 10px 0; text-align: right; border-bottom: 1px solid var(--outline-variant); white-space: nowrap;
+        font-variant-numeric: tabular-nums; }
+      th:first-child, td:first-child { text-align: left; padding-left: 4px; }
       td.text { text-align: left; }
-      ul.items { margin: 2px 0 0; padding-left: 16px; font-size: 0.85em; opacity: 0.75; }
-      ul.items li { max-width: 46em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      ul.items li.more { cursor: pointer; text-decoration: underline dotted; }
-      span.badge { font-size: 0.75em; padding: 0 5px; border: 1px solid currentColor; border-radius: 8px;
-                   opacity: 0.7; cursor: help; }
-      td.txn-id code { visibility: hidden; user-select: all; cursor: copy; font-size: 0.8em; opacity: 0.7; }
-      tr:hover > td.txn-id code, td.txn-id code.copied { visibility: visible; }
-      th button.sort { border: 0; padding: 0; background: none; font-weight: 600; cursor: pointer; }
+      th button.sort { all: unset; cursor: pointer; font-weight: 500; }
       th button.sort[data-dir="asc"]::after { content: " ▲"; }
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
       tr.line { cursor: pointer; }
-      tr.line:hover td { background: var(--track); }
-      tr.over td.left { color: var(--over); font-weight: 600; }
-      .bar { width: 120px; height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
-      .bar span { display: block; height: 100%; background: var(--ok); }
-      tr.over .bar span { background: var(--over); }
-      tr.unbudgeted .bar span { background: var(--muted); }
-      tr.detail td { background: var(--track); padding: 6px 8px; }
+      tr.line:hover td { background: var(--surface-container); }
+      tr.over td.left { color: var(--error); font-weight: 500; }
+      .bar { width: 120px; height: 8px; background: var(--surface-high); border-radius: 4px; overflow: hidden; }
+      .bar span { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
+      tr.over .bar span { background: var(--error); }
+      tr.unbudgeted .bar span { background: var(--outline); }
+      tr.detail td, tr.form-row td { background: var(--surface-container); padding: 8px 12px; }
       tr.detail table { margin: 0; width: 100%; }
-      #budget-summary { margin: 4px 0; }
-      #status h2 { font-size: 15px; margin: 18px 0 6px; }
-      .runs { color: var(--muted); }
-      .stale { color: var(--over); font-weight: 600; margin-top: 4px; }
-      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
-      .card { border: 1px solid var(--line); border-left: 4px solid var(--over); border-radius: 6px; padding: 8px 10px; }
-      .card .count { font-size: 20px; font-weight: 600; margin-right: 6px; }
-      .card .detail { margin-top: 4px; font-size: 0.85em; color: var(--muted); overflow-wrap: anywhere; }
-      .clear { border-left-color: var(--ok); }
-      pre.log { margin: 6px 0 0; padding: 8px; background: var(--track); border-radius: 6px; overflow-x: auto;
-                font-size: 12px; line-height: 1.45; }
-      pre.log .flag { color: var(--over); font-weight: 600; }
-      body.editing { padding-bottom: 72px; }
-      #edit-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
-      input[type="text"], input[type="date"], input:not([type]) { font: inherit; padding: 3px 6px; border: 1px solid var(--line);
-        border-radius: 6px; background: var(--bg); color: var(--ink); }
+      #budget-summary { margin: 12px 0 4px; font-size: 16px; line-height: 24px; }
+      #chart { width: 100%; min-height: 480px; }
+      details { margin-top: 16px; }
+      summary { cursor: pointer; font-weight: 500; }
+      ul.items { margin: 2px 0 0; padding-left: 16px; font-size: 0.85em; color: var(--on-surface-variant); }
+      ul.items li { max-width: 46em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      ul.items li.more { cursor: pointer; text-decoration: underline dotted; }
+      span.badge { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--secondary-container);
+        color: var(--on-secondary-container); cursor: help; }
+      td.txn-id code { visibility: hidden; user-select: all; cursor: copy; font: 12px "Roboto Mono", monospace; color: var(--on-surface-variant); }
+      tr:hover > td.txn-id code, td.txn-id code.copied { visibility: visible; }
+
+      /* editing */
+      body.editing { padding-bottom: 88px; }
+      #edit-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+      #edit-tabs button { min-height: 32px; padding: 0 16px; border-radius: 8px; background: transparent;
+        border: 1px solid var(--outline); color: var(--on-surface-variant); }
+      #edit-tabs button:hover { box-shadow: none; background: var(--surface-container); }
+      #edit-tabs button[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container);
+        border-color: transparent; }
+      #edit th, #edit td { text-align: left; }
+      #edit h3 { font-size: 16px; font-weight: 500; margin: 24px 0 4px; }
+      #edit .actions { display: flex; gap: 8px; flex-wrap: wrap; }
       input.amount { width: 7em; }
       input.wide { width: 22em; max-width: 100%; }
-      form.edit { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; padding: 8px; }
-      form.edit label { display: flex; flex-direction: column; font-size: 0.85em; color: var(--muted); gap: 2px; }
-      form.edit .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-      form.edit .error { color: var(--over); width: 100%; }
-      tr.staged td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
-      td.staged-note { color: var(--ok); font-size: 0.85em; white-space: normal; }
-      button.small { font-size: 0.8em; padding: 1px 6px; }
-      #pending { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px; background: var(--bg);
-        border-top: 2px solid var(--ok); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; z-index: 5; }
+      form.edit { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; padding: 12px 4px; }
+      form.edit label { display: flex; flex-direction: column; font-size: 12px; gap: 4px; }
+      form.edit .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      form.edit .error { width: 100%; }
+      tr.staged td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
+      td.staged-note { color: var(--primary); font-size: 13px; white-space: normal; }
+      #pending { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 24px; background: var(--surface-high);
+        box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.2); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; z-index: 5; }
+      #pending strong { font-weight: 500; margin-right: auto; }
       #pending ul { width: 100%; max-height: 40vh; overflow-y: auto; margin: 4px 0 0; padding-left: 18px; }
-      #pending li button { margin-left: 6px; }
+      #pending li { padding: 2px 0; }
+      #pending li button { margin-left: 8px; }
       #pending-msg { width: 100%; }
-      .error, .refused { color: var(--over); }
-      .saved { color: var(--ok); }
-      #edit th, #edit td { text-align: left; }
-      #edit h3 { font-size: 14px; margin: 18px 0 4px; }
+      @media (max-width: 600px) {
+        main { padding: 12px 16px 24px; }
+        header.top { padding: 8px 16px 0; }
+        .scenario, .scale { grid-template-columns: 1fr 1fr; }
+        .scenario .axis, .scale div { display: none; }
+        .logs { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
-    <header>
-      <span role="group" aria-label="View">
+    <header class="top">
+      <div class="appbar"><h1>Household</h1></div>
+      <nav class="tabs" aria-label="Views">
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
-      </span>
-      <span id="controls" hidden>
-        <label>Period <select id="period"></select></label>
-        <span role="group" aria-label="Detail">
-          <button id="group" aria-pressed="true">Groups</button>
-          <button id="category" aria-pressed="false">Categories</button>
-        </span>
-      </span>
+      </nav>
     </header>
+    <main>
+    <div id="controls" hidden>
+      <select id="period" aria-label="Period"></select>
+      <span class="segmented" role="group" aria-label="Detail">
+        <button id="group" aria-pressed="true">Groups</button>
+        <button id="category" aria-pressed="false">Categories</button>
+      </span>
+    </div>
 
     <section id="status">
-      <div id="status-runs" class="runs">Loading…</div>
-      <h2>Needs you</h2>
+      <div class="status-head">
+        <h2 id="status-title">Loading…</h2>
+        <div id="status-runs" class="chips"></div>
+        <div id="status-stale" class="banner" hidden></div>
+      </div>
       <div id="status-attention" class="cards"></div>
-      <h2>Tax projection</h2>
-      <div id="status-projection"></div>
-      <h2>Latest runs</h2>
-      <div id="status-logs"></div>
+      <div class="two">
+        <section class="panel">
+          <h2>How lines were categorized</h2>
+          <div id="status-since" class="support"></div>
+          <div id="status-categories"></div>
+        </section>
+        <section class="panel">
+          <h2 id="status-projection-title">Tax projection</h2>
+          <div class="support">What the year's return comes to under each scenario</div>
+          <div id="status-projection"></div>
+        </section>
+      </div>
+      <div id="status-logs" class="logs"></div>
     </section>
 
     <section id="flows" hidden>
@@ -159,13 +306,15 @@
 
     <div id="pending" hidden>
       <strong id="pending-count"></strong>
-      <button id="pending-show">Show</button>
-      <button id="pending-save">Save</button>
-      <button id="pending-discard">Discard all</button>
+      <button id="pending-show" class="text">Show</button>
+      <button id="pending-save" class="filled">Save</button>
+      <button id="pending-discard" class="text">Discard all</button>
+      <button id="pending-dismiss" class="text" hidden>Dismiss</button>
       <ul id="pending-list" hidden></ul>
       <div id="pending-msg"></div>
     </div>
 
+    </main>
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
       var view = "status", level = "group";
@@ -443,6 +592,7 @@
         document.body.classList.toggle("editing", !bar.hidden);
         document.getElementById("pending-count").textContent = n ? n + (n === 1 ? " change" : " changes") + " not saved" : "";
         ["pending-show", "pending-save", "pending-discard"].forEach(function (id) { document.getElementById(id).hidden = !n; });
+        document.getElementById("pending-dismiss").hidden = !!n;
         var list = document.getElementById("pending-list");
         list.textContent = "";
         stagedOrder.forEach(function (t) {
@@ -1027,11 +1177,13 @@
           var cards = document.getElementById("status-attention");
           var clear = cards.querySelector(".card.clear");
           if (clear && refused.length) clear.remove();
-          var card = el("div", null, "card" + (refused.length ? "" : " clear"));
-          card.appendChild(el("span", String(list.length), "count"));
-          card.appendChild(document.createTextNode(refused.length ? "saved changes refused by ingest" : "saved changes waiting for ingest"));
-          refused.forEach(function (w) { card.appendChild(el("div", w.name + ": " + w.refused, "detail")); });
-          card.appendChild(button("See them", function () { setView("edit"); setEditTab("waiting"); }, "small"));
+          var card = attentionCard({
+            key: "waiting_changes", count: refused.length || list.length, action: "waiting", flags: [], detail: [],
+            label: refused.length ? (refused.length === 1 ? "saved change set was refused" : "saved change sets were refused")
+                                  : (list.length === 1 ? "saved change set waits for ingest" : "saved change sets wait for ingest"),
+            note: refused.length ? "Ingest wrote nothing from it. Fix the reason, or discard it and edit again." : "Run ingest, then compute, to apply it.",
+            items: refused.map(function (w) { return { title: w.name, detail: w.refused }; }),
+          }, !refused.length);
           cards.insertBefore(card, cards.firstChild);
         }).withFailureHandler(function () { /* no folder yet, or no Drive access: nothing to show */ }).getWaiting();
       }
@@ -1055,87 +1207,202 @@
         return isNaN(d) ? at : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
       }
 
+      // Material icons (Apache 2.0), drawn inline so they need no font.
+      var ICONS = {
+        edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+        download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+        inbox: "M19 3H4.99C3.89 3 3 3.9 3 5l.01 14c0 1.1.89 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z",
+        copy: "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+        warning: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+        check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+        sync: "M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
+      };
+      var CARD_ICON = { review_open_lines: "edit", downloads_due: "download", inbox_unread: "inbox", possible_duplicates: "copy",
+                        transfers_unmatched: "edit", waiting_changes: "sync" };
+      var ACTION_LABEL = { review: "Answer in Review", duplicates: "Settle duplicates", withholding: "Explain stubs",
+                           waiting: "See saved changes" };
+      var CARD_NOTE = { downloads_due: "Download each one into the inbox, then run ingest." };
+
+      function icon(name) {
+        var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("class", "icon");
+        svg.setAttribute("aria-hidden", "true");
+        var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", ICONS[name] || ICONS.warning);
+        svg.appendChild(path);
+        return svg;
+      }
+
+      // One thing that needs you: the count and what it counts, a sentence more, the things themselves, and
+      // the button that answers it.
+      function attentionCard(a, waiting) {
+        var card = el("article", null, "card attention" + (waiting ? " waiting" : ""));
+        var badge = el("div", null, "badge-icon");
+        badge.appendChild(icon(CARD_ICON[a.key] || "warning"));
+        card.appendChild(badge);
+        var body = el("div");
+        var headline = el("div", null, "headline");
+        headline.appendChild(el("span", a.count.toLocaleString(), "num"));
+        headline.appendChild(document.createTextNode(a.label));
+        body.appendChild(headline);
+        var note = [a.note, CARD_NOTE[a.key] || ""].filter(Boolean).join(" ");
+        if (note) body.appendChild(el("p", note, "support"));
+        if (a.items.length) {
+          var list = el("ul", null, "things");
+          a.items.forEach(function (i) {
+            var li = el("li");
+            li.appendChild(el("strong", i.title));
+            li.appendChild(el("span", i.detail));
+            list.appendChild(li);
+          });
+          body.appendChild(list);
+        }
+        a.detail.forEach(function (d) { body.appendChild(el("p", d.replace(/^[a-z_ ]+:\s*/, ""), "support")); });
+        if (a.action) {
+          var actions = el("div", null, "actions");
+          actions.appendChild(button(ACTION_LABEL[a.action] || "Open", function () {
+            setView("edit");
+            setEditTab(a.action);
+          }, "filled"));
+          body.appendChild(actions);
+        }
+        card.appendChild(body);
+        return card;
+      }
+
+      function chip(iconName, text) {
+        var c = el("span", null, "chip");
+        c.appendChild(icon(iconName));
+        c.appendChild(document.createTextNode(text));
+        return c;
+      }
+
+      var STAGE_NAME = { ingest: "Ingest", compute: "Compute" };
+
       function drawStatus(status) {
+        var title = document.getElementById("status-title");
         var runs = document.getElementById("status-runs");
+        var stale = document.getElementById("status-stale");
         var cards = document.getElementById("status-attention");
-        var projection = document.getElementById("status-projection");
         var logs = document.getElementById("status-logs");
-        runs.textContent = cards.textContent = projection.textContent = logs.textContent = "";
+        [runs, cards, logs].forEach(function (e) { e.textContent = ""; });
         if (!status.stages.length) {
-          runs.textContent = "No runs recorded yet: run ingest and compute once with this release.";
+          title.textContent = "No runs yet";
+          cards.appendChild(el("p", "Run ingest and compute once with this release, and this page fills in.", "support"));
           return;
         }
-        status.stages.forEach(function (s) {
-          var line = document.createElement("div");
-          line.textContent = "Last " + s.stage + ": " + when(s.at) + " (run " + s.runId + ")";
-          runs.appendChild(line);
-        });
-        if (status.stale) {
-          var stale = document.createElement("div");
-          stale.className = "stale";
-          stale.textContent = "Compute has not run since the last ingest: these numbers are from before it.";
-          runs.appendChild(stale);
-        }
+        var n = status.attention.length;
+        title.textContent = n ? (n === 1 ? "One thing needs you" : n + " things need you") : "Nothing needs you";
+        status.stages.forEach(function (s) { runs.appendChild(chip("sync", STAGE_NAME[s.stage] + " " + when(s.at))); });
+        stale.hidden = !status.stale;
+        stale.textContent = "Compute hasn't run since the last ingest, so these numbers are from before it. Run compute.";
         var flagged = {};
-        if (!status.attention.length) {
-          var clear = document.createElement("div");
-          clear.className = "card clear";
-          clear.textContent = "Nothing needs you.";
+        status.attention.forEach(function (a) {
+          a.flags.forEach(function (l) { flagged[l] = true; });
+          cards.appendChild(attentionCard(a));
+        });
+        if (!n) {
+          var clear = el("article", null, "card attention clear");
+          var badge = el("div", null, "badge-icon");
+          badge.appendChild(icon("check"));
+          clear.appendChild(badge);
+          clear.appendChild(el("div", "Every line has a category, every download is current, and every check agrees.", "headline"));
           cards.appendChild(clear);
         }
-        status.attention.forEach(function (a) {
-          var card = document.createElement("div");
-          card.className = "card";
-          var count = document.createElement("span");
-          count.className = "count";
-          count.textContent = a.count.toLocaleString();
-          card.appendChild(count);
-          card.appendChild(document.createTextNode(a.label));
-          a.detail.forEach(function (d) {
-            flagged[d] = true;
-            var detail = document.createElement("div");
-            detail.className = "detail";
-            detail.textContent = d;
-            card.appendChild(detail);
-          });
-          cards.appendChild(card);
-        });
-        if (status.projection.length) {
-          var table = document.createElement("table");
-          status.projection.forEach(function (p) {
-            var row = document.createElement("tr");
-            cell(row, p[0], "text");
-            cell(row, (p[1] > 0 ? "owe " : "refund ") + money.format(Math.abs(p[1])));
-            table.appendChild(row);
-          });
-          projection.appendChild(table);
-        } else {
-          projection.textContent = "No projection in the last compute.";
-          projection.className = "note";
-        }
+        drawBreakdown(status.categories);
+        drawProjection(status.projection, status.projectionYear);
         status.stages.forEach(function (s) {
-          var details = document.createElement("details");
-          var summary = document.createElement("summary");
-          summary.textContent = s.stage + " " + when(s.at) + " (" + s.lines.length + " lines)";
-          details.appendChild(summary);
-          var pre = document.createElement("pre");
-          pre.className = "log";
+          var panel = el("section", null, "panel");
+          var head = el("div", null, "head");
+          head.appendChild(el("h2", STAGE_NAME[s.stage]));
+          head.appendChild(el("span", when(s.at) + ", run " + s.runId + ", " + s.lines.length + " lines", "support"));
+          panel.appendChild(head);
+          var list = el("ol");
           s.lines.forEach(function (l) {
-            var span = document.createElement("span");
-            if (flagged[l]) span.className = "flag";
-            span.textContent = l + "\n";
-            pre.appendChild(span);
+            list.appendChild(el("li", l, flagged[l] ? "flag" : /^\s/.test(l) ? "indent" : ""));
           });
-          details.appendChild(pre);
-          logs.appendChild(details);
+          panel.appendChild(list);
+          logs.appendChild(panel);
         });
+      }
+
+      var SEGMENT_COLOR = { waiting: "var(--waiting)", open: "var(--error)" };
+
+      function drawBreakdown(c) {
+        var box = document.getElementById("status-categories");
+        var since = document.getElementById("status-since");
+        box.textContent = "";
+        if (!c || !c.total) {
+          since.textContent = "";
+          box.appendChild(el("p", "The next compute fills this in.", "support"));
+          return;
+        }
+        var d = new Date(c.since + "T00:00:00");
+        since.textContent = c.total.toLocaleString() + " lines since " +
+          (isNaN(d) ? c.since : d.toLocaleDateString([], { dateStyle: "long" }));
+        var stack = el("div", null, "stack");
+        stack.setAttribute("role", "img");
+        stack.setAttribute("aria-label", c.segments.map(function (s) { return s.label + " " + s.count; }).join(", "));
+        var legend = el("ul", null, "legend");
+        var shade = 0;
+        c.segments.forEach(function (s) {
+          var color = SEGMENT_COLOR[s.kind] || "var(--seg-" + Math.min(5, ++shade) + ")";
+          var part = el("span");
+          part.style.flex = String(s.count);
+          part.style.background = color;
+          part.title = s.label + ": " + s.count.toLocaleString();
+          stack.appendChild(part);
+          var li = el("li");
+          var swatch = el("span", null, "swatch");
+          swatch.style.background = color;
+          li.appendChild(swatch);
+          li.appendChild(el("span", s.label));
+          li.appendChild(el("span", s.count.toLocaleString(), "n"));
+          li.appendChild(el("span", Math.round(100 * s.count / c.total) + "%", "pct"));
+          legend.appendChild(li);
+        });
+        box.appendChild(stack);
+        box.appendChild(legend);
+      }
+
+      // Each scenario as a bar from zero: a refund to the left, an amount owed to the right.
+      function drawProjection(rows, year) {
+        var box = document.getElementById("status-projection");
+        document.getElementById("status-projection-title").textContent = "Tax projection" + (year ? " for " + year : "");
+        box.textContent = "";
+        if (!rows.length) { box.appendChild(el("p", "No projection in the last compute.", "support")); return; }
+        var biggest = Math.max.apply(null, rows.map(function (r) { return Math.abs(r[1]); })) || 1;
+        var list = el("div", null, "scenarios");
+        list.style.marginTop = "16px";
+        rows.forEach(function (r) {
+          var owe = r[1] > 0;
+          var row = el("div", null, "scenario");
+          row.appendChild(el("span", r[0].charAt(0).toUpperCase() + r[0].slice(1)));
+          var axis = el("div", null, "axis");
+          var bar = el("span", null, owe ? "owe" : "refund");
+          bar.style.width = (50 * Math.abs(r[1]) / biggest) + "%";
+          axis.appendChild(bar);
+          row.appendChild(axis);
+          row.appendChild(el("span", (owe ? "Owe " : "Refund ") + money.format(Math.abs(r[1])), "amount " + (owe ? "owe" : "refund")));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+        var scale = el("div", null, "scale");
+        scale.appendChild(el("span"));
+        var ends = el("div");
+        ends.appendChild(el("span", "Refund " + money.format(biggest)));
+        ends.appendChild(el("span", "0"));
+        ends.appendChild(el("span", "Owe " + money.format(biggest)));
+        scale.appendChild(ends);
+        box.appendChild(scale);
       }
 
       function load() {
         document.getElementById("controls").hidden = view === "status" || view === "edit";
         if (view === "status") {
-          document.getElementById("status-runs").textContent = "Loading…";
-          call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); }, "status-runs");
+          document.getElementById("status-title").textContent = "Loading…";
+          call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); }, "status-title");
           return;
         }
         if (view === "edit") {
@@ -1204,6 +1471,10 @@
           this.textContent = list.hidden ? "Show" : "Hide";
         });
         document.getElementById("pending-save").addEventListener("click", saveStaged);
+        document.getElementById("pending-dismiss").addEventListener("click", function () {
+          document.getElementById("pending-msg").textContent = "";
+          drawPending();
+        });
         document.getElementById("pending-discard").addEventListener("click", function () {
           stagedOrder.slice().forEach(unstage);
           redrawEditor();

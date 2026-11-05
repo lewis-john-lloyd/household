@@ -83,6 +83,7 @@ def test_ingest_then_compute_then_rerun(session):
     assert computed["mismatches"] == 0 and computed["possible_duplicates"] == 0
     assert computed["tax_check_mismatches"] == 0
     assert computed["withholding_unexplained"] == 0  # the synthetic stub is from 2001: no tables
+    assert set(computed["categories"]) == {"since", "decided", "waiting", "open_lines"}  # for the status page
 
     actuals = explore.monthly_actuals(session, session.root)
     assert actuals["spend"].dtype == float and len(actuals) == computed["rows"]

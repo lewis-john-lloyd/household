@@ -397,20 +397,23 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                 _say(log, f"tax_lines: {len(compared)} projected lines beside a filed return, {len(off)} off by more than 1")
             params = books["parameters"]
             setting = lambda key, default: float(categorize.household_parameter(params, key, default) or default)  # noqa: E731
-            target, wi_target = setting("target_refund", 2000), setting("wi_target_refund", 0)
-            rate = setting("planned_supplemental_rate", 0.35)
-            plan = projection.withholding_plan(year, stubs, sales, facts, target, wi_target, rate)
+            target, rate = setting("target_refund", 2000), setting("planned_supplemental_rate", 0.35)
+            plan = projection.withholding_plan(year, stubs, sales, facts, target, rate)
             sheets.replace_table(reports, schema.table(schema.REPORTS, "withholding_plan"),
                                  plan.assign(year=year, run_id=run_id))
             for row in plan.to_dict("records"):
                 if pd.isna(row["suggested_extra"]):
                     _say(log, f"withholding plan {year}, {row['return']}: {row['note']}")
                     continue
+                goal = ("a refund of " if row["target"] > 0 else "owing ") + format(abs(row["target"]), ",.0f") \
+                    if row["target"] else "no balance"
                 _say(log, f"withholding plan {year}, {row['return']}: with vests at {rate:.0%}, "
-                          f"{'refund' if row['projected'] >= 0 else 'owe'} {abs(row['projected']):,.0f}; for "
-                          f"{'a refund of ' + format(row['target'], ',.0f') if row['target'] else 'no balance'}, "
+                          f"{'refund' if row['projected'] >= 0 else 'owe'} {abs(row['projected']):,.0f}; for {goal}, "
                           f"{row['person']} ({row['employer']}) withholds {row['suggested_extra']:,.2f} extra a "
-                          f"paycheck (now {row['current_extra']:,.2f}) for {row['paychecks_left']} paychecks")
+                          f"paycheck (now {row['current_extra']:,.2f}) for {row['paychecks_left']} paychecks"
+                          + ("" if abs(row["lands_at"] - row["target"]) <= 1 else
+                             f", which can only get to {row['lands_at']:,.0f}")
+                          + (" (an underpayment penalty is possible)" if row["penalty_free"] is False else ""))
             for note in notes:
                 _say(log, f"projection {year}: {note}")
             for row in lines.to_dict("records"):

@@ -318,6 +318,10 @@ METHODS = {
     "tax: qualified dividends and capital gain tax worksheet": (
         "instructions-for-form-1040-2025", 37, "Qualified Dividends and Capital Gain Tax Worksheet"),
     "safe harbor: 110% of prior-year tax above 150,000 AGI": ("publication-505-2026", 21, "110%"),
+    "no underpayment penalty owing under 1,000": ("publication-505-2026", 21,
+                                                   "1,000 in tax for 2026 after subtracting your withholding"),
+    "no underpayment penalty withholding 90% of this year's tax": ("publication-505-2026", 21,
+                                                                    "90% of the tax to be shown on your 2026 tax return"),
     "wi withholding: flat percentages on supplemental pay": (_W166, 25, "Approved Flat Percentages"),
     "pa: tax is the flat rate on adjusted taxable income (PA-40 line 12)": (
         "pa-40-2025", 2, "PA Tax Liability. Multiply Line 11 by 3.07 percent (0.0307)"),

@@ -30,10 +30,11 @@ compared with the year's limits, with what the stubs show so far: the after-tax
 return_lines lays both returns out line by line (Form 1040 and Wisconsin Form 1),
 so the tax page shows the whole return, and a filed return can be set beside it.
 
-withholding_plan says what withholding lands the year near a target refund:
-future vests withheld at a planned supplemental rate, and the extra per paycheck
-(W-4 Step 4(c), and WT-4's additional amount for Wisconsin) on the paychecks of
-the person and employer with the most left.
+withholding_plan says what withholding lands the year on a refund of the target,
+on no balance, and on owing the target: future vests withheld at a planned
+supplemental rate, and the extra per paycheck (W-4 Step 4(c), and WT-4's
+additional amount for Wisconsin) on the paychecks of the person and employer with
+the most left.
 """
 
 from datetime import date, timedelta
@@ -268,7 +269,7 @@ def project(year, paystubs, sales, facts):
     """Projected lines per scenario, plus the safe-harbor target from last year's return.
 
     Returns (summary, notes, detail): one summary row per scenario, the notes, and every line of both
-    returns per scenario (return_lines), each beside the filed value once the year's return is in
+    returns as things stand (return_lines), each beside the filed value once the year's return is in
     return_facts.
     """
     rows, detail = [], []
@@ -287,9 +288,9 @@ def project(year, paystubs, sales, facts):
         if name == "as is":
             notes = [f"{p}/{e}: {n}" for (p, e), v in pos.items() for n in v["notes"]]
             notes += _wisconsin_notes(year)
-        for order, row in enumerate(return_lines(i, r, w, year)):
-            detail.append({"scenario": name, "order": order, **row,
-                           "filed": filed.get(row["key"]) if name == "as is" else None})
+        if name == "as is":  # the forms show the year as it stands; scenarios differ only in their totals
+            for order, row in enumerate(return_lines(i, r, w, year)):
+                detail.append({"scenario": name, "order": order, **row, "filed": filed.get(row["key"])})
         rows.append({"scenario": name, "agi": r["11a"], "deduction": r["12e"], "taxable": r["15"],
                      "total_tax": r["24"], "withheld": r["33"], "owe_or_refund": r["37"],
                      "safe_harbor": harbor,
@@ -362,13 +363,22 @@ def return_lines(i, r, w, year):
 
 
 PLAN_COLUMNS = ["return", "person", "employer", "paychecks_left", "vest_rate", "projected", "target", "current_extra",
-                "suggested_extra", "lands_at", "note"]
+                "suggested_extra", "lands_at", "penalty_free", "note"]
 
 
-def withholding_plan(year, paystubs, sales, facts, target=2000.0, wi_target=0.0, supplemental_rate=0.35):
-    """What lands the year near target: projected (refund positive, amount owed negative) with future vests
-    withheld at supplemental_rate and today's W-4 and WT-4, and the extra per paycheck that would bring
-    the refund to target (federal) and wi_target (Wisconsin)."""
+def _harbor(year, facts):
+    """The prior-year safe harbor from last year's filed return, or None when it isn't in return_facts."""
+    prior = facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] if not facts.empty else facts
+    lines = dict(zip(prior["key"], _num(prior["value"]))) if len(prior) else {}
+    return tax.safe_harbor(lines["24"], lines.get("11a", 0)) if "24" in lines else None
+
+
+def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35):
+    """For each return, the extra per paycheck that lands the year on a refund of target, on no balance, and
+    on owing target, from the year so far plus the projection with future vests withheld at
+    supplemental_rate. projected and lands_at: refund positive, owed negative. The change goes on the
+    paychecks of the person and employer with the most left (W-4 Step 4(c); WT-4's additional amount). A
+    federal balance owed says whether it escapes the underpayment penalty (tax.penalty_free)."""
     i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate})
     r = tax.federal_return(i, year)
     w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
@@ -379,23 +389,22 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, wi_target=0.0,
                               "note": "no paychecks left this year to change"}], columns=PLAN_COLUMNS)
     (person, employer), v = max(left, key=lambda kv: kv[1]["paychecks_left"])
     n = v["paychecks_left"]
-    fed_now = v["extra_withholding"]
-    wi_now = float(v["wi_settings"][2]) if v.get("wi_settings") else 0.0
-    rows = [
-        {"return": "federal", "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
-         "projected": -r["37"], "target": target, "current_extra": round(fed_now, 2),
-         "suggested_extra": round(max(fed_now + (r["37"] + target) / n, 0.0), 2),
-         "note": "W-4 Step 4(c): extra withholding per paycheck"},
-        {"return": "wisconsin", "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
-         "projected": -w["wi_owe_or_refund"], "target": wi_target, "current_extra": round(wi_now, 2),
-         "suggested_extra": round(max(wi_now + (w["wi_owe_or_refund"] + wi_target) / n, 0.0), 2),
-         "note": "WT-4: additional amount per paycheck" if v.get("wi_settings") else
-                 "no Wisconsin settings decoded from the stubs; additional amount assumed zero"},
-    ]
-    for row in rows:  # withholding can't go below none: then the year lands short of the target
-        row["lands_at"] = round(row["projected"] + (row["suggested_extra"] - row["current_extra"]) * n, 2)
-        if abs(row["lands_at"] - row["target"]) > 1:
-            row["note"] += f"; with no extra at all the refund is still {row['lands_at']:,.0f}"
+    harbor = _harbor(year, facts)
+    returns = (("federal", -r["37"], v["extra_withholding"], "W-4 Step 4(c): extra withholding per paycheck"),
+               ("wisconsin", -w["wi_owe_or_refund"], float(v["wi_settings"][2]) if v.get("wi_settings") else 0.0,
+                "WT-4: additional amount per paycheck" if v.get("wi_settings") else
+                "no Wisconsin settings decoded from the stubs; additional amount assumed zero"))
+    rows = []
+    for name, projected, now, note in returns:
+        for goal in (target, 0.0, -target):  # a refund of target, no balance, owing target
+            extra = round(max(now + (goal - projected) / n, 0.0), 2)  # withholding can't go below none
+            lands = round(projected + (extra - now) * n, 2)
+            row = {"return": name, "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
+                   "projected": projected, "target": goal, "current_extra": round(now, 2), "suggested_extra": extra,
+                   "lands_at": lands, "penalty_free": None, "note": note}
+            if name == "federal":
+                row["penalty_free"] = tax.penalty_free(-lands, r["25a"] + r["25c"] + (extra - now) * n, r["24"], harbor)
+            rows.append(row)
     return pd.DataFrame(rows, columns=PLAN_COLUMNS)
 
 

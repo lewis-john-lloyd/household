@@ -24,7 +24,16 @@ Step 4(c)) that would bring the federal balance to zero, on the paychecks of the
 person and employer with the most paychecks left.
 
 Elections (401(k), HSA, dependent-care FSA) are projected the same way and
-compared with the year's limits.
+compared with the year's limits, with what the stubs show so far: the after-tax
+401(k) room under 415(c) is the mega backdoor Roth's.
+
+return_lines lays both returns out line by line (Form 1040 and Wisconsin Form 1),
+so the tax page shows the whole return, and a filed return can be set beside it.
+
+withholding_plan says what withholding lands the year near a target refund:
+future vests withheld at a planned supplemental rate, and the extra per paycheck
+(W-4 Step 4(c), and WT-4's additional amount for Wisconsin) on the paychecks of
+the person and employer with the most left.
 """
 
 from datetime import date, timedelta
@@ -129,6 +138,8 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
            "hsa": _ytd(rows, "pre_tax", contains=HSA_EMPLOYEE) + _ytd(rows, "pre_tax", contains=HSA_EMPLOYER),
            "dependent_care": _ytd(rows, "pre_tax", contains=DEPENDENT_CARE),
            "paychecks_left": 0, "vests_left": 0, "extra_withholding": 0.0, "notes": []}
+    out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care")}
+    out["wi_settings"] = wi_settings
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
     if regular.empty:
         return out
@@ -185,6 +196,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
         for _ in range(months_left):
             _add_medicare(out, amount, year)
         out["vests_left"] = months_left
+        out["vest_rate"] = rate
         out["notes"].append(f"{months_left} more monthly vests of about {amount:,.0f} at {rate:.0%}")
     return out
 
@@ -250,8 +262,15 @@ def inputs_for(year, paystubs, sales, facts, overrides=None):
 
 
 def project(year, paystubs, sales, facts):
-    """Projected lines per scenario, plus the safe-harbor target from last year's return."""
-    rows = []
+    """Projected lines per scenario, plus the safe-harbor target from last year's return.
+
+    Returns (summary, notes, detail): one summary row per scenario, the notes, and every line of both
+    returns per scenario (return_lines), each beside the filed value once the year's return is in
+    return_facts.
+    """
+    rows, detail = [], []
+    filed = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "filed")] if not facts.empty else facts
+    filed = dict(zip(filed["key"], _num(filed["value"]))) if len(filed) else {}
     prior = facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] \
         if not facts.empty else facts
     prior_lines = dict(zip(prior["key"], _num(prior["value"]))) if len(prior) else {}
@@ -265,6 +284,9 @@ def project(year, paystubs, sales, facts):
         if name == "as is":
             notes = [f"{p}/{e}: {n}" for (p, e), v in pos.items() for n in v["notes"]]
             notes += _wisconsin_notes(year)
+        for order, row in enumerate(return_lines(i, r, w, year)):
+            detail.append({"scenario": name, "order": order, **row,
+                           "filed": filed.get(row["key"]) if name == "as is" else None})
         rows.append({"scenario": name, "agi": r["11a"], "deduction": r["12e"], "taxable": r["15"],
                      "total_tax": r["24"], "withheld": r["33"], "owe_or_refund": r["37"],
                      "safe_harbor": harbor,
@@ -272,7 +294,105 @@ def project(year, paystubs, sales, facts):
                      "extra_to_break_even": break_even_extra(pos, r["37"]),
                      "wi_taxable": w["wi_taxable"], "wi_tax": w["wi_net_tax"],
                      "wi_withheld": w["wi_withheld"], "wi_owe_or_refund": w["wi_owe_or_refund"]})
-    return pd.DataFrame(rows), notes
+    return pd.DataFrame(rows), notes, pd.DataFrame(detail, columns=DETAIL_COLUMNS)
+
+
+FEDERAL = "Form 1040"
+WISCONSIN = "Wisconsin Form 1"
+DETAIL_COLUMNS = ["scenario", "order", "form", "line", "key", "label", "value", "filed"]
+
+
+def return_lines(i, r, w, year):
+    """Both returns line by line, as a person reads them: form, line number, key (the return_facts key a
+    filed value is stored under), label and value. Inputs a return only shows when they are not zero
+    (interest, dividends, IRA distributions) are left out when they are."""
+    g = lambda k: float(i.get(k, 0) or 0)  # noqa: E731
+    itemized = r["12e"] > taxdata.params(year)["standard_deduction_mfj"]
+    out = []
+
+    def add(form, line, key, label, value, always=True):
+        if always or value:
+            out.append({"form": form, "line": line, "key": key, "label": label, "value": round(float(value), 2)})
+
+    add(FEDERAL, "1z", "1z", "Wages (W-2 box 1)", r["1z"])
+    add(FEDERAL, "2b", "taxable_interest", "Taxable interest", g("taxable_interest"), always=False)
+    add(FEDERAL, "3a", "qualified_dividends", "Qualified dividends", g("qualified_dividends"), always=False)
+    add(FEDERAL, "3b", "ordinary_dividends", "Ordinary dividends", g("ordinary_dividends"), always=False)
+    add(FEDERAL, "4b", "ira_taxable", "IRA distributions, taxable", g("ira_taxable"), always=False)
+    add(FEDERAL, "7", "7a", "Capital gain or loss", r["7a"])
+    add(FEDERAL, "Sch D 7", "capital_gain_short", "of which short-term", g("capital_gain_short"), always=False)
+    add(FEDERAL, "Sch D 15", "capital_gain_long", "of which long-term", g("capital_gain_long"), always=False)
+    add(FEDERAL, "8", "other_income", "Other income", g("other_income"), always=False)
+    add(FEDERAL, "9", "9", "Total income", r["9"])
+    add(FEDERAL, "10", "adjustments", "Adjustments to income", g("adjustments"), always=False)
+    add(FEDERAL, "11", "11a", "Adjusted gross income", r["11a"])
+    add(FEDERAL, "12", "12e", "Itemized deductions" if itemized else "Standard deduction", r["12e"])
+    if itemized:
+        add(FEDERAL, "Sch A 5e", "schA_5e", "state and local taxes, capped", r["schA_5e"])
+        add(FEDERAL, "Sch A 8a", "mortgage_interest", "mortgage interest", g("mortgage_interest"), always=False)
+        add(FEDERAL, "Sch A 11", "charity", "gifts to charity", g("charity"), always=False)
+    add(FEDERAL, "15", "15", "Taxable income", r["15"])
+    add(FEDERAL, "16", "16", "Tax", r["16"])
+    add(FEDERAL, "20", "20", "Credits", r["20"], always=False)
+    add(FEDERAL, "22", "22", "Tax after credits", r["22"])
+    add(FEDERAL, "Sch 2 11", "s2_11", "Additional Medicare Tax", r["s2_11"])
+    add(FEDERAL, "Sch 2 12", "s2_12", "Net investment income tax", r["s2_12"])
+    add(FEDERAL, "23", "23", "Other taxes", r["23"])
+    add(FEDERAL, "24", "24", "Total tax", r["24"])
+    add(FEDERAL, "25a", "25a", "Withheld, W-2s", r["25a"])
+    add(FEDERAL, "25c", "25c", "Withheld, Additional Medicare Tax", r["25c"])
+    add(FEDERAL, "26", "estimated_payments", "Estimated payments", g("estimated_payments"), always=False)
+    add(FEDERAL, "31", "31", "Excess Social Security withheld", r["31"], always=False)
+    add(FEDERAL, "33", "33", "Total payments", r["33"])
+    add(FEDERAL, "34 or 37", "37", "Refund" if r["37"] < 0 else "Amount owed", abs(r["37"]))
+    for key, label in (("wi_income", "Wisconsin income"), ("wi_standard_deduction", "Standard deduction"),
+                       ("wi_exemptions", "Exemptions"), ("wi_taxable", "Taxable income"), ("wi_tax", "Tax"),
+                       ("wi_itemized_credit", "Itemized deduction credit"),
+                       ("wi_school_property_credit", "School property tax credit"),
+                       ("wi_married_couple_credit", "Married couple credit"), ("wi_net_tax", "Net tax"),
+                       ("wi_withheld", "Wisconsin tax withheld")):
+        add(WISCONSIN, "", key, label, w.get(key, 0))
+    add(WISCONSIN, "", "wi_owe_or_refund", "Refund" if w["wi_owe_or_refund"] < 0 else "Amount owed",
+        abs(w["wi_owe_or_refund"]))
+    return out
+
+
+PLAN_COLUMNS = ["return", "person", "employer", "paychecks_left", "vest_rate", "projected", "target", "current_extra",
+                "suggested_extra", "lands_at", "note"]
+
+
+def withholding_plan(year, paystubs, sales, facts, target=2000.0, wi_target=0.0, supplemental_rate=0.35):
+    """What lands the year near target: projected (refund positive, amount owed negative) with future vests
+    withheld at supplemental_rate and today's W-4 and WT-4, and the extra per paycheck that would bring
+    the refund to target (federal) and wi_target (Wisconsin)."""
+    i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate})
+    r = tax.federal_return(i, year)
+    w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
+    left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]
+    vest = next((v.get("vest_rate") for v in pos.values() if v.get("vest_rate") is not None), None)
+    if not left:
+        return pd.DataFrame([{"return": "federal", "projected": -r["37"], "target": target, "vest_rate": vest,
+                              "note": "no paychecks left this year to change"}], columns=PLAN_COLUMNS)
+    (person, employer), v = max(left, key=lambda kv: kv[1]["paychecks_left"])
+    n = v["paychecks_left"]
+    fed_now = v["extra_withholding"]
+    wi_now = float(v["wi_settings"][2]) if v.get("wi_settings") else 0.0
+    rows = [
+        {"return": "federal", "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
+         "projected": -r["37"], "target": target, "current_extra": round(fed_now, 2),
+         "suggested_extra": round(max(fed_now + (r["37"] + target) / n, 0.0), 2),
+         "note": "W-4 Step 4(c): extra withholding per paycheck"},
+        {"return": "wisconsin", "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
+         "projected": -w["wi_owe_or_refund"], "target": wi_target, "current_extra": round(wi_now, 2),
+         "suggested_extra": round(max(wi_now + (w["wi_owe_or_refund"] + wi_target) / n, 0.0), 2),
+         "note": "WT-4: additional amount per paycheck" if v.get("wi_settings") else
+                 "no Wisconsin settings decoded from the stubs; additional amount assumed zero"},
+    ]
+    for row in rows:  # withholding can't go below none: then the year lands short of the target
+        row["lands_at"] = round(row["projected"] + (row["suggested_extra"] - row["current_extra"]) * n, 2)
+        if abs(row["lands_at"] - row["target"]) > 1:
+            row["note"] += f"; with no extra at all the refund is still {row['lands_at']:,.0f}"
+    return pd.DataFrame(rows, columns=PLAN_COLUMNS)
 
 
 def _wisconsin_notes(year):
@@ -282,31 +402,48 @@ def _wisconsin_notes(year):
         if stale else []
 
 
+ELECTION_COLUMNS = ["year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status"]
+MEGA_BACKDOOR = "Mega backdoor Roth (after-tax 401(k))"
+BACKDOOR_ROTH = "Backdoor Roth IRA"
+
+
 def elections(year, paystubs):
-    """401(k), HSA and dependent-care FSA projected to year end against the year's limits."""
+    """401(k), HSA and dependent-care FSA so far and projected to year end against the year's limits.
+
+    The mega backdoor Roth row is the after-tax 401(k): its limit is what 415(c) leaves after elective
+    deferrals and the employer's contributions, projected. A backdoor Roth IRA is not on a pay stub, so
+    each person gets a row saying it is not tracked yet.
+    """
     p = taxdata.params(year)
     pos = positions(paystubs, year)
-    out = []
+    out, people = [], []
     for (person, employer), v in pos.items():
+        people.append(person)
+        y = v["ytd"]
         if v["elective"]:
-            out.append(_election(year, person, employer, "401(k) elective deferral", v["elective"],
+            out.append(_election(year, person, employer, "401(k) elective deferral", y["elective"], v["elective"],
                                  p["elective_deferral_402g"]))
         if v["after_tax"]:
-            total = v["elective"] + v["after_tax"] + v["employer_401k"]
-            out.append(_election(year, person, employer, "401(k) total additions (415(c))", total,
-                                 p["annual_additions_415c"]))
-    household = {"HSA, family (employee + employer)": (sum(v["hsa"] for v in pos.values()), p["hsa_family"]),
-                 "dependent-care FSA": (sum(v["dependent_care"] for v in pos.values()),
-                                        p["dependent_care_fsa_mfj"])}
-    for plan, (projected, limit) in household.items():
+            room = p["annual_additions_415c"] - v["elective"] - v["employer_401k"]
+            out.append(_election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room))
+            out.append(_election(year, person, employer, "401(k) total additions (415(c))",
+                                 y["elective"] + y["after_tax"] + y["employer_401k"],
+                                 v["elective"] + v["after_tax"] + v["employer_401k"], p["annual_additions_415c"]))
+    household = {"HSA, family (employee + employer)": ("hsa", p["hsa_family"]),
+                 "dependent-care FSA": ("dependent_care", p["dependent_care_fsa_mfj"])}
+    for plan, (key, limit) in household.items():
+        projected = sum(v[key] for v in pos.values())
         if projected:
-            out.append(_election(year, "household", "", plan, projected, limit))
-    return pd.DataFrame(out, columns=["year", "person", "employer", "plan", "projected", "limit",
-                                      "gap", "status"])
+            out.append(_election(year, "household", "", plan, sum(v["ytd"][key] for v in pos.values()), projected, limit))
+    for person in sorted(set(people)):
+        out.append({"year": year, "person": person, "employer": "", "plan": BACKDOOR_ROTH, "ytd": None,
+                    "projected": None, "limit": None, "gap": None,
+                    "status": "not tracked: no IRA contributions or conversions in the ledger"})
+    return pd.DataFrame(out, columns=ELECTION_COLUMNS)
 
 
-def _election(year, person, employer, plan, projected, limit):
+def _election(year, person, employer, plan, ytd, projected, limit):
     gap = round(limit - projected, 2)
     status = "at limit" if abs(gap) < 1 else ("room left" if gap > 0 else "over limit")
-    return {"year": year, "person": person, "employer": employer, "plan": plan,
+    return {"year": year, "person": person, "employer": employer, "plan": plan, "ytd": round(ytd, 2),
             "projected": round(projected, 2), "limit": limit, "gap": gap, "status": status}

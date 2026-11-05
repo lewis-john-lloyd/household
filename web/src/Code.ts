@@ -187,3 +187,12 @@ function discardWaiting(id: string): void {
 function getTransaction(id: string): Line | null {
   return findLine(readTab_("categorized"), String(id || "").trim());
 }
+
+/** Everything the tax page shows (taxes.ts). */
+function getTaxes(): TaxPage {
+  const tabs: Record<string, unknown[][]> = {};
+  for (const name of ["tax_lines", "projection", "withholding_plan", "elections", "run_log", "run_notes"]) {
+    tabs[name] = readTabIfAny_(name);
+  }
+  return taxPage(tabs);
+}

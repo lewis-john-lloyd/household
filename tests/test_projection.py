@@ -49,8 +49,48 @@ def test_scenarios_change_withholding_not_tax():
     stubs = stubs_through(24)
     facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
-    lines, notes = projection.project(2026, stubs, sales, facts)
+    lines, notes, detail = projection.project(2026, stubs, sales, facts)
     lines = lines.set_index("scenario")
+    as_is = detail[detail["scenario"] == "as is"].set_index("key")
+    assert as_is.loc["11a", "value"] == lines.loc["as is", "agi"]
+    assert set(detail["form"]) == {"Form 1040", "Wisconsin Form 1"}
     assert lines["total_tax"].nunique() == 1
     assert lines.loc["no extra withholding", "withheld"] < lines.loc["as is", "withheld"]
     assert any("27 paychecks" in n for n in notes)
+
+
+def test_the_return_lines_read_like_the_forms_and_sit_beside_a_filed_return():
+    stubs = stubs_through(24)
+    facts = pd.DataFrame([{"year": 2026, "kind": "filed", "key": "24", "person": "", "value": 9000},
+                          {"year": 2026, "kind": "filed", "key": "11a", "person": "", "value": 120000}])
+    sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
+    _, _, detail = projection.project(2026, stubs, sales, facts)
+    federal = detail[(detail["scenario"] == "as is") & (detail["form"] == "Form 1040")]
+    assert federal["line"].tolist()[:4] == ["1z", "7", "9", "11"]  # no interest or dividends: left out
+    assert federal.set_index("key").loc["24", "filed"] == 9000
+    assert federal.set_index("key").loc["15", "filed"] is None or pd.isna(federal.set_index("key").loc["15", "filed"])
+    assert detail[detail["scenario"] != "as is"]["filed"].isna().all()
+    assert federal["label"].iloc[-1] in ("Refund", "Amount owed")
+
+
+def test_the_withholding_plan_lands_the_year_on_the_target_refund():
+    stubs = stubs_through(20)
+    facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
+    sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
+    plan = projection.withholding_plan(2026, stubs, sales, facts, target=2000, wi_target=0).set_index("return")
+    federal = plan.loc["federal"]
+    assert federal["paychecks_left"] == 7 and federal["current_extra"] == 200  # Oct 9 to Dec 31
+    # withholding that much more on the paychecks left moves the refund to the target
+    # more refund than the target even with no extra: the plan says where it lands instead
+    assert federal["projected"] > 2000 and federal["suggested_extra"] == 0
+    assert federal["lands_at"] == federal["projected"] - 200 * 7  # the 200 extra a paycheck stops
+    assert "still" in federal["note"]
+    owing = projection.withholding_plan(2026, stubs, sales, facts, target=9000).set_index("return").loc["federal"]
+    assert abs(owing["lands_at"] - 9000) < 1  # reachable: lands on it
+    assert plan.loc["wisconsin", "note"].startswith("no Wisconsin settings")  # the stubs have no Wisconsin line
+
+
+def test_elections_show_the_year_so_far_and_say_a_backdoor_roth_is_not_tracked():
+    plans = projection.elections(2026, stubs_through(24)).set_index("plan")
+    assert plans.loc["401(k) elective deferral", "ytd"] == 300 * 24
+    assert plans.loc["Backdoor Roth IRA", "status"].startswith("not tracked")

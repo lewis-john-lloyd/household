@@ -148,6 +148,9 @@ def citations():
     """Every citation as (year, item, document, page, quote); methods have year None."""
     out = [(year, item, *c) for (year, item), c in sorted(taxdata.CITATIONS.items())]
     out += [(None, item, *c) for item, c in taxdata.METHODS.items()]
+    out += [(year, f"Form line {line} ({key})", document, page, quote)  # not wi_..., so no value checks apply
+            for year, lines in sorted(taxdata.FORM_LINES.items())
+            for key, (line, document, page, quote) in sorted(lines.items())]
     return out
 
 

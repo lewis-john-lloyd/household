@@ -88,6 +88,7 @@ def test_citation_check_catches_a_wrong_value_page_or_table(monkeypatch):
         (2026, "hsa_family"): ("doc-a", 1, "family coverage is 8,750"),
         (2026, "withholding_mfj_table_floor"): ("doc-b", 1, f"0 {floor:,} 0.00 0%")})
     monkeypatch.setattr(taxdata, "METHODS", {})
+    monkeypatch.setattr(taxdata, "FORM_LINES", {})
     dollar = "$"  # sources print dollar signs; quotes are written without them
     pages = {"doc-a": [f"the   family coverage is {dollar}8,750."], "doc-b": [page]}
     assert taxsources.check(pages)["ok"].all()
@@ -113,3 +114,11 @@ def test_tax_sources_report_links_filed_documents():
     assert (report["record"] == "no source on file").sum() == len(taxdata.UNCITED)
     assert set(report.loc[report["document"] != title, "record"]) <= {
         "not in record store", "no source on file"}
+
+
+def test_form_line_numbers_are_cited_and_carry_forward_to_a_year_with_no_form_on_file():
+    assert taxdata.form_line(2025, "wi_net_tax") == ("22", 2025)
+    assert taxdata.form_line(2026, "wi_net_tax") == ("22", 2025)  # until the 2026 form is on file
+    assert taxdata.form_line(2024, "wi_net_tax") == ("", None)
+    cited = [c for c in taxsources.citations() if c[1].startswith("Form line ")]
+    assert ("Form line 22 (wi_net_tax)", "wi-form-1-2025", 2, "This is your net tax") in [c[1:] for c in cited]

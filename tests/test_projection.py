@@ -106,3 +106,14 @@ def test_the_mega_backdoor_row_says_whether_the_plan_converts_after_tax_money():
     assert plain["ytd"] == 500 and plain["status"].endswith("(set after_tax_401k_converts_to_roth if the plan does it)")
     auto = projection.elections(2026, stubs, after_tax_converts=True).set_index("plan")
     assert auto.loc["Mega backdoor Roth (after-tax 401(k))", "status"].endswith("converts it to Roth automatically")
+
+
+def test_wisconsin_lines_carry_the_form_s_line_numbers_and_say_when_they_are_last_year_s():
+    stubs = stubs_through(24)
+    facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
+    sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
+    _, notes, detail = projection.project(2026, stubs, sales, facts)
+    wi = detail[(detail["scenario"] == "as is") & (detail["form"] == "Wisconsin Form 1")].set_index("key")
+    assert wi.loc["wi_income", "line"] == "7" and wi.loc["wi_net_tax", "line"] == "22"
+    assert wi.loc["wi_owe_or_refund", "line"] == ("40" if wi.loc["wi_owe_or_refund", "label"] == "Refund" else "45")
+    assert "Wisconsin 2026: Form 1 line numbers are the 2025 form's until the 2026 form is on file" in notes

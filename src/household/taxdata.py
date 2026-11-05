@@ -339,6 +339,35 @@ UNCITED = {
 }
 
 
+# Line numbers on the forms, so the tax page lays a return out as the form does; each is cited like a value
+# (taxsources.citations checks the quote on its page). {year: {key: (line, document, page, quote)}}.
+_WI1 = "wi-form-1-2025"
+FORM_LINES = {
+    2025: {
+        "wi_income": ("7", _WI1, 1, "This is your Wisconsin income"),
+        "wi_standard_deduction": ("8", _WI1, 1, "Standard deduction. See table on page 35"),
+        "wi_exemptions": ("10c", _WI1, 1, "Add lines 10a and 10b"),
+        "wi_taxable": ("11", _WI1, 2, "This is taxable income"),
+        "wi_tax": ("12", _WI1, 2, "Tax (see table on page 38)"),
+        "wi_itemized_credit": ("13", _WI1, 2, "Itemized deduction credit. Complete Schedule 1"),
+        "wi_school_property_credit": ("16", _WI1, 2, "School property tax credit"),
+        "wi_married_couple_credit": ("18", _WI1, 2, "Married couple credit. Complete Schedule 2"),
+        "wi_net_tax": ("22", _WI1, 2, "This is your net tax"),
+        "wi_withheld": ("28", _WI1, 2, "Wisconsin tax withheld. Include withholding statements"),
+        "wi_overpaid": ("40", _WI1, 3, "This is the AMOUNT YOU OVERPAID"),
+        "wi_owe": ("45", _WI1, 3, "This is the AMOUNT YOU OWE"),
+    },
+}
+
+
+def form_line(year, key):
+    """(line, year of the form it comes from) for a return line, from the latest form on file for year or
+    before; ("", None) when no form on file numbers it."""
+    years = [y for y in FORM_LINES if y <= year and key in FORM_LINES[y]]
+    if not years:
+        return "", None
+    return FORM_LINES[max(years)][key][0], max(years)
+
 def citation(year, item):
     """(document, page, quote) for one value, or None."""
     return CITATIONS.get((year, item))

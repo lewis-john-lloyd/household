@@ -351,9 +351,10 @@ def return_lines(i, r, w, year):
                        ("wi_school_property_credit", "School property tax credit"),
                        ("wi_married_couple_credit", "Married couple credit"), ("wi_net_tax", "Net tax"),
                        ("wi_withheld", "Wisconsin tax withheld")):
-        add(WISCONSIN, "", key, label, w.get(key, 0))
-    add(WISCONSIN, "", "wi_owe_or_refund", "Refund" if w["wi_owe_or_refund"] < 0 else "Amount owed",
-        abs(w["wi_owe_or_refund"]))
+        add(WISCONSIN, taxdata.form_line(year, key)[0], key, label, w.get(key, 0))
+    refund = w["wi_owe_or_refund"] < 0
+    add(WISCONSIN, taxdata.form_line(year, "wi_overpaid" if refund else "wi_owe")[0], "wi_owe_or_refund",
+        "Refund" if refund else "Amount owed", abs(w["wi_owe_or_refund"]))
     return out
 
 
@@ -398,8 +399,11 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, wi_target=0.0,
 def _wisconsin_notes(year):
     stale = sorted(key[1] for key in taxdata.UNCITED
                    if isinstance(key, tuple) and key[0] == year and key[1].startswith("wi_"))
-    return [f"Wisconsin {year}: {len(stale)} amounts are the prior year's until {year}'s are published"] \
-        if stale else []
+    out = [f"Wisconsin {year}: {len(stale)} amounts are the prior year's until {year}'s are published"] if stale else []
+    _, form_year = taxdata.form_line(year, "wi_net_tax")
+    if form_year is not None and form_year != year:
+        out.append(f"Wisconsin {year}: Form 1 line numbers are the {form_year} form's until the {year} form is on file")
+    return out
 
 
 ELECTION_COLUMNS = ["year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status"]

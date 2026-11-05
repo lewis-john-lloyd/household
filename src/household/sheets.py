@@ -5,6 +5,7 @@ spreadsheet unless it is the Reports spreadsheet, so a bug in compute cannot
 overwrite stored facts.
 """
 
+import json
 import re
 from datetime import date, timedelta
 
@@ -193,13 +194,13 @@ def _cell(value):
     return {"userEnteredValue": {"stringValue": str(value)}}
 
 
-def append_tables(spreadsheet, tables):
+def append_tables(spreadsheet, tables, size=None):
     """Append records to several tables as one write: every table's rows land, or none do.
 
     tables is a list of (Table, DataFrame). One spreadsheets.batchUpdate of appendCells requests, which
     Sheets applies atomically, so a file's rows and its source_documents row can't be split by a failure
     between them (an ingest that writes the rows but not the record of them would read the file again).
-    Returns rows appended by table name.
+    Returns rows appended by table name; size, a dict when given, gets the request's "bytes".
     """
     requests, counts = [], {}
     for t, df in tables:
@@ -210,7 +211,10 @@ def append_tables(spreadsheet, tables):
         requests.append({"appendCells": {"sheetId": spreadsheet.worksheet(t.name).id, "fields": "userEnteredValue",
                                          "rows": [{"values": [_cell(v) for v in row]} for row in values]}})
     if requests:
-        spreadsheet.batch_update({"requests": requests})
+        body = {"requests": requests}
+        if size is not None:
+            size["bytes"] = len(json.dumps(body))  # Google suggests keeping a request under 2 MB
+        spreadsheet.batch_update(body)
     return counts
 
 

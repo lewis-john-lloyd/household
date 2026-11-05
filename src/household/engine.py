@@ -218,11 +218,26 @@ def review(session, folder_id, log=print, now=None):
     return _review(ledger, log, now)
 
 
+def _not_yet(new, held, keys, fields):
+    """The rows of new that differ from the latest row the ledger holds for their key."""
+    if new is None or new.empty or held is None or held.empty:
+        return new
+    def text(df):
+        return df[keys + fields].astype(str).apply(lambda c: c.str.strip())
+    last = text(compute.latest(held, keys))
+    seen = set(map(tuple, last.values.tolist()))
+    return new[[tuple(r) not in seen for r in text(new).values.tolist()]].reset_index(drop=True)
+
+
 def _review(ledger, log=print, now=None):
     review_table = schema.table(schema.LEDGER, "review")
     typed = _read(ledger, "review")
     categories = compute.latest(_read(ledger, "categories"), ["category"])["category"].astype(str).str.strip()
     decisions, corrections, left = categorize.harvest(typed, set(categories), now=now)
+    # an answer the ledger already holds as its latest is not written again: if the review tab's rewrite
+    # below failed after these were written, the next run reads the same answers and must not repeat them
+    decisions = _not_yet(decisions, _read(ledger, "proposal_decisions"), ["proposal_key"], ["kind", "decision", "note"])
+    corrections = _not_yet(corrections, _read(ledger, "txn_corrections"), ["txn_id", "field"], ["value", "reason", "source"])
     sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "proposal_decisions"), decisions),
                                   (schema.table(schema.LEDGER, "txn_corrections"), corrections)])
     if len(decisions) or len(corrections):

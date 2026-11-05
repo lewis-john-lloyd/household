@@ -130,6 +130,29 @@ def test_review_reads_answers_and_rewrites_the_queue(session):
     assert rows(ledger, "review").empty
 
 
+def test_answers_written_before_the_review_tab_failed_to_rewrite_are_not_written_twice(session, monkeypatch):
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
+    ledger = session.sheets.files["ledger"]
+    ledger.worksheet("categories").append_rows([["food", "food", "high"], ["household", "household", "medium"]])
+    ledger.worksheet("transactions").append_rows([
+        ["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"]])
+    engine.review(session, session.root, log=None)
+    tab = ledger.worksheet("review").rows
+    tab[1][tab[0].index("answer")] = "household"
+    real = sheets.rewrite_review
+
+    def fails(*a, **k):
+        raise RuntimeError("503: the service is unavailable")
+    monkeypatch.setattr(sheets, "rewrite_review", fails)
+    with pytest.raises(RuntimeError):
+        engine.review(session, session.root, log=None, now="2026-11-01T00:00:00")
+    assert len(rows(ledger, "proposal_decisions")) == 1  # written; the tab still holds the answer
+    monkeypatch.setattr(sheets, "rewrite_review", real)
+    again = engine.review(session, session.root, log=None, now="2026-11-01T00:05:00")
+    assert again["questions"] == 0
+    assert rows(ledger, "proposal_decisions")[["proposal_key", "note"]].values.tolist() == [["payee:QUILL & INK", "household"]]
+
+
 def test_compute_writes_the_mortgage_schedule_when_a_loan_is_on_file(session):
     engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
     ledger = session.sheets.files["ledger"]
@@ -222,3 +245,19 @@ def test_change_sets_written_come_from_the_ledger_and_reach_back_further_than_a_
     assert out.values.tolist() == [["e5", "changes_2026-01-31T120000.000Z_e5.json", "2026-01-31T12:10:00+00:00"]]
     assert engine.CHANGES_WRITTEN_DAYS > 30
     assert engine.changes_written(sources.iloc[0:0]).empty
+
+
+def test_review_answers_the_ledger_already_holds_are_not_written_again():
+    # the answers were written, then rewriting the review tab failed: the next run reads them again
+    import pandas as pd
+    from household.engine import _not_yet
+    held = pd.DataFrame([{"proposal_key": "payee:ACME GROCER", "kind": "payee", "decided_at": "t1", "decision": "approve", "note": "food"},
+                         {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t1", "decision": "approve", "note": "gifts"},
+                         {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t2", "decision": "approve", "note": "kids"}])
+    again = pd.DataFrame([{"proposal_key": "payee:ACME GROCER", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "food"},
+                          {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "gifts"},
+                          {"proposal_key": "payee:QUILL & INK", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "hobby"}])
+    out = _not_yet(again, held, ["proposal_key"], ["kind", "decision", "note"])
+    # the same as the latest is skipped; back to an earlier answer, or a new payee, is written
+    assert out["proposal_key"].tolist() == ["payee:WILLOW ST", "payee:QUILL & INK"]
+    assert _not_yet(again, held.iloc[0:0], ["proposal_key"], ["kind", "decision", "note"]).equals(again)

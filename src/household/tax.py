@@ -112,6 +112,19 @@ def safe_harbor(prior_year_total_tax, prior_agi):
     return whole(prior_year_total_tax * (1.10 if prior_agi > 150_000 else 1.00))
 
 
+PENALTY_FREE_BALANCE = 1000  # owing less than this after withholding brings no underpayment penalty
+CURRENT_YEAR_SHARE = 0.90    # nor does withholding at least this share of this year's tax
+
+
+def penalty_free(owe, withheld, total_tax, harbor=None):
+    """Whether a balance owed escapes the underpayment penalty (Pub 505): under PENALTY_FREE_BALANCE, or
+    withholding of at least the smaller of 90% of this year's tax and the prior-year safe harbor."""
+    if owe < PENALTY_FREE_BALANCE:
+        return True
+    needed = CURRENT_YEAR_SHARE * total_tax if harbor is None else min(CURRENT_YEAR_SHARE * total_tax, harbor)
+    return withheld >= needed
+
+
 FILED_LINES = ("11a", "12e", "15", "16", "s2_11", "s2_12", "23", "24", "25c", "31", "33", "37")
 
 

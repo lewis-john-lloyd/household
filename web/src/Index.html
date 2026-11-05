@@ -184,6 +184,12 @@
       .card.plan h2 { margin-bottom: 8px; }
       .plan-row + .plan-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid currentColor; border-top-color: rgba(127, 127, 127, 0.35); }
       .plan-title { font-weight: 500; }
+      table.plan-table { width: 100%; margin-top: 8px; }
+      table.plan-table th, table.plan-table td { border-bottom-color: rgba(127, 127, 127, 0.35); color: inherit; padding: 6px 12px 6px 0; }
+      table.plan-table th { font-size: 12px; opacity: 0.8; }
+      table.plan-table tr.current td { font-weight: 500; }
+      td.plan-note { font-size: 13px; white-space: normal; opacity: 0.85; }
+      td.plan-note.off { color: var(--error); opacity: 1; }
       .plan-row p { margin: 4px 0 0; }
       .small-print { font-size: 12px; margin-top: 12px; }
       table.form-lines { width: 100%; }
@@ -1617,33 +1623,48 @@
         }
       }
 
-      // The withholding that lands the year near the target refund, for each return.
+      // For each return, the extra withholding per paycheck that lands the year on a refund, on no balance, and
+      // on owing, from the year so far plus the projection.
       function planCard(plan) {
         var card = el("article", null, "card plan");
-        card.appendChild(el("h2", "To land near your target"));
-        plan.forEach(function (p) {
-          var row = el("div", null, "plan-row");
-          var name = PLAN_NAME[p["return"]] || p["return"];
-          if (p.suggested_extra === "") { row.appendChild(el("p", name + ": " + p.note, "support")); card.appendChild(row); return; }
-          var target = Number(p.target);
-          var change = Number(p.suggested_extra) - Number(p.current_extra);
-          row.appendChild(el("div", name + (target ? ": a " + money.format(target) + " refund" : ": no balance either way"), "plan-title"));
-          var what = el("p");
-          what.textContent = (change === 0 ? "Keep " : "Change ") + (p["return"] === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") +
-            " for " + p.person + " (" + p.employer + ") " + (change === 0 ? "at " : "from " + cents.format(Number(p.current_extra)) + " to ") +
-            cents.format(Number(p.suggested_extra)) + " a paycheck, for the " + p.paychecks_left + " paychecks left.";
-          row.appendChild(what);
-          var now = Number(p.projected), lands = Number(p.lands_at);
-          var balance = function (n) { return Math.abs(n) < 1 ? "nothing owed or refunded" : (n > 0 ? "refund " : "owe ") + money.format(Math.abs(n)); };
-          row.appendChild(el("p", "As things stand: " + balance(now) + "; with the change: " + balance(lands) + "." +
-            (p.vest_rate ? " Vests withheld at " + Math.round(Number(p.vest_rate) * 100) + "%." : ""), "support"));
-          if (Math.abs(lands - target) > 1) {
-            row.appendChild(el("p", "Even with no extra withholding the refund stays at " + money.format(lands) +
-              ", above the target: the rest is in how the vests and the regular withholding run.", "support"));
-          }
-          card.appendChild(row);
+        card.appendChild(el("h2", "Withholding for the rest of the year"));
+        var byReturn = {};
+        plan.forEach(function (p) { (byReturn[p["return"]] = byReturn[p["return"]] || []).push(p); });
+        var vest = "";
+        Object.keys(byReturn).forEach(function (name) {
+          var rows = byReturn[name], first = rows[0];
+          var section = el("div", null, "plan-row");
+          section.appendChild(el("div", PLAN_NAME[name] || name, "plan-title"));
+          if (first.suggested_extra === "") { section.appendChild(el("p", first.note, "support")); card.appendChild(section); return; }
+          if (first.vest_rate) vest = Math.round(Number(first.vest_rate) * 100) + "%";
+          var now = Number(first.projected);
+          section.appendChild(el("p", "As things stand: " + (now >= 0 ? "refund " : "owe ") + money.format(Math.abs(now)) + ". " +
+            (name === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") + " for " + first.person + " (" + first.employer +
+            ") is " + cents.format(Number(first.current_extra)) + " a paycheck, with " + first.paychecks_left + " paychecks left.", "support"));
+          var table = el("table", null, "plan-table");
+          var head = el("tr");
+          ["To land on", "Extra a paycheck", ""].forEach(function (h) { head.appendChild(el("th", h)); });
+          table.appendChild(el("thead")).appendChild(head);
+          var body = el("tbody");
+          rows.forEach(function (p) {
+            var goal = Number(p.target), lands = Number(p.lands_at);
+            var row = el("tr", null, Number(p.suggested_extra) === Number(p.current_extra) ? "current" : "");
+            cell(row, goal > 0 ? "a refund of " + money.format(goal) : goal < 0 ? "owing " + money.format(-goal) : "no balance", "text");
+            cell(row, cents.format(Number(p.suggested_extra)));
+            var notes = [];
+            if (Math.abs(lands - goal) > 1) notes.push("gets to " + (lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands)) + " at most");
+            if (p.penalty_free === "FALSE" || p.penalty_free === "false") notes.push("an underpayment penalty is possible");
+            else if (lands < -1 && name === "federal") notes.push("no underpayment penalty");
+            cell(row, notes.join("; "), "text plan-note" + (/penalty is possible/.test(notes.join()) ? " off" : ""));
+            body.appendChild(row);
+          });
+          table.appendChild(body);
+          section.appendChild(table);
+          if (/no Wisconsin settings/.test(first.note)) section.appendChild(el("p", first.note + ".", "support"));
+          card.appendChild(section);
         });
-        card.appendChild(el("p", "Targets and the vest rate are household settings (target_refund, wi_target_refund, planned_supplemental_rate) in Edit.", "support small-print"));
+        card.appendChild(el("p", "From the year so far plus the projection" + (vest ? ", with future vests withheld at " + vest : "") +
+          ". The amount and the vest rate are household settings (target_refund, planned_supplemental_rate) in Edit.", "support small-print"));
         return card;
       }
 
@@ -1710,7 +1731,7 @@
 
       function scenariosPanel(totals) {
         var panel = el("section", null, "panel");
-        panel.appendChild(el("h2", "Every scenario"));
+        panel.appendChild(el("h2", "Scenarios for this year"));
         panel.appendChild(el("p", "Federal as a bar from zero (refund left, owed right), Wisconsin beside it.", "support"));
         var box = el("div");
         box.id = "tax-scenarios-chart";

@@ -69,25 +69,45 @@ def test_the_return_lines_read_like_the_forms_and_sit_beside_a_filed_return():
     assert federal["line"].tolist()[:4] == ["1z", "7", "9", "11"]  # no interest or dividends: left out
     assert federal.set_index("key").loc["24", "filed"] == 9000
     assert federal.set_index("key").loc["15", "filed"] is None or pd.isna(federal.set_index("key").loc["15", "filed"])
-    assert detail[detail["scenario"] != "as is"]["filed"].isna().all()
+    assert set(detail["scenario"]) == {"as is"}  # the forms show the year as it stands
     assert federal["label"].iloc[-1] in ("Refund", "Amount owed")
 
 
-def test_the_withholding_plan_lands_the_year_on_the_target_refund():
-    stubs = stubs_through(20)
+def test_the_withholding_plan_gives_a_refund_no_balance_and_owing_for_each_return():
+    stubs = stubs_through(20)  # last paid Sep 25: seven paychecks left, Oct 9 to Dec 31
     facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
-    plan = projection.withholding_plan(2026, stubs, sales, facts, target=2000, wi_target=0).set_index("return")
-    federal = plan.loc["federal"]
-    assert federal["paychecks_left"] == 7 and federal["current_extra"] == 200  # Oct 9 to Dec 31
-    # withholding that much more on the paychecks left moves the refund to the target
-    # more refund than the target even with no extra: the plan says where it lands instead
-    assert federal["projected"] > 2000 and federal["suggested_extra"] == 0
-    assert federal["lands_at"] == federal["projected"] - 200 * 7  # the 200 extra a paycheck stops
-    assert "still" in federal["note"]
-    owing = projection.withholding_plan(2026, stubs, sales, facts, target=9000).set_index("return").loc["federal"]
-    assert abs(owing["lands_at"] - 9000) < 1  # reachable: lands on it
-    assert plan.loc["wisconsin", "note"].startswith("no Wisconsin settings")  # the stubs have no Wisconsin line
+    plan = projection.withholding_plan(2026, stubs, sales, facts, target=2000)
+    assert [(r["return"], r["target"]) for r in plan.to_dict("records")] == [
+        ("federal", 2000), ("federal", 0), ("federal", -2000), ("wisconsin", 2000), ("wisconsin", 0), ("wisconsin", -2000)]
+    federal = plan[plan["return"] == "federal"].set_index("target")
+    assert (federal["paychecks_left"] == 7).all() and (federal["current_extra"] == 200).all()
+    # the stubs over-withhold: even none extra leaves more than a 2,000 refund, so each target lands where none does
+    assert federal["projected"].iloc[0] - 200 * 7 > 2000
+    assert (federal["suggested_extra"] == 0).all() and (federal["lands_at"] == federal["projected"] - 200 * 7).all()
+    assert federal["penalty_free"].all()  # a refund owes no penalty
+    # stubs that under-withhold reach every target, and owing 2,000 is checked for the penalty
+    under = stubs.copy()
+    fit = under["line_item"] == "Federal Income Tax"
+    under.loc[fit, "amount"] = under.loc[fit, "amount"] * 0.5
+    under.loc[fit, "ytd_amount"] = under.loc[fit, "ytd_amount"] * 0.5
+    short = projection.withholding_plan(2026, under, sales, facts, target=2000)
+    short = short[short["return"] == "federal"].set_index("target")
+    assert all(abs(short.loc[goal, "lands_at"] - goal) < 1 for goal in (2000, 0))
+    assert short.loc[0, "suggested_extra"] < short.loc[2000, "suggested_extra"]
+    # owing 2,000 would take less than no extra withholding: it lands as close as none gets, and says if a
+    # penalty is possible
+    assert short.loc[-2000, "suggested_extra"] == 0 and short.loc[-2000, "lands_at"] > -2000
+    assert short.loc[0, "penalty_free"] and short.loc[-2000, "penalty_free"] in (True, False)
+    assert plan[plan["return"] == "wisconsin"]["note"].iloc[0].startswith("no Wisconsin settings")
+
+
+def test_the_penalty_rule():
+    from household import tax
+    assert tax.penalty_free(owe=999, withheld=0, total_tax=50_000)  # under 1,000 owed
+    assert tax.penalty_free(owe=5_000, withheld=45_000, total_tax=50_000)  # 90% of this year's tax
+    assert not tax.penalty_free(owe=5_000, withheld=40_000, total_tax=50_000)
+    assert tax.penalty_free(owe=5_000, withheld=40_000, total_tax=50_000, harbor=39_000)  # last year's safe harbor
 
 
 def test_elections_show_the_year_so_far_and_say_a_backdoor_roth_is_not_tracked():

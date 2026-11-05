@@ -111,7 +111,8 @@ REPORTS = (
     Table("tax_lines", ("year", "scenario", "order", "form", "line", "key", "label", "value", "filed", "run_id")),
     # what withholding lands the year near the target refund (projection.withholding_plan)
     Table("withholding_plan", ("year", "return", "person", "employer", "paychecks_left", "vest_rate", "projected",
-                               "target", "current_extra", "suggested_extra", "lands_at", "note", "run_id")),
+                               "target", "current_extra", "suggested_extra", "lands_at", "penalty_free", "note",
+                               "run_id")),
     Table("tax_sources", ("year", "item", "value", "document", "page", "quote", "record", "run_id")),
     Table("transfers", ("txn_a", "date_a", "account_a", "payee_a", "txn_b", "date_b", "account_b",
                         "payee_b", "amount", "kind", "run_id"),

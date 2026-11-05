@@ -152,6 +152,22 @@
       .logs li.indent { color: var(--on-surface-variant); }
       .logs li.flag { background: var(--error-container); color: var(--on-error-container); }
 
+      /* where the money went: the summary beside the chart */
+      .flow-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px;
+        align-items: start; margin-top: 16px; }
+      .flow-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+      .flow-total { font-size: 22px; line-height: 28px; font-variant-numeric: tabular-nums; }
+      ul.flow-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      .flow-label { display: flex; justify-content: space-between; gap: 12px; }
+      .flow-label span:first-child { overflow-wrap: anywhere; }
+      .flow-label .n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .flow-bar { height: 6px; border-radius: 3px; background: var(--surface-high); margin-top: 4px; overflow: hidden; }
+      .flow-bar span { display: block; height: 100%; border-radius: 3px; }
+      .flow-column.came .flow-bar span { background: var(--success); }
+      .flow-column.taxes .flow-bar span { background: var(--error); }
+      .flow-column.went .flow-bar span { background: var(--primary); }
+      .flow-through { grid-column: 1 / -1; margin: 0; }
+
       /* taxes */
       #taxes-body { display: grid; gap: 16px; padding-top: 8px; }
       .tax-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
@@ -358,17 +374,7 @@
     <section id="flows" hidden>
       <div id="chart">Loading…</div>
       <div id="flows-note" class="note"></div>
-      <details open>
-        <summary>Totals</summary>
-        <div class="scroll"><table id="totals">
-          <thead><tr>
-            <th><button class="sort" data-key="name">Node</button></th>
-            <th><button class="sort" data-key="into">In</button></th>
-            <th><button class="sort" data-key="out">Out</button></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table></div>
-      </details>
+      <div id="flow-summary" class="flow-summary"></div>
     </section>
 
     <section id="budget" hidden>
@@ -477,19 +483,47 @@
         }).forEach(function (r) { render(body, r); });
       };
 
-      // Where the money went: the Sankey and its node totals.
-      var totals = new Sortable("totals", "total", "desc", function (body, t) {
-        var row = document.createElement("tr");
-        cell(row, t.name);
-        cell(row, t.into ? money.format(t.into) : "");
-        cell(row, t.out ? money.format(t.out) : "");
-        body.appendChild(row);
-      });
+      // Where the money went: the Sankey, and beside it the same money by what it is to the household.
+      function drawFlowSummary(s) {
+        var box = document.getElementById("flow-summary");
+        box.textContent = "";
+        var sum = function (items) { return items.reduce(function (a, i) { return a + i.amount; }, 0); };
+        [["Came in", s.came, "came"], ["Taxes and deductions", s.taxes, "taxes"], ["Went to", s.went, "went"]].forEach(function (c) {
+          if (!c[1].length) return;
+          var panel = el("section", null, "panel flow-column " + c[2]);
+          var head = el("div", null, "flow-head");
+          head.appendChild(el("h2", c[0]));
+          var total = sum(c[1]);
+          head.appendChild(el("span", money.format(total), "flow-total"));
+          panel.appendChild(head);
+          var list = el("ul", null, "flow-items");
+          c[1].forEach(function (i) {
+            var li = el("li");
+            var label = el("div", null, "flow-label");
+            label.appendChild(el("span", i.name));
+            label.appendChild(el("span", money.format(i.amount), "n"));
+            li.appendChild(label);
+            var bar = el("div", null, "flow-bar");
+            var fill = el("span");
+            fill.style.width = (100 * i.amount / (c[1][0].amount || 1)) + "%";
+            bar.appendChild(fill);
+            li.appendChild(bar);
+            li.title = i.name + ": " + money.format(i.amount) + ", " + Math.round(100 * i.amount / (total || 1)) + "% of " + c[0].toLowerCase();
+            list.appendChild(li);
+          });
+          panel.appendChild(list);
+          box.appendChild(panel);
+        });
+        if (s.through.length) {
+          box.appendChild(el("p", "On the way: " + s.through.map(function (t) { return t.name + " " + money.format(t.amount); }).join(", ") + ".",
+                             "support flow-through"));
+        }
+      }
 
       function drawFlows(result) {
         var chart = document.getElementById("chart");
         var note = document.getElementById("flows-note");
-        totals.draw(result.totals);
+        drawFlowSummary(result.summary);
         if (!result.rows.length) {
           chart.textContent = "No flows for this period.";
           note.textContent = "";

@@ -6,7 +6,7 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -18,6 +18,7 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
   parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
   findLine: (values: unknown[][], id: string) => Line | null;
+  flowSummary: (totals: NodeTotal[]) => FlowSummary;
 };
 
 const VALUES: unknown[][] = [
@@ -239,4 +240,16 @@ test("findLine gives one whole line, a split with all its parts and the items it
   assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20 });
   assert.deepEqual(shape.findLine(values, "t2")?.parts, []);
   assert.equal(shape.findLine(values, "t9"), null);
+});
+
+test("the flow summary sorts nodes into where money came from, taxes, where it went, and stops on the way", () => {
+  const node = (name: string, into: number, out: number): NodeTotal => ({ name, into, out, total: Math.max(into, out) });
+  const s = shape.flowSummary([
+    node("gross pay (alex)", 0, 5000), node("from savings: brokerage", 0, 900), node("net pay", 3500, 3500),
+    node("accounts", 4400, 4400), node("federal tax", 800, 0), node("pre-tax: 401k", 700, 0), node("food", 600, 0),
+    node("to cash balances", 1200, 0), node("kids", 2600, 0)]);
+  assert.deepEqual(s.came.map((i) => i.name), ["gross pay (alex)", "from savings: brokerage"]);
+  assert.deepEqual(s.taxes.map((i) => [i.name, i.amount]), [["federal tax", 800], ["pre-tax: 401k", 700]]);
+  assert.deepEqual(s.went.map((i) => i.name), ["kids", "to cash balances", "food"]);
+  assert.deepEqual(s.through.map((i) => [i.name, i.amount]), [["accounts", 4400], ["net pay", 3500]]);
 });

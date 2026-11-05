@@ -1,3 +1,3 @@
 """Household finance engine: ingest, compute and views over a Google Sheets ledger."""
 
-__version__ = "0.9.9"
+__version__ = "0.9.10"

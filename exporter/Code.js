@@ -250,9 +250,10 @@ function body_(payload) {
   if (!html) return found.plain;
   return html
     .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table)>/gi, "\n")
+    .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|pre)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
     .replace(/&zwnj;|&shy;|&copy;/g, "")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, "\"")
     .replace(/\r/g, "")

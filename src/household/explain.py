@@ -18,7 +18,8 @@ ledger, matched by amount and date.
            store whose order history lists items joins by a parser writing
            order_items rows and an entry there): a card charge is one shipment
            (the items shipped together, summed) or, failing that, a whole
-           order; a credit is one refund, of the item that cost exactly that
+           order or, failing both, one item of a shipment that held several (a
+           store that charges each part as it ships); a credit is one refund, of the item that cost exactly that
            much if there is one. The line takes its category from the items:
            Whole Foods orders are food, departments map through DEPARTMENTS,
            anything else is household, and a charge whose items fall in several
@@ -132,7 +133,11 @@ def order_groups(items, cards, service="amazon"):
     orders = (bought.groupby("order_id", as_index=False).agg(date=("order_date", "first"), amount=("amount", "sum"))
               .assign(level="order", rank=1))
     refunds = df[df["kind"] == "refund"][["order_id", "date", "amount", "item_id"]].assign(level="refund", rank=0)
-    groups = pd.concat([shipments, orders, refunds], ignore_index=True)
+    # an item on its own, last: a store that charges each part of a shipment separately (an order history with
+    # one date for the whole order cannot say which items went together)
+    several = bought.groupby(["order_id", "date"])["item_id"].transform("size") > 1
+    singles = bought[several][["order_id", "date", "amount", "item_id"]].assign(level="item", rank=2)
+    groups = pd.concat([shipments, orders, refunds, singles], ignore_index=True)
     groups["amount"] = groups["amount"].round(2)
     groups["group"] = (groups["level"] + ":" + groups["order_id"] + ":" + groups["date"].astype(str)
                        + ":" + groups.get("item_id", pd.Series("", index=groups.index)).fillna("").astype(str))
@@ -160,12 +165,18 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
     charges = store[store["amt"] < 0].assign(abs_amt=lambda d: -d["amt"])
     credits = store[store["amt"] > 0].assign(abs_amt=lambda d: d["amt"])
 
-    def exclusive(r):  # a shipment used rules out its order, and the reverse
+    def exclusive(r):  # a part used rules out what contains it and what it contains
         if r["level"] == "refund":
             return {r["group"]}
-        shipments = set(groups.loc[(groups["order_id"] == r["order_id"]) & (groups["level"] == "shipment"), "group"])
-        orders = set(groups.loc[(groups["order_id"] == r["order_id"]) & (groups["level"] == "order"), "group"])
-        return {r["group"]} | (orders if r["level"] == "shipment" else shipments)
+        same = groups[groups["order_id"] == r["order_id"]]
+        orders = set(same.loc[same["level"] == "order", "group"])
+        if r["level"] == "order":
+            return set(same.loc[same["level"] != "refund", "group"])
+        if r["level"] == "shipment":
+            inside = same[(same["level"] == "item") & (same["date"] == r["date_c"])]
+            return {r["group"]} | orders | set(inside["group"])
+        shipment = same[(same["level"] == "shipment") & (same["date"] == r["date_c"])]
+        return {r["group"]} | orders | set(shipment["group"])
 
     found = (_greedy(charges, groups[groups["level"] != "refund"], "abs_amt", exclusive=exclusive)
              + _greedy(credits, groups[groups["level"] == "refund"], "abs_amt"))
@@ -176,6 +187,8 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
         order = bought[bought["order_id"] == r["order_id"]]
         if r["level"] == "shipment":
             order = order[order["date"] == r["date_c"]]
+        elif r["level"] == "item":
+            order = order[order["item_id"] == r["item_id"]]
         elif r["level"] == "refund":  # an item that cost exactly the refund is the one returned
             same = order[(order["amount"].round(2) - abs(float(r["amt"]))).abs() < 0.005]
             order = same.head(1) if len(same) else order

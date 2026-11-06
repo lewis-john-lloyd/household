@@ -1,0 +1,252 @@
+===== RECEIPT f1 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-05-03
+
+ Thank you for shopping
+ YOUR RECEIPT
+ WILLOW ST
+ 1 Willow St
+ __________________________________________
+ 5/2/26 10:15 AM
+ Trans.: 11 Store: 01
+ Reg.: 002 Cashier #: 12
+ SALE
+ __________________________________________
+ Garden Hose 20.00 T
+ 123456 x 1 24.00
+ 15% Bucket Promotion (4.00)
+ Oats 6.00 N
+ NOT ON FILE x 1 6.00
+ Donation 1.00 N
+ 234567 x 1 1.00 NE
+ Donation - Local
+ Subtotal 27.00
+ Total Sales Tax 1.00
+ Total 28.00
+ Credit 28.00
+ Card: Visa
+ Change Due 0.00
+ Customer Copy
+
+===== RECEIPT f2 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-05-04
+
+ YOUR RECEIPT
+ WILLOW ST
+ __________________________________________
+ 5/4/26 9:00 AM
+ Trans.: 12 Store: 01
+ Reg.: 002 Cashier #: 12
+ RETURN
+ __________________________________________
+ Garden Hose -20.00 T
+ 123456 x 1 -20.00
+ Subtotal -20.00
+ Total Sales Tax -1.00
+ Total -21.00
+ Credit -21.00
+ Customer Copy
+
+===== RECEIPT r1 =====
+From: notices@example.com
+Subject: Your eReceipt - store purchase
+Date: 2026-06-06
+
+ Thanks for shopping with us!
+ Transaction details
+ Date: 06/06/26 04:14 PM
+ Transaction type: Sale
+ Items purchased
+Rain Jacket
+ Item #100001
+ Qty: 1
+ $60.00
+ $60.00
+Wool Socks
+ Item #100002
+ Qty: 2
+ $10.00
+ $20.00
+ Purchased at:
+ ACME GROCER
+ Payment details
+ Subtotal
+ $80.00
+ Sales tax
+ $4.00
+ Total
+ $84.00
+ Total Rewards
+ -$42.00
+ You paid
+ $42.00
+ VISA (ending in 1111)
+ $42.00
+ NEED HELP?
+
+===== RECEIPT r2 =====
+From: notices@example.com
+Subject: Thanks for your order! (#A100)
+Date: 2026-08-18
+
+ We got your order!
+ Order number:
+ A100
+ Order date: 08/18/2026
+ You paid: $70.00
+ Items to ship
+ Standard shipping
+ Estimated arrival (2 items):
+Sat, Aug 22
+ Camp Stove
+ Blue
+ Item #200001
+ Qty: 1
+ $50.00
+ $50.00
+ Tent Stakes
+ Item #200002
+ Qty: 1
+ $30.00
+ $30.00
+ Why separate shipments?
+ Payment details
+ Subtotal
+ Standard shipping
+ Estimated sales tax
+ $80.00
+ FREE
+ $4.00
+ Order total
+ $84.00
+ Total Rewards
+ -$14.00
+ You paid
+ $70.00
+ MasterCard (ending in 1111)
+ $70.00
+ NEED HELP?
+
+===== RECEIPT r3 =====
+From: notices@example.com
+Subject: Thanks for your order! (#A101)
+Date: 2026-07-05
+
+ Order number:
+ A101
+ Order date: 07/05/2026
+ Estimated arrival (1 item):
+Thu, Jul 10
+ Trail Map
+ Item #200003
+ Qty: 1
+ $10.00
+ $10.00
+ Payment details
+ Subtotal
+ Standard shipping
+ Estimated sales tax
+ $10.00
+ FREE
+ $0.50
+ Order total
+ $10.50
+ Total Rewards
+ -$10.50
+ You paid
+ Billing address:
+ NEED HELP?
+
+===== RECEIPT p1 =====
+From: service@example.com
+Subject: QUILL & INK: $12.50 USD
+Date: 2026-09-02
+
+ QUILL & INK: $12.50 USD
+ Hello, Alex
+ You paid $12.50 USD to QUILL & INK Co.
+ Merchant
+ QUILL & INK Co.
+ Transaction date
+ Sep 1, 2026
+ Subtotal
+ $12.50
+ Total
+ $12.50 USD
+ This charge will appear on your credit card statement as "PAYPAL *QUILLINK".
+ Transaction ID: 1AB2CD3EF4GH5IJ6K
+ Copyright 1999-2026 PayPal, Inc. All rights reserved.
+
+===== RECEIPT p2 =====
+From: service@example.com
+Subject: Receipt for your PayPal payment
+Date: 2026-09-03
+
+ Receipt for your PayPal payment
+ Payment to
+ PAGE TURNER BOOKS
+ Transaction ID
+ 2BC3DE4FG5HI6JK7L
+ Date
+ September 3, 2026
+ Description
+ Unit price
+ Qty
+ Amount
+ Atlas of Rivers,
+ Second Edition
+ $15.00 USD
+ 2
+ $30.00 USD
+ Shipping and handling
+ $0.00 USD
+ Total
+ $30.00 USD
+ Payment method:
+ MCARD x- 1111
+ Copyright 1999-2026 PayPal, Inc. All rights reserved.
+
+===== RECEIPT p3 =====
+From: service@example.com
+Subject: Your refund from QUILL & INK Co. is on the way
+Date: 2026-09-10
+
+ Your Refund of $12.50 USD from QUILL & INK Co.
+ Refund total
+ $12.50 USD
+ Refund from
+ QUILL & INK Co.
+ Copyright 1999-2026 PayPal, Inc. All rights reserved.
+
+===== RECEIPT p4 =====
+From: service@example.com
+Subject: sam sent you $40.00 USD
+Date: 2026-09-12
+
+ sam sent you $40.00 USD
+ Amount
+ $40.00 USD
+ Note from sam
+ Half of the camping gear
+ Transaction date
+ September 12, 2026
+ Transaction ID
+ 3CD4EF5GH6IJ7KL8M
+ Copyright 1999-2026 PayPal, Inc. All rights reserved.
+
+===== RECEIPT p5 =====
+From: service@example.com
+Subject: You authorized a payment
+Date: 2026-09-02
+
+ Hello, Alex
+ You authorized $12.50 USD to QUILL & INK Co.
+ Merchant
+ QUILL & INK Co.
+ Transaction date
+ Sep 1, 2026
+ Transaction ID: 1AB2CD3EF4GH5IJ6K
+ Copyright 1999-2026 PayPal, Inc. All rights reserved.

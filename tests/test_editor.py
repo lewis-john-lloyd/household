@@ -50,7 +50,11 @@ def test_settings_in_force_are_the_last_row_per_key():
     params = table("parameters", {"jurisdiction": "household", "key": "transfer_account", "value": "checking"},
                    {"jurisdiction": "federal", "key": "rate", "value": "1"},
                    {"jurisdiction": "household", "key": "transfer_account", "value": "savings"})
-    assert editor.parameters(params)[["key", "value"]].values.tolist() == [["transfer_account", "savings"]]
+    out = editor.parameters(params).set_index("key")
+    assert out.at["transfer_account", "value"] == "savings" and "rate" not in out.index
+    # every known setting shows, set or not, with what it is for
+    assert out.at["payroll_url", "source"] == "not set" and "W-4" in out.at["payroll_url", "about"]
+    assert out.at["transfer_account", "about"] == ""
 
 
 def test_no_settings_yet_publishes_empty_tables_with_their_columns():

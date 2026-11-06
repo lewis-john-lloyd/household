@@ -48,7 +48,8 @@ function runner(ok, fail) {
     };
   } });
 }
-window.google = { script: { run: runner(null, null) },
+window.google = { script: { run: runner(null, null),
+                            url: { getLocation: function (f) { setTimeout(function () { f(window.__location || { parameter: {} }); }, 0); } } },
   charts: { load: function () {}, setOnLoadCallback: function (f) { setTimeout(f, 0); } } };
 `;
 
@@ -377,5 +378,21 @@ test("a discard the views couldn't remember says the status page can't tell, ins
   await page.click("#pending-msg button:has-text('Discard that change set too')");
   await page.waitForFunction(() => /could not remember this discard/.test(document.getElementById("pending-msg").textContent));
   assert.doesNotMatch(await page.textContent("#pending-msg"), /the status page will say so/);
+  await page.close();
+});
+
+test("a link opens the page it names, and a known setting not set yet is added as a new one", async () => {
+  const page = await open("window.__location = { parameter: { view: 'edit', tab: 'settings' } };" +
+    "window.__answers.getEditor.parameters.push({ key: 'payroll_url', value: '', source: 'not set', " +
+    "about: 'Where W-4, WT-4 and supplemental withholding are changed' });");
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  assert.equal(await page.getAttribute("#edit-tabs button[data-tab=settings]", "aria-pressed"), "true");
+  assert.match(await page.textContent(".md-row:has-text('payroll_url')"), /not set: Where W-4/);
+  await changeSetting(page, "payroll_url", "https://payroll.example");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "parameter", key: "payroll_url", value: "https://payroll.example", was: null }]);
+  assert.deepEqual(page.errors, []);
   await page.close();
 });

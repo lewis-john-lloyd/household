@@ -9,7 +9,7 @@ so these tables carry each row's fields exactly as the ledger holds them.
 
 import pandas as pd
 
-from . import budget, compute, schema
+from . import budget, compute, schema, settings
 
 PER_WORDS = {"monthly": "a month", "biweekly": "every two weeks", "weekly": "a week",
              "semi_monthly": "twice a month", "quarterly": "a quarter", "semi_annually": "every six months",
@@ -112,12 +112,15 @@ def payee_rules(rules):
 
 
 def parameters(params):
-    """Household settings (jurisdiction household): the last row per key."""
+    """Household settings (jurisdiction household): the last row per key, and every known setting not set yet,
+    each with what it is for (settings.SETTINGS)."""
     columns = _columns("editor_parameters")
     if params is None or params.empty:
-        return pd.DataFrame(columns=columns)
-    household = params[params["jurisdiction"].astype(str) == "household"]
-    return compute.latest(household, ["key"]).reindex(columns=columns, fill_value="").sort_values("key")
+        rows = pd.DataFrame(columns=["key", "value", "source"])
+    else:
+        household = params[params["jurisdiction"].astype(str) == "household"]
+        rows = compute.latest(household, ["key"]).reindex(columns=["key", "value", "source"], fill_value="")
+    return settings.known(rows).reindex(columns=columns, fill_value="")
 
 
 def review_queue(review):

@@ -5,8 +5,10 @@ paid. An Amazon line says only AMAZON; Amazon's order history says what was in
 the shipment. Neither export adds money: it names a line already in the
 ledger, matched by amount and date.
 
-  Google   order_items rows of service google (Google Pay's purchase list): a
-           GOOGLE line takes the app and item bought as its payee.
+  App stores  order_items rows of service google (Google Pay's purchase list, or Google Play
+           receipts) and apple (Apple's emailed receipts), match_named: a GOOGLE or APPLE.COM
+           line takes what its order bought (the app first) as its payee, so review asks once
+           about a subscription that renews.
   PayPal   payment_details rows of service paypal: same signed amount, the
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
@@ -222,25 +224,48 @@ def match_all_orders(lines, items, cards, contents=None, services=None):
     return out
 
 
-def match_google(lines, items):
-    """{txn_id: payee} for GOOGLE lines named by Google's purchase list: the app and item bought.
+# app stores whose purchases name a card line (Google's purchase list or receipts, Apple's receipts):
+# service -> the pattern of its lines' payee
+NAMED_SERVICES = {"google": r"GOOGLE", "apple": r"APPLE\.COM|APPLE COM|ITUNES"}
 
-    A charge matches a purchase, a credit a refund, by amount and date, one to one.
+
+def _together(names):
+    """Item names as one: "Apple TV: First; Second" when they share an app, else joined with "; "."""
+    names = list(dict.fromkeys(str(n) for n in names))
+    apps = {n.split(": ", 1)[0] for n in names if ": " in n}
+    if len(names) > 1 and len(apps) == 1 and all(": " in n for n in names):
+        return f"{apps.pop()}: " + "; ".join(n.split(": ", 1)[1] for n in names)
+    return "; ".join(names)
+
+
+def match_named(lines, items, service):
+    """{txn_id: payee} for an app store's card lines named by what each charge bought.
+
+    An order is one charge: its items (an Apple receipt can hold several) are summed and named together.
+    A charge matches an order, a credit a refund, by amount and date, one to one.
     """
     if items is None or items.empty:
         return {}
-    google = items[items["service"] == "google"].copy()
-    if google.empty:
+    store = items[items["service"] == service].copy()
+    if store.empty:
         return {}
-    google["amount"] = pd.to_numeric(google["amount"]).round(2)
-    google = google.assign(group=google["item_id"], rank=0)
+    store["amount"] = pd.to_numeric(store["amount"])
+    orders = (store.groupby(["order_id", "kind"], sort=False)
+              .agg(amount=("amount", "sum"), date=("date", "min"), item=("item", _together)).reset_index())
+    orders["amount"] = orders["amount"].round(2)
+    orders = orders.assign(group=orders["order_id"] + "|" + orders["kind"], rank=0)
     upper = lines["payee_raw"].astype(str).str.upper()
-    named = lines[upper.str.contains("GOOGLE") & ~upper.str.contains("PAYROLL")].copy()
+    named = lines[upper.str.contains(NAMED_SERVICES[service]) & ~upper.str.contains("PAYROLL")].copy()
     named["amt"] = pd.to_numeric(named["amount"]).round(2)
     named["abs_amt"] = named["amt"].abs()
-    found = (_greedy(named[named["amt"] < 0], google[google["kind"] == "item"], "abs_amt")
-             + _greedy(named[named["amt"] > 0], google[google["kind"] == "refund"], "abs_amt"))
+    found = (_greedy(named[named["amt"] < 0], orders[orders["kind"] == "item"], "abs_amt")
+             + _greedy(named[named["amt"] > 0], orders[orders["kind"] == "refund"], "abs_amt"))
     return {r["txn_id"]: str(r["item"]) for r in found}
+
+
+def match_google(lines, items):
+    """{txn_id: payee} for GOOGLE lines named by Google's purchases: the app and item bought."""
+    return match_named(lines, items, "google")
 
 
 HINT_WINDOW = (-2, 10)  # days from a shipment to an unmatched charge that might be part of it
@@ -278,7 +303,7 @@ def explain(lines, details=None, items=None, cards=(), services=None):
     """Everything categorization needs from the explanation downloads. services: the stores with an
     order history and their payee patterns (order_services; ORDER_SERVICES by default)."""
     services = services or ORDER_SERVICES
-    named = {**match_paypal(lines, details), **match_google(lines, items)}
+    named = {**match_paypal(lines, details), **match_named(lines, items, "google"), **match_named(lines, items, "apple")}
     contents = {}
     split = match_all_orders(lines, items, cards, contents, services)
     hints = {}

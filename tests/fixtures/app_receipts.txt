@@ -1,0 +1,161 @@
+===== RECEIPT a1 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-03-01
+
+ Your Apple Account was used to purchase Night Ferry and other items.
+ Receipt
+APPLE ACCOUNT
+alex@example.com
+ BILLED TO
+Visa .... 1111 (Apple Pay)
+Alex
+1 Willow St
+ DATE
+ Feb 8, 2026
+ ORDER ID
+ AB1CD2EF3G
+ DOCUMENT NO.
+1001
+ Apple TV
+Night Ferry
+ Drama
+Movie
+ Alex's laptop
+ Report a Problem
+ $12.00
+Paper Moon
+ Comedy
+Movie
+ Alex's laptop
+ Report a Problem
+ $8.00
+ Subtotal
+ $20.00
+ Tax
+ $1.40
+ TOTAL
+ $21.40
+ Receipt
+ ORDER ID
+ AB1CD2EF3G
+ DOCUMENT NO.
+1001
+ Apple TV
+Night Ferry
+ $12.00
+Paper Moon
+ $8.00
+ Subtotal
+ $20.00
+ TOTAL
+ $21.40
+
+===== RECEIPT a2 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-03-01
+
+Receipt
+March 2, 2026
+Order ID:
+HJ4KL5MN6P
+Document:
+1002
+Apple Account:
+alex@example.com
+Lantern Notes
+Lantern Notes Pro (Monthly)
+Renews April 2, 2026
+Alex's phone
+$5.00
+Billing and Payment
+Alex
+1 Willow St
+Subtotal
+$5.00
+Tax
+$0.25
+Visa •••• 1111 (Apple Pay)
+$5.25
+
+===== RECEIPT g1 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-03-01
+
+Google Play
+
+Thank you
+
+Your subscription from Trails Co on Google Play has renewed. Manage
+your subscriptions
+
+Order number: GPA.1..6
+Order date: Mar 3, 2026 12:51:43 AM CST
+Your account: alex@example.com
+
+Item Price
+
+Trail Map Peak Plus with Offline Maps and Weather Layers for Every Hike (Trails:
+Hike) $12.00/month
+
+Auto-renewing subscription
+
+State sales tax: $0.60
+
+Local sales tax: $0.06
+
+Total: $12.66/month
+
+Payment method:
+
+Visa-1111
+
+===== RECEIPT g2 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-03-01
+
+Google Play
+
+Order number: SOP.2..0
+Order date: Mar 9, 2026 1:24:57 AM EST
+
+Item Price
+
+Cloud Plus (2 TB) (Cloud Drive) (by Trails Co) $50.00/year
+
+Tax: $0.00
+
+Total: $50.00/year
+
+Payment method:
+
+Visa-1111
+
+===== RECEIPT a3 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-03-01
+
+Receipt
+March 5, 2026
+Order ID:
+QR7ST8UV9W
+Document:
+1003
+Apple Account:
+alex@example.com
+Lantern Notes
+Lantern Notes Pro (Monthly)
+Renews April 5, 2026
+Alex's phone
+$4.00
+Billing and Payment
+Subtotal
+$5.00
+Tax
+$0.25
+Visa •••• 1111 (Apple Pay)
+$5.25

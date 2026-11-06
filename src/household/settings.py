@@ -33,11 +33,40 @@ SETTINGS = {
                             "year (lpfsa_claim_deadline:2026 with a full date for one plan year)",
     "dcfsa_claim_deadline": "The last day to claim dependent care FSA money: MM-DD of the year after the plan "
                             "year (dcfsa_claim_deadline:2026 with a full date for one plan year)",
+    "receipt_search": "A Gmail search the receipt exporter runs each day, one per store (receipt_search:<store>), "
+                      "naming the sender with from:, such as from:receipts@example.com subject:receipt",
 }
 
 LINKS = ("views_url", "payroll_url", "benefits_url", "fsa_claims_url")
 NUMBERS = ("target_refund", "planned_supplemental_rate", "withholding_tolerance")
 DEADLINES = ("lpfsa_claim_deadline", "dcfsa_claim_deadline")
+SEARCH_MAX = 300
+FROM = re.compile(r"(^|[\s({])from:\S")
+
+
+def search_problem(v):
+    """Why a receipt search can't be run, or "": one line, short, and naming a sender, so the exporter reads one
+    store's mail and never the whole mailbox."""
+    if "\n" in v or "\r" in v:
+        return "is more than one line"
+    if len(v) > SEARCH_MAX:
+        return f"is longer than {SEARCH_MAX} characters"
+    if not FROM.search(v):
+        return "names no sender (from:)"
+    return ""
+
+
+def receipt_searches(params):
+    """The receipt exporter's Gmail searches, one row per store (store, search): every receipt_search:<store>
+    setting that is set and can be run, by store. A bare receipt_search is the store "receipts"."""
+    if params is None or params.empty:
+        return pd.DataFrame(columns=["store", "search"])
+    household = params[params["jurisdiction"].astype(str) == "household"]
+    latest = household.drop_duplicates("key", keep="last")
+    rows = [{"store": key.split(":", 1)[1] if ":" in key else "receipts", "search": v}
+            for key, v in zip(latest["key"].astype(str), latest["value"].astype(str).str.strip())
+            if key.split(":")[0] == "receipt_search" and v and not search_problem(v)]
+    return pd.DataFrame(rows, columns=["store", "search"]).sort_values("store").reset_index(drop=True)
 
 
 def value(params, key, default=""):
@@ -102,6 +131,8 @@ def check(params):
                 re.compile(v)
             except re.error as e:
                 out.append((key, v, f"is not a pattern ({e})"))
+        elif base == "receipt_search" and search_problem(v):
+            out.append((key, v, search_problem(v)))
         elif base in DEADLINES:
             full = ":" in key
             ok = re.fullmatch(r"\d{4}-\d{2}-\d{2}" if full else r"\d{2}-\d{2}", v)

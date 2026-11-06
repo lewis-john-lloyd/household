@@ -22,8 +22,9 @@ function message(id, isoDate, body, from = "Willow St <receipts@example.coop>") 
 function pad(n) { return String(n).padStart(2, "0"); }
 
 /** A fresh exporter over a fake mailbox. mailbox: id -> message (or a function returning one, or throwing). */
-function exporter(mailbox, props = {}) {
-  const store = { SENDERS: JSON.stringify(["from:receipts@example.coop"]), FOLDER_ID: "folder1", ...props };
+function exporter(mailbox, props = {}, searches = [["co_op", "from:receipts@example.coop"]]) {
+  const store = { REPORTS_ID: "reports1", FOLDER_ID: "folder1", ...props };
+  const reads = [];
   const files = [];
   const logs = [];
   const triggers = [];
@@ -37,6 +38,11 @@ function exporter(mailbox, props = {}) {
     JSON, Math, Date, Number, String, Object, Array, Error, RegExp,
     PropertiesService: { getScriptProperties: () => ({
       getProperty: (k) => (k in store ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); } }) },
+    Sheets: { Spreadsheets: { Values: { get: (id, range) => {
+      reads.push([id, range]);
+      if (searches instanceof Error) throw searches;
+      return { values: [["store", "search", "run_id"], ...searches] };
+    } } } },
     Gmail: { Users: { Messages: {
       list: (_me, { q }) => {
         const after = /after:(\d{4})\/(\d{2})\/(\d{2})/.exec(q);
@@ -77,7 +83,7 @@ function exporter(mailbox, props = {}) {
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
-  return { run: () => context.exportReceipts(), installTrigger: () => context.installTrigger(), store, files, logs, triggers,
+  return { run: () => context.exportReceipts(), installTrigger: () => context.installTrigger(), store, files, logs, triggers, reads, context,
            decode: (d) => context.decode_(d), body: (p) => context.body_(p) };
 }
 
@@ -187,4 +193,31 @@ test("past the retry cap the oldest unreadable messages are dropped, each logged
   assert.equal(kept.length, 200);
   assert.deepEqual(["x000", "x001"].filter((id) => kept.includes(id)), []);  // the two oldest
   assert.ok(run.logs.some((l) => /giving up on message x000 after 2 tries: more than 200 unreadable/.test(l)));
+});
+
+test("the searches come from Reports' receipt_searches, and one that names no sender is skipped", () => {
+  const queries = [];
+  const run = exporter({ m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") }, {},
+                       [["co_op", "from:receipts@example.coop"], ["everything", "in:anywhere"], ["blank", ""]]);
+  const list = run.context.Gmail.Users.Messages.list;
+  run.context.Gmail.Users.Messages.list = (me, args) => { queries.push(args.q); return list(me, args); };
+  run.run();
+  assert.deepEqual(run.reads, [["reports1", "receipt_searches!A:B"]]);
+  assert.deepEqual(queries, ["from:receipts@example.coop"]);
+  assert.ok(run.logs.some((l) => l.includes("skipping the search for everything")));
+  assert.equal(run.files.length, 1);
+});
+
+test("with no Reports id, Reports unreadable or no searches, the run fails and exports nothing", () => {
+  const box = { m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") };
+  for (const [props, searches, said] of [
+    [{ REPORTS_ID: undefined }, undefined, /REPORTS_ID/],
+    [{}, new Error("Unable to parse range: receipt_searches!A:B"), /compute has run/],
+    [{}, [], /no receipt searches/],
+    [{}, [["everything", "in:anywhere"]], /no receipt searches/],
+  ]) {
+    const run = exporter(box, props, searches);
+    assert.throws(() => run.run(), said);
+    assert.equal(run.files.length, 0);
+  }
 });

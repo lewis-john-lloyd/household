@@ -1,0 +1,4 @@
+# clasp pushes only the script and its manifest; the tests run under Node, not in Apps Script
+**/**
+!Code.js
+!appsscript.json

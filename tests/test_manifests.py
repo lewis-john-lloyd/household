@@ -68,3 +68,13 @@ def test_the_views_and_the_exporter_each_need_what_they_have():
     assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", exporter)} == {"Gmail", "Drive", "Sheets"}
     # the exporter reads its searches from Reports and never writes a spreadsheet
     assert set(re.findall(r"\bSheets\.[\w.]+", exporter)) == {"Sheets.Spreadsheets.Values.get"}
+
+
+@pytest.mark.parametrize("project", ["exporter", "nudge"])
+def test_clasp_pushes_only_the_script_and_its_manifest(project):
+    # without this, clasp push sends test/*.js too, and Apps Script runs the Node tests (require is not defined)
+    ignore = [line for line in (ROOT / project / ".claspignore").read_text().splitlines()
+              if line.strip() and not line.startswith("#")]
+    assert ignore == ["**/**", "!Code.js", "!appsscript.json"]
+    assert sorted(p.name for p in (ROOT / project).iterdir() if p.is_file() and not p.name.startswith(".")) == [
+        "Code.js", "appsscript.json"]

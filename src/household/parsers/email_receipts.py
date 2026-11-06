@@ -2,8 +2,9 @@
 
 A file holds one or more messages, each starting with a line "===== RECEIPT <message id> =====",
 then From, Subject and Date lines, a blank line and the body. Each receipt layout has a reader
-(READERS, recognized by the body, not the sender, so no store's name lives in this code); a
-message in a layout with no reader yet is counted and left out.
+(READERS, recognized by the body, not the sender, so no local store's name lives in this code; the
+app stores, like Amazon and Google elsewhere, are named); a message in a layout with no reader yet is
+counted and left out.
 
 Co-op point-of-sale receipts (service "co_op"): the receipt lists each item with its price and its
 tax flags (F: food, W: weighed, T1: taxed). The items add to Net Sales, the taxed ones to the base printed beside the
@@ -30,6 +31,28 @@ names and quantities but no prices. A summary for one item reads as that item, a
 were charged; one for several items cannot be shared out by price, so it is counted and left as one
 charge.
 
+App store receipts (Apple's and Google Play's) name what a charge bought rather than a store's
+shelf, so their rows are read for matching as Google's purchase list is (explain.match_named): the
+card line is named after its order's items, and review asks about that name, once for every renewal
+of the same subscription.
+
+Apple receipts (service "apple"), in two layouts, both in HTML: the older one ("ORDER ID", "DOCUMENT
+NO.", each item under its store's section, such as Apple TV, then its name, a detail, its kind and the
+device, "Report a Problem" and its price; the whole receipt printed twice, for wide screens and narrow,
+so only the first copy is read) and the newer one ("Order ID:", "Document:", each item its app, its
+plan, when it renews and the device, then its price, and "Billing and Payment" with the Subtotal and
+Tax). Each item is "<section or app>: <name or plan>"; tax is shared by amount, so the items add to
+what was charged; the order is keyed by its order id.
+
+Google Play receipts (service "google", the same as the Takeout purchase list): "Order number:",
+"Order date:", the items each ending in its price (per month or year for a subscription), the tax
+lines and "Total:". One order is one row at its total, keyed as the Takeout reader keys a transaction
+("google|<order number>|item"), so a purchase in both is read once. An item reads as the Takeout
+reader names it: the app first ("Claude by Anthropic: Claude Pro Subscription").
+
+A receipt in one of these layouts that doesn't add up (a layout Apple or Google has since changed, say)
+is left out with its id in the notes, never refusing the rest of the file.
+
 A body still in HTML (a store that sends HTML in its plain-text part) is turned into text first,
 the way the exporter does it.
 
@@ -40,11 +63,13 @@ twice is read once. The household names each store's card lines with a parameter
 
 import hashlib
 import re
+from datetime import datetime
 
 import pandas as pd
 
 from .amazon import COLUMNS
 from .common import ParseError, Result
+from .google_takeout import _item as _app_item
 
 NAME = "email_receipts"
 KIND = "email_receipts"
@@ -101,6 +126,26 @@ def _text(body):
 
 class Unpriced(Exception):
     """A receipt that lists several items without their prices: it stays one charge."""
+
+
+class Unread(Exception):
+    """A receipt in a known layout that doesn't add up: left out, with why, in the notes."""
+
+
+def _soft(service):
+    """An app store reader whose surprises (a line missing, a number that won't read) leave the one receipt
+    out with a note, as Unread, rather than refusing the file: those layouts change without notice."""
+    def wrap(reader):
+        def read(message_id, headers, body):
+            try:
+                return reader(message_id, headers, body)
+            except Unread:
+                raise
+            except (StopIteration, IndexError, ValueError) as e:
+                raise Unread(f"{service} {message_id}: {type(e).__name__} {e}".strip()) from e
+        read.__name__ = reader.__name__
+        return read
+    return wrap
 
 
 def _cents(text):
@@ -305,6 +350,169 @@ def bookseller_online(message_id, headers, body):
     return [_row(BOOKSELLER, message_id, 0, headers.get("date", "")[:10], charged, department, name, BOOKSELLER)]
 
 
+APPLE = "apple"
+GOOGLE = "google"
+PRICE = re.compile(r"^(-?)\$([\d,]+\.\d\d)$")
+CARD_LAST4 = re.compile(r"(?:Visa|Mastercard|MasterCard|Amex|American Express|Discover)\D{0,12}?(\d{4})")
+APPLE_SECTIONS = {"Apple TV", "iTunes Store", "App Store", "Apple Books", "Apple Music", "Apple Arcade",
+                  "Apple Podcasts", "Apple Fitness+", "Apple News+", "Apple One", "iCloud"}
+APPLE_NOISE = {"Report a Problem", "Write a Review"}
+
+
+def _day(text, formats=("%B %d, %Y", "%b %d, %Y")):
+    for f in formats:
+        try:
+            return datetime.strptime(text.strip(), f).date().isoformat()
+        except ValueError:
+            pass
+    return ""
+
+
+def _after(lines, label, start=0):
+    """The line after the first line equal to label, from start; "" when there is none."""
+    i = next((i for i in range(start, len(lines)) if lines[i] == label), None)
+    return lines[i + 1] if i is not None and i + 1 < len(lines) else ""
+
+
+def _blocks(lines):
+    """[(lines, cents)]: runs of lines each ended by a price line."""
+    out, block = [], []
+    for line in lines:
+        price = PRICE.match(line)
+        if price:
+            out.append((block, (-1 if price[1] else 1) * _cents(price[2])))
+            block = []
+        elif line not in APPLE_NOISE:
+            block.append(line)
+    return out
+
+
+def _apple_rows(order, message_id, day, card, items, total):
+    """Rows for one Apple order: the tax shared by amount so the items add to total."""
+    if not items:
+        return []
+    if total <= 0:
+        return []
+    amounts = _scale([c for _, c in items], total)
+    return [{**_row(APPLE, order or message_id, n, day, amount, "", name, "apple.com"), "card": card}
+            for n, ((name, _), amount) in enumerate(zip(items, amounts))]
+
+
+@_soft(APPLE)
+def apple_itunes(message_id, headers, body):
+    """order_items rows for one Apple receipt in the older layout (ORDER ID, DOCUMENT NO.)."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    doc = next(i for i, line in enumerate(lines) if line == "DOCUMENT NO.")
+    end = next((i for i in range(doc, len(lines)) if lines[i] == "Subtotal"), None)
+    if end is None:
+        raise Unread(f"{APPLE} {message_id}: no Subtotal")
+    items, section = [], ""
+    for block, cents in _blocks(lines[doc + 2:end]):
+        if block and block[0] in APPLE_SECTIONS:
+            section, block = block[0], block[1:]
+        if not block:
+            raise Unread(f"{APPLE} {message_id}: a price with no item")
+        items.append(((f"{section}: " if section else "") + block[0], cents))
+    totals = lines[end:end + 8]
+    subtotal = _cents(_after(totals, "Subtotal").lstrip("$")) if _after(totals, "Subtotal").startswith("$") else None
+    tax = _after(totals, "Tax")
+    total = _after(totals, "TOTAL")
+    if subtotal is None or not total.startswith("$"):
+        raise Unread(f"{APPLE} {message_id}: no Subtotal or TOTAL")
+    total = _cents(total.lstrip("$"))
+    if sum(c for _, c in items) != subtotal or subtotal + (_cents(tax.lstrip("$")) if tax.startswith("$") else 0) != total:
+        raise Unread(f"{APPLE} {message_id}: the items, tax and TOTAL don't add up")
+    billed = CARD_LAST4.search(" ".join(lines[:doc]))
+    return _apple_rows(_after(lines, "ORDER ID"), message_id, _day(_after(lines, "DATE")) or headers.get("date", "")[:10],
+                       billed.group(1) if billed else "", items, total)
+
+
+@_soft(APPLE)
+def apple_receipt(message_id, headers, body):
+    """order_items rows for one Apple receipt in the newer layout (Order ID:, Billing and Payment)."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    start = next(i for i, line in enumerate(lines) if line == "Document:") + 2
+    if start < len(lines) and lines[start] == "Apple Account:":
+        start += 2
+    end = next((i for i in range(start, len(lines)) if lines[i] == "Billing and Payment"), None)
+    if end is None:
+        raise Unread(f"{APPLE} {message_id}: no Billing and Payment")
+    items = []
+    for block, cents in _blocks(lines[start:end]):
+        if not block:
+            raise Unread(f"{APPLE} {message_id}: a price with no item")
+        plan = block[1] if len(block) > 1 and not block[1].startswith("Renews ") else ""
+        items.append((f"{block[0]}: {plan}" if plan and plan != block[0] else block[0], cents))
+    totals = lines[end:]
+    sub = _after(totals, "Subtotal")
+    tax = _after(totals, "Tax")
+    if not sub.startswith("$"):
+        raise Unread(f"{APPLE} {message_id}: no Subtotal")
+    subtotal = _cents(sub.lstrip("$"))
+    total = subtotal + (_cents(tax.lstrip("$")) if tax.startswith("$") else 0)
+    if sum(c for _, c in items) != subtotal:
+        raise Unread(f"{APPLE} {message_id}: the items don't add to the Subtotal")
+    billed = CARD_LAST4.search(" ".join(totals))
+    day = _day(lines[lines.index("Receipt") + 1]) if "Receipt" in lines[:start] else ""
+    return _apple_rows(_after(lines, "Order ID:"), message_id, day or headers.get("date", "")[:10],
+                       billed.group(1) if billed else "", items, total)
+
+
+GOOGLE_ITEM = re.compile(r"^(?P<name>.*\S)\s+\$(?P<price>[\d,]+\.\d\d)(?:/\w+)?$")
+GOOGLE_TAX = re.compile(r"^(?:[A-Za-z ]*\s)?tax:\s*\$([\d,]+\.\d\d)$", re.I)
+GOOGLE_TOTAL = re.compile(r"^Total:\s*\$([\d,]+\.\d\d)(?:/\w+)?$")
+
+
+@_soft(GOOGLE)
+def google_play(message_id, headers, body):
+    """One order_items row for one Google Play receipt, at what was charged, keyed as Takeout keys it."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    number = next(line for line in lines if line.startswith("Order number:")).split(":", 1)[1].strip()
+    when = next((line for line in lines if line.startswith("Order date:")), "Order date:").split(":", 1)[1]
+    day = _day(" ".join(when.split()[:3])) or headers.get("date", "")[:10]
+    head = next((i for i, line in enumerate(lines) if line in ("Item Price", "Price")), None)
+    total_at = next((i for i, line in enumerate(lines) if GOOGLE_TOTAL.match(line)), None)
+    if head is None or total_at is None:
+        raise Unread(f"{GOOGLE} {message_id}: no items or no Total")
+    items, taxes, text = [], 0, ""
+    for line in lines[head + 1:total_at]:
+        tax = GOOGLE_TAX.match(line)
+        if tax:
+            taxes += _cents(tax.group(1))
+            continue
+        if line == "Auto-renewing subscription":
+            continue
+        priced = GOOGLE_ITEM.match(f"{text} {line}".strip())
+        if priced:
+            items.append((re.sub(r"\s*\(by [^()]*\)$", "", priced["name"]), _cents(priced["price"])))
+            text = ""
+        else:
+            text = f"{text} {line}".strip()  # a long name wraps onto the next line
+    total = _cents(GOOGLE_TOTAL.match(lines[total_at]).group(1))
+    if not items or sum(c for _, c in items) + taxes != total:
+        raise Unread(f"{GOOGLE} {message_id}: the items and tax don't add to the Total")
+    if total <= 0:
+        return []
+    paid = _after(lines, "Payment method:")
+    card = re.search(r"(\d{4})\s*$", paid)
+    name = "; ".join(_app_item(n, "") for n, _ in items)
+    return [{"item_id": hashlib.sha256(f"{GOOGLE}|{number}|item".encode()).hexdigest()[:16], "service": GOOGLE,
+             "order_id": number, "kind": "item", "order_date": day, "date": day, "amount": total / 100,
+             "card": card.group(1) if card else "", "department": "Google Play", "item": name, "website": ""}]
+
+
+def _is_apple_itunes(body):
+    return all(s in body for s in ("ORDER ID", "DOCUMENT NO.", "TOTAL", "Apple"))
+
+
+def _is_apple_receipt(body):
+    return all(s in body for s in ("Order ID:", "Document:", "Billing and Payment", "Apple"))
+
+
+def _is_google_play(body):
+    return all(s in body for s in ("Google Play", "Order number:", "Total:"))
+
+
 def _is_co_op(body):
     return all(s in body for s in ("EMAIL RECEIPT", "Net Sales", "SUB TOTAL"))
 
@@ -317,11 +525,12 @@ def _is_bookseller_online(body):
     return "Item(s) Shipped/Billed" in body and "Order Subtotal:" in body
 
 
-READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_online, bookseller_online))
+READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_online, bookseller_online),
+           (_is_apple_itunes, apple_itunes), (_is_apple_receipt, apple_receipt), (_is_google_play, google_play))
 
 
 def parse(text):
-    rows, skipped, unpriced, empty, unreadable = [], {}, {}, 0, []
+    rows, skipped, unpriced, empty, unreadable, unread = [], {}, {}, 0, [], []
     for message_id, headers, body in _messages(text):
         if "unreadable" in headers:  # the exporter could not read it; it tries again every run
             unreadable.append(f"{message_id} ({headers['unreadable']})")
@@ -337,6 +546,9 @@ def parse(text):
         except Unpriced as e:
             unpriced[str(e)] = unpriced.get(str(e), 0) + 1
             continue
+        except Unread as e:
+            unread.append(str(e))
+            continue
         rows += found
         if not found:
             empty += 1
@@ -348,6 +560,8 @@ def parse(text):
               for k, n in sorted(unpriced.items())]
     if empty:
         notes.append(f"receipts: {empty} that charged nothing (a return, a free order) left out")
+    if unread:
+        notes.append(f"receipts: {len(unread)} in a known layout that didn't add up, left out: " + "; ".join(unread))
     if unreadable:
         notes.append(f"receipts: {len(unreadable)} the exporter could not read, tried again on its every run "
                      "(look in Gmail by id): " + "; ".join(unreadable))

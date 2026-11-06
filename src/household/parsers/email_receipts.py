@@ -50,6 +50,32 @@ lines and "Total:". One order is one row at its total, keyed as the Takeout read
 ("google|<order number>|item"), so a purchase in both is read once. An item reads as the Takeout
 reader names it: the app first ("Claude by Anthropic: Claude Pro Subscription").
 
+Farm store register receipts (service "farm_store", the receipt printed one line at a time): each item
+is its name, its price after any discount and its tax code (T taxed, N not), then a line with its
+barcode (or NOT ON FILE) and quantity, then any discount and regular-price lines. The items add to
+Subtotal, Subtotal and Total Sales Tax to Total, and the card was charged the Credit (or Debit) lines.
+Tax goes to the taxed items by amount, then everything is scaled to what the cards were charged (a
+reward or gift card that paid part). An untaxed item is food (groceries go untaxed where the store
+is), a donation is charity, anything else is left to the default. A receipt not marked SALE (a return)
+or paid without a card is left out.
+
+Outfitter receipts (service "outfitter"), in two layouts: the store eReceipt ("Items purchased",
+"Transaction type: Sale") and the online order confirmation ("Order number:", "Order date:"). Each
+item is its name (and for an online order its color or size, in brackets), "Item #", "Qty:", the
+price each and what it came to. Payment details list Subtotal, shipping, tax and the total (label then
+value, or all the labels then all the values), then the member rewards used and what each card paid
+("(ending in ...)"). A store sale is one charge, so tax and rewards are shared by amount; an online
+order is charged as its parts ship, and the rewards come off the first items listed, as charged, so
+each item reads at what its part cost the card and matching can take the parts one by one. A store
+return, or an order the rewards paid in full, is left out.
+
+PayPal emails (service "paypal", rows for payment_details, as the QIF download's are): a merchant's
+receipt ("You paid" or "You authorized ... to", with the merchant's name and the transaction date),
+PayPal's own receipt ("Payment to", the items in a table, Total), a refund ("Your Refund of ...
+from") and money a person sent ("... sent you", with their note). Money out is negative. A payment is
+keyed by PayPal's transaction id, so its receipt and its authorization are read once; a refund, which
+prints none, by the message id.
+
 A receipt in one of these layouts that doesn't add up (a layout Apple or Google has since changed, say)
 is left out with its id in the notes, never refusing the rest of the file.
 
@@ -116,9 +142,10 @@ def _text(body):
     if not HTML.search(body):
         return body
     body = re.sub(r"<(style|script)[\s\S]*?</\1>", " ", body, flags=re.I)
-    body = re.sub(r"<br\s*/?>|</(p|div|tr|li|h\d|table)>", "\n", body, flags=re.I)
+    body = re.sub(r"<br\s*/?>|</(p|div|tr|li|h\d|table|pre)>", "\n", body, flags=re.I)
     body = re.sub(r"<[^>]+>", " ", body)
     body = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))), body)
+    body = re.sub(r"&#x([0-9a-f]+);", lambda m: chr(int(m.group(1), 16)), body, flags=re.I)
     body = re.sub(r"&([a-z]+);", lambda m: ENTITIES.get(m.group(1), m.group(0)), body)
     body = re.sub(r"[ \t\u00a0]+", " ", body.replace("\r", ""))
     return re.sub(r"\n\s*\n+", "\n", body)
@@ -501,6 +528,201 @@ def google_play(message_id, headers, body):
              "card": card.group(1) if card else "", "department": "Google Play", "item": name, "website": ""}]
 
 
+FARM_STORE = "farm_store"
+FARM_ITEM = re.compile(r"^(?P<name>.*\S)\s+(?P<price>-?[\d,]+\.\d\d)\s+(?P<tax>[A-Z])$")
+FARM_CODE = re.compile(r"^(?:\d{6,14}|NOT ON FILE) x \d+\b")
+FARM_DAY = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{2})\s+\d{1,2}:\d{2}\s?[AP]M$")
+FARM_TENDER = re.compile(r"^(?:Credit|Debit)\s+([\d,]+\.\d\d)$")
+DONATION = re.compile(r"\bdonation\b", re.I)
+
+
+@_soft(FARM_STORE)
+def farm_store(message_id, headers, body):
+    """order_items rows for one farm store register receipt, or [] for a return or one paid in cash."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    rules = [i for i, line in enumerate(lines) if re.fullmatch(r"_{20,}", line)]
+    if len(rules) < 2:
+        raise Unread(f"{FARM_STORE} {message_id}: no item list")
+    if "SALE" not in lines[rules[0]:rules[1]]:
+        return []
+    end = next((i for i in range(rules[1], len(lines)) if lines[i].startswith("Subtotal ")), None)
+    if end is None:
+        raise Unread(f"{FARM_STORE} {message_id}: no Subtotal")
+    items = []
+    for n in range(rules[1] + 1, end):
+        m = FARM_ITEM.match(lines[n])
+        if m and n + 1 < end and FARM_CODE.match(lines[n + 1]):  # the price line is the item's, after discounts
+            items.append((" ".join(m["name"].split()), _cents(m["price"]), m["tax"]))
+    totals = lines[end:]
+    subtotal = _money("\n".join(totals), r"^Subtotal\s+(-?[\d,]+\.\d\d)$", "Subtotal")
+    tax = _money("\n".join(totals), r"^Total Sales Tax\s+(-?[\d,]+\.\d\d)$", "tax", required=False) or 0
+    total = _money("\n".join(totals), r"^Total\s+(-?[\d,]+\.\d\d)$", "Total")
+    if not items or sum(c for _, c, _ in items) != subtotal or subtotal + tax != total:
+        raise Unread(f"{FARM_STORE} {message_id}: the items, tax and Total don't add up")
+    charged = sum(_cents(m.group(1)) for m in map(FARM_TENDER.match, totals) if m)
+    if charged <= 0:
+        return []
+    base = sum(c for _, c, t in items if t == "T")
+    with_tax = [c + (round(tax * c / base) if base and t == "T" else 0) for _, c, t in items]
+    amounts = _scale(with_tax, charged)  # a reward or gift card that paid part comes off every item alike
+    when = next((FARM_DAY.match(line) for line in lines[rules[0]:rules[1]] if FARM_DAY.match(line)), None)
+    day = f"20{when[3]}-{int(when[1]):02d}-{int(when[2]):02d}" if when else headers.get("date", "")[:10]
+    store = lines[lines.index("YOUR RECEIPT") + 1] if "YOUR RECEIPT" in lines[:rules[0]] else FARM_STORE
+    rows = []
+    for n, ((name, _, tax_code), amount) in enumerate(zip(items, amounts)):
+        department = "charity" if DONATION.search(name) else "grocery" if tax_code == "N" else ""
+        rows.append(_row(FARM_STORE, message_id, n, day, amount, department, name, store))
+    return rows
+
+
+OUTFITTER = "outfitter"
+DOLLARS = re.compile(r"^(-?)\$([\d,]+\.\d\d)$")
+PAID_WITH = re.compile(r"\(ending in \d{4}\)")
+SHIP_NOISE = re.compile(r"^(Estimated arrival|Standard shipping|Expedited|Ship to|Items to ship|"
+                        r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \w{3} \d{1,2}$)")
+
+
+def _priced_lines(section):
+    """{label: cents} for a totals section printed label then value, or all the labels then all the values."""
+    labels = [line for line in section if not DOLLARS.match(line) and line != "FREE"]
+    values = [0 if line == "FREE" else (-1 if DOLLARS.match(line)[1] else 1) * _cents(DOLLARS.match(line)[2])
+              for line in section if DOLLARS.match(line) or line == "FREE"]
+    if len(labels) != len(values):
+        raise ValueError("the totals' labels and values don't pair up")
+    return dict(zip(labels, values))
+
+
+@_soft(OUTFITTER)
+def outfitter(message_id, headers, body):
+    """order_items rows for one outfitter store eReceipt or online order confirmation, or [] for a return or one
+    paid in full with rewards."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    online = "Order number:" in lines
+    kind = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("transaction type:")), "")
+    if not online and kind.lower() != "sale":
+        return []
+    start = lines.index("Items purchased") + 1 if not online else next(
+        i for i, line in enumerate(lines) if line.startswith("Estimated arrival")) + 1
+    end = lines.index("Payment details")
+    items, text, n = [], [], start
+    while n < end:
+        line = lines[n]
+        if line.startswith("Item #"):
+            qty = next(i for i in range(n, end) if lines[i].startswith("Qty:"))
+            prices = [i for i in range(qty + 1, end) if DOLLARS.match(lines[i])]
+            last = prices[0]
+            while last + 1 < end and DOLLARS.match(lines[last + 1]):
+                last += 1
+            name = [t for t in text if not SHIP_NOISE.match(t)]
+            if not name:
+                raise ValueError("an item with no name")
+            m = DOLLARS.match(lines[last])
+            items.append((name[0] + (f" ({', '.join(name[1:])})" if len(name) > 1 else ""),
+                          (-1 if m[1] else 1) * _cents(m[2])))
+            text, n = [], last + 1
+            continue
+        text.append(line)
+        n += 1
+    totals = lines[end + 1:]
+    upto = next(i for i, line in enumerate(totals) if line in ("Total", "Order total"))
+    priced = _priced_lines(totals[:upto + 2])
+    subtotal, total = priced["Subtotal"], priced.get("Total", priced.get("Order total"))
+    if not items or sum(c for _, c in items) != subtotal or sum(priced.values()) - total != total:
+        raise Unread(f"{OUTFITTER} {message_id}: the items, tax and total don't add up")
+    charged = 0
+    for i, line in enumerate(totals[:-1]):
+        if PAID_WITH.search(line) and DOLLARS.match(totals[i + 1]):
+            charged += _cents(DOLLARS.match(totals[i + 1])[2])
+    if charged <= 0:
+        return []
+    if online:  # shipped in parts, charged as each part ships: rewards come off the first items, as charged
+        amounts, left = [], total - charged
+        for amount in _scale([c for _, c in items], total):
+            off = min(amount, left)
+            amounts.append(amount - off)
+            left -= off
+    else:  # one charge: tax and any rewards used shared by amount
+        amounts = _scale([c for _, c in items], charged)
+    if online:
+        order = lines[lines.index("Order number:") + 1]
+        when = re.search(r"Order date:\s*(\d{2})/(\d{2})/(\d{4})", body)
+        day = f"{when[3]}-{when[1]}-{when[2]}" if when else headers.get("date", "")[:10]
+    else:
+        order = message_id
+        when = re.search(r"Date:\s*(\d{2})/(\d{2})/(\d{2})\s", body)
+        day = f"20{when[3]}-{when[1]}-{when[2]}" if when else headers.get("date", "")[:10]
+    website = "online" if online else next((lines[i + 1] for i, line in enumerate(lines[:-1])
+                                            if line == "Purchased at:"), OUTFITTER)
+    return [_row(OUTFITTER, order, n, day, amount, "", name, website)
+            for n, ((name, _), amount) in enumerate(zip(items, amounts)) if amount > 0]
+
+
+PAYPAL = "paypal"
+PAYPAL_ID = re.compile(r"Transaction ID:?\s*\n?\s*([0-9A-Z]{17})\b")
+PAYPAL_PAID = re.compile(r"^You (paid|authorized) \$([\d,]+\.\d\d) USD (?:payment )?to (.+?)\.?$", re.M)
+PAYPAL_SENT = re.compile(r"^(.+?) sent you \$([\d,]+\.\d\d) USD$", re.M)
+PAYPAL_REFUND = re.compile(r"^Your Refund of \$([\d,]+\.\d\d) USD from (.+?)\.?$", re.M)
+PAYPAL_TOTAL = re.compile(r"^\$([\d,]+\.\d\d) USD$")
+
+
+@_soft(PAYPAL)
+def paypal(message_id, headers, body):
+    """One payment_details row for one PayPal email: a payment to a merchant (its receipt, or the merchant's own
+    layout), money a person sent, or a refund. The row is shaped as the QIF download's are, keyed by PayPal's
+    transaction id (a refund, which shows none, by the message id)."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    text = "\n".join(lines)
+    txn = PAYPAL_ID.search(text)
+    memo = ""
+    paid, sent, refund = PAYPAL_PAID.search(text), PAYPAL_SENT.search(text), PAYPAL_REFUND.search(text)
+    if refund:
+        kind, cents, who = "Payment Refund", _cents(refund[1]), _after(lines, "Refund from") or refund[2]
+    elif paid:  # the merchant's name in full where it is printed (the sentence drops a last ".")
+        kind, cents, who = "Payment", -_cents(paid[2]), _after(lines, "Merchant") or paid[3]
+    elif sent:
+        kind, cents, who = "Payment Received", _cents(sent[2]), sent[1]
+        note = _after(lines, f"Note from {who}")
+        memo = "" if note in ("Transaction date", "Amount") else note
+    elif "Payment to" in lines:  # the receipt layout: the items in a table, then Total
+        kind, who = "Payment", _after(lines, "Payment to")
+        at = lines.index("Total", lines.index("Payment to"))
+        cents = -_cents(PAYPAL_TOTAL.match(lines[at + 1])[1])
+        if "Description" in lines:
+            head = lines.index("Amount", lines.index("Description")) + 1
+            names, row = [], []
+            for line in lines[head:at]:
+                if line in ("Shipping and handling", "Sales Tax", "Discount", "Insurance", "Handling"):
+                    break
+                row.append(line)
+                if PAYPAL_TOTAL.match(line) and len(row) >= 4:  # name, unit price, quantity, amount
+                    names.append(" ".join(row[:-3]))
+                    row = []
+            memo = "; ".join(names)
+    else:
+        raise Unread(f"{PAYPAL} {message_id}: no payment, refund or money received")
+    when = _after(lines, "Transaction date") or _after(lines, "Date")
+    day = _day(when) or headers.get("date", "")[:10]
+    key = txn.group(1) if txn and not refund else message_id
+    return [{"detail_id": hashlib.sha256(f"{PAYPAL}|{key}".encode()).hexdigest()[:16], "date": day,
+             "amount": cents / 100, "service": PAYPAL, "kind": kind, "counterparty": " ".join(who.split()),
+             "memo": " ".join(memo.split())}]
+
+
+def _is_farm_store(body):
+    return all(s in body for s in ("Cashier #:", "Total Sales Tax", "Subtotal")) and bool(
+        re.search(r"^\s*(?:\d{6,14}|NOT ON FILE) x \d+\b", body, re.M))
+
+
+def _is_outfitter(body):
+    return "Payment details" in body and "Item #" in body and "Qty:" in body and (
+        "Items purchased" in body or "Order number:" in body)
+
+
+def _is_paypal(body):
+    return "PayPal, Inc." in body and any(s in body for s in (
+        "You paid $", "You authorized $", " sent you $", "Your Refund of $", "Receipt for your PayPal payment"))
+
+
 def _is_apple_itunes(body):
     return all(s in body for s in ("ORDER ID", "DOCUMENT NO.", "TOTAL", "Apple"))
 
@@ -526,11 +748,13 @@ def _is_bookseller_online(body):
 
 
 READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_online, bookseller_online),
-           (_is_apple_itunes, apple_itunes), (_is_apple_receipt, apple_receipt), (_is_google_play, google_play))
+           (_is_apple_itunes, apple_itunes), (_is_apple_receipt, apple_receipt), (_is_google_play, google_play),
+           (_is_farm_store, farm_store), (_is_outfitter, outfitter), (_is_paypal, paypal))
+DETAIL_COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
 def parse(text):
-    rows, skipped, unpriced, empty, unreadable, unread = [], {}, {}, 0, [], []
+    rows, details, skipped, unpriced, empty, unreadable, unread = [], [], {}, {}, 0, [], []
     for message_id, headers, body in _messages(text):
         if "unreadable" in headers:  # the exporter could not read it; it tries again every run
             unreadable.append(f"{message_id} ({headers['unreadable']})")
@@ -549,12 +773,16 @@ def parse(text):
         except Unread as e:
             unread.append(str(e))
             continue
-        rows += found
+        rows += [r for r in found if "item_id" in r]
+        details += [r for r in found if "detail_id" in r]
         if not found:
             empty += 1
     df = pd.DataFrame(rows, columns=COLUMNS)
-    dates = sorted(d for d in df["date"] if d)
+    paid = pd.DataFrame(details, columns=DETAIL_COLUMNS).drop_duplicates("detail_id")
+    dates = sorted(d for d in list(df["date"]) + list(paid["date"]) if d)
     notes = [f"receipts: {df['order_id'].nunique()} read, {len(df)} items"]
+    if len(paid):
+        notes.append(f"PayPal: {len(paid)} payments with a counterparty")
     notes += [f"receipts: {n} from {k} left for a reader not written yet" for k, n in sorted(skipped.items())]
     notes += [f"receipts: {n} {k} charges for several items without prices left as one charge"
               for k, n in sorted(unpriced.items())]
@@ -567,4 +795,5 @@ def parse(text):
                      "(look in Gmail by id): " + "; ".join(unreadable))
     return Result(kind=KIND, parser=NAME, label=f"receipts_{dates[-1] if dates else 'none'}",
                   covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]}, notes=notes)
+                  tables={k: v for k, v in (("order_items", df), ("payment_details", paid)) if len(v)},
+                  keys={"order_items": ["item_id"], "payment_details": ["detail_id"]}, notes=notes)

@@ -166,6 +166,14 @@ test("bodies decode from bytes or unpadded base64url, and HTML in the plain part
   assert.equal(run.body({ mimeType: "text/plain", body: { data: b64url(html) } }).trim(), "Oats 4.00");
 });
 
+test("a register receipt printed one <pre> per line keeps its lines, and hex entities read", () => {
+  const run = exporter({});
+  const html = "<div><pre> Oats   4.00  N </pre><pre>   NOT ON FILE x 1   4.00 </pre></div><p>we&#x27;re open</p>";
+  const text = run.body({ mimeType: "text/html", body: { data: b64url(html) } });
+  assert.deepEqual(text.split("\n").map((l) => l.trim()).filter(Boolean),
+                   ["Oats 4.00 N", "NOT ON FILE x 1 4.00", "we're open"]);
+});
+
 test("past the retry cap the oldest unreadable messages are dropped, each logged", () => {
   const failed = {};
   for (let n = 0; n < 202; n++) {

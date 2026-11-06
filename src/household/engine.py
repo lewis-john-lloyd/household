@@ -6,12 +6,13 @@ the folder ID (and, for migration, the legacy workbook ID).
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
 from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage,
-               pennsylvania, projection, recurring, schema, sheets, tax, taxsources, transfers, wisconsin, withholding)
+               nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxsources, transfers,
+               wisconsin, withholding)
 
 
 def versions():
@@ -140,7 +141,9 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are printed above)
         if f.get("parser") != "changes":
             said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
-    result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing}
+    result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing,
+              # where the inbox is, so the weekly email can list what waits in it with nothing to set up
+              "inbox": backup.find_or_create_folder(drive, "inbox", folder_id)}
     _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}
             | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended", "written")} for f in files]}, said)
     return result
@@ -389,6 +392,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
               "record store")
 
     stubs = sheets.read_table(ledger, schema.table(schema.LEDGER, "paystubs"))
+    tax_plan = tax_elections = None  # this year's, for the weekly email
     if not stubs.empty:
         backtest = withholding.backtest(stubs, withholding.explained_by_people(decisions, "federal"))
         backtest["run_id"] = run_id
@@ -438,6 +442,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             setting = lambda key, default: float(categorize.household_parameter(params, key, default) or default)  # noqa: E731
             target, rate = setting("target_refund", 2000), setting("planned_supplemental_rate", 0.35)
             plan = projection.withholding_plan(year, stubs, sales, facts, target, rate)
+            tax_plan = plan if year == int(today[:4]) else None
             sheets.replace_table(reports, schema.table(schema.REPORTS, "withholding_plan"),
                                  plan.assign(year=year, run_id=run_id))
             for row in plan.to_dict("records"):
@@ -473,11 +478,26 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             plans = projection.elections(year, stubs, after_tax_converts=converts)
             plans["run_id"] = run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "elections"), plans)
+            tax_elections = plans if year == int(today[:4]) else None
             for row in plans[plans["status"] != "at limit"].to_dict("records"):
                 _say(log, f"elections {year}: {row['person']} {row['plan']}: {row['status']} "
                           f"({row['gap']:+,.2f})")
             result["projection"] = dict(zip(lines["scenario"], lines["owe_or_refund"]))
             result["projection_year"] = year
+    day = date.fromisoformat(today)
+    params = books["parameters"]
+    for key, v, problem in settings.check(params):
+        _say(log, f"settings: {key} {v!r} {problem}")
+    fsa = nudges.fsa_balances(stubs, categorized, params, day, tax_elections)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "fsa_balances"), fsa.assign(run_id=run_id))
+    for r in fsa.to_dict("records"):
+        _say(log, f"fsa_balances {r['year']} {r['account']}: {r['reimbursed']:,.2f} of {r['elected']:,.2f} "
+                  f"reimbursed, {r['left']:,.2f} left" + (f", claims due {r['claim_deadline']}" if r["claim_deadline"] else ""))
+    todo = nudges.build(day, params, due, published["editor_review"], tax_plan, tax_elections, stubs, fsa)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "nudges"), todo.assign(run_id=run_id))
+    showing = todo[(todo["show_from"] <= today) & ((todo["show_until"] == "") | (todo["show_until"] >= today))]
+    _say(log, f"nudges: {len(todo)} for the weekly email, {len(showing)} of them due in it as of today")
+
     if legacy_id and legacy_year:
         rows = session.sheets.open_by_key(legacy_id).worksheet(str(legacy_year)).get_values(
             value_render_option=sheets.UNFORMATTED)

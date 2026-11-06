@@ -1160,7 +1160,9 @@
         var error = el("div", "", "error");
         var actions = el("div", null, "actions");
         actions.appendChild(button(isNew ? "Add setting" : "Keep this change", function () {
-          var e = { kind: "parameter", key: isNew ? key.value.trim() : p.key, value: value.value.trim(), was: isNew ? null : { value: p.value } };
+          var unset = !isNew && p.source === "not set";  // a known setting not in the ledger yet: a new one
+          var e = { kind: "parameter", key: isNew ? key.value.trim() : p.key, value: value.value.trim(),
+                    was: isNew || unset ? null : { value: p.value } };
           if (!/^[a-z][a-z0-9_]*(:[a-z0-9_]+)?$/.test(e.key)) { error.textContent = "A setting is lower case letters, digits, _ and one ':'."; return; }
           stage(e, "setting " + e.key + " = " + (e.value || "(blank)"));
           done();
@@ -1584,12 +1586,15 @@
       function drawSettings(body) {
         masterDetail(body, {
           items: editor.parameters, noun: "settings", key: function (p) { return p.key; },
-          title: function (p) { return p.key; }, sub: function (p) { return p.value; },
+          title: function (p) { return p.key; },
+          sub: function (p) { return p.source === "not set" ? "not set: " + p.about : p.value; },
           staged: function (p) { return stagedText("parameter|" + p.key); },
-          empty: "Household settings, such as the account transfers come from and the stores with order histories. Choose one to change it.",
+          empty: "Household settings, such as the account transfers come from, the links in the weekly email and " +
+                 "the FSA claim deadlines. Choose one to change it.",
           add: [{ label: "New setting", form: function (panel, done) { panel.appendChild(parameterForm(null, done)); } }],
           detail: function (p, panel, done) {
-            facts(panel, [["Value", p.value], ["Source", p.source]]);
+            facts(panel, [["What it's for", p.about || ""], ["Value", p.source === "not set" ? "not set" : p.value],
+                          ["Source", p.source === "not set" ? "" : p.source]].filter(function (f) { return f[1]; }));
             panel.appendChild(parameterForm(p, done));
           },
         });
@@ -2282,8 +2287,18 @@
         });
         document.getElementById("group").addEventListener("click", function () { setLevel("group"); });
         document.getElementById("category").addEventListener("click", function () { setLevel("category"); });
-        load();
+        // A link can open a page: ?view=taxes, or ?view=edit&tab=review (the weekly email's links do).
+        if (google.script.url && google.script.url.getLocation) google.script.url.getLocation(openFrom); else load();
       });
+
+      function openFrom(location) {
+        var p = (location && location.parameter) || {};
+        if (p.tab && document.querySelector('#edit-tabs button[data-tab="' + p.tab + '"]')) {
+          editTab = p.tab;
+          document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });
+        }
+        if (["flows", "budget", "taxes", "edit"].indexOf(p.view) >= 0) setView(p.view); else load();
+      }
     </script>
   </body>
 </html>

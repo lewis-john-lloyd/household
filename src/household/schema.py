@@ -94,6 +94,10 @@ REPORTS = (
     Table("run_notes", ("run_id", "stage", "at", "n", "message")),
     # change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS: written by ingest, from
     # source_documents, so a later run never hides one (the views check discards against it)
+    # the weekly email's to-do list, each with the dates it belongs in the email (nudges.py, nudge/Code.js)
+    Table("nudges", ("group", "item", "detail", "show_from", "show_until", "link", "run_id")),
+    # each plan year's FSA money: elected on the pay stubs, reimbursed by deposits, left to claim (nudges.py)
+    Table("fsa_balances", ("year", "account", "elected", "reimbursed", "left", "claim_deadline", "run_id")),
     Table("changes_written", ("file_id", "file", "written_at")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),
@@ -151,7 +155,7 @@ REPORTS = (
     Table("editor_payee_rules", ("pattern", "category", "precedence", "effective", "ask", "status", "run_id")),
     Table("editor_categories", ("category", "group", "priority", "run_id")),
     Table("editor_aliases", ("alias", "category", "note", "run_id")),
-    Table("editor_parameters", ("key", "value", "source", "run_id")),
+    Table("editor_parameters", ("key", "value", "source", "about", "run_id")),
     Table("editor_review", ("key", "guess", "lines", "total", "example", "first", "last", "accounts", "guessed_by",
                             "confidence", "kind", "note", "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",

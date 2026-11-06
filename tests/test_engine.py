@@ -178,6 +178,12 @@ def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session)
     assert dict(zip(runs["stage"], runs["run_id"])) == {"compute": "run-2", "ingest": "run-3"}
     summary = json.loads(runs.loc[runs["stage"] == "compute", "detail"].item())
     assert "review_open_lines" in summary and "versions" in summary
+    # the weekly email's list and the FSA balances are there for the weekly script, with their columns
+    for name in ("nudges", "fsa_balances"):
+        table = sheets.read_table(reports, schema.table(schema.REPORTS, name))
+        assert list(table.columns) == list(schema.table(schema.REPORTS, name).columns)
+    assert summary.get("inbox") is None  # the ingest stage, not compute, says where the inbox is
+    assert json.loads(runs.loc[runs["stage"] == "ingest", "detail"].item())["inbox"]
     ingest = json.loads(runs.loc[runs["stage"] == "ingest", "detail"].item())
     assert all(set(f) == {"file", "status", "reason", "appended", "written"} for f in ingest["files"])
     written = sheets.read_table(reports, schema.table(schema.REPORTS, "changes_written"))
@@ -228,7 +234,8 @@ def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(se
     line = read("editor_budget_lines").iloc[0]
     assert (line["line"], line["in_words"], line["in_force"]) == ("groceries", "50.00 a week", "yes")
     assert read("editor_categories").set_index("category").at["food", "group"] == "groceries"
-    assert read("editor_parameters")[["key", "value"]].values.tolist() == [["transfer_account", "checking"]]
+    settings_now = read("editor_parameters")
+    assert settings_now[settings_now["value"] != ""][["key", "value"]].values.tolist() == [["transfer_account", "checking"]]
 
 
 def test_change_sets_written_come_from_the_ledger_and_reach_back_further_than_a_discard_is_remembered():

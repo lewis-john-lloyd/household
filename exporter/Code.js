@@ -1,18 +1,23 @@
 /**
  * Receipt exporter: copies new store receipts from Gmail into the household inbox, once a day.
  *
- * It runs only the Gmail searches listed in the script property SENDERS, reads each new message, and
+ * It runs only the Gmail searches the household lists in its settings (receipt_search:<store>, edited in
+ * the views and kept in the ledger; compute publishes them to Reports as receipt_searches), reads each new message, and
  * writes all of a run's messages as one text file (receipts_<date>.txt) in a folder of its own, where
  * the engine's receipt reader parses them. It never changes Gmail.
  *
  * Drive access is drive.file: the exporter can see and change only what it created. So it makes its
  * own folder ("email_receipts", in My Drive) on the first run; move that folder into the
  * household inbox folder once, and the engine reads it there. It keeps writing into the folder
- * wherever it is moved, and nothing else in Drive is open to it.
+ * wherever it is moved. Nothing else in Drive is open to it, except that spreadsheets.readonly, which it
+ * needs for Reports, would let it read any spreadsheet (Sheets has no scope for one file a standalone
+ * script didn't create).
  *
- * Script properties, set once by hand in Project Settings: SENDERS (a JSON list of searches, such as
- * ["from:receipts@example.coop"]; kept out of this file so no store is named in the repo). It keeps
- * its own state there too: FOLDER_ID (its folder), SINCE (the date the next search starts from),
+ * Script property, set once by hand in Project Settings: REPORTS_ID, the Reports spreadsheet's id (no
+ * store is named in this file or the repo). It reads Reports with spreadsheets.readonly and writes nothing
+ * there. A search that names no sender (from:) is skipped, so a setting can't open the whole mailbox; if
+ * Reports can't be read, or lists no searches, the run fails (and Apps Script emails the failure) rather
+ * than quietly exporting nothing. It keeps its own state in the script properties too: FOLDER_ID (its folder), SINCE (the date the next search starts from),
  * DONE (ids already exported, kept for a few weeks so the overlap between searches is not exported
  * twice) and FAILED (messages it could not read, retried by id every run).
  *
@@ -23,7 +28,7 @@
  * entry with the Gmail id and the error), so the engine's ingest notes, and the status page, show it.
  *
  * Its Gmail permission, gmail.readonly, lets it read the whole mailbox: Gmail has no narrower scope that
- * still shows a message's body. SENDERS limits what it reads, not what it could read; the boundary is
+ * still shows a message's body. The searches limit what it reads, not what it could read; the boundary is
  * this file, which is short so it can be read in full before it is pushed.
  *
  * Run exportReceipts once by hand (it asks for permission, then exports everything so far), then
@@ -49,6 +54,34 @@ function log_(text) {
   console.log("[" + Math.round((Date.now() - started_) / 1000) + "s] " + text);
 }
 
+const FROM = /(^|[\s({])from:\S/;
+
+/** The Gmail searches from Reports' receipt_searches table: one per store, each naming a sender. */
+function searches_(props) {
+  const id = props.getProperty("REPORTS_ID");
+  if (!id) throw new Error("Set the script property REPORTS_ID to the Reports spreadsheet's id.");
+  let rows;
+  try {
+    rows = Sheets.Spreadsheets.Values.get(id, "receipt_searches!A:B").values || [];
+  } catch (e) {
+    throw new Error("Could not read receipt_searches from Reports (" + String(e).slice(0, 200) + "). Check REPORTS_ID, "
+                    + "and that compute has run since the receipt_search settings were added.");
+  }
+  const out = [];
+  for (const [store, search] of rows.slice(1)) {  // the first row is the header
+    const q = String(search || "").trim();
+    if (!q) continue;
+    if (!FROM.test(q) || /[\r\n]/.test(q)) {
+      log_("skipping the search for " + store + ": it names no sender (from:)");
+      continue;
+    }
+    out.push(q);
+  }
+  if (!out.length) throw new Error("Reports lists no receipt searches: add receipt_search:<store> settings in the "
+                                   + "views, then run ingest and compute.");
+  return out;
+}
+
 /** call(), tried again with growing waits while Gmail refuses it for quota or rate. */
 function gmail_(what, call) {
   for (let attempt = 0; ; attempt++) {
@@ -67,8 +100,7 @@ function gmail_(what, call) {
 function exportReceipts() {
   const props = PropertiesService.getScriptProperties();
   const folderId = folder_(props);
-  const senders = JSON.parse(props.getProperty("SENDERS") || "[]");
-  if (!senders.length) throw new Error("Set the script property SENDERS to a JSON list of Gmail searches.");
+  const senders = searches_(props);
   const since = props.getProperty("SINCE");   // "yyyy/mm/dd", or none for everything so far
   const done = JSON.parse(props.getProperty("DONE") || "{}");   // id -> epoch ms of the message
   const failed = JSON.parse(props.getProperty("FAILED") || "{}");   // id -> {when, tries, error}

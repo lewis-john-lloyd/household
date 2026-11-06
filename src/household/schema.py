@@ -98,6 +98,8 @@ REPORTS = (
     Table("nudges", ("group", "item", "detail", "show_from", "show_until", "link", "run_id")),
     # each plan year's FSA money: elected on the pay stubs, reimbursed by deposits, left to claim (nudges.py)
     Table("fsa_balances", ("year", "account", "elected", "reimbursed", "left", "claim_deadline", "run_id")),
+    # the receipt exporter's Gmail searches, from the receipt_search:<store> settings (settings.py, exporter/Code.js)
+    Table("receipt_searches", ("store", "search", "run_id")),
     Table("changes_written", ("file_id", "file", "written_at")),
     Table("monthly_actuals", ("month", "category", "spend", "txn_count", "run_id", "computed_at")),
     Table("legacy_check", ("month", "category", "legacy", "computed", "diff", "run_id")),

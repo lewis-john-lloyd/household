@@ -488,6 +488,10 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     params = books["parameters"]
     for key, v, problem in settings.check(params):
         _say(log, f"settings: {key} {v!r} {problem}")
+    searches = settings.receipt_searches(params)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "receipt_searches"), searches.assign(run_id=run_id))
+    _say(log, f"receipt_searches: {len(searches)} for the receipt exporter"
+              + (f" ({', '.join(searches['store'])})" if len(searches) else ""))
     fsa = nudges.fsa_balances(stubs, categorized, params, day, tax_elections)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "fsa_balances"), fsa.assign(run_id=run_id))
     for r in fsa.to_dict("records"):

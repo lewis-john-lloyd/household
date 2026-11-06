@@ -64,4 +64,7 @@ def test_the_views_build_pushes_this_manifest():
 def test_the_views_and_the_exporter_each_need_what_they_have():
     # the check above is only as good as its view of the code: these are the calls each makes today
     assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", code(PROJECTS["web"][1]))} == {"Sheets", "Drive"}
-    assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", code(PROJECTS["exporter"][1]))} == {"Gmail", "Drive"}
+    exporter = code(PROJECTS["exporter"][1])
+    assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", exporter)} == {"Gmail", "Drive", "Sheets"}
+    # the exporter reads its searches from Reports and never writes a spreadsheet
+    assert set(re.findall(r"\bSheets\.[\w.]+", exporter)) == {"Sheets.Spreadsheets.Values.get"}

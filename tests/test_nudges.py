@@ -178,6 +178,10 @@ def test_downloads_and_review_are_due_once_stale_for_30_days():
     assert list(rows.index) == ["BLUE PUMP FUEL card", "PAGE TURNER BOOKS orders", "2 questions"]
     assert rows.at["BLUE PUMP FUEL card", "show_from"] == "2026-10-30"
     assert rows.at["PAGE TURNER BOOKS orders", "show_from"] == "2026-11-06"
+    assert rows.at["PAGE TURNER BOOKS orders", "detail"] == "never downloaded; 12 lines wait for it"
+    one = nudges.build(date(2026, 11, 6), params(), coverage=pd.DataFrame([
+        {"source": "BLUE PUMP FUEL card", "newest": "2026-09-30", "waiting_lines": 1, "status": "due"}]))
+    assert one.iloc[0]["detail"] == "has everything through September 30, 2026; 1 line waits for it"
     assert rows.at["2 questions", "show_from"] == "2026-10-01"
     assert rows.at["2 questions", "detail"] == "covering 5 lines, the oldest from September 1, 2026"
     assert rows.at["2 questions", "link"] == "https://views.example/exec?view=edit&tab=review"

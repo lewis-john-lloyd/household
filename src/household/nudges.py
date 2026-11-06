@@ -230,10 +230,10 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
             waiting = int(float(r.get("waiting_lines") or 0))
             if newest:
                 add("download", r["source"], f"has everything through {newest:%B} {newest.day}, {newest.year}"
-                    + (f"; {_lines(waiting)} wait for it" if waiting else ""),
+                    + (f"; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it" if waiting else ""),
                     newest + timedelta(days=STALE_DAYS), link=_view(params, "status"))
             elif waiting:
-                add("download", r["source"], f"never downloaded; {_lines(waiting)} wait for it", today,
+                add("download", r["source"], f"never downloaded; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it", today,
                     link=_view(params, "status"))
 
     if review is not None and len(review):

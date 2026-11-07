@@ -110,6 +110,9 @@ def match_paypal(lines, details):
     return {r["txn_id"]: " ".join(f"{r['counterparty']} {r['memo']}".split()) for r in found}
 
 
+VENMO_TRANSFER = "Venmo transfer"  # how a cash-out is named, before what it carried
+
+
 def match_venmo(lines, details):
     """{txn_id: payee} for VENMO lines named by Venmo's emails: a payment by who it went to or came from and its
     note, as PayPal's are; a transfer to the bank (a cash-out) by the payments received since the transfer
@@ -134,7 +137,7 @@ def match_venmo(lines, details):
         before = max((t for t in transfers if t < r["date_c"]), default="")
         carried = received[(received["date"] > before) & (received["date"] <= r["date_c"])]
         names = [f"{c} ({m})" if m else c for c, m in zip(carried["counterparty"], carried["memo"])]
-        out[r["txn_id"]] = "Venmo transfer" + (": " + "; ".join(names) if names else "")
+        out[r["txn_id"]] = VENMO_TRANSFER + (": " + "; ".join(names) if names else "")
     return out
 
 

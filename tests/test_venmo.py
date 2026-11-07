@@ -42,6 +42,11 @@ def test_a_payment_line_takes_who_and_why_and_a_cash_out_takes_what_it_carried()
     # a payment after the latest email waits for the next; the named ones don't
     status = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found).set_index("txn_id")
     assert status.at["t3", "status"] == "waiting" and "waiting" not in set(status.loc[["t1", "t2"], "status"])
+    # each cash-out is its own question, even after an answer for its merchant
+    answered = pd.DataFrame([{"proposal_key": "payee:VENMO TRANSFER", "kind": "category", "decided_at": "2026-09-01",
+                              "decision": "approve", "note": "gifts"}])
+    again = categorize.categorize(lines, pd.DataFrame(), answered, explanations=found).set_index("txn_id")
+    assert (again.at["t2", "ask"], again.at["t2", "decided_by"]) == ("line", "venmo transfer, asked each time")
 
 
 def test_a_line_before_the_first_email_is_asked_about_and_one_after_the_last_waits():

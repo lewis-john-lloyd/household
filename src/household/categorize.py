@@ -449,6 +449,9 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         elif service in ONE_BY_ONE and _covers(covered.get(service), r.date) and r.txn_id not in named:
             # inside the export's dates but matched nothing: no merchant answer fits, ask about this line
             out.append({"decided_by": f"{service}, no matching order", "ask": "line"})
+        elif str(named.get(r.txn_id, "")).startswith(explain.VENMO_TRANSFER):
+            # a cash-out carries whatever came in since the last: each is its own question
+            out.append({"decided_by": "venmo transfer, asked each time", "ask": "line"})
         elif (hit := _longest_prefix(r.key, answered_index)) is not None:
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and _waits(covered.get(service), r.date):

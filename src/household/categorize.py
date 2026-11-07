@@ -17,8 +17,10 @@ Sources, first that applies wins:
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
                  Apple, Google): it keeps a provisional guess and is not asked about
                  until the export arrives (a line dated before the service's earliest
-                 email or download is asked about instead: nothing will cover it); an
-                 Amazon line inside the export's dates
+                 email or download is asked about instead: nothing will cover it; a
+                 PayPal, Venmo, Apple or Google line is asked about on its own, since
+                 its payee names only the service, unless review already answered for
+                 its merchant); an Amazon line inside the export's dates
                  that matched no order is asked about on its own, with the items
                  shipped around then as hints
   model          a scikit-learn classifier trained every run on the old books and on
@@ -69,6 +71,10 @@ WAITING = (
     ("apple", re.compile(r"APPLE\.COM|APPLE COM|ITUNES")),
     ("google", re.compile(r"GOOGLE\s?\*|GOOGLE PLAY")),
 )
+
+# services whose bank line names only the service (a Venmo payment, an Apple charge): with nothing from the
+# service to name it, each line is asked about on its own rather than as one merchant
+BY_LINE = ("paypal", "venmo", "apple", "google")
 
 # the bank's category (USAA's CSV) to a household category, for guesses only
 BANK_HINTS = {
@@ -438,6 +444,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and _waits(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
+        elif service in BY_LINE:  # the payee names the service, not who was paid: ask about each line
+            out.append({"decided_by": f"{service}, not in its emails or downloads", "ask": "line"})
         elif not r.key:  # no letters to name a merchant by: ask about the line itself
             out.append({"ask": "line"})
         else:

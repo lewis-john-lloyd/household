@@ -52,3 +52,21 @@ def test_a_line_before_the_first_email_is_asked_about_and_one_after_the_last_wai
     status = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found).set_index("txn_id")
     assert status.at["t1", "status"] != "waiting" and status.at["t1", "ask"] in ("payee", "line")
     assert status.at["t2", "status"] == "waiting"
+
+
+def test_venmo_and_apple_lines_nothing_names_are_asked_about_one_by_one():
+    details = email_receipts.parse(FILE).tables["payment_details"]  # Venmo's emails run 2026-08-01 to 2026-09-06
+    lines = pd.DataFrame([line(1, "2026-07-15", "VENMO PAYMENT 1111", -25.00),
+                          line(2, "2026-07-20", "VENMO PAYMENT 2222", -40.00),
+                          line(3, "2026-07-21", "APPLE.COM/BILL", -2.99),
+                          line(4, "2026-07-22", "WILLOW ST", -12.00),
+                          line(5, "2026-07-23", "WILLOW ST", -14.00)])
+    found = explain.explain(lines, details=details)
+    found["coverage"]["apple"] = ("2026-08-01", "2026-09-30")  # Apple's downloads start after these lines too
+    df = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found)
+    status = df.set_index("txn_id")
+    assert list(status.loc[["t1", "t2", "t3"], "ask"]) == ["line"] * 3
+    assert list(status.loc[["t4", "t5"], "ask"]) == ["payee"] * 2  # an ordinary merchant is still one question
+    review = categorize.queue(df)
+    assert sorted(review.loc[review["kind"] == "line", "key"]) == ["t1", "t2", "t3"]
+    assert review.loc[review["kind"] == "payee", "lines"].tolist() == [2]

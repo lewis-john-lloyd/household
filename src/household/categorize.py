@@ -16,7 +16,9 @@ Sources, first that applies wins:
                  the same merchant (same_merchant), past and future
   waiting        a line an explanation download will name (Amazon, PayPal, Venmo,
                  Apple, Google): it keeps a provisional guess and is not asked about
-                 until the export arrives; an Amazon line inside the export's dates
+                 until the export arrives (a line dated before the service's earliest
+                 email or download is asked about instead: nothing will cover it); an
+                 Amazon line inside the export's dates
                  that matched no order is asked about on its own, with the items
                  shipped around then as hints
   model          a scikit-learn classifier trained every run on the old books and on
@@ -282,6 +284,13 @@ def _covers(span, date):
     return bool(span) and span[0] <= date <= span[1]
 
 
+def _waits(span, date):
+    """Whether a line the service would explain should wait for it: when nothing from the service has come
+    yet, or the line is newer than the latest of it. A line from before the earliest is not waited for: no
+    later email or download will cover dates before the start, so it is asked about like any other."""
+    return not span or date > span[1]
+
+
 def _waiting(payee):
     upper = str(payee).upper()
     return next((service for service, pattern in WAITING if pattern.search(upper)), "")
@@ -427,7 +436,7 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
             out.append({"decided_by": f"{service}, no matching order", "ask": "line"})
         elif (hit := _longest_prefix(r.key, answered_index)) is not None:
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
-        elif service and r.txn_id not in named and not _covers(covered.get(service), r.date):
+        elif service and r.txn_id not in named and _waits(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
         elif not r.key:  # no letters to name a merchant by: ask about the line itself
             out.append({"ask": "line"})

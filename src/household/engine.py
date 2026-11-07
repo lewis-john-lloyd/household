@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage, paycheck,
-               nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxsources, transfers,
+               nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
 
@@ -394,6 +394,13 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         result["tax_check_mismatches"] = int((~check["match"]).sum())
         _say(log, f"tax_check: {len(check)} filed lines, {result['tax_check_mismatches']} off by more "
                   "than 1 dollar")
+        unchecked = sorted(set(facts.loc[facts["kind"] == "filed", "year"].astype(int)) - set(tax.taxdata.PARAMS))
+        if unchecked:
+            _say(log, f"tax_check: {', '.join(map(str, unchecked))} shown as filed; their tax law is not on file, "
+                      "so their lines are not recomputed")
+        past = taxhistory.history(facts)
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_history"), past.assign(run_id=run_id))
+        _say(log, f"tax_history: {past['year'].nunique()} filed years")
 
     documents = sheets.read_table(ledger, schema.table(schema.LEDGER, "source_documents"))
     sources = taxsources.report(documents)

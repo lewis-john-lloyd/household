@@ -127,6 +127,21 @@
       .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
       .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
       .stacked { display: flex; flex-direction: column; gap: 12px; }
+      .tax-history { margin-bottom: 16px; position: relative; }
+      .history-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 4px 0 8px; }
+      .tax-history .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+      .tax-history .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+        margin-right: 6px; background: var(--swatch); vertical-align: -1px; }
+      .history-chart { display: block; width: 100%; overflow: visible; }
+      .history-chart .axis { font-size: 12px; fill: var(--muted); }
+      .history-chart .grid { stroke: var(--outline-variant); stroke-width: 1; opacity: 0.6; }
+      .history-chart .zero { stroke: var(--outline); stroke-width: 1; }
+      .history-chart .lbl { font-size: 12px; font-weight: 600; fill: var(--on-surface); }
+      .history-chart .inside { font-size: 11px; fill: #ffffff; pointer-events: none; }
+      .history-column.chosen rect:first-child { stroke: var(--on-surface); stroke-width: 0; }
+      .tax-history .tip { z-index: 10; position: absolute; pointer-events: none; background: var(--surface-high); color: var(--on-surface);
+        border-radius: 8px; padding: 8px 12px; font-size: 13px; box-shadow: var(--shadow); width: 280px; }
+      .tax-history .tip .strong { font-weight: 600; }
       .pay-charts { display: grid; gap: 12px; margin-bottom: 16px; }
       .pay-chart { position: relative; }
       .pay-chart h3 { margin: 0; font-size: 16px; font-weight: 500; }
@@ -1428,7 +1443,7 @@
             tip.hidden = false;
             var scale = svg.getBoundingClientRect().width / width;
             tip.style.left = Math.max(0, Math.min(cx * scale + 12, panel.clientWidth - 280)) + "px";
-            tip.style.top = (svg.offsetTop + cy * scale + 14) + "px";
+            tip.style.top = (svg.getBoundingClientRect().top - panel.getBoundingClientRect().top + cy * scale + 14) + "px";
           });
           hit.addEventListener("mouseleave", function () { tip.hidden = true; });
         });
@@ -2166,6 +2181,162 @@
         call("getTaxes", [], function (data) { taxes = data; drawTaxes(); }, "taxes-body");
       }
 
+      // Taxes over the years: one column per filed year, its income split where it came from, how it was taxed,
+      // or where it went, in dollars or as shares of the whole; hover a column for its parts and their change on the
+      // year before, click it to open that year below when the page has it.
+      var historyView = { split: "went", measure: "Dollars", jurisdiction: "federal" };
+      var HISTORY_SPLITS = { went: "Where it went", came: "Where it came from", taxed: "How it was taxed" };
+      var HISTORY_RETURNS = { federal: "Federal", pa: "Pennsylvania", wi: "Wisconsin" };
+      var PART_COLOR = { "Kept after income tax": 1, "Federal income tax": 7, "Other federal taxes": 5, "State income tax": 2,
+                         "Pennsylvania income tax": 2, "Wisconsin income tax": 2, "Compensation": 1, "Wisconsin income": 1,
+                         "Interest & dividends": 4, "Capital gains": 3, "Other income": 6, "Taxable income": 1,
+                         "Deducted": 6, "Adjustments": 4, "Wages": 1 };
+      var CREDIT_PART = "Credits (part of what was kept)";
+
+      function drawTaxHistory(body) {
+        var all = taxes.history;
+        var returns = Object.keys(HISTORY_RETURNS).filter(function (j) { return all.some(function (r) { return r.jurisdiction === j; }); });
+        if (returns.indexOf(historyView.jurisdiction) < 0) historyView.jurisdiction = returns[0];
+        var splits = Object.keys(HISTORY_SPLITS).filter(function (k) {
+          return all.some(function (r) { return r.jurisdiction === historyView.jurisdiction && r.split === k; }); });
+        if (splits.indexOf(historyView.split) < 0) historyView.split = splits[0];
+        var rows = all.filter(function (r) { return r.jurisdiction === historyView.jurisdiction && r.split === historyView.split; });
+        var people = Array.from(new Set(all.filter(function (r) { return /^Wages, /.test(r.part); }).map(function (r) { return r.part; })));
+        var colorOf = function (part) {
+          var n = PART_COLOR[part] || (people.indexOf(part) >= 0 ? people.indexOf(part) + 1 : 8);
+          return "var(--series-" + n + ")";
+        };
+        var section = el("section", null, "panel tax-history");
+        var head = el("div", null, "tax-head");
+        head.appendChild(el("h2", "Taxes over the years"));
+        section.appendChild(head);
+        var controls = el("div", null, "history-controls");
+        var redraw = function () { drawTaxes(); };
+        controls.appendChild(pill(splits.map(function (k) { return HISTORY_SPLITS[k]; }), HISTORY_SPLITS[historyView.split], function (label) {
+          historyView.split = Object.keys(HISTORY_SPLITS).filter(function (k) { return HISTORY_SPLITS[k] === label; })[0]; redraw(); }, "Split by"));
+        controls.appendChild(pill(["Dollars", "Share of income"], historyView.measure, function (m) { historyView.measure = m; redraw(); }, "Measure"));
+        if (returns.length > 1) controls.appendChild(pill(returns.map(function (j) { return HISTORY_RETURNS[j]; }), HISTORY_RETURNS[historyView.jurisdiction],
+          function (label) { historyView.jurisdiction = returns.filter(function (j) { return HISTORY_RETURNS[j] === label; })[0]; redraw(); }, "Return"));
+        section.appendChild(controls);
+        body.appendChild(section);
+        if (!rows.length) { section.appendChild(el("p", "Nothing to show for this return yet.", "support")); return; }
+
+        var years = Array.from(new Set(rows.map(function (r) { return r.year; }))).sort();
+        var parts = [];  // in the split's order, bottom of the column first
+        rows.slice().sort(function (a, b) { return a.order - b.order; }).forEach(function (r) { if (parts.indexOf(r.part) < 0) parts.push(r.part); });
+        var legend = el("div", null, "legend");
+        parts.slice().reverse().forEach(function (part) {
+          var item = el("span", part);
+          item.style.setProperty("--swatch", part === CREDIT_PART
+            ? "repeating-linear-gradient(135deg, var(--series-8) 0 2px, transparent 2px 5px)" : colorOf(part));
+          legend.appendChild(item);
+        });
+        section.appendChild(legend);
+        var share = historyView.measure !== "Dollars";
+        var at = {};
+        rows.forEach(function (r) { (at[r.year] || (at[r.year] = {}))[r.part] = r; });
+        var totalOf = function (y) { var any = rows.filter(function (r) { return r.year === y; })[0]; return any ? any.total : 0; };
+        var scaled = function (y, v) { return share ? (totalOf(y) ? 100 * v / totalOf(y) : 0) : v; };
+        var hi = 0, lo = 0;
+        years.forEach(function (y) {
+          var up = 0, down = 0;
+          parts.forEach(function (p) { var r = at[y][p]; if (!r) return; var v = scaled(y, r.value); if (v > 0) up += v; else down += v; });
+          hi = Math.max(hi, up); lo = Math.min(lo, down);
+        });
+        var step = share ? 20 : Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1) / 4)));
+        if (!share) [1, 2, 2.5, 5, 10].some(function (k) { if ((hi - lo) / (step * k) <= 5) { step *= k; return true; } return false; });
+        var top = share ? Math.max(100, Math.ceil(hi / step) * step) : Math.ceil(hi * 1.08 / step) * step;
+        var bottom = lo < 0 ? lo * 1.2 : 0;  // room for a loss below the line, without a whole empty step
+        var NS = "http://www.w3.org/2000/svg";
+        var svgEl = function (name, attrs, parent) {
+          var e = document.createElementNS(NS, name);
+          Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+          if (parent) parent.appendChild(e);
+          return e;
+        };
+        var width = Math.max(section.clientWidth - 40, 360), height = 360, m = { top: 22, right: 12, bottom: 26, left: 60 };
+        var y = function (v) { return m.top + (top - v) / Math.max(top - bottom, 1) * (height - m.top - m.bottom); };
+        var svg = svgEl("svg", { viewBox: "0 0 " + width + " " + height, "class": "history-chart", role: "img",
+                                 "aria-label": HISTORY_SPLITS[historyView.split] + " by year; the return for each year is below" });
+        var defs = svgEl("defs", {}, svg);
+        var pat = svgEl("pattern", { id: "credit-hatch", width: 5, height: 5, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+        svgEl("rect", { width: 5, height: 5, fill: "var(--surface-low)" }, pat);
+        svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 5, stroke: "var(--series-8)", "stroke-width": 2 }, pat);
+        section.appendChild(svg);
+        var short = function (v) {
+          var a = Math.abs(v), sign = v < 0 ? "-" : "";
+          return sign + (a >= 1e6 ? "$" + (a / 1e6).toFixed(1) + "M" : a >= 1000 ? "$" + Math.round(a / 1000) + "k" : "$" + Math.round(a));
+        };
+        var ticks = [];
+        for (var v = 0; v <= top + 0.001; v += step) ticks.push(v);
+        for (v = -step; v >= bottom - 0.001; v -= step) ticks.push(v);
+        ticks.forEach(function (v) {
+          svgEl("line", { x1: m.left, x2: width - m.right, y1: y(v), y2: y(v), "class": v === 0 ? "zero" : "grid" }, svg);
+          var t = svgEl("text", { x: m.left - 8, y: y(v) + 4, "text-anchor": "end", "class": "axis" }, svg);
+          t.textContent = share ? Math.round(v) + "%" : short(v);
+        });
+        var gap = (width - m.left - m.right) / years.length, bw = Math.min(72, gap * 0.6);
+        var tip = el("div", null, "tip");
+        tip.hidden = true;
+        section.appendChild(tip);
+        years.forEach(function (yr, i) {
+          var cx = m.left + gap * (i + 0.5), x = cx - bw / 2, up = 0, down = 0;
+          var col = svgEl("g", { "class": "history-column" + (taxYear === yr ? " chosen" : "") }, svg);
+          parts.forEach(function (p) {
+            var r = at[yr][p]; if (!r) return;
+            var v = scaled(yr, r.value);
+            var y0 = v >= 0 ? y(up + v) : y(down), h = Math.abs(y(v >= 0 ? up : down) - y(v >= 0 ? up + v : down + v));
+            var fill = p === CREDIT_PART ? "url(#credit-hatch)" : colorOf(p);
+            svgEl("rect", { x: x, width: bw, y: y0 + (v >= 0 ? 0 : 1), height: Math.max(h - 2, 1), fill: fill, rx: 2 }, col);
+            if (h > 18 && p !== CREDIT_PART) {
+              var label = svgEl("text", { x: cx, y: y0 + h / 2 + 4, "text-anchor": "middle", "class": "inside" }, col);
+              label.textContent = share ? Math.round(v) + "%" : short(r.value);
+            }
+            if (v >= 0) up += v; else down += v;
+          });
+          var t = svgEl("text", { x: cx, y: y(up) - 6, "text-anchor": "middle", "class": "lbl" }, col);
+          if (share && historyView.split === "went") {
+            var taxed = parts.filter(function (p) { return p !== "Kept after income tax" && p !== CREDIT_PART; })
+              .reduce(function (s, p) { return s + (at[yr][p] ? at[yr][p].value : 0); }, 0);
+            t.textContent = Math.round(100 * taxed / (totalOf(yr) || 1)) + "% tax";
+          } else if (!share) t.textContent = short(totalOf(yr));
+          var yl = svgEl("text", { x: cx, y: height - 6, "text-anchor": "middle", "class": "axis" }, col);
+          yl.textContent = yr;
+          var hit = svgEl("rect", { x: cx - gap / 2, width: gap, y: m.top, height: height - m.top - m.bottom, fill: "transparent" }, col);
+          hit.addEventListener("mouseenter", function () {
+            tip.textContent = "";
+            tip.appendChild(el("div", yr + ": " + money.format(totalOf(yr)) + (historyView.split === "came" ? " of income" : ""), "strong"));
+            var before = years[i - 1];
+            parts.slice().reverse().forEach(function (p) {
+              var r = at[yr][p]; if (!r) return;
+              var prev = before && at[before][p] ? at[before][p].value : null;
+              var change = prev === null ? "" : " (" + (r.value - prev >= 0 ? "+" : "-") + money.format(Math.abs(r.value - prev)) + " on " + before + ")";
+              tip.appendChild(el("div", p + ": " + money.format(r.value) + (share ? ", " + Math.round(scaled(yr, r.value)) + "%" : "") + change));
+            });
+            if (taxes.years.some(function (y) { return y.year === yr; })) tip.appendChild(el("div", "Click to open " + yr + " below", "support"));
+            tip.hidden = false;
+            var scale = svg.getBoundingClientRect().width / width;
+            var left = (cx + bw / 2 + 12) * scale;
+            tip.style.left = (left + 300 > section.clientWidth ? Math.max(0, (cx - bw / 2 - 12) * scale - 290) : left) + "px";
+            tip.style.top = (svg.getBoundingClientRect().top - section.getBoundingClientRect().top + 20) + "px";
+          });
+          hit.addEventListener("mouseleave", function () { tip.hidden = true; });
+          hit.addEventListener("click", function () {
+            if (!taxes.years.some(function (y) { return y.year === yr; })) return;
+            taxYear = yr;
+            drawTaxes();
+            var detail = document.querySelector("#taxes-body .tax-head + .support");
+            if (detail) detail.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+          if (taxes.years.some(function (y) { return y.year === yr; })) hit.style.cursor = "pointer";
+        });
+        section.appendChild(el("p", historyView.jurisdiction === "federal" && historyView.split === "went"
+          ? "Each year's total income, split by where it went: federal and state income taxes after credits, and what was kept. The hatched part of what was kept is the tax that credits cancelled."
+          : historyView.split === "came" ? "Each year's income on the return, by where it came from; a capital loss shows below the line, at the most the return could deduct."
+          : historyView.split === "taxed" ? "Each year's income, split into what was taxed and what was deducted before it."
+          : "Each year's income on this return, split by where it went.", "support"));
+      }
+
       function signed(n) { return (n > 0 ? "Owe " : n < 0 ? "Refund " : "") + money.format(Math.abs(n)); }
 
       function pill(options, value, onpick, label) {
@@ -2183,6 +2354,7 @@
       function drawTaxes() {
         var body = document.getElementById("taxes-body");
         body.textContent = "";
+        if (taxes.history && taxes.history.length) drawTaxHistory(body);
         if (!taxes.years.length) {
           body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
           return;

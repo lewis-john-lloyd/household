@@ -58,9 +58,10 @@ def pa_return(i, year):
     taxable = max(total - g("pa_other_deductions"), 0)
     tax = whole(rate * taxable)
     credit = schedule_gl(i, year)["gl_6"]
-    payments = whole(g("pa_withheld")) + whole(g("pa_estimated_payments")) + credit
+    other = whole(g("pa_other_credits"))  # line 23: Schedule OC and DC credits, such as dependent care
+    payments = whole(g("pa_withheld")) + whole(g("pa_estimated_payments")) + credit + other
     return {"pa40_9": whole(total), "pa40_11": whole(taxable), "pa40_12": tax,
-            "pa40_13": whole(g("pa_withheld")), "pa40_22": credit, "pa40_24": payments,
+            "pa40_13": whole(g("pa_withheld")), "pa40_22": credit, "pa40_23": other, "pa40_24": payments,
             "pa40_26": max(tax - payments, 0), "pa40_29": max(payments - tax, 0)}
 
 

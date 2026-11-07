@@ -68,7 +68,7 @@ def federal_return(i, year):
     lines["1z"] = g("wages")
     lines["7a"] = max(capital, -3000)
     lines["9"] = (lines["1z"] + g("taxable_interest") + g("ordinary_dividends") + g("ira_taxable")
-                  + lines["7a"] + g("other_income"))
+                  + g("pension_taxable") + lines["7a"] + g("other_income"))
     agi = lines["11a"] = lines["9"] - g("adjustments")
 
     salt = salt_deduction(g("state_income_tax"), g("real_estate_tax"), agi, year)
@@ -154,11 +154,13 @@ def has_wisconsin(inputs):
 
 
 def check_against_return(facts):
-    """Recompute every year that has filed lines and compare line by line."""
+    """Recompute every year that has filed lines, and whose tax law is on file, and compare line by line."""
     out = []
     from . import pennsylvania, wisconsin  # both import this module
 
     for year in sorted(facts.loc[facts["kind"] == "filed", "year"].astype(int).unique()):
+        if year not in taxdata.PARAMS:  # the law for that year is not on file: its return is shown, not redone
+            continue
         inputs = inputs_from_facts(facts, year)
         computed = federal_return(inputs, year)
         if has_wisconsin(inputs):

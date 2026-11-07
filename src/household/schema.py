@@ -166,6 +166,8 @@ REPORTS = (
     # subscriptions you marked (recurring.subscriptions), and the Subscriptions editor's rows
     Table("subscriptions", ("key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
                             "next_expected", "status", "change", "example", "note", "run_id")),
+    # each filed year's income split three ways, for the Taxes page's history (taxhistory.py)
+    Table("tax_history", ("year", "jurisdiction", "split", "part", "order", "value", "total", "run_id")),
     Table("subscription_months", ("month", "key", "category", "group", "expected", "actual", "run_id")),
     Table("editor_subscriptions", ("key", "marked", "cadence", "charges", "last", "latest", "yearly", "category",
                                    "example", "note", "run_id")),

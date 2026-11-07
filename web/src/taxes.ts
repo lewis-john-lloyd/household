@@ -30,7 +30,19 @@ interface ScenarioTotals {
   wisconsin: number;
 }
 
+/** One part of one year's income split (taxhistory.py): where it came from, how it was taxed, where it went. */
+interface HistoryPart {
+  year: string;
+  jurisdiction: string;  // federal, pa, wi
+  split: string;  // came, taxed, went
+  part: string;
+  order: number;
+  value: number;
+  total: number;  // the whole the split's parts add up to
+}
+
 interface TaxPage {
+  history: HistoryPart[];
   years: TaxYear[];
   totals: ScenarioTotals[];  // the current year's scenarios
   plan: Record<string, string>[];
@@ -76,7 +88,12 @@ function taxPage(tabs: Record<string, unknown[][]>): TaxPage {
   const notes = rowsOf(tabs.run_notes || [])
     .filter((r) => r.stage === "compute" && r.run_id === run && /^projection \d{4}: /.test(r.message))
     .sort((a, b) => Number(a.n) - Number(b.n)).map((r) => r.message.replace(/^projection \d{4}: /, ""));
+  const history = rowsOf(tabs.tax_history || []).filter((r) => r.year && r.part).map((r) => ({
+    year: r.year, jurisdiction: r.jurisdiction, split: r.split, part: r.part, order: Number(r.order) || 0,
+    value: Number(r.value) || 0, total: Number(r.total) || 0 }))
+    .sort((a, b) => a.year.localeCompare(b.year) || a.order - b.order);
   return {
+    history,
     years: Array.from(years.values()).sort((a, b) => b.year.localeCompare(a.year)),
     totals, plan: latest(rowsOf(tabs.withholding_plan || [])), accounts: latest(rowsOf(tabs.elections || [])), notes,
   };

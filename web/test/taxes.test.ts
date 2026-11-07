@@ -46,3 +46,17 @@ test("the plan, accounts and notes come from the latest year and the latest comp
   assert.deepEqual(page.totals, [{ scenario: "as is", federal: -1500, wisconsin: 200 }]);
   assert.deepEqual(page.notes, ["alex/Acme Widgets: 3 more monthly vests of about 900 at 35%"]);
 });
+
+test("the tax history comes oldest year first, each split's parts in order", () => {
+  const page = taxes.taxPage({ tax_lines: LINES, tax_history: [
+    ["year", "jurisdiction", "split", "part", "order", "value", "total", "run_id"],
+    ["2001", "federal", "went", "Federal income tax", 4, 9000, 90000, "r2"],
+    ["2001", "federal", "went", "Kept after income tax", 0, 81000, 90000, "r2"],
+    ["2000", "federal", "came", "Capital gains", 2, -3000, 77000, "r2"],
+    ["2000", "federal", "came", "Wages, alex", 0, 80000, 77000, "r2"],
+  ] });
+  assert.deepEqual(page.history.map((h) => [h.year, h.part, h.value]),
+                   [["2000", "Wages, alex", 80000], ["2000", "Capital gains", -3000],
+                    ["2001", "Kept after income tax", 81000], ["2001", "Federal income tax", 9000]]);
+  assert.equal(taxes.taxPage({ tax_lines: LINES }).history.length, 0);
+});

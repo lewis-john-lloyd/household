@@ -31,7 +31,13 @@ the period, so money back in one month offsets spending in another:
                                  more came back than went out: "category (money
                                  back)" -> accounts
 Transfers between the household's own accounts are not flows. Selling shares
-is drawing on savings, not income: the shares were income when they vested.
+is drawing on savings, not income: the shares were income when they vested, at
+their value then, which is their basis. Only what a sale made or lost against
+that basis is new: each period's net realized gain on share sales (equity_sales,
+by sale date) flows from "capital gains" into savings, and a net loss flows
+from savings to "capital losses". Neither touches the accounts, so a sale whose
+cash reaches the bank in a later month still balances, and the proceeds that
+do arrive come "from savings" as before.
 
 Each period is balanced: when more went out of accounts than came in, the
 difference came from cash already in the accounts ("from cash balances"); when
@@ -58,6 +64,8 @@ ACCOUNTS = "accounts"
 NET_PAY = "net pay"
 TAXES, PRE_TAX, POST_TAX, OTHER_INCOME = "taxes", "pre-tax deductions", "post-tax deductions", "other income"
 NO_STUB = "pay without a stub"
+GAINS, GAINS_KEPT = "capital gains", "capital gains (to savings)"
+LOSSES_FROM, LOSSES = f"{FROM_SAVINGS}: capital losses", "capital losses"
 COLUMNS = ["period", "level", "source", "target", "amount"]
 
 
@@ -189,6 +197,27 @@ def _no_stub(pay, period, net):
     return rows
 
 
+def _gain_flows(equity_sales, months):
+    """Net realized gain or loss on share sales: (month rows, year rows), for the periods the ledger has."""
+    if equity_sales is None or equity_sales.empty or "gain" not in equity_sales:
+        return [], []
+    sales = equity_sales.assign(gain=pd.to_numeric(equity_sales["gain"], errors="coerce").fillna(0.0),
+                                month=equity_sales["sale_date"].astype(str).str[:7])
+    years = {m[:4] for m in months}
+    out = []
+    for kept, key in ((sales[sales["month"].isin(months)], sales["month"]),
+                      (sales[sales["month"].str[:4].isin(years)], sales["month"].str[:4])):
+        rows = []
+        for period, net in kept.groupby(key.loc[kept.index])["gain"].sum().items():
+            net = round(float(net), 2)
+            if net > 0:
+                rows.append((period, GAINS, GAINS_KEPT, net, GAINS, SAVINGS))
+            elif net < 0:
+                rows.append((period, LOSSES_FROM, LOSSES, -net, FROM_SAVINGS, LOSSES))
+        out.append(rows)
+    return out[0], out[1]
+
+
 def _category_flows(by_period, groups):
     """Flow rows (period, source, target, amount, group source, group target) for each category's net."""
     rows = []
@@ -210,7 +239,7 @@ def _category_flows(by_period, groups):
     return rows
 
 
-def build(paystubs, categorized, categories):
+def build(paystubs, categorized, categories, equity_sales=None):
     """The flows table: one row per period, level, source and target."""
     from .categorize import actual_rows
 
@@ -232,6 +261,9 @@ def build(paystubs, categorized, categories):
     year_rows, year_net = _year_flows(paystubs, set(months))
     month_rows += _no_stub(pay, "month", month_net)
     year_rows += _no_stub(pay, "year", year_net)
+    month_gains, year_gains = _gain_flows(equity_sales, set(months))
+    month_rows += month_gains
+    year_rows += year_gains
     signed = txns[txns["category"].astype(str).str.strip() != "pay"]
     signed = signed.groupby(["month", "category"], as_index=False)["amount"].sum()
 

@@ -41,7 +41,8 @@ NO.", each item under its store's section, such as Apple TV, then its name, a de
 device, "Report a Problem" and its price; the whole receipt printed twice, for wide screens and narrow,
 so only the first copy is read) and the newer one ("Order ID:", "Document:", each item its app, its
 plan, when it renews and the device, then its price, and "Billing and Payment" with the Subtotal and
-Tax). Each item is "<section or app>: <name or plan>"; tax is shared by amount, so the items add to
+Tax; an Apple Card offer above the items is skipped). Each item is "<section or app>: <name or plan>";
+tax is shared by amount, so the items add to
 what was charged; the order is keyed by its order id.
 
 Google Play receipts (service "google", the same as the Takeout purchase list): "Order number:",
@@ -388,6 +389,7 @@ CARD_LAST4 = re.compile(r"(?:Visa|Mastercard|MasterCard|Amex|American Express|Di
 APPLE_SECTIONS = {"Apple TV", "iTunes Store", "App Store", "Apple Books", "Apple Music", "Apple Arcade",
                   "Apple Podcasts", "Apple Fitness+", "Apple News+", "Apple One", "iCloud"}
 APPLE_NOISE = {"Report a Problem", "Write a Review"}
+APPLE_PROMO = re.compile(r"^Save \d+% on all your Apple purchases|Apple Card")
 
 
 def _day(text, formats=("%B %d, %Y", "%b %d, %Y")):
@@ -465,6 +467,8 @@ def apple_receipt(message_id, headers, body):
     start = next(i for i, line in enumerate(lines) if line == "Document:") + 2
     if start < len(lines) and lines[start] == "Apple Account:":
         start += 2
+    while start < len(lines) and APPLE_PROMO.search(lines[start]):  # an Apple Card offer above the items
+        start += 1
     end = next((i for i in range(start, len(lines)) if lines[i] == "Billing and Payment"), None)
     if end is None:
         raise Unread(f"{APPLE} {message_id}: no Billing and Payment")

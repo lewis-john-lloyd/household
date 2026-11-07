@@ -283,6 +283,10 @@ def _together(names):
     return "; ".join(names)
 
 
+# an Apple Card offer that receipts read before 0.17.4 took as the app: "Save 3% on all ... 2: Apple One"
+APPLE_PROMO = re.compile(r"^Save \d+% on all your Apple purchases.*?\d: ")
+
+
 def match_named(lines, items, service):
     """{txn_id: payee} for an app store's card lines named by what each charge bought.
 
@@ -295,6 +299,7 @@ def match_named(lines, items, service):
     if store.empty:
         return {}
     store["amount"] = pd.to_numeric(store["amount"])
+    store["item"] = store["item"].astype(str).str.replace(APPLE_PROMO, "", regex=True)
     orders = (store.groupby(["order_id", "kind"], sort=False)
               .agg(amount=("amount", "sum"), date=("date", "min"), item=("item", _together)).reset_index())
     orders["amount"] = orders["amount"].round(2)

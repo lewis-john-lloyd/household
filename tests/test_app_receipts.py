@@ -37,7 +37,9 @@ def test_app_store_receipts_read_item_by_item_with_tax_shared_and_a_bad_one_left
         12.66, "2026-03-03", "1111")
     assert play.at["SOP.2..0", "item"] == "Cloud Drive: Cloud Plus (2 TB)"  # "(by ...)" dropped
     # the third Apple receipt's item doesn't add to its Subtotal: it is left out with its id, the rest read
-    assert result.notes[0] == "receipts: 4 read, 5 items"
+    offer = df[df["order_id"] == "XY1ZA2BC3D"]  # the Apple Card offer above the item is not the item
+    assert offer[["item", "amount"]].values.tolist() == [["Apple One: Family (Monthly)", 21.00]]
+    assert result.notes[0] == "receipts: 5 read, 6 items"
     assert any("a3: the items don't add to the Subtotal" in n for n in result.notes)
 
 
@@ -66,3 +68,24 @@ def test_an_apple_charge_is_named_by_its_orders_items_and_no_longer_waits():
     # inside the receipts' dates, a charge with no receipt is categorized like any other line, not kept waiting
     waits = categorize.categorize(lines.assign(category=""), pd.DataFrame(), pd.DataFrame(), explanations=found)
     assert "waiting" not in set(waits.loc[waits["txn_id"].isin(["t1", "t2"]), "status"])
+
+
+def test_an_apple_charge_is_asked_about_as_apple_and_its_app_not_the_item():
+    items = email_receipts.parse(only("a1", "a2", "a4")).tables["order_items"]
+    # a name read before the offer was skipped is repaired when matched
+    old = items.iloc[[0]].assign(item_id="old", order_id="OLD1", date="2026-04-20", amount=10.00,
+                                 item="Save 3% on all your Apple purchases with Apple Card. 1 Apply and use "
+                                      "in minutes. 2: Apple One")
+    items = pd.concat([items, old], ignore_index=True)
+    lines = pd.DataFrame([line(1, "2026-02-09", "APPLE.COM/BILL 866-712-7753 CA", -21.40),
+                          line(2, "2026-03-03", "APPLE.COM/BILL 866-712-7753 CA", -5.25),
+                          line(3, "2026-04-02", "APPLE.COM/BILL 866-712-7753 CA", -21.00),
+                          line(4, "2026-04-21", "APPLE.COM/BILL 866-712-7753 CA", -10.00)])
+    found = explain.explain(lines, items=items)
+    assert found["payee"]["t4"] == "Apple One"
+    df = categorize.categorize(lines.assign(category=""), pd.DataFrame(), pd.DataFrame(), explanations=found)
+    assert df.set_index("txn_id")["key"].to_dict() == {"t1": "APPLE TV", "t2": "APPLE LANTERN NOTES",
+                                                       "t3": "APPLE ONE", "t4": "APPLE ONE"}
+    review = categorize.queue(df).set_index("key")
+    assert review.at["APPLE ONE", "lines"] == 2
+    assert review.at["APPLE TV", "example"] == "APPLE.COM/BILL 866-712-7753 CA (Apple TV: Night Ferry; Paper Moon)"

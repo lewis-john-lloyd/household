@@ -114,6 +114,14 @@ def payee_key(text):
     return " ".join(words[:KEY_WORDS])
 
 
+def apple_key(item):
+    """The key of an Apple charge its receipt named: APPLE and the app ("Apple TV: Night Ferry" is APPLE
+    TV, "iCloud: iCloud+ (Monthly)" APPLE ICLOUD), so one answer covers every rental or renewal from it."""
+    app = str(item).split(": ", 1)[0].split("; ", 1)[0]
+    key = payee_key(app)
+    return key if key.startswith("APPLE") else payee_key(f"APPLE {app}")
+
+
 def _words(s):
     words = re.sub(r"[^A-Z& ]", " ", s).split()
     if len(words) > 2 and STATE.fullmatch(words[-1]):
@@ -396,7 +404,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     df["hint"] = df["txn_id"].map(lambda t: hints.get(t, ""))
     contents = explanations.get("items", {})  # what an explained charge bought, as JSON, for the views
     df["items"] = df["txn_id"].map(lambda t: contents.get(t, ""))
-    df["key"] = df["payee_text"].map(payee_key)
+    df["key"] = [apple_key(text) if t in named and _waiting(p) == "apple" else payee_key(text)
+                 for t, p, text in zip(df["txn_id"], df["payee_raw"].astype(str), df["payee_text"])]
     unpaired = set(unpaired)
     rules, answered = _rules(payee_rules), payee_decisions(decisions)
     answered_index = _by_first_word(answered)
@@ -444,7 +453,8 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and _waits(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
-        elif service in BY_LINE:  # the payee names the service, not who was paid: ask about each line
+        elif service in BY_LINE and r.txn_id not in named:
+            # nothing named it, and its payee names the service, not who was paid: ask about each line
             out.append({"decided_by": f"{service}, not in its emails or downloads", "ask": "line"})
         elif not r.key:  # no letters to name a merchant by: ask about the line itself
             out.append({"ask": "line"})
@@ -538,6 +548,16 @@ def _merge_keys(keys):
     return {k: find(k) for k in ordered}
 
 
+def _shown(lines):
+    """Each line's payee as review shows it: the bank's, then what an email or download named it, if
+    anything ("APPLE.COM/BILL (Apple TV: Night Ferry)")."""
+    raw = lines["payee_raw"].astype(str)
+    if "payee_text" not in lines:
+        return raw
+    text = lines["payee_text"].astype(str)
+    return raw.where(text == raw, raw + " (" + text + ")")
+
+
 def queue(categorized, carry=None):
     """The review tab: one row per open payee group, then one row per line asked about singly.
 
@@ -555,7 +575,7 @@ def queue(categorized, carry=None):
             guess = g["guess"].mode().iloc[0]
             rows.append({"key": key, "answer": "", "split": "", "guess": guess, "lines": len(g),
                          "total": round(float(amounts.sum()), 2),
-                         "example": " | ".join(g["payee_raw"].value_counts().index[:3]), "first": g["date"].min(),
+                         "example": " | ".join(_shown(g).value_counts().index[:3]), "first": g["date"].min(),
                          "last": g["date"].max(), "accounts": ", ".join(sorted(set(g["account_id"]))),
                          "guessed_by": g["decided_by"].mode().iloc[0],
                          "confidence": round(float(pd.to_numeric(g["confidence"]).mean()), 3),
@@ -565,7 +585,8 @@ def queue(categorized, carry=None):
     for r in singles.to_dict("records"):
         rows.append({"key": r["txn_id"], "answer": "", "split": "", "guess": r["guess"], "lines": 1,
                      "total": round(float(r["amount"]), 2),
-                     "example": r["payee_raw"] + (f" | {r['hint']}" if r.get("hint") else ""), "first": r["date"],
+                     "example": _shown(pd.DataFrame([r])).iloc[0] + (f" | {r['hint']}" if r.get("hint") else ""),
+                     "first": r["date"],
                      "last": r["date"], "accounts": r["account_id"], "guessed_by": r["decided_by"],
                      "confidence": r["confidence"], "kind": "line", "note": ""})
     out = pd.DataFrame(rows, columns=list(REVIEW_COLUMNS))

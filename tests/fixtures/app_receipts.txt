@@ -79,6 +79,34 @@ $0.25
 Visa •••• 1111 (Apple Pay)
 $5.25
 
+===== RECEIPT a4 =====
+From: receipts@example.com
+Subject: Your receipt
+Date: 2026-04-01
+
+Receipt
+April 1, 2026
+Order ID:
+XY1ZA2BC3D
+Document:
+1004
+Apple Account:
+alex@example.com
+Save 3% on all your Apple purchases with Apple Card. 1 Apply and use in minutes. 2
+Apple One
+Family (Monthly)
+Renews May 1, 2026
+$20.00
+Billing and Payment
+Alex
+1 Willow St
+Subtotal
+$20.00
+Tax
+$1.00
+Visa •••• 1111 (Apple Pay)
+$21.00
+
 ===== RECEIPT g1 =====
 From: receipts@example.com
 Subject: Your receipt

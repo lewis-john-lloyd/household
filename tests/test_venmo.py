@@ -42,3 +42,13 @@ def test_a_payment_line_takes_who_and_why_and_a_cash_out_takes_what_it_carried()
     # a payment after the latest email waits for the next; the named ones don't
     status = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found).set_index("txn_id")
     assert status.at["t3", "status"] == "waiting" and "waiting" not in set(status.loc[["t1", "t2"], "status"])
+
+
+def test_a_line_before_the_first_email_is_asked_about_and_one_after_the_last_waits():
+    details = email_receipts.parse(FILE).tables["payment_details"]  # Venmo's emails run 2026-08-01 to 2026-09-06
+    lines = pd.DataFrame([line(1, "2026-07-15", "VENMO PAYMENT 1111", -25.00),
+                          line(2, "2026-09-20", "VENMO PAYMENT 2222", -25.00)])
+    found = explain.explain(lines, details=details)
+    status = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found).set_index("txn_id")
+    assert status.at["t1", "status"] != "waiting" and status.at["t1", "ask"] in ("payee", "line")
+    assert status.at["t2", "status"] == "waiting"

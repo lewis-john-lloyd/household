@@ -13,6 +13,10 @@ ledger, matched by amount and date.
            line posted WINDOW days around the payment. The line takes the
            counterparty as its payee, and categorization goes on from there
            (rules, your answers for that payee, the model).
+  Venmo    payment_details rows of service venmo (Venmo's emails), match_venmo: a VENMO line that
+           is one payment takes who it went to or came from and its note, as PayPal's; a cash-out
+           to the bank matches the transfer's email and takes the payments received since the
+           transfer before it, which it carried.
   Orders   order_items of a service in ORDER_SERVICES (Amazon, Target, and any a household
            parameter order_payee:<service> adds, so a local store's name stays out of this code; any
            store whose order history lists items joins by a parser writing
@@ -104,6 +108,34 @@ def match_paypal(lines, details):
     d = d.assign(group=d["detail_id"], rank=0)
     found = _greedy(paypal.assign(amt=pd.to_numeric(paypal["amount"]).round(2)), d, "amt")
     return {r["txn_id"]: " ".join(f"{r['counterparty']} {r['memo']}".split()) for r in found}
+
+
+def match_venmo(lines, details):
+    """{txn_id: payee} for VENMO lines named by Venmo's emails: a payment by who it went to or came from and its
+    note, as PayPal's are; a transfer to the bank (a cash-out) by the payments received since the transfer
+    before it, which are what it carried."""
+    if details is None or details.empty:
+        return {}
+    venmo = lines[lines["payee_raw"].astype(str).str.upper().str.contains("VENMO")]
+    d = details[details["service"] == "venmo"].copy()
+    if venmo.empty or d.empty:
+        return {}
+    d["amount"] = pd.to_numeric(d["amount"]).round(2)
+    d["date"] = d["date"].astype(str).str[:10]
+    d = d.assign(group=d["detail_id"], rank=0)
+    found = _greedy(venmo.assign(amt=pd.to_numeric(venmo["amount"]).round(2)), d, "amt")
+    received = d[d["kind"] == "Payment Received"].sort_values("date")
+    transfers = sorted(d.loc[d["kind"] == "Transfer", "date"])
+    out = {}
+    for r in found:
+        if r["kind"] != "Transfer":
+            out[r["txn_id"]] = " ".join(f"{r['counterparty']} {r['memo']}".split())
+            continue
+        before = max((t for t in transfers if t < r["date_c"]), default="")
+        carried = received[(received["date"] > before) & (received["date"] <= r["date_c"])]
+        names = [f"{c} ({m})" if m else c for c, m in zip(carried["counterparty"], carried["memo"])]
+        out[r["txn_id"]] = "Venmo transfer" + (": " + "; ".join(names) if names else "")
+    return out
 
 
 def _category(item):
@@ -316,7 +348,8 @@ def explain(lines, details=None, items=None, cards=(), services=None):
     """Everything categorization needs from the explanation downloads. services: the stores with an
     order history and their payee patterns (order_services; ORDER_SERVICES by default)."""
     services = services or ORDER_SERVICES
-    named = {**match_paypal(lines, details), **match_named(lines, items, "google"), **match_named(lines, items, "apple")}
+    named = {**match_paypal(lines, details), **match_venmo(lines, details), **match_named(lines, items, "google"),
+             **match_named(lines, items, "apple")}
     contents = {}
     split = match_all_orders(lines, items, cards, contents, services)
     hints = {}

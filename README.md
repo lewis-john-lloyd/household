@@ -68,6 +68,8 @@ Two more stores read the same way. A farm store's register receipts (service `fa
 
 PayPal's emails replace its activity download (the QIF still reads): each payment's receipt, in the merchant's layout or PayPal's own, each refund and each payment a person sends goes to `payment_details` as the download's rows do, keyed by PayPal's transaction id so a receipt and its authorization are one payment, and a PAYPAL line on a card takes its counterparty as its payee. A transfer out to the bank is not a payment, and the search below leaves it out.
 
+Venmo's emails read the same way (service `venmo`): each payment sent or received, with its note, names the VENMO line it matches, and each transfer to the bank names its cash-out line after the payments received since the transfer before it ("Venmo transfer: partner (Concert tickets); sam"). Venmo emails only the account's owner, so a second person's payments come in only if their Venmo emails are forwarded to the mailbox the exporter reads; Gmail's forwarding keeps Venmo as the sender. A search like `from:venmo@venmo.com (subject:paid OR subject:transfer)`.
+
 For the three, `receipt_search` settings like `from:<the farm store's eReceipt address>`, `from:<the outfitter's notices address> (subject:eReceipt OR subject:"Thanks for your order")` (not its shipping notices) and `from:service@paypal.com (subject:USD OR subject:receipt OR subject:refund)` (not its transfer notices, activity reports or security notices).
 
 To set it up (`npm i -g @google/clasp`, logged in):

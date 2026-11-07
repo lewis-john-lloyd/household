@@ -1,0 +1,96 @@
+===== RECEIPT v1 =====
+From: venmo@example.com
+Subject: You paid sam $42.50
+Date: 2026-09-01
+
+ You paid sam $42.50 You paid sam $42.50
+ You paid sam
+ $
+ 42
+ . 50
+ Pizza night
+ See transaction
+ Transaction details
+ Date
+ Sep 01, 2026
+ Transaction ID
+ 1001
+ Payment Method
+ BANK account
+ Sent from
+ @alex
+ Venmo is a service of PayPal, Inc., a licensed provider of money transfer services.
+
+===== RECEIPT v2 =====
+From: venmo@example.com
+Subject: partner paid you $30.00
+Date: 2026-09-03
+
+ partner paid you $30.00 partner paid you $30.00
+ partner paid you
+ $
+ 30
+ . 00
+ Concert tickets
+ See transaction
+ Money credited to your Venmo account.
+ Transaction details
+ Date
+ Sep 03, 2026
+ Transaction ID
+ 1002
+ Sent to
+ @alex
+ Venmo is a service of PayPal, Inc., a licensed provider of money transfer services.
+
+===== RECEIPT v3 =====
+From: venmo@example.com
+Subject: sam paid you $20.00
+Date: 2026-09-05
+
+ sam paid you $20.00 sam paid you $20.00
+ sam paid you
+ $
+ 20
+ . 00
+ See transaction
+ Money credited to your Venmo account.
+ Transaction details
+ Date
+ Sep 05, 2026
+ Transaction ID
+ 1003
+ Sent to
+ @alex
+ Venmo is a service of PayPal, Inc., a licensed provider of money transfer services.
+
+===== RECEIPT v4 =====
+From: venmo@example.com
+Subject: Your Venmo Standard transfer has been initiated
+Date: 2026-09-06
+
+ Standard Transfer Initiated We successfully issued your transfer
+ Standard transfer initiated
+ Initiated on
+ Sunday, September 06, 2026
+ Transfer Amount
+ $50.00
+ Transfer transaction ID
+ 2001
+ Estimated arrival
+ Wednesday, September 09, 2026
+ Venmo is a service of PayPal, Inc., a licensed provider of money transfer services.
+
+===== RECEIPT v5 =====
+From: venmo@example.com
+Subject: Your Venmo Standard transfer has been initiated
+Date: 2026-08-01
+
+ Standard transfer initiated
+ Initiated on
+ Saturday, August 01, 2026
+ Transfer Amount
+ $10.00
+ Transfer transaction ID
+ 2000
+ Venmo is a service of PayPal, Inc., a licensed provider of money transfer services.

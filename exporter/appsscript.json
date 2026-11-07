@@ -5,13 +5,11 @@
   "oauthScopes": [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
     "https://www.googleapis.com/auth/script.scriptapp"
   ],
   "dependencies": {
     "enabledAdvancedServices": [
       { "userSymbol": "Gmail", "serviceId": "gmail", "version": "v1" },
-      { "userSymbol": "Sheets", "serviceId": "sheets", "version": "v4" },
       { "userSymbol": "Drive", "serviceId": "drive", "version": "v3" }
     ]
   }

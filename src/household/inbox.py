@@ -48,13 +48,39 @@ MAX_FILE_BYTES = 200 * 1024 * 1024  # a file bigger than this is left in the inb
 ZIP_LIMITS = {"members": 2000, "member_bytes": 200 * 1024 * 1024, "total_bytes": 1024 * 1024 * 1024}
 
 
+# the receipt exporter's searches file (exporter/Code.js makes it, compute fills its description): not an export
+SEARCHES_PROPERTY = ("household", "receipt_searches")
+SEARCHES_MAX = 4000  # characters of description; far more than a household's stores need
+
+
 def list_files(drive, folder_id, folders=False):
-    """The files (or, with folders, the folders) directly in a folder."""
+    """The files (or, with folders, the folders) directly in a folder, less the exporter's searches file."""
     op = "=" if folders else "!="
     query = f"'{folder_id}' in parents and trashed = false and mimeType {op} '{backup.FOLDER_MIME}'"
-    response = drive.files().list(q=query, fields="files(id,name,mimeType,size)",
+    response = drive.files().list(q=query, fields="files(id,name,mimeType,size,properties)",
                                   pageSize=1000).execute(num_retries=RETRIES)
-    return response.get("files", [])
+    key, value = SEARCHES_PROPERTY
+    return [{k: v for k, v in f.items() if k != "properties"} for f in response.get("files", [])
+            if (f.get("properties") or {}).get(key) != value]
+
+
+def write_receipt_searches(drive, searches):
+    """Write the exporter's searches (settings.receipt_searches rows) into its searches file's description,
+    the only thing of yours it can read besides Gmail. The number of files written: 0 when the exporter
+    hasn't run since it began keeping one. Too long a list is refused rather than cut short."""
+    import json
+    payload = json.dumps({"version": 1, "searches": [
+        {"store": r["store"], "senders": [a.strip() for a in r["senders"].split(",") if a.strip()],
+         "subjects": [w.strip() for w in r["subjects"].split("|") if w.strip()]} for r in searches.to_dict("records")]},
+        separators=(",", ":"))
+    if len(payload) > SEARCHES_MAX:
+        raise ValueError(f"the receipt searches come to {len(payload)} characters, over {SEARCHES_MAX}")
+    key, value = SEARCHES_PROPERTY
+    found = drive.files().list(q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
+                               fields="files(id)", pageSize=10).execute(num_retries=RETRIES).get("files", [])
+    for f in found:
+        drive.files().update(fileId=f["id"], body={"description": payload}, fields="id").execute(num_retries=RETRIES)
+    return len(found)
 
 
 def list_inbox(drive, inbox):

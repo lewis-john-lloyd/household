@@ -22,9 +22,14 @@ function message(id, isoDate, body, from = "Willow St <receipts@example.coop>") 
 function pad(n) { return String(n).padStart(2, "0"); }
 
 /** A fresh exporter over a fake mailbox. mailbox: id -> message (or a function returning one, or throwing). */
-function exporter(mailbox, props = {}, searches = [["co_op", "from:receipts@example.coop"]]) {
-  const store = { REPORTS_ID: "reports1", FOLDER_ID: "folder1", ...props };
+/** searches: what compute wrote into the searches file (an object, or raw description text), or null for no
+ * searches file yet. */
+function exporter(mailbox, props = {},
+                  searches = { version: 1, searches: [{ store: "co_op", senders: ["receipts@example.coop"], subjects: [] }] }) {
+  const store = { FOLDER_ID: "folder1", ...(searches === null ? {} : { SEARCHES_ID: "searches1" }), ...props };
+  const description = searches === null ? "" : typeof searches === "string" ? searches : JSON.stringify(searches);
   const reads = [];
+  const made = [];
   const files = [];
   const logs = [];
   const triggers = [];
@@ -38,11 +43,6 @@ function exporter(mailbox, props = {}, searches = [["co_op", "from:receipts@exam
     JSON, Math, Date, Number, String, Object, Array, Error, RegExp,
     PropertiesService: { getScriptProperties: () => ({
       getProperty: (k) => (k in store ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); } }) },
-    Sheets: { Spreadsheets: { Values: { get: (id, range) => {
-      reads.push([id, range]);
-      if (searches instanceof Error) throw searches;
-      return { values: [["store", "search", "run_id"], ...searches] };
-    } } } },
     Gmail: { Users: { Messages: {
       list: (_me, { q }) => {
         const after = /after:(\d{4})\/(\d{2})\/(\d{2})/.exec(q);
@@ -57,8 +57,15 @@ function exporter(mailbox, props = {}, searches = [["co_op", "from:receipts@exam
       get: (_me, id) => fetch(id),
     } } },
     Drive: { Files: {
-      create: (meta, blob) => { files.push({ name: meta.name, text: blob ? blob.text : "" }); return { id: "file" + files.length }; },
-      get: (id) => ({ id, trashed: false }),
+      create: (meta, blob) => {
+        if (meta.mimeType === "application/json") { made.push(meta); return { id: "searches-new" }; }
+        files.push({ name: meta.name, text: blob ? blob.text : "" });
+        return { id: "file" + files.length };
+      },
+      get: (id, opts) => {
+        reads.push([id, opts && opts.fields]);
+        return id === store.SEARCHES_ID ? { id, trashed: false, description } : { id, trashed: false };
+      },
     } },
     MimeType: { PLAIN_TEXT: "text/plain" },
     Utilities: {
@@ -83,7 +90,7 @@ function exporter(mailbox, props = {}, searches = [["co_op", "from:receipts@exam
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
-  return { run: () => context.exportReceipts(), installTrigger: () => context.installTrigger(), store, files, logs, triggers, reads, context,
+  return { run: () => context.exportReceipts(), installTrigger: () => context.installTrigger(), store, files, logs, triggers, reads, made, context,
            decode: (d) => context.decode_(d), body: (p) => context.body_(p) };
 }
 
@@ -195,28 +202,41 @@ test("past the retry cap the oldest unreadable messages are dropped, each logged
   assert.ok(run.logs.some((l) => /giving up on message x000 after 2 tries: more than 200 unreadable/.test(l)));
 });
 
-test("the searches come from Reports' receipt_searches, and one that names no sender is skipped", () => {
+test("each search is built from plain senders and subjects, and a store with search syntax is skipped", () => {
   const queries = [];
-  const run = exporter({ m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") }, {},
-                       [["co_op", "from:receipts@example.coop"], ["everything", "in:anywhere"], ["blank", ""]]);
+  const run = exporter({ m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") }, {}, { version: 1, searches: [
+    { store: "co_op", senders: ["receipts@example.coop"], subjects: [] },
+    { store: "books", senders: ["a@example.com", "b@example.com"], subjects: ["Thank you", "Billing Summary"] },
+    { store: "wide", senders: ["x@example.com OR in:anywhere"], subjects: [] },
+    { store: "sneaky", senders: ["y@example.com"], subjects: ['x") OR (in:anywhere'] },
+    { store: "none", senders: [], subjects: [] },
+  ] });
   const list = run.context.Gmail.Users.Messages.list;
   run.context.Gmail.Users.Messages.list = (me, args) => { queries.push(args.q); return list(me, args); };
   run.run();
-  assert.deepEqual(run.reads, [["reports1", "receipt_searches!A:B"]]);
-  assert.deepEqual(queries, ["from:receipts@example.coop"]);
-  assert.ok(run.logs.some((l) => l.includes("skipping the search for everything")));
+  assert.deepEqual(queries, ["from:(receipts@example.coop)",
+                             'from:(a@example.com OR b@example.com) subject:("Thank you" OR "Billing Summary")']);
+  for (const store of ["wide", "sneaky", "none"]) {
+    assert.ok(run.logs.some((l) => l.includes("skipping the search for " + store)), store);
+  }
   assert.equal(run.files.length, 1);
 });
 
-test("with no Reports id, Reports unreadable or no searches, the run fails and exports nothing", () => {
+test("the first run makes an empty searches file in its folder and fails until compute fills it", () => {
+  const run = exporter({ m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") }, {}, null);
+  assert.throws(() => run.run(), /No receipt searches yet/);
+  assert.equal(run.made.length, 1);
+  // objects made inside the script's context: compare as JSON
+  assert.equal(JSON.stringify(run.made[0].parents), '["folder1"]');
+  assert.equal(JSON.stringify(run.made[0].properties), '{"household":"receipt_searches"}');
+  assert.equal(run.store.SEARCHES_ID, "searches-new");
+  assert.equal(run.files.length, 0);
+});
+
+test("a searches file that isn't the list compute writes, or lists nothing, fails the run and exports nothing", () => {
   const box = { m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") };
-  for (const [props, searches, said] of [
-    [{ REPORTS_ID: undefined }, undefined, /REPORTS_ID/],
-    [{}, new Error("Unable to parse range: receipt_searches!A:B"), /compute has run/],
-    [{}, [], /no receipt searches/],
-    [{}, [["everything", "in:anywhere"]], /no receipt searches/],
-  ]) {
-    const run = exporter(box, props, searches);
+  for (const [searches, said] of [["not json", /not the list compute writes/], [{ version: 1, searches: [] }, /No receipt searches/]]) {
+    const run = exporter(box, {}, searches);
     assert.throws(() => run.run(), said);
     assert.equal(run.files.length, 0);
   }

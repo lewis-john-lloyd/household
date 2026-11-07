@@ -1,23 +1,23 @@
 /**
  * Receipt exporter: copies new store receipts from Gmail into the household inbox, once a day.
  *
- * It runs only the Gmail searches the household lists in its settings (receipt_search:<store>, edited in
- * the views and kept in the ledger; compute publishes them to Reports as receipt_searches), reads each new message, and
- * writes all of a run's messages as one text file (receipts_<date>.txt) in a folder of its own, where
- * the engine's receipt reader parses them. It never changes Gmail.
+ * It runs only the Gmail searches the household's settings allow: per store, mail from the addresses in
+ * receipt_sender:<store>, and if receipt_subject:<store> is set, whose subject has one of its phrases. It
+ * builds each search itself from those plain addresses and words, so no setting can widen a search past
+ * its senders. It reads each new message and writes all of a run's messages as one text file
+ * (receipts_<date>.txt) in a folder of its own, where the engine's receipt reader parses them. It never
+ * changes Gmail.
  *
  * Drive access is drive.file: the exporter can see and change only what it created. So it makes its
  * own folder ("email_receipts", in My Drive) on the first run; move that folder into the
  * household inbox folder once, and the engine reads it there. It keeps writing into the folder
- * wherever it is moved. Nothing else in Drive is open to it, except that spreadsheets.readonly, which it
- * needs for Reports, would let it read any spreadsheet (Sheets has no scope for one file a standalone
- * script didn't create).
+ * wherever it is moved. In that folder it also makes one empty file, the searches file; compute writes
+ * the searches into its description, and this script reads them there. Nothing else of yours is open to
+ * it: no spreadsheet, no other file, no network, no sending mail. If the searches file holds no searches
+ * the run fails (and Apps Script emails the failure) rather than quietly exporting nothing.
  *
- * Script property, set once by hand in Project Settings: REPORTS_ID, the Reports spreadsheet's id (no
- * store is named in this file or the repo). It reads Reports with spreadsheets.readonly and writes nothing
- * there. A search that names no sender (from:) is skipped, so a setting can't open the whole mailbox; if
- * Reports can't be read, or lists no searches, the run fails (and Apps Script emails the failure) rather
- * than quietly exporting nothing. It keeps its own state in the script properties too: FOLDER_ID (its folder), SINCE (the date the next search starts from),
+ * It keeps its own state in the script properties: FOLDER_ID (its folder), SEARCHES_ID (its searches
+ * file), SINCE (the date the next search starts from),
  * DONE (ids already exported, kept for a few weeks so the overlap between searches is not exported
  * twice) and FAILED (messages it could not read, retried by id every run).
  *
@@ -54,31 +54,59 @@ function log_(text) {
   console.log("[" + Math.round((Date.now() - started_) / 1000) + "s] " + text);
 }
 
-const FROM = /(^|[\s({])from:\S/;
+const SEARCHES_NAME = "receipt searches (written by compute).json";
+const SEARCHES_PROPERTY = "household";   // its value marks the file, so ingest skips it and compute finds it
+const ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+const PHRASE = /^[A-Za-z0-9][A-Za-z0-9 &'.,!#-]{0,59}$/;
+const MAX_PARTS = 10;
 
-/** The Gmail searches from Reports' receipt_searches table: one per store, each naming a sender. */
-function searches_(props) {
-  const id = props.getProperty("REPORTS_ID");
-  if (!id) throw new Error("Set the script property REPORTS_ID to the Reports spreadsheet's id.");
-  let rows;
+/** The searches file: one this script made in its folder, so drive.file can read it, holding the searches
+ * in its description, which compute writes from the receipt_sender and receipt_subject settings. Made
+ * empty, with a log line, when there is none yet or it was trashed. */
+function searchesFile_(props, folderId) {
+  const id = props.getProperty("SEARCHES_ID");
+  if (id) {
+    try {
+      const found = Drive.Files.get(id, { fields: "id,trashed,description" });
+      if (!found.trashed) return found;
+    } catch (e) {
+      log_("the searches file (" + id + ") can't be reached, making a new one: " + String(e).slice(0, 120));
+    }
+  }
+  const made = Drive.Files.create({ name: SEARCHES_NAME, mimeType: "application/json", parents: [folderId],
+                                    properties: { [SEARCHES_PROPERTY]: "receipt_searches" } });
+  props.setProperty("SEARCHES_ID", made.id);
+  log_("made the searches file " + made.id + "; run compute to fill it");
+  return { id: made.id, description: "" };
+}
+
+/** The Gmail searches, one per store, built here from plain senders and subject phrases: from those
+ * senders, and if there are subjects, with one of them. A store with an address or phrase that isn't
+ * plain is skipped, so nothing in the settings can widen a search past its senders. */
+function searches_(props, folderId) {
+  const file = searchesFile_(props, folderId);
+  let stores = [];
   try {
-    rows = Sheets.Spreadsheets.Values.get(id, "receipt_searches!A:B").values || [];
+    const parsed = JSON.parse(file.description || "{}");
+    stores = Array.isArray(parsed.searches) ? parsed.searches : [];
   } catch (e) {
-    throw new Error("Could not read receipt_searches from Reports (" + String(e).slice(0, 200) + "). Check REPORTS_ID, "
-                    + "and that compute has run since the receipt_search settings were added.");
+    throw new Error("The searches file's description is not the list compute writes; run compute again: " + e);
   }
   const out = [];
-  for (const [store, search] of rows.slice(1)) {  // the first row is the header
-    const q = String(search || "").trim();
-    if (!q) continue;
-    if (!FROM.test(q) || /[\r\n]/.test(q)) {
-      log_("skipping the search for " + store + ": it names no sender (from:)");
+  for (const s of stores) {
+    const from = Array.isArray(s.senders) ? s.senders.map(String) : [];
+    const subjects = Array.isArray(s.subjects) ? s.subjects.map(String) : [];
+    const plain = from.length >= 1 && from.length <= MAX_PARTS && from.every((a) => ADDRESS.test(a))
+      && subjects.length <= MAX_PARTS && subjects.every((w) => PHRASE.test(w));
+    if (!plain) {
+      log_("skipping the search for " + String(s.store) + ": its senders or subjects are not plain addresses and words");
       continue;
     }
-    out.push(q);
+    out.push("from:(" + from.join(" OR ") + ")"
+             + (subjects.length ? " subject:(" + subjects.map((w) => '"' + w + '"').join(" OR ") + ")" : ""));
   }
-  if (!out.length) throw new Error("Reports lists no receipt searches: add receipt_search:<store> settings in the "
-                                   + "views, then run ingest and compute.");
+  if (!out.length) throw new Error("No receipt searches yet: add receipt_sender:<store> settings in the views, "
+                                   + "then run ingest and compute (compute writes them where this script reads them).");
   return out;
 }
 
@@ -100,7 +128,7 @@ function gmail_(what, call) {
 function exportReceipts() {
   const props = PropertiesService.getScriptProperties();
   const folderId = folder_(props);
-  const senders = searches_(props);
+  const senders = searches_(props, folderId);
   const since = props.getProperty("SINCE");   // "yyyy/mm/dd", or none for everything so far
   const done = JSON.parse(props.getProperty("DONE") || "{}");   // id -> epoch ms of the message
   const failed = JSON.parse(props.getProperty("FAILED") || "{}");   // id -> {when, tries, error}

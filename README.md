@@ -72,7 +72,7 @@ For the three, `receipt_search` settings like `from:<the farm store's eReceipt a
 
 To set it up (`npm i -g @google/clasp`, logged in):
 
-1. `cd exporter && clasp create-script --type standalone --title "Household receipt exporter" --rootDir .`, then `clasp push`
+1. `cd exporter && clasp create-script --type standalone --title "Household receipt exporter" --rootDir .`, then `git checkout -- appsscript.json` (creating the project writes a default manifest over the repo's, which has the permissions and services the script needs), then `clasp push`
 2. In the script editor, Project Settings, Script properties: `REPORTS_ID`, the same id the views use. Add a `receipt_search:<store>` setting per store in the views, then run ingest and compute so Reports lists them
 3. Run `exportReceipts` once. It asks for Gmail read access, read access to spreadsheets (for Reports) and access to its own Drive files, makes `email_receipts` in My Drive, and exports every receipt so far into it
 4. Move `email_receipts` into the household inbox folder
@@ -95,7 +95,7 @@ The links and deadlines are household settings in the ledger (`settings.py`), ch
 
 To set it up (`npm i -g @google/clasp`, logged in):
 
-1. `cd nudge && clasp create-script --type standalone --title "Household weekly email" --rootDir .`, then `clasp push`
+1. `cd nudge && clasp create-script --type standalone --title "Household weekly email" --rootDir .`, then `git checkout -- appsscript.json` (creating the project writes a default manifest over the repo's, which has the permissions and services the script needs), then `clasp push`
 2. In the script editor, Project Settings, Script properties: `REPORTS_ID`, the same id the views use
 3. Run `preview` once. It asks for its permissions, then logs the email it would send today
 4. Run `installTrigger` once to send it every Saturday at 7 in the morning

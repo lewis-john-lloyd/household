@@ -62,15 +62,33 @@ const MAX_PARTS = 10;
 
 /** The searches file: one this script made in its folder, so drive.file can read it, holding the searches
  * in its description, which compute writes from the receipt_sender and receipt_subject settings. Made
- * empty, with a log line, when there is none yet or it was trashed. */
+ * empty, with a log line, when there is none yet or it was trashed.
+ *
+ * Its description decides which mail is read, so it is trusted only as compute leaves it: still in this
+ * script's folder, and last changed by the account this script runs as (compute runs as the same owner).
+ * Someone else who can edit the folder could change the file, but the run then stops and says so, rather
+ * than reading whatever senders they put there. */
 function searchesFile_(props, folderId) {
   const id = props.getProperty("SEARCHES_ID");
   if (id) {
+    let found = null;
     try {
-      const found = Drive.Files.get(id, { fields: "id,trashed,description" });
-      if (!found.trashed) return found;
+      found = Drive.Files.get(id, { fields: "id,trashed,description,parents,lastModifyingUser(me,emailAddress)" });
     } catch (e) {
       log_("the searches file (" + id + ") can't be reached, making a new one: " + String(e).slice(0, 120));
+    }
+    if (found && !found.trashed) {
+      if ((found.parents || []).indexOf(folderId) < 0) {
+        throw new Error("The searches file (" + id + ") is no longer in the exporter's folder, so its searches are not "
+                        + "trusted. Put it back, or delete SEARCHES_ID in Project Settings to make a new one.");
+      }
+      const by = found.lastModifyingUser || {};
+      if (by.me === false) {
+        throw new Error("The searches file was last changed by " + (by.emailAddress || "another account")
+                        + ", not by this script's owner, so its searches are not trusted. Run compute as the owner "
+                        + "to write them again.");
+      }
+      return found;
     }
   }
   const made = Drive.Files.create({ name: SEARCHES_NAME, mimeType: "application/json", parents: [folderId],

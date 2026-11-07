@@ -65,9 +65,14 @@ def test_the_views_and_the_exporter_each_need_what_they_have():
     # the check above is only as good as its view of the code: these are the calls each makes today
     assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", code(PROJECTS["web"][1]))} == {"Sheets", "Drive"}
     exporter = code(PROJECTS["exporter"][1])
-    assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", exporter)} == {"Gmail", "Drive", "Sheets"}
-    # the exporter reads its searches from Reports and never writes a spreadsheet
-    assert set(re.findall(r"\bSheets\.[\w.]+", exporter)) == {"Sheets.Spreadsheets.Values.get"}
+    assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", exporter)} == {"Gmail", "Drive"}
+
+
+def test_the_exporter_holds_gmail_read_its_own_files_and_its_trigger_and_nothing_else():
+    # its searches come from a file it made (compute writes them there), so it needs no spreadsheet; it has
+    # no network and no sending mail, so whatever it reads can go nowhere but its own Drive files
+    scopes = {s[len(SCOPE):] for s in json.loads(PROJECTS["exporter"][0].read_text())["oauthScopes"]}
+    assert scopes == {"gmail.readonly", "drive.file", "script.scriptapp"}
 
 
 @pytest.mark.parametrize("project", ["exporter", "nudge"])

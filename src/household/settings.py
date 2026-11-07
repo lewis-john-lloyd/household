@@ -33,40 +33,77 @@ SETTINGS = {
                             "year (lpfsa_claim_deadline:2026 with a full date for one plan year)",
     "dcfsa_claim_deadline": "The last day to claim dependent care FSA money: MM-DD of the year after the plan "
                             "year (dcfsa_claim_deadline:2026 with a full date for one plan year)",
-    "receipt_search": "A Gmail search the receipt exporter runs each day, one per store (receipt_search:<store>), "
-                      "naming the sender with from:, such as from:receipts@example.com subject:receipt",
+    "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
+                      "(receipt_sender:<store>); the receipt exporter reads only mail from these",
+    "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "
+                       "by | (receipt_subject:<store>); the exporter then reads only mail whose subject has one",
 }
 
 LINKS = ("views_url", "payroll_url", "benefits_url", "fsa_claims_url")
 NUMBERS = ("target_refund", "planned_supplemental_rate", "withholding_tolerance")
 DEADLINES = ("lpfsa_claim_deadline", "dcfsa_claim_deadline")
-SEARCH_MAX = 300
-FROM = re.compile(r"(^|[\s({])from:\S")
+ADDRESS = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
+PHRASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 &'.,!#-]{0,59}")
+MAX_PARTS = 10
 
 
-def search_problem(v):
-    """Why a receipt search can't be run, or "": one line, short, and naming a sender, so the exporter reads one
-    store's mail and never the whole mailbox."""
-    if "\n" in v or "\r" in v:
-        return "is more than one line"
-    if len(v) > SEARCH_MAX:
-        return f"is longer than {SEARCH_MAX} characters"
-    if not FROM.search(v):
-        return "names no sender (from:)"
-    return ""
+def senders(v):
+    return [a.strip() for a in str(v).split(",") if a.strip()]
+
+
+def subjects(v):
+    return [w.strip() for w in str(v).split("|") if w.strip()]
+
+
+def sender_problem(v):
+    """Why a receipt_sender value can't be used, or "": email addresses only, so each search is exactly
+    those senders and a setting can never widen the exporter to the rest of the mailbox."""
+    found = senders(v)
+    if not found or len(found) > MAX_PARTS:
+        return f"needs 1 to {MAX_PARTS} addresses"
+    bad = [a for a in found if not ADDRESS.fullmatch(a)]
+    return f"has {bad[0]!r}, which is not an email address" if bad else ""
+
+
+def subject_problem(v):
+    """Why a receipt_subject value can't be used, or "": plain words and phrases, no search syntax."""
+    found = subjects(v)
+    if not found or len(found) > MAX_PARTS:
+        return f"needs 1 to {MAX_PARTS} phrases"
+    bad = [w for w in found if not PHRASE.fullmatch(w)]
+    return f"has {bad[0]!r}: letters, digits, spaces and & ' . , ! # - only" if bad else ""
+
+
+def gmail_search(sender_list, subject_list):
+    """The Gmail search for one store, as the exporter builds it: from those senders, and if there are
+    subjects, with one of them. Every branch keeps the sender."""
+    search = "from:(" + " OR ".join(sender_list) + ")"
+    if subject_list:
+        search += " subject:(" + " OR ".join(f'"{w}"' for w in subject_list) + ")"
+    return search
 
 
 def receipt_searches(params):
-    """The receipt exporter's Gmail searches, one row per store (store, search): every receipt_search:<store>
-    setting that is set and can be run, by store. A bare receipt_search is the store "receipts"."""
+    """The receipt exporter's searches, one row per store (store, senders, subjects, search): each
+    receipt_sender:<store> that is set and usable, with its receipt_subject:<store> if that is set and
+    usable. A store whose subject setting can't be used is left out rather than read without it."""
+    columns = ["store", "senders", "subjects", "search"]
     if params is None or params.empty:
-        return pd.DataFrame(columns=["store", "search"])
+        return pd.DataFrame(columns=columns)
     household = params[params["jurisdiction"].astype(str) == "household"]
     latest = household.drop_duplicates("key", keep="last")
-    rows = [{"store": key.split(":", 1)[1] if ":" in key else "receipts", "search": v}
-            for key, v in zip(latest["key"].astype(str), latest["value"].astype(str).str.strip())
-            if key.split(":")[0] == "receipt_search" and v and not search_problem(v)]
-    return pd.DataFrame(rows, columns=["store", "search"]).sort_values("store").reset_index(drop=True)
+    value = dict(zip(latest["key"].astype(str), latest["value"].astype(str).str.strip()))
+    rows = []
+    for key, v in value.items():
+        base, _, store = key.partition(":")
+        if base != "receipt_sender" or not store or not v or sender_problem(v):
+            continue
+        subject = value.get(f"receipt_subject:{store}", "")
+        if subject and subject_problem(subject):
+            continue
+        rows.append({"store": store, "senders": ", ".join(senders(v)), "subjects": " | ".join(subjects(subject)),
+                     "search": gmail_search(senders(v), subjects(subject))})
+    return pd.DataFrame(rows, columns=columns).sort_values("store").reset_index(drop=True)
 
 
 def value(params, key, default=""):
@@ -131,8 +168,10 @@ def check(params):
                 re.compile(v)
             except re.error as e:
                 out.append((key, v, f"is not a pattern ({e})"))
-        elif base == "receipt_search" and search_problem(v):
-            out.append((key, v, search_problem(v)))
+        elif base == "receipt_sender" and sender_problem(v):
+            out.append((key, v, sender_problem(v)))
+        elif base == "receipt_subject" and subject_problem(v):
+            out.append((key, v, subject_problem(v)))
         elif base in DEADLINES:
             full = ":" in key
             ok = re.fullmatch(r"\d{4}-\d{2}-\d{2}" if full else r"\d{2}-\d{2}", v)

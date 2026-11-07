@@ -190,18 +190,3 @@ def test_downloads_and_review_are_due_once_stale_for_30_days():
 def test_a_setting_that_cant_be_used_is_in_the_next_email():
     rows = nudges.build(date(2026, 11, 6), params(payroll_url="payroll.example"))
     assert rows[["group", "item", "show_from"]].values.tolist() == [["Fix a setting", "payroll_url", "2026-11-06"]]
-
-
-def test_receipt_searches_come_from_the_settings_and_one_that_names_no_sender_is_left_out():
-    p = pd.DataFrame([
-        {"year": "", "jurisdiction": "household", "key": "receipt_search:co_op", "value": "from:old@example.coop"},
-        {"year": "", "jurisdiction": "household", "key": "receipt_search:co_op", "value": "from:receipts@example.coop"},
-        {"year": "", "jurisdiction": "household", "key": "receipt_search:books", "value": "from:(a@example.com) receipt"},
-        {"year": "", "jurisdiction": "household", "key": "receipt_search:all", "value": "in:anywhere"},
-        {"year": "", "jurisdiction": "household", "key": "receipt_search:gone", "value": ""},
-    ])
-    found = settings.receipt_searches(p)
-    # the latest row per store, by store; a search with no sender never reaches the exporter
-    assert found.values.tolist() == [["books", "from:(a@example.com) receipt"], ["co_op", "from:receipts@example.coop"]]
-    assert settings.check(p) == [("receipt_search:all", "in:anywhere", "names no sender (from:)")]
-    assert "receipt_search" in set(settings.known(pd.DataFrame(columns=["key", "value", "source"]))["key"])

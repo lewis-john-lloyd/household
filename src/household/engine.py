@@ -492,6 +492,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     sheets.replace_table(reports, schema.table(schema.REPORTS, "receipt_searches"), searches.assign(run_id=run_id))
     _say(log, f"receipt_searches: {len(searches)} for the receipt exporter"
               + (f" ({', '.join(searches['store'])})" if len(searches) else ""))
+    try:
+        written = inbox.write_receipt_searches(session.drive(), searches)
+        if not written:
+            _say(log, "receipt_searches: the exporter has no searches file yet; run exportReceipts once, then compute")
+    except Exception as e:  # the rest of compute goes on: the exporter keeps the searches it was last given
+        _say(log, f"receipt_searches: could not write the exporter's searches file: {e}")
     fsa = nudges.fsa_balances(stubs, categorized, params, day, tax_elections)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "fsa_balances"), fsa.assign(run_id=run_id))
     for r in fsa.to_dict("records"):

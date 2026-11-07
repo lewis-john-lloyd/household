@@ -35,7 +35,7 @@ def test_each_split_of_each_year_adds_up_to_its_whole():
     assert (fed[("went", "Federal income tax")], fed[("went", "State income tax")], fed[("went", taxhistory.CREDITS)]) == (16_000, 4_545, 4_000)
     assert fed[("went", taxhistory.KEPT)] == 147_020 - 16_000 - 4_545 - 4_000
     pa = h[h["jurisdiction"] == "pa"].set_index(["split", "part"])["value"]
-    assert pa[("went", "Pennsylvania income tax")] == 4_545 and ("came", "Capital gains") not in pa.index  # a loss adds nothing
+    assert pa[("went", "State income tax")] == 4_545 and ("came", "Capital gains") not in pa.index  # a loss adds nothing
 
 
 def test_a_year_without_its_tax_law_is_not_recomputed_and_pa_counts_its_other_credits():

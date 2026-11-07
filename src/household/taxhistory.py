@@ -91,12 +91,12 @@ def history(facts):
             add("pa", "taxed", [("Taxable income", filed.get("pa40_11", 0.0)),
                                 ("Deducted", total - filed.get("pa40_11", total))], total)
             tax, credits = states["pa"]
-            add("pa", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("Pennsylvania income tax", tax)],
+            add("pa", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)],
                 total)
         if "wi" in states:
             total = g("wi_income") or filed.get("wi_income", 0.0)
             tax, credits = states["wi"]
             add("wi", "came", [("Wisconsin income", total)], total)
-            add("wi", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("Wisconsin income tax", tax)],
+            add("wi", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)],
                 total)
     return pd.DataFrame(rows, columns=COLUMNS)

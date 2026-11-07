@@ -28,7 +28,11 @@ compared with the year's limits, with what the stubs show so far: the after-tax
 401(k) room under 415(c) is the mega backdoor Roth's.
 
 return_lines lays both returns out line by line (Form 1040 and Wisconsin Form 1),
-so the tax page shows the whole return, and a filed return can be set beside it.
+so the tax page shows the whole return. A year whose return is filed is laid out
+by as_filed instead, from the return's own inputs, beside the filed lines.
+
+A job is projected only while it is still paying: not in a year that is over, and
+not once its stubs stop (more than five weeks behind the latest stub).
 
 withholding_plan says what withholding lands the year on a refund of the target,
 on no balance, and on owing the target: future vests withheld at a planned
@@ -118,8 +122,9 @@ def _add_medicare(out, wages, year):
     out["medicare_wages"] += wages
 
 
-def employer_position(rows, backtest, year, overrides, wi_backtest=None):
-    """Year to date and the rest of the year for one person at one employer."""
+def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=False):
+    """Year to date and the rest of the year for one person at one employer. ended: the employer pays no
+    more this year (the year is over, or its stubs stopped), so the year is its year to date."""
     rows = rows[rows["pay_date"].astype(str).str[:4] == str(year)]
     bt = backtest[backtest["pay_date"].str[:4] == str(year)]
     wi_bt = (wi_backtest if wi_backtest is not None else wisconsin.backtest(rows))
@@ -144,7 +149,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None):
     out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care", "health_fsa")}
     out["wi_settings"] = wi_settings
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
-    if regular.empty:
+    if regular.empty or ended:
         return out
 
     last = regular.iloc[-1]
@@ -227,16 +232,29 @@ def break_even_extra(pos, owe):
     return round(max(v["extra_withholding"] + owe / v["paychecks_left"], 0.0), 2)
 
 
+ENDED_AFTER = timedelta(days=35)  # more than two paychecks missed: the job has ended
+
+
 def positions(paystubs, year, overrides=None):
-    """employer_position for every person and employer with stubs this year."""
+    """employer_position for every person and employer with stubs this year.
+
+    Only a job still paying is projected to December 31: none in a year before the latest stub's (that
+    year is over), and none whose latest stub is more than ENDED_AFTER older than the latest of all.
+    """
     backtest = withholding.backtest(paystubs)
     wi_backtest = wisconsin.backtest(paystubs)
+    latest = date.fromisoformat(str(paystubs["pay_date"].astype(str).max())[:10])
     year_rows = paystubs[paystubs["pay_date"].astype(str).str[:4] == str(year)]
     out = {}
     for (person, employer), rows in year_rows.groupby(["person", "employer"]):
         mine = lambda b: b[(b["person"] == person) & (b["employer"] == employer)]  # noqa: E731
+        last = date.fromisoformat(str(rows["pay_date"].astype(str).max())[:10])
+        stopped = latest - last > ENDED_AFTER
         out[(person, employer)] = employer_position(rows, mine(backtest), year, overrides or {},
-                                                    mine(wi_backtest))
+                                                    mine(wi_backtest), ended=year < latest.year or stopped)
+        if stopped and year == latest.year:
+            out[(person, employer)]["notes"].append(f"no pay stub since {last.isoformat()}: taken as no "
+                                                    "longer paying, so nothing more this year")
     return out
 
 
@@ -306,18 +324,21 @@ WISCONSIN = "Wisconsin Form 1"
 DETAIL_COLUMNS = ["scenario", "order", "form", "line", "key", "label", "value", "filed"]
 
 
-def return_lines(i, r, w, year):
-    """Both returns line by line, as a person reads them: form, line number, key (the return_facts key a
-    filed value is stored under), label and value. Inputs a return only shows when they are not zero
-    (interest, dividends, IRA distributions) are left out when they are."""
+def _adder(out):
+    def add(form, line, key, label, value, always=True):
+        if always or value:
+            out.append({"form": form, "line": line, "key": key, "label": label, "value": round(float(value), 4 if key in RATIO_KEYS else 2)})
+    return add
+
+
+def federal_lines(i, r, year):
+    """Form 1040 line by line, as a person reads it: form, line number, key (the return_facts key a filed
+    value is stored under), label and value. Inputs a return only shows when they are not zero (interest,
+    dividends, IRA distributions) are left out when they are."""
     g = lambda k: float(i.get(k, 0) or 0)  # noqa: E731
     itemized = r["12e"] > taxdata.params(year)["standard_deduction_mfj"]
     out = []
-
-    def add(form, line, key, label, value, always=True):
-        if always or value:
-            out.append({"form": form, "line": line, "key": key, "label": label, "value": round(float(value), 2)})
-
+    add = _adder(out)
     add(FEDERAL, "1z", "1z", "Wages (W-2 box 1)", r["1z"])
     add(FEDERAL, "2b", "taxable_interest", "Taxable interest", g("taxable_interest"), always=False)
     add(FEDERAL, "3a", "qualified_dividends", "Qualified dividends", g("qualified_dividends"), always=False)
@@ -349,6 +370,13 @@ def return_lines(i, r, w, year):
     add(FEDERAL, "31", "31", "Excess Social Security withheld", r["31"], always=False)
     add(FEDERAL, "33", "33", "Total payments", r["33"])
     add(FEDERAL, "34 or 37", "37", "Refund" if r["37"] < 0 else "Amount owed", abs(r["37"]))
+    return out
+
+
+def wisconsin_lines(w, year):
+    """Wisconsin Form 1 (a full-year resident's) line by line."""
+    out = []
+    add = _adder(out)
     for key, label in (("wi_income", "Wisconsin income"), ("wi_standard_deduction", "Standard deduction"),
                        ("wi_exemptions", "Exemptions"), ("wi_taxable", "Taxable income"), ("wi_tax", "Tax"),
                        ("wi_itemized_credit", "Itemized deduction credit"),
@@ -360,6 +388,72 @@ def return_lines(i, r, w, year):
     add(WISCONSIN, taxdata.form_line(year, "wi_overpaid" if refund else "wi_owe")[0], "wi_owe_or_refund",
         "Refund" if refund else "Amount owed", abs(w["wi_owe_or_refund"]))
     return out
+
+
+# Form 1NPR (a part-year resident's) and PA-40: the keys are the line numbers, as in return_facts
+WISCONSIN_NPR = "Wisconsin Form 1NPR"
+NPR_LINES = (("32", "Wisconsin share of income"), ("34c", "Standard deduction"), ("36c", "Exemptions"),
+             ("37", "Taxable income"), ("38", "Tax on all income"), ("39", "Tax on the Wisconsin share"),
+             ("40", "Itemized deduction credit"), ("43c", "School property tax credit"),
+             ("45", "Tax after those credits"), ("48", "Married couple credit"), ("52", "Net tax"),
+             ("58", "Wisconsin tax withheld"))
+PENNSYLVANIA = "Pennsylvania PA-40"
+PA_LINES = (("9", "Total PA taxable income"), ("11", "Adjusted PA taxable income"), ("12", "Tax"),
+            ("13", "PA tax withheld"), ("22", "Resident credit"), ("24", "Total payments and credits"))
+RATIO_KEYS = ("wi1npr_32",)  # a share, not dollars
+
+
+def wisconsin_npr_lines(w):
+    out = []
+    add = _adder(out)
+    for line, label in NPR_LINES:
+        add(WISCONSIN_NPR, line, f"wi1npr_{line}", label, w[f"wi1npr_{line}"])
+    if w["wi1npr_73"]:
+        add(WISCONSIN_NPR, "73", "wi1npr_73", "Amount owed", w["wi1npr_73"])
+    else:
+        add(WISCONSIN_NPR, "70", "wi1npr_70", "Refund", w["wi1npr_70"])
+    return out
+
+
+def pennsylvania_lines(pa):
+    out = []
+    add = _adder(out)
+    for line, label in PA_LINES:
+        add(PENNSYLVANIA, line, f"pa40_{line}", label, pa[f"pa40_{line}"])
+    if pa["pa40_26"]:
+        add(PENNSYLVANIA, "26", "pa40_26", "Amount owed", pa["pa40_26"])
+    else:
+        add(PENNSYLVANIA, "29", "pa40_29", "Refund", pa["pa40_29"])
+    return out
+
+
+def return_lines(i, r, w, year):
+    """Form 1040 and Wisconsin Form 1 line by line, for a year projected from stubs."""
+    return federal_lines(i, r, year) + wisconsin_lines(w, year)
+
+
+def has_return(facts, year):
+    """Whether return_facts holds the year's return inputs (the figures the filed return was made from)."""
+    return not facts.empty and ((facts["year"].astype(str) == str(year)) & (facts["kind"] == "input")).any()
+
+
+def as_filed(year, facts):
+    """A filed year's returns line by line, computed from the return's own inputs in return_facts (the
+    W-2s and the other figures on it), each beside the filed line: Form 1040, then Wisconsin Form 1 or
+    Form 1NPR and PA-40 when the inputs have them. The same computation tax_check compares."""
+    from . import pennsylvania
+    i = tax.inputs_from_facts(facts, year)
+    r = tax.federal_return(i, year)
+    lines = federal_lines(i, r, year)
+    if tax.has_wisconsin(i):
+        w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
+        lines += wisconsin_npr_lines(w) if "wi_income" in i else wisconsin_lines(w, year)
+    if pennsylvania.has_pennsylvania(i):
+        lines += pennsylvania_lines(pennsylvania.pa_return(i, year))
+    filed = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "filed")]
+    filed = dict(zip(filed["key"], _num(filed["value"])))
+    return pd.DataFrame([{"scenario": "as is", "order": n, **row, "filed": filed.get(row["key"])}
+                         for n, row in enumerate(lines)], columns=DETAIL_COLUMNS)
 
 
 PLAN_COLUMNS = ["return", "person", "employer", "paychecks_left", "vest_rate", "projected", "target", "current_extra",

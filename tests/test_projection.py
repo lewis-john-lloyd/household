@@ -147,3 +147,45 @@ def test_a_limited_purpose_fsa_is_projected_against_the_health_fsa_limit():
     fsa = projection.elections(2026, pd.DataFrame(rows)).set_index("plan").loc["Limited-purpose FSA"]
     assert (fsa["person"], fsa["ytd"], fsa["projected"], fsa["limit"]) == ("alex", 50 * 24, 50 * 26, 3_400)
     assert fsa["status"] == "room left"
+
+
+def test_a_job_whose_stubs_stopped_and_a_year_that_is_over_are_not_projected():
+    left = stubs_through(10)  # alex's last paycheck from Acme: 2026-05-08
+    left["employer"] = "Acme Widgets"
+    stubs = pd.concat([left, stubs_through(24)], ignore_index=True)  # still paid by Acme through 2026-11-20
+    pos = projection.positions(stubs, 2026)
+    gone, going = pos[("alex", "Acme Widgets")], pos[("alex", "Acme")]
+    assert gone["paychecks_left"] == 0 and gone["wages"] == 10 * 4_500  # its year to date, nothing more
+    assert any("no pay stub since 2026-05-08" in n for n in gone["notes"])
+    assert going["paychecks_left"] == 3
+    # the year after: 2026 is over, so even the job still paying in November adds nothing
+    later = pd.DataFrame(regular("2027-01-08", "1"))
+    over = projection.positions(pd.concat([stubs, later], ignore_index=True), 2026)[("alex", "Acme")]
+    assert over["paychecks_left"] == 0 and over["wages"] == 24 * 4_500 and over["notes"] == []
+
+
+def facts_of(rows, year="2025"):
+    return pd.DataFrame([{"year": year, "kind": k, "key": key, "person": p, "value": str(v)}
+                         for k, key, p, v in rows])
+
+
+def test_a_filed_year_is_laid_out_from_its_own_figures_beside_every_filed_line():
+    rows = [("input", "wages", "alex", 90_000), ("input", "wages", "sam", 60_000),
+            ("input", "federal_withheld", "alex", 15_000), ("input", "federal_withheld", "sam", 8_000),
+            ("input", "taxable_interest", "", 20), ("input", "capital_gain_short", "", 1_000),
+            ("input", "wi_income", "", 75_510), ("input", "wi_exemptions", "", 2), ("input", "wi_withheld", "", 4_000),
+            ("input", "wi_earned_income", "alex", 50_000), ("input", "wi_earned_income", "sam", 25_000),
+            ("input", "pa_compensation", "", 50_000), ("input", "pa_withheld", "", 1_500)]
+    facts = facts_of(rows)
+    r = projection.tax.federal_return(projection.tax.inputs_from_facts(facts, 2025), 2025)
+    filed = [("filed", "11a", "", r["11a"]), ("filed", "24", "", r["24"]), ("filed", "wi1npr_32", "", 0.5),
+             ("filed", "pa40_12", "", 50)]  # the last one off
+    detail = projection.as_filed(2025, pd.concat([facts, facts_of(filed)], ignore_index=True))
+    assert list(dict.fromkeys(detail["form"])) == ["Form 1040", "Wisconsin Form 1NPR", "Pennsylvania PA-40"]
+    by = detail.set_index("key")
+    assert by.loc["1z", "value"] == 150_000 and by.loc["taxable_interest", "line"] == "2b"
+    assert by.loc["11a", "filed"] == by.loc["11a", "value"] and pd.isna(by.loc["1z", "filed"])
+    assert (by.loc["wi1npr_32", "value"], by.loc["wi1npr_32", "line"]) == (0.5, "32")
+    assert by.loc["pa40_12", "value"] == round(0.0307 * 50_000) != by.loc["pa40_12", "filed"]
+    assert detail["label"].iloc[-1] in ("Refund", "Amount owed") and set(detail["scenario"]) == {"as is"}
+    assert projection.has_return(facts, 2025) and not projection.has_return(facts, 2026)

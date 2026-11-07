@@ -427,17 +427,20 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             lines, notes, detail = projection.project(year, stubs, sales, facts)
             lines["year"], lines["run_id"] = year, run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)
-            # last year too while its stubs are here: the whole year from stubs, beside the filed return once it is in
+            # last year too: as filed once its return is in return_facts, until then the year its stubs show
             details = [detail.assign(year=year)]
             last = year - 1
-            if last in tax.taxdata.PARAMS and (stubs["pay_date"].astype(str).str[:4] == str(last)).any():
+            if last in tax.taxdata.PARAMS and projection.has_return(facts, last):
+                details.append(projection.as_filed(last, facts).assign(year=last))
+                filed_lines = details[-1][details[-1]["filed"].notna()]
+                off = filed_lines[(filed_lines["value"] - filed_lines["filed"]).abs() > 1]
+                _say(log, f"tax_lines: {last} as filed, {len(filed_lines)} lines beside the filed return, "
+                          f"{len(off)} off by more than 1")
+            elif last in tax.taxdata.PARAMS and (stubs["pay_date"].astype(str).str[:4] == str(last)).any():
                 details.append(projection.project(last, stubs, sales, facts)[2].assign(year=last))
+                _say(log, f"tax_lines: {last} from its pay stubs until its return's figures are in return_facts")
             every = pd.concat(details, ignore_index=True)
             sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_lines"), every.assign(run_id=run_id))
-            compared = every[every["filed"].notna()]
-            if len(compared):
-                off = compared[(compared["value"] - compared["filed"]).abs() > 1]
-                _say(log, f"tax_lines: {len(compared)} projected lines beside a filed return, {len(off)} off by more than 1")
             params = books["parameters"]
             setting = lambda key, default: float(categorize.household_parameter(params, key, default) or default)  # noqa: E731
             target, rate = setting("target_refund", 2000), setting("planned_supplemental_rate", 0.35)

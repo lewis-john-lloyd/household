@@ -121,6 +121,7 @@
       .attention .actions { margin-top: 16px; display: flex; gap: 8px; }
       .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
       .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
+      .stacked { display: flex; flex-direction: column; gap: 12px; }
       .panel { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; padding: 16px 20px 20px; }
       .panel h2 + .support { margin: 2px 0 16px; }
       .stack { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface-high); }
@@ -1723,8 +1724,10 @@
         head.appendChild(el("h2", "Taxes for " + taxYear));
         if (years.length > 1) head.appendChild(pill(years, taxYear, function (y) { taxYear = y; drawTaxes(); }, "Year"));
         body.appendChild(head);
+        var asFiled = !current && year.filed;
         body.appendChild(el("p", current ? "Projected from this year's pay stubs, vests and sales, and your estimates."
-          : "The whole year from its pay stubs" + (year.filed ? ", beside the return you filed." : "; the filed return appears beside it once its lines are in the ledger."),
+          : asFiled ? "As filed: each line computed from the W-2s and other figures on the return, beside the line you filed."
+          : "The whole year from its pay stubs; it is shown as filed once the return's figures are in the ledger.",
           "support"));
 
         var forms = year.forms;
@@ -1734,7 +1737,7 @@
           return last ? (last.label === "Refund" ? -last.value : last.value) : null;
         };
         var summary = el("div", null, "cards tax-summary");
-        [["Federal", bottom("Form 1040")], ["Wisconsin", bottom("Wisconsin Form 1")]].forEach(function (x) {
+        Object.keys(forms).map(function (form) { return [STATE_NAMES[form] || form, bottom(form)]; }).forEach(function (x) {
           if (x[1] === null) return;
           var card = el("article", null, "card total " + (x[1] > 0 ? "owe" : "refund"));
           card.appendChild(el("div", x[0], "support"));
@@ -1744,14 +1747,16 @@
         if (current && taxes.plan.length) summary.appendChild(planCard(taxes.plan));
         body.appendChild(summary);
 
+        // the federal return on the left, the state returns stacked on the right
         var two = el("div", null, "two");
-        ["Form 1040", "Wisconsin Form 1"].forEach(function (form) {
-          if (!forms[form]) return;
+        var states = el("div", null, "stacked");
+        Object.keys(forms).forEach(function (form) {
           var panel = el("section", null, "panel");
           panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
-          panel.appendChild(formTable(forms[form], year.filed));
-          two.appendChild(panel);
+          panel.appendChild(formTable(forms[form], year.filed, asFiled ? "Computed" : "From stubs"));
+          (form === "Form 1040" ? two : states).appendChild(panel);
         });
+        if (states.childNodes.length) two.appendChild(states);
         body.appendChild(two);
 
         var lower = el("div", null, "two");
@@ -1813,11 +1818,16 @@
         return card;
       }
 
-      function formTable(lines, withFiled) {
+      // the summary card's name for each form's bottom line
+      var STATE_NAMES = { "Form 1040": "Federal", "Wisconsin Form 1": "Wisconsin", "Wisconsin Form 1NPR": "Wisconsin",
+                          "Pennsylvania PA-40": "Pennsylvania" };
+      var RATIO_KEYS = ["wi1npr_32"];  // a share, not dollars
+
+      function formTable(lines, withFiled, computedHead) {
         var wrap = el("div", null, "scroll");
         var table = el("table", null, "form-lines");
         var head = el("tr");
-        ["Line", "", withFiled ? "From stubs" : "Amount"].concat(withFiled ? ["Filed", "Off by"] : []).forEach(function (h) { head.appendChild(el("th", h)); });
+        ["Line", "", withFiled ? computedHead : "Amount"].concat(withFiled ? ["Filed", "Off by"] : []).forEach(function (h) { head.appendChild(el("th", h)); });
         table.appendChild(el("thead")).appendChild(head);
         var tbody = el("tbody");
         lines.forEach(function (l) {
@@ -1825,11 +1835,15 @@
             /^(Total tax|Adjusted gross income|Taxable income|Refund|Amount owed|Net tax|Total payments)$/.test(l.label) ? "key-line" : "");
           cell(row, l.line, "line-no");
           cell(row, l.label, "text");
-          cell(row, cents.format(l.value));
+          var ratio = RATIO_KEYS.indexOf(l.key) >= 0;
+          var show = function (v) { return ratio ? (v * 100).toFixed(2) + "%" : cents.format(v); };
+          cell(row, show(l.value));
           if (withFiled) {
-            cell(row, l.filed === null ? "" : cents.format(l.filed));
-            var off = l.filed === null || Math.abs(l.value - l.filed) <= 1 ? "" : cents.format(l.value - l.filed);
-            cell(row, off, l.filed !== null && Math.abs(l.value - l.filed) > 1 ? "off" : "");
+            // a line with nothing filed comes back without a filed value (null or missing)
+            var has = typeof l.filed === "number" && isFinite(l.filed);
+            var isOff = has && Math.abs(l.value - l.filed) > (ratio ? 0.00005 : 1);
+            cell(row, has ? show(l.filed) : "");
+            cell(row, isOff ? show(l.value - l.filed) : "", isOff ? "off" : "");
           }
           tbody.appendChild(row);
         });

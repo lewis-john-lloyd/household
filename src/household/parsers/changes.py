@@ -19,6 +19,10 @@ row a person would otherwise have typed:
   item             one item's category, from an order  -> item_categories
                    history or receipt (the line it
                    explains splits by it)
+  job              a pay change: a raise, a new job,   -> comp_events
+                   a change of hours (FTE); a row for
+                   the same date, person and employer
+                   corrects the earlier one
 
 A change set fails closed: parse checks its shape and every value it can check alone (strict JSON,
 no unknown fields, sizes, enums, dates, regexes), and check then holds each edit against the ledger
@@ -72,6 +76,7 @@ KINDS = {
     "explanation": ({"jurisdiction", "stub_id", "note"}, set()),
     "not_duplicate": ({"txn_a", "txn_b"}, set()),
     "item": ({"item_id", "category"}, set()),
+    "job": ({"effective", "person", "employer"}, {"salary", "band", "rating", "fte", "note"}),
 }
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
@@ -239,6 +244,18 @@ def _values(kind, e):
             out.append("an explanation needs a note")
     if kind == "item" and not e["item_id"]:
         out.append("item_id is empty")
+    if kind == "job":
+        if not _date(e["effective"]):
+            out.append(f"effective {e['effective']!r} is not a date (YYYY-MM-DD)")
+        if not NAME_RE.match(e["person"]):
+            out.append(f"person {e['person']!r}: use the lower case name the pay stubs use")
+        if not e["employer"]:
+            out.append("employer is empty")
+        if e.get("salary", "") and not _number(e["salary"]):
+            out.append(f"salary {e['salary']!r} is not a number")
+        fte = e.get("fte", "")
+        if fte and (not _number(fte) or not 0 < float(fte) <= 1.5):
+            out.append(f"fte {fte!r} is not a share of full time (0.6 for 60%)")
     if kind == "not_duplicate" and e["txn_a"] == e["txn_b"]:
         out.append("a line is not a duplicate of itself")
     if kind in WAS_FIELDS and isinstance(e.get("was"), dict):
@@ -265,6 +282,8 @@ def _target(e):
         return ("line", e["txn_id"], field)
     if kind == "payee":
         return ("payee", categorize.payee_key(e["key"]) or e["key"].upper())
+    if kind == "job":
+        return ("job", e["person"], e["effective"], e["employer"])
     key = {"payee_rule": "pattern", "category": "category", "alias": "alias", "parameter": "key",
            "explanation": "stub_id", "item": "item_id"}[kind]
     extra = (e["jurisdiction"],) if kind == "explanation" else ()
@@ -355,6 +374,10 @@ def _describe(e):
         return f"{e['jurisdiction']} withholding on stub {e['stub_id']} explained"
     if kind == "item":
         return f"item {e['item_id']}: {e['category']}"
+    if kind == "job":
+        pay = f" at {e['salary']}" if e.get("salary") else ""
+        fte = f", {e['fte']} FTE" if e.get("fte") else ""
+        return f"job: {e['person']} at {e['employer']}{pay}{fte} from {e['effective']}"
     return f"{e['txn_a']} and {e['txn_b']} are not duplicates"
 
 
@@ -387,6 +410,9 @@ def _rows(edits, at):
                                "source": SOURCE})
         elif kind == "item":
             add("item_categories", {"item_id": e["item_id"], "category": e["category"], "recorded_at": at, "source": SOURCE})
+        elif kind == "job":
+            add("comp_events", {c: e.get(c, "").replace(",", "") if c == "salary" else e.get(c, "")
+                                for c in schema.table(schema.LEDGER, "comp_events").columns})
         elif kind == "explanation":
             add("proposal_decisions", {"proposal_key": f"{e['jurisdiction']}:{e['stub_id']}", "kind": "withholding",
                                        "decided_at": at, "decision": "approve", "note": e["note"]})
@@ -497,6 +523,12 @@ def check(edits, read):
                 wrong.append("no such item")
             elif category not in known:
                 wrong.append(f"not a category: {category}")
+        elif kind == "job":
+            jobs = read("comp_events")
+            people = set(stubs["person"].astype(str)) if len(stubs) else set()
+            people |= set(jobs["person"].astype(str)) if len(jobs) else set()
+            if e["person"] not in people:
+                wrong.append(f"no pay stubs or jobs for {e['person']}")
         elif kind in ("payee", "alias") and category not in known:
             wrong.append(f"not a category: {category}")
         elif kind in ("budget_line", "payee_rule") and category and category not in known:

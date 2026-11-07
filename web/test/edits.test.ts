@@ -162,3 +162,19 @@ test("a discarded change set the ledger holds was applied anyway, whichever run 
   assert.deepEqual(out.map((d) => [d.id, d.writtenAt, d.edits]), [["e5", "2026-01-31T12:00:00+00:00", ["payee ACME GROCER: food"]]]);
   assert.deepEqual(edits.appliedAnyway(discarded, []), []);
 });
+
+test("the Jobs editor reads comp_events and only the runs of paychecks that disagree; a job edit is one change", () => {
+  const data = edits.editorData({
+    run_log: RUN_LOG,
+    editor_jobs: [["effective", "person", "employer", "salary", "fte", "stubs", "run_id"], ["2026-01-01", "alex", "Acme", "70000", "", "agrees", "r3"]],
+    pay_check: [["person", "employer", "from", "status", "run_id"], ["alex", "Acme Widgets", "2026-01-04", "agrees", "r3"],
+                ["alex", "Acme Widgets", "2026-04-26", "disagrees", "r3"]],
+  });
+  assert.deepEqual(data.jobs.map((j) => [j.effective, j.stubs]), [["2026-01-01", "agrees"]]);
+  assert.deepEqual(data.payCheck.map((r) => r.from), ["2026-04-26"]);
+  const job = { kind: "job", effective: "2026-04-26", person: "alex", employer: "Acme", salary: "72000", fte: "0.6" };
+  assert.deepEqual(edits.editProblems(job), []);
+  assert.deepEqual(edits.editProblems({ kind: "job", effective: "2026-04-26", person: "alex" }), ["missing employer"]);
+  assert.equal(edits.editTarget(job), edits.editTarget({ ...job, salary: "73000" }));
+  assert.notEqual(edits.editTarget(job), edits.editTarget({ ...job, effective: "2026-05-10" }));
+});

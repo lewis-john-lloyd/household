@@ -160,6 +160,13 @@ REPORTS = (
     Table("editor_parameters", ("key", "value", "source", "about", "run_id")),
     Table("editor_review", ("key", "guess", "lines", "total", "example", "first", "last", "accounts", "guessed_by",
                             "confidence", "kind", "note", "run_id")),
+    # the pay history (comp_events) for the Jobs editor, each row with how the stubs since it compare
+    Table("editor_jobs", ("effective", "person", "employer", "salary", "band", "rating", "fte", "note", "stubs",
+                          "run_id")),
+    # paychecks beside comp_events (paycheck.py): runs that agree, disagree or have no row in force
+    Table("pay_check", ("person", "employer", "kind", "from", "to", "paychecks", "stubs_annual", "comp_effective",
+                        "comp_employer", "comp_salary", "comp_fte", "comp_annual", "off", "status", "finding",
+                        "run_id")),
     Table("possible_duplicates", ("account_id", "amount", "txn_a", "date_a", "payee_a", "doc_a",
                                   "txn_b", "date_b", "payee_b", "doc_b", "run_id")),
 )

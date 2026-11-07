@@ -412,6 +412,7 @@
         <button data-tab="categories" aria-pressed="false">Categories</button>
         <button data-tab="settings" aria-pressed="false">Settings</button>
         <button data-tab="withholding" aria-pressed="false">Withholding</button>
+        <button data-tab="jobs" aria-pressed="false">Jobs</button>
         <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
         <button data-tab="waiting" aria-pressed="false">Saved</button>
       </div>
@@ -694,6 +695,7 @@
           case "explanation": return "explanation|" + e.jurisdiction + "|" + e.stub_id;
           case "not_duplicate": return "not_duplicate|" + [e.txn_a, e.txn_b].sort().join("|");
           case "item": return "item|" + e.item_id;
+          case "job": return "job|" + e.person + "|" + e.effective + "|" + e.employer;
         }
         return e.kind + "|" + JSON.stringify(e);
       }
@@ -992,7 +994,7 @@
           return;
         }
         ({ review: drawReview, budget: drawBudgetLines, rules: drawRules, categories: drawCategories, settings: drawSettings,
-           withholding: drawWithholding, duplicates: drawDuplicates })[editTab](body);
+           withholding: drawWithholding, jobs: drawJobs, duplicates: drawDuplicates })[editTab](body);
       }
 
       // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
@@ -1150,6 +1152,41 @@
           stage(e, "alias " + e.alias + " counts as " + e.category);
           done();
         }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
+      }
+
+      // A pay change for comp_events: a raise, a new job or a change of hours. j holds what to start from (a row
+      // to correct, or what the paychecks suggest); a row for the same date, person and employer corrects it.
+      function jobForm(j, done, label) {
+        var form = el("form", null, "edit");
+        j = j || {};
+        var people = Array.from(new Set(editor.jobs.map(function (r) { return r.person; }))).sort();
+        var effective = field(form, "From", dateInput(j.effective || today()));
+        var person = field(form, "Person", people.length ? choice(people, j.person || people[0]) : textInput(j.person || ""));
+        var employer = field(form, "Employer", textInput(j.employer || "", "", "the name comp_events uses"));
+        var salary = field(form, "Salary, full time, a year", textInput(j.salary || "", "", "70000"));
+        var fte = field(form, "Share of full time", textInput(j.fte || "", "", "blank for full time, 0.6 for 60%"));
+        var band = field(form, "Band", textInput(j.band || ""));
+        var rating = field(form, "Rating", textInput(j.rating || ""));
+        var note = field(form, "Note", textInput(j.note || "", "wide"));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button(label || "Keep this change", function () {
+          var e = { kind: "job", effective: effective.value, person: person.value.trim(), employer: employer.value.trim(),
+                    salary: salary.value.replace(/,/g, "").trim(), fte: fte.value.trim(), band: band.value.trim(),
+                    rating: rating.value.trim(), note: note.value.trim() };
+          ["salary", "fte", "band", "rating", "note"].forEach(function (f) { if (!e[f]) delete e[f]; });
+          if (!isDate(e.effective)) { error.textContent = "Give the date the change took effect."; return; }
+          if (!/^[a-z][a-z0-9_]*$/.test(e.person)) { error.textContent = "Use the lower case name the pay stubs use."; return; }
+          if (!e.employer) { error.textContent = "Name the employer."; return; }
+          if (e.salary && !isAmount(e.salary)) { error.textContent = "The salary is a number a year."; return; }
+          if (e.fte && !(Number(e.fte) > 0 && Number(e.fte) <= 1.5)) { error.textContent = "Share of full time is like 0.6 for 60%."; return; }
+          stage(e, "job: " + e.person + " at " + e.employer + (e.salary ? " at " + e.salary : "") +
+                (e.fte ? ", " + e.fte + " FTE" : "") + " from " + e.effective);
+          done();
+        }, "filled"));
         form.appendChild(actions);
         form.appendChild(error);
         return form;
@@ -1633,6 +1670,55 @@
             form.appendChild(actions);
             form.appendChild(error);
             panel.appendChild(form);
+          },
+        });
+      }
+
+      // Jobs: the pay history in comp_events, with the runs of paychecks that disagree with it on top. A run that
+      // disagrees offers the row the paychecks suggest: the date its first period began, its pay on a yearly
+      // footing, the employer of the row in force.
+      function drawJobs(body) {
+        var items = editor.payCheck.map(function (r) { return { kind: "pay", row: r }; })
+          .concat(editor.jobs.map(function (r) { return { kind: "job", row: r }; }));
+        var money = function (v) { return v === "" || v === undefined ? "" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }); };
+        masterDetail(body, {
+          items: items, noun: "jobs and pay changes",
+          key: function (i) { return i.kind + "|" + i.row.person + "|" + (i.kind === "pay" ? i.row.employer + "|" + i.row.from : i.row.effective + "|" + i.row.employer); },
+          title: function (i) {
+            return i.kind === "pay" ? i.row.person + ", " + i.row.from + " to " + i.row.to : i.row.effective + ", " + i.row.employer;
+          },
+          sub: function (i) {
+            if (i.kind === "pay") return i.row.employer + ": paid " + money(i.row.stubs_annual) + " a year" +
+              (i.row.comp_annual ? ", comp_events says " + money(i.row.comp_annual) : ", no job in force");
+            var pay = i.row.salary ? money(i.row.salary) + (i.row.fte && Number(i.row.fte) !== 1 ? " at " + i.row.fte + " FTE" : "") : "";
+            return [pay, i.row.stubs === "agrees" ? "paychecks agree" : i.row.stubs ? "paychecks disagree" : ""].filter(Boolean).join(", ");
+          },
+          section: function (i) { return i.kind === "pay" ? "Paychecks that disagree" : "Jobs: " + i.row.person; },
+          staged: function (i) { return i.kind === "job" ? stagedText("job|" + i.row.person + "|" + i.row.effective + "|" + i.row.employer) : ""; },
+          empty: "Every raise, new job and change of hours, which the tax projection and the pay check read. " +
+                 "Choose a run of paychecks to record the change it shows, or a job to correct it.",
+          add: [{ label: "New pay change", form: function (panel, done) { panel.appendChild(jobForm(null, done, "Add pay change")); } }],
+          detail: function (i, panel, done) {
+            if (i.kind === "pay") {
+              var r = i.row;
+              facts(panel, [["Employer on the stubs", r.employer], ["Paychecks", r.paychecks + " (" + (r.kind === "salary" ? "the same pay each" : "hours vary: their median") + ")"],
+                            ["Paid, a year", money(r.stubs_annual)],
+                            ["Job in force", r.comp_effective ? r.comp_effective + ", " + r.comp_employer : "none"],
+                            ["Its pay, a year", money(r.comp_annual)], ["The check says", r.finding]]);
+              section(panel, "Record the change", "Filled in from the paychecks. For a change of hours, give the full-time salary and the share of full time.");
+              // well under the job's salary reads as fewer hours: keep the salary and suggest the share of full time
+              var full = Number(r.comp_salary), paid = Number(r.stubs_annual);
+              var fewer = full > 0 && paid < 0.9 * full;
+              panel.appendChild(jobForm({ effective: r.from, person: r.person, employer: r.comp_employer || r.employer,
+                                          salary: String(Math.round(fewer ? full : paid)),
+                                          fte: fewer ? String(Math.round(paid / full * 100) / 100) : "" }, done, "Add pay change"));
+            } else {
+              var j = i.row;
+              facts(panel, [["Person", j.person], ["Salary, a year", money(j.salary)], ["Share of full time", j.fte],
+                            ["Band", j.band], ["Rating", j.rating], ["Note", j.note], ["Paychecks", j.stubs]]);
+              section(panel, "Correct it", "A row with the same date, person and employer replaces this one.");
+              panel.appendChild(jobForm(j, done));
+            }
           },
         });
       }

@@ -171,7 +171,7 @@ function keepSaved_(id: string, record: string): void {
 function getEditor(): EditorData {
   const names = ["run_log", "editor_budget_lines", "editor_scheduled", "editor_payee_rules", "editor_categories", "editor_aliases",
                  "editor_parameters", "editor_review", "possible_duplicates", "withholding_backtest",
-                 "wi_withholding_backtest"];
+                 "wi_withholding_backtest", "editor_jobs", "pay_check"];
   const tabs: Record<string, unknown[][]> = {};
   for (const name of names) tabs[name] = readTabIfAny_(name);
   const data = editorData(tabs);

@@ -371,6 +371,7 @@ const CHECKS: [string, string, string, string][] = [
   ["pay_not_deposited", "pay stubs have no deposit", "paychecks:", ""],
   ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
   ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
+  ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "jobs"],
   ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
   ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
   ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],

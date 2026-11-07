@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage,
+from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage, paycheck,
                nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxsources, transfers,
                wisconsin, withholding)
 
@@ -392,6 +392,16 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
               "record store")
 
     stubs = sheets.read_table(ledger, schema.table(schema.LEDGER, "paystubs"))
+    jobs = sheets.read_table(ledger, schema.table(schema.LEDGER, "comp_events"))
+    pay = paycheck.check(stubs, jobs)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "pay_check"), pay.assign(run_id=run_id))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "editor_jobs"),
+                         paycheck.jobs(jobs, pay).assign(run_id=run_id))
+    wrong_pay = pay[pay["status"] != "agrees"]
+    result["pay_mismatches"] = len(wrong_pay)
+    _say(log, f"pay_check: {len(pay)} runs of paychecks beside comp_events, {len(wrong_pay)} disagree")
+    for row in wrong_pay.to_dict("records"):
+        _say(log, f"  {row['person']} at {row['employer']}: {row['finding']}")
     tax_plan = tax_elections = None  # this year's, for the weekly email
     if not stubs.empty:
         backtest = withholding.backtest(stubs, withholding.explained_by_people(decisions, "federal"))
@@ -423,7 +433,6 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
         year = int(stubs["pay_date"].astype(str).max()[:4])
         sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))
-        jobs = sheets.read_table(ledger, schema.table(schema.LEDGER, "comp_events"))
         if year in tax.taxdata.PARAMS:
             lines, notes, detail = projection.project(year, stubs, sales, facts, jobs)
             lines["year"], lines["run_id"] = year, run_id

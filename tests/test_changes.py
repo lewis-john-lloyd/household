@@ -445,3 +445,20 @@ def test_a_ledger_write_that_fails_leaves_nothing_and_the_next_ingest_writes_the
     assert rows(ledger, "parameters")["value"].tolist() == ["checking", "savings"]
     written = engine.changes_written(rows(ledger, "source_documents"))
     assert written[["file_id", "file"]].values.tolist() == [[fid, "changes_2026-01-31T120000.000Z_e5.json"]]
+
+
+def test_a_job_becomes_a_comp_events_row_and_is_checked():
+    job = {"kind": "job", "effective": "2026-03-08", "person": "alex", "employer": "Acme Widgets",
+           "salary": "90,000", "fte": "0.6", "note": "from the stubs"}
+    result = changes.parse(doc(job))
+    result.check(ledger_reader(**LEDGER))
+    assert result.tables["comp_events"].values.tolist() == [
+        ["2026-03-08", "alex", "Acme Widgets", "90000", "", "", "0.6", "from the stubs"]]
+    assert "job: alex at Acme Widgets at 90,000, 0.6 FTE from 2026-03-08" in result.notes
+    why = refused(doc({**job, "effective": "March", "fte": "60", "salary": "lots", "person": "Alex"}))
+    for reason in ("effective 'March' is not a date", "person 'Alex'", "salary 'lots' is not a number",
+                   "fte '60' is not a share of full time"):
+        assert reason in why
+    assert "no pay stubs or jobs for sam" in refused(doc({**job, "person": "sam"}))
+    # two edits for one person, date and employer are one change made twice
+    assert "edits the same thing as edit 1" in refused(doc(job, {**job, "salary": "95000"}))

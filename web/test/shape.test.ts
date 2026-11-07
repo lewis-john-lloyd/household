@@ -249,8 +249,25 @@ test("the flow summary sorts nodes into where money came from, taxes, where it w
     node("gross pay (alex)", 0, 5000), node("from savings: brokerage", 0, 900), node("net pay", 3500, 3500),
     node("accounts", 4400, 4400), node("federal tax", 800, 0), node("pre-tax: 401k", 700, 0), node("food", 600, 0),
     node("to cash balances", 1200, 0), node("kids", 2600, 0)]);
-  assert.deepEqual(s.came.map((i) => i.name), ["gross pay (alex)", "from savings: brokerage"]);
+  assert.deepEqual(s.income.map((i) => i.name), ["gross pay (alex)"]);
+  assert.deepEqual(s.other.map((i) => i.name), ["from savings: brokerage"]);
   assert.deepEqual(s.taxes.map((i) => [i.name, i.amount]), [["federal tax", 800], ["pre-tax: 401k", 700]]);
   assert.deepEqual(s.went.map((i) => i.name), ["kids", "to cash balances", "food"]);
   assert.deepEqual(s.through.map((i) => [i.name, i.amount]), [["accounts", 4400], ["net pay", 3500]]);
+});
+
+test("shares sold count only their gain or loss as income; the proceeds and money back are other money in", () => {
+  const node = (name: string, into: number, out: number): NodeTotal => ({ name, into, out, total: Math.max(into, out) });
+  const s = shape.flowSummary([
+    node("gross pay (alex)", 0, 5000), node("from savings: stock_sales", 0, 900), node("capital gains", 0, 25),
+    node("capital gains (to savings)", 25, 0), node("food (money back)", 0, 30), node("from cash balances", 0, 70),
+    node("accounts", 6000, 6000), node("food", 6000, 0)]);
+  assert.deepEqual(s.income.map((i) => [i.name, i.amount]), [["gross pay (alex)", 5000], ["capital gains", 25]]);
+  assert.deepEqual(s.other.map((i) => i.name), ["from savings: stock_sales", "from cash balances", "food (money back)"]);
+  assert.ok(s.went.some((i) => i.name === "capital gains (to savings)"));
+  const lost = shape.flowSummary([node("gross pay (alex)", 0, 5000), node("from savings: capital losses", 0, 15),
+                                  node("capital losses", 15, 0)]);
+  assert.deepEqual(lost.income.map((i) => [i.name, i.amount]), [["gross pay (alex)", 5000], ["capital losses", -15]]);
+  assert.deepEqual(lost.other, []);
+  assert.deepEqual(lost.went, []);
 });

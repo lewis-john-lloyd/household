@@ -547,7 +547,10 @@ function findLine(values: unknown[][], id: string): Line | null {
 
 /**
  * The flow chart's nodes by what they are to the household, for the summary beside the chart:
- *   came     where money came from: pay, money back, shares sold, cash already in the accounts
+ *   income   what was earned: pay (vested shares at their value included), other income, and the net gain on
+ *            shares sold, or the net loss as a negative line
+ *   other    money in that wasn't earned: shares sold and other money drawn from savings (their value came in
+ *            as income when they vested), money back, cash already in the accounts
  *   taxes    taxes and the deductions taken from pay
  *   went     where it ended up: each category, savings, the shares that vested, cash left in the accounts
  *   through  the stops on the way (net pay, accounts), each with the amount that passed through
@@ -559,7 +562,8 @@ interface FlowItem {
 }
 
 interface FlowSummary {
-  came: FlowItem[];
+  income: FlowItem[];
+  other: FlowItem[];
   taxes: FlowItem[];
   went: FlowItem[];
   through: FlowItem[];
@@ -567,20 +571,30 @@ interface FlowSummary {
 
 const TAX_NODES = ["federal tax", "state tax", "social security", "medicare", "taxes", "pre-tax deductions",
                    "post-tax deductions"];
+const FROM_SAVINGS = "from savings";
+const LOSSES = "capital losses";
 
 function isTaxOrDeduction(name: string): boolean {
   return TAX_NODES.indexOf(name) >= 0 || name.indexOf("pre-tax: ") === 0 || name.indexOf("post-tax: ") === 0;
 }
 
+function notEarned(name: string): boolean {
+  return name === FROM_SAVINGS || name.indexOf(FROM_SAVINGS + ": ") === 0 || name === "money back"
+    || / \(money back\)$/.test(name) || name === "from cash balances";
+}
+
 function flowSummary(totals: NodeTotal[]): FlowSummary {
-  const out: FlowSummary = { came: [], taxes: [], went: [], through: [] };
+  const out: FlowSummary = { income: [], other: [], taxes: [], went: [], through: [] };
   for (const t of totals) {
-    if (t.into > 0 && t.out > 0) out.through.push({ name: t.name, amount: roundCents(Math.max(t.into, t.out)) });
-    else if (t.out > 0) out.came.push({ name: t.name, amount: roundCents(t.out) });
+    if (t.name === LOSSES) out.income.push({ name: t.name, amount: -roundCents(t.into) });  // what sales lost
+    else if (t.name === FROM_SAVINGS + ": " + LOSSES) continue;  // the shares' value the loss took, not money in
+    else if (t.into > 0 && t.out > 0) out.through.push({ name: t.name, amount: roundCents(Math.max(t.into, t.out)) });
+    else if (t.out > 0) (notEarned(t.name) ? out.other : out.income).push({ name: t.name, amount: roundCents(t.out) });
     else if (t.into > 0) (isTaxOrDeduction(t.name) ? out.taxes : out.went).push({ name: t.name, amount: roundCents(t.into) });
   }
   const biggest = (a: FlowItem, b: FlowItem): number => b.amount - a.amount || a.name.localeCompare(b.name);
-  out.came.sort(biggest);
+  out.income.sort(biggest);
+  out.other.sort(biggest);
   out.taxes.sort(biggest);
   out.went.sort(biggest);
   out.through.sort(biggest);

@@ -174,3 +174,31 @@ def test_vested_shares_go_to_savings_not_a_deduction():
     assert e[("gross pay (alex)", "net pay")] == 4000.0
     g = edges(flows.build(pd.DataFrame(vest), txns, CATEGORIES), "2026-03", "group")
     assert g[("gross pay (alex)", "savings")] == 7000.0
+
+
+def test_a_share_sale_adds_only_its_gain_or_loss_and_the_proceeds_come_from_savings():
+    cats = pd.concat([CATEGORIES, pd.DataFrame([{"category": "stock_sales", "group": "savings"}])])
+    # proceeds reach the bank a month after the sales: the gain stays in the month of the sale
+    txns = frame([txn(1, "2026-06-02", -40.0, "food"), txn(2, "2026-07-01", 900.0, "stock_sales")])
+    sales = pd.DataFrame([
+        {"sale_date": "2026-06-29", "grant_id": "g1", "proceeds": "500", "basis": "520", "gain": "-20"},
+        {"sale_date": "2026-06-29", "grant_id": "g2", "proceeds": "400", "basis": "395", "gain": "5"},
+        {"sale_date": "2026-05-20", "grant_id": "g1", "proceeds": "60", "basis": "50", "gain": "10"},  # no ledger month
+        {"sale_date": "2025-12-30", "grant_id": "g1", "proceeds": "60", "basis": "50", "gain": "10"},  # no ledger year
+    ])
+    out = flows.build(pd.DataFrame(), txns, cats, sales)
+    june, july, year = edges(out, "2026-06"), edges(out, "2026-07"), edges(out, "2026")
+    assert june[("from savings: capital losses", "capital losses")] == 15.0  # -20 + 5, net
+    assert ("capital gains", "capital gains (to savings)") not in june
+    assert july[("from savings: stock_sales", "accounts")] == 900.0       # the cash, drawn from savings
+    assert year[("from savings: capital losses", "capital losses")] == 5.0  # -20 + 5 + 10 (May), net for the year
+    # neither touches the accounts, so each period still balances to the cent
+    for period in ("2026-06", "2026-07", "2026"):
+        e = edges(out, period)
+        assert round(sum(a for (s, t), a in e.items() if t == "accounts"), 2) == \
+            round(sum(a for (s, t), a in e.items() if s == "accounts"), 2)
+    group = edges(out, "2026-06", "group")
+    assert group[("from savings", "capital losses")] == 15.0
+    gains = flows.build(pd.DataFrame(), txns, cats, sales.assign(gain=["20", "5", "0", "0"]))
+    assert edges(gains, "2026-06")[("capital gains", "capital gains (to savings)")] == 25.0
+    assert edges(gains, "2026-06", "group")[("capital gains", "savings")] == 25.0

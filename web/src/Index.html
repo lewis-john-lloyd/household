@@ -494,7 +494,8 @@
         var box = document.getElementById("flow-summary");
         box.textContent = "";
         var sum = function (items) { return items.reduce(function (a, i) { return a + i.amount; }, 0); };
-        [["Came in", s.came, "came"], ["Taxes and deductions", s.taxes, "taxes"], ["Went to", s.went, "went"]].forEach(function (c) {
+        [["Income", s.income, "came"], ["Other money in", s.other, "came"], ["Taxes and deductions", s.taxes, "taxes"],
+         ["Went to", s.went, "went"]].forEach(function (c) {
           if (!c[1].length) return;
           var panel = el("section", null, "panel flow-column " + c[2]);
           var head = el("div", null, "flow-head");
@@ -511,10 +512,12 @@
             li.appendChild(label);
             var bar = el("div", null, "flow-bar");
             var fill = el("span");
-            fill.style.width = (100 * i.amount / (c[1][0].amount || 1)) + "%";
+            var widest = Math.max.apply(null, c[1].map(function (x) { return Math.abs(x.amount); }));
+            fill.style.width = (100 * Math.max(i.amount, 0) / (widest || 1)) + "%";  // a loss has no bar
             bar.appendChild(fill);
             li.appendChild(bar);
-            li.title = i.name + ": " + money.format(i.amount) + ", " + Math.round(100 * i.amount / (total || 1)) + "% of " + c[0].toLowerCase();
+            li.title = i.name + ": " + money.format(i.amount) + (i.amount > 0 && total > 0
+              ? ", " + Math.round(100 * i.amount / total) + "% of " + c[0].toLowerCase() : "");
             list.appendChild(li);
           });
           panel.appendChild(list);

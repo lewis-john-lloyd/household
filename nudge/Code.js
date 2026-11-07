@@ -192,6 +192,13 @@ function listInbox_(folderId) {
   return out;
 }
 
+/** What to check, given why a call failed: a service missing from the manifest, or else the settings. */
+function hint_(e, otherwise) {
+  const missing = /ReferenceError: (Sheets|Drive) is not defined/.exec(String(e));
+  return missing ? "The " + missing[1] + " service isn't turned on: push the repo's appsscript.json (clasp push)."
+                 : otherwise;
+}
+
 /** This week's email: {subject, text, html}, or null when nothing needs doing. */
 function weeklyEmail_(today) {
   const items = [];
@@ -200,7 +207,7 @@ function weeklyEmail_(today) {
     tabs = readTabs_(["nudges", "run_log"]);
   } catch (e) {
     return compose([{ group: "Check the weekly email", item: "Reports couldn't be read",
-                      detail: String(e) + ". Check REPORTS_ID in the script's settings.", link: "" }], today);
+                      detail: String(e) + ". " + hint_(e, "Check REPORTS_ID in the script's settings."), link: "" }], today);
   }
   reportItems(tabs.nudges, today).forEach((i) => items.push(i));
   behindItems(tabs.run_log, today).forEach((i) => items.push(i));
@@ -209,7 +216,8 @@ function weeklyEmail_(today) {
     try {
       inboxItems(listInbox_(inbox), tabs.run_log, today).forEach((i) => items.push(i));
     } catch (e) {
-      items.push({ group: "Check the weekly email", item: "The inbox couldn't be listed", detail: String(e), link: "" });
+      items.push({ group: "Check the weekly email", item: "The inbox couldn't be listed",
+                   detail: String(e) + hint_(e, "").replace(/^(?=.)/, ". "), link: "" });
     }
   }
   return compose(items, today);

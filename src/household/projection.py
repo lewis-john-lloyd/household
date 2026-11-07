@@ -31,8 +31,8 @@ return_lines lays both returns out line by line (Form 1040 and Wisconsin Form 1)
 so the tax page shows the whole return. A year whose return is filed is laid out
 by as_filed instead, from the return's own inputs, beside the filed lines.
 
-A job is projected only while it is still paying: not in a year that is over, and
-not once its stubs stop (more than five weeks behind the latest stub).
+A job is projected to December 31 until comp_events records the person's next job
+(job_ends), and nothing is projected in a year that is over.
 
 withholding_plan says what withholding lands the year on a refund of the target,
 on no balance, and on owing the target: future vests withheld at a planned
@@ -41,6 +41,7 @@ additional amount for Wisconsin) on the paychecks of the person and employer wit
 the most left.
 """
 
+import re
 from datetime import date, timedelta
 
 import pandas as pd
@@ -122,9 +123,10 @@ def _add_medicare(out, wages, year):
     out["medicare_wages"] += wages
 
 
-def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=False):
+def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=False, ends=None):
     """Year to date and the rest of the year for one person at one employer. ended: the employer pays no
-    more this year (the year is over, or its stubs stopped), so the year is its year to date."""
+    more this year (the year is over), so the year is its year to date; ends: the date the job ends
+    (job_ends), so no paycheck or vest on or after it is projected."""
     rows = rows[rows["pay_date"].astype(str).str[:4] == str(year)]
     bt = backtest[backtest["pay_date"].str[:4] == str(year)]
     wi_bt = (wi_backtest if wi_backtest is not None else wisconsin.backtest(rows))
@@ -161,7 +163,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     adjustment = overrides.get("step4c", last["residual"])
     out["extra_withholding"] = float(adjustment)
     medicare_base = _current(stub, "tax", contains=MEDICARE) / _medicare_rate(out["medicare_wages"], year)
-    dates = remaining_pay_dates(last["pay_date"], year)
+    dates = [d for d in remaining_pay_dates(last["pay_date"], year) if ends is None or d < ends]
     done = len(regular["pay_date"].unique())
     for n, _ in enumerate(dates, start=done + 1):
         full = n > FULL_YEAR_PAYCHECKS
@@ -192,7 +194,10 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     by_day = recent.groupby("pay_date")["base"].sum()
     vest_days = by_day[by_day > 1_000]
     if len(vest_days) >= 2:
-        months_left = 12 - int(vest_days.index.max()[5:7])
+        latest_vest = date.fromisoformat(vest_days.index.max()[:10])
+        # a vest on the same day of each month after the latest, before the job ends
+        months_left = sum(1 for m in range(latest_vest.month + 1, 13)
+                          if ends is None or date(year, m, min(latest_vest.day, 28)) < ends)
         amount = float(vest_days.mean()) * overrides.get("stock_price", 1.0)
         rate = overrides.get("supplemental_rate",
                              float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
@@ -232,14 +237,38 @@ def break_even_extra(pos, owe):
     return round(max(v["extra_withholding"] + owe / v["paychecks_left"], 0.0), 2)
 
 
-ENDED_AFTER = timedelta(days=35)  # more than two paychecks missed: the job has ended
+def _same_employer(a, b):
+    """Whether two names are one employer: one's first word is a word of the other ("Acme" and "ACME
+    WIDGETS, LLC")."""
+    words = lambda name: re.sub(r"[^a-z0-9 ]", " ", str(name).lower()).split()  # noqa: E731
+    wa, wb = words(a), words(b)
+    return bool(wa and wb) and (wa[0] in wb or wb[0] in wa)
 
 
-def positions(paystubs, year, overrides=None):
+def job_ends(comp_events, person, employer, first, last):
+    """The date a person's job at an employer ends, from comp_events, or None while it goes on.
+
+    A job goes on until the person's next job change: its stint starts at the latest comp_events row for
+    this employer on or before its last stub (or at its first stub this year, when no row names it), and
+    ends at the first row after that start for another employer. A raise at the same employer ends nothing.
+    """
+    if comp_events is None or comp_events.empty:
+        return None
+    mine = comp_events[comp_events["person"].astype(str) == str(person)].copy()
+    mine["effective"] = mine["effective"].astype(str).str[:10]
+    mine = mine[mine["effective"].str.match(r"\d{4}-\d{2}-\d{2}$")].sort_values("effective")
+    here = mine["employer"].map(lambda e: _same_employer(e, employer))
+    starts = mine[here & (mine["effective"] <= last.isoformat())]["effective"]
+    start = starts.iloc[-1] if len(starts) else first.isoformat()
+    after = mine[~here & (mine["effective"] > start)]
+    return date.fromisoformat(after["effective"].iloc[0]) if len(after) else None
+
+
+def positions(paystubs, year, overrides=None, comp_events=None):
     """employer_position for every person and employer with stubs this year.
 
-    Only a job still paying is projected to December 31: none in a year before the latest stub's (that
-    year is over), and none whose latest stub is more than ENDED_AFTER older than the latest of all.
+    A job is projected to December 31 until comp_events says the person changed jobs (job_ends), and
+    none in a year before the latest stub's (that year is over).
     """
     backtest = withholding.backtest(paystubs)
     wi_backtest = wisconsin.backtest(paystubs)
@@ -248,19 +277,20 @@ def positions(paystubs, year, overrides=None):
     out = {}
     for (person, employer), rows in year_rows.groupby(["person", "employer"]):
         mine = lambda b: b[(b["person"] == person) & (b["employer"] == employer)]  # noqa: E731
-        last = date.fromisoformat(str(rows["pay_date"].astype(str).max())[:10])
-        stopped = latest - last > ENDED_AFTER
+        paid = rows["pay_date"].astype(str).str[:10]
+        first, last = date.fromisoformat(paid.min()), date.fromisoformat(paid.max())
+        ends = job_ends(comp_events, person, employer, first, last)
         out[(person, employer)] = employer_position(rows, mine(backtest), year, overrides or {},
-                                                    mine(wi_backtest), ended=year < latest.year or stopped)
-        if stopped and year == latest.year:
-            out[(person, employer)]["notes"].append(f"no pay stub since {last.isoformat()}: taken as no "
-                                                    "longer paying, so nothing more this year")
+                                                    mine(wi_backtest), ended=year < latest.year, ends=ends)
+        if ends is not None and year == latest.year:
+            out[(person, employer)]["notes"].append(f"ends {ends.isoformat()} (a new job in comp_events): "
+                                                    "nothing projected from then")
     return out
 
 
-def inputs_for(year, paystubs, sales, facts, overrides=None):
+def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None):
     """federal_return inputs for the year: stubs plus projection, equity sales, estimates."""
-    pos = positions(paystubs, year, overrides)
+    pos = positions(paystubs, year, overrides, comp_events)
     sales = sales[sales["sale_date"].astype(str).str[:4] == str(year)] if not sales.empty else sales
     gain = _num(sales["gain"]) if not sales.empty else pd.Series(dtype=float)
     term = sales["term"] if not sales.empty else pd.Series(dtype=str)
@@ -283,7 +313,7 @@ def inputs_for(year, paystubs, sales, facts, overrides=None):
     return i, pos
 
 
-def project(year, paystubs, sales, facts):
+def project(year, paystubs, sales, facts, comp_events=None):
     """Projected lines per scenario, plus the safe-harbor target from last year's return.
 
     Returns (summary, notes, detail): one summary row per scenario, the notes, and every line of both
@@ -300,7 +330,7 @@ def project(year, paystubs, sales, facts):
               if "24" in prior_lines else None)
     notes = []
     for name, overrides in SCENARIOS.items():
-        i, pos = inputs_for(year, paystubs, sales, facts, overrides)
+        i, pos = inputs_for(year, paystubs, sales, facts, overrides, comp_events)
         r = tax.federal_return(i, year)
         w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
         if name == "as is":
@@ -467,13 +497,13 @@ def _harbor(year, facts):
     return tax.safe_harbor(lines["24"], lines.get("11a", 0)) if "24" in lines else None
 
 
-def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35):
+def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35, comp_events=None):
     """For each return, the extra per paycheck that lands the year on a refund of target, on no balance, and
     on owing target, from the year so far plus the projection with future vests withheld at
     supplemental_rate. projected and lands_at: refund positive, owed negative. The change goes on the
     paychecks of the person and employer with the most left (W-4 Step 4(c); WT-4's additional amount). A
     federal balance owed says whether it escapes the underpayment penalty (tax.penalty_free)."""
-    i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate})
+    i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate}, comp_events)
     r = tax.federal_return(i, year)
     w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
     left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]
@@ -518,7 +548,7 @@ HEALTH_FSA_PLAN = "Limited-purpose FSA"
 BACKDOOR_ROTH = "Backdoor Roth IRA"
 
 
-def elections(year, paystubs, after_tax_converts=False):
+def elections(year, paystubs, after_tax_converts=False, comp_events=None):
     """401(k), HSA and dependent-care FSA so far and projected to year end against the year's limits.
 
     The mega backdoor Roth row is the after-tax 401(k): its limit is what 415(c) leaves after elective
@@ -528,7 +558,7 @@ def elections(year, paystubs, after_tax_converts=False):
     on a pay stub, so each person gets a row saying it is not tracked yet.
     """
     p = taxdata.params(year)
-    pos = positions(paystubs, year)
+    pos = positions(paystubs, year, comp_events=comp_events)
     out, people = [], []
     for (person, employer), v in pos.items():
         people.append(person)

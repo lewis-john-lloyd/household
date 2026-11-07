@@ -149,18 +149,35 @@ def test_a_limited_purpose_fsa_is_projected_against_the_health_fsa_limit():
     assert fsa["status"] == "room left"
 
 
-def test_a_job_whose_stubs_stopped_and_a_year_that_is_over_are_not_projected():
-    left = stubs_through(10)  # alex's last paycheck from Acme: 2026-05-08
-    left["employer"] = "Acme Widgets"
-    stubs = pd.concat([left, stubs_through(24)], ignore_index=True)  # still paid by Acme through 2026-11-20
+def jobs(*rows):
+    return pd.DataFrame([{"effective": e, "person": p, "employer": m, "salary": "", "band": "", "rating": "",
+                          "fte": "", "note": ""} for e, p, m in rows])
+
+
+def test_a_job_goes_on_until_comp_events_records_the_next_one():
+    left = stubs_through(10)  # alex's last paycheck from Acme Widgets: 2026-05-08
+    left["employer"] = "Acme Widgets, LLC"
+    stubs = pd.concat([left, stubs_through(24)], ignore_index=True)  # Acme pays through 2026-11-20
+    # no job change recorded: both jobs go on, whatever the gap in stubs
     pos = projection.positions(stubs, 2026)
-    gone, going = pos[("alex", "Acme Widgets")], pos[("alex", "Acme")]
-    assert gone["paychecks_left"] == 0 and gone["wages"] == 10 * 4_500  # its year to date, nothing more
-    assert any("no pay stub since 2026-05-08" in n for n in gone["notes"])
-    assert going["paychecks_left"] == 3
-    # the year after: 2026 is over, so even the job still paying in November adds nothing
-    later = pd.DataFrame(regular("2027-01-08", "1"))
-    over = projection.positions(pd.concat([stubs, later], ignore_index=True), 2026)[("alex", "Acme")]
+    assert pos[("alex", "Acme Widgets, LLC")]["paychecks_left"] == 17 and pos[("alex", "Acme")]["paychecks_left"] == 3
+    # a raise at Acme Widgets ends nothing; the move to Willow St on May 18 ends it
+    events = jobs(("2025-01-01", "alex", "Acme Widgets"), ("2026-03-01", "alex", "Acme Widgets"),
+                  ("2026-05-18", "alex", "Willow St"), ("2026-06-01", "sam", "Quill & Ink"))
+    gone = projection.positions(stubs, 2026, comp_events=events)[("alex", "Acme Widgets, LLC")]
+    assert gone["paychecks_left"] == 0 and gone["wages"] == 10 * 4_500
+    assert any("ends 2026-05-18" in n for n in gone["notes"])
+    # a change later in the year stops the paychecks from then
+    later = projection.positions(stubs, 2026, comp_events=jobs(("2026-12-10", "alex", "Willow St")))
+    assert later[("alex", "Acme")]["paychecks_left"] == 1  # Dec 4, not Dec 18 or 31
+    # a job the person went back to goes on: its stint starts at the latest row naming it
+    back = jobs(("2025-01-01", "alex", "Acme"), ("2025-06-01", "alex", "Willow St"), ("2026-01-01", "alex", "Acme"))
+    assert projection.positions(stubs_through(24), 2026, comp_events=back)[("alex", "Acme")]["paychecks_left"] == 3
+
+
+def test_a_year_that_is_over_is_not_projected():
+    stubs = pd.concat([stubs_through(24), pd.DataFrame(regular("2027-01-08", "1"))], ignore_index=True)
+    over = projection.positions(stubs, 2026)[("alex", "Acme")]
     assert over["paychecks_left"] == 0 and over["wages"] == 24 * 4_500 and over["notes"] == []
 
 

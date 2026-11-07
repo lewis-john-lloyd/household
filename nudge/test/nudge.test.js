@@ -130,6 +130,14 @@ test("Reports it can't read, or an inbox it can't list, is in the email, never a
   assert.match(d.sent[0].body, /BLUE PUMP FUEL card/);  // the rest of the email still goes
 });
 
+test("a service the manifest doesn't turn on is named, not blamed on REPORTS_ID", () => {
+  const s = script();
+  delete s.context.Sheets;  // the default manifest clasp create-script writes enables no advanced services
+  s.context.weekly();
+  assert.match(s.sent[0].body, /Reports couldn't be read: ReferenceError: Sheets is not defined\. The Sheets service isn't turned on: push the repo's appsscript\.json/);
+  assert.doesNotMatch(s.sent[0].body, /REPORTS_ID/);
+});
+
 test("preview logs the email without sending it, and installTrigger keeps one Saturday trigger", () => {
   const s = script();
   s.context.preview();

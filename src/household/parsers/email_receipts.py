@@ -76,6 +76,10 @@ from") and money a person sent ("... sent you", with their note). Money out is n
 keyed by PayPal's transaction id, so its receipt and its authorization are read once; a refund, which
 prints none, by the message id.
 
+Venmo emails (service "venmo", rows for payment_details): a payment sent ("You paid ..."), one received
+("... paid you"), each with its note and transaction id, and a transfer to the bank ("Transfer Amount"), which
+explain.match_venmo names after the payments received before it.
+
 A receipt in one of these layouts that doesn't add up (a layout Apple or Google has since changed, say)
 is left out with its id in the notes, never refusing the rest of the file.
 
@@ -708,6 +712,51 @@ def paypal(message_id, headers, body):
              "memo": " ".join(memo.split())}]
 
 
+VENMO = "venmo"
+VENMO_PAID = re.compile(r"^You paid ([^$]+)$")
+VENMO_RECEIVED = re.compile(r"^([^$]+) paid you$")
+VENMO_AMOUNT = re.compile(r"\$([\d,]+\.\d\d)")
+
+
+@_soft(VENMO)
+def venmo(message_id, headers, body):
+    """One payment_details row for one Venmo email: a payment sent ("You paid ..."), one received ("... paid
+    you"), each with its note, or a transfer to the bank ("Transfer Amount"). Money out is negative; a transfer
+    is positive, as it lands in the bank. Keyed by Venmo's transaction id."""
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if "Transfer Amount" in lines:
+        amount = VENMO_AMOUNT.search(_after(lines, "Transfer Amount"))
+        txn = _after(lines, "Transfer transaction ID")
+        if not amount or not txn:
+            raise Unread(f"{VENMO} {message_id}: a transfer with no amount or id")
+        day = _day(_after(lines, "Initiated on"), ("%A, %B %d, %Y",)) or headers.get("date", "")[:10]
+        return [{"detail_id": hashlib.sha256(f"{VENMO}|transfer|{txn}".encode()).hexdigest()[:16], "date": day,
+                 "amount": _cents(amount[1]) / 100, "service": VENMO, "kind": "Transfer", "counterparty": "",
+                 "memo": ""}]
+    at = next((i for i, line in enumerate(lines) if VENMO_PAID.match(line) or VENMO_RECEIVED.match(line)), None)
+    if at is None:
+        raise Unread(f"{VENMO} {message_id}: no payment sent or received")
+    paid = VENMO_PAID.match(lines[at])
+    who = paid[1] if paid else VENMO_RECEIVED.match(lines[at])[1]
+    amount = VENMO_AMOUNT.search(lines[0]) or VENMO_AMOUNT.search(headers.get("subject", ""))
+    txn = _after(lines, "Transaction ID")
+    if not amount or not txn:
+        raise Unread(f"{VENMO} {message_id}: no amount or transaction id")
+    # the amount is printed as "$", "12", ". 50" after the sentence; the note follows it, up to "See transaction"
+    end = next((i for i in range(at, len(lines)) if lines[i].startswith("See transaction")), at)
+    note = [line for line in lines[at + 1:end] if not re.fullmatch(r"\$|[\d,]+|\.\s?\d\d", line)]
+    cents = _cents(amount[1])
+    return [{"detail_id": hashlib.sha256(f"{VENMO}|{txn}".encode()).hexdigest()[:16],
+             "date": _day(_after(lines, "Date")) or headers.get("date", "")[:10],
+             "amount": (-cents if paid else cents) / 100, "service": VENMO,
+             "kind": "Payment" if paid else "Payment Received", "counterparty": " ".join(who.split()),
+             "memo": " ".join(" ".join(note).split())}]
+
+
+def _is_venmo(body):
+    return "Venmo is a service of PayPal" in body and ("Transaction ID" in body or "Transfer Amount" in body)
+
+
 def _is_farm_store(body):
     return all(s in body for s in ("Cashier #:", "Total Sales Tax", "Subtotal")) and bool(
         re.search(r"^\s*(?:\d{6,14}|NOT ON FILE) x \d+\b", body, re.M))
@@ -749,7 +798,8 @@ def _is_bookseller_online(body):
 
 READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_online, bookseller_online),
            (_is_apple_itunes, apple_itunes), (_is_apple_receipt, apple_receipt), (_is_google_play, google_play),
-           (_is_farm_store, farm_store), (_is_outfitter, outfitter), (_is_paypal, paypal))
+           (_is_farm_store, farm_store), (_is_outfitter, outfitter), (_is_venmo, venmo),
+           (_is_paypal, paypal))
 DETAIL_COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
@@ -782,7 +832,8 @@ def parse(text):
     dates = sorted(d for d in list(df["date"]) + list(paid["date"]) if d)
     notes = [f"receipts: {df['order_id'].nunique()} read, {len(df)} items"]
     if len(paid):
-        notes.append(f"PayPal: {len(paid)} payments with a counterparty")
+        for service, n in paid["service"].value_counts().sort_index().items():
+            notes.append(f"{'PayPal' if service == PAYPAL else 'Venmo'}: {n} payments and transfers")
     notes += [f"receipts: {n} from {k} left for a reader not written yet" for k, n in sorted(skipped.items())]
     notes += [f"receipts: {n} {k} charges for several items without prices left as one charge"
               for k, n in sorted(unpriced.items())]

@@ -43,7 +43,7 @@ def test_store_receipts_read_item_by_item_and_paypal_emails_read_as_payment_deta
     assert paid.at["PAGE TURNER BOOKS", "memo"] == "Atlas of Rivers, Second Edition"
     assert (paid.at["sam", "amount"], paid.at["sam", "memo"], paid.at["sam", "date"]) == (
         40.0, "Half of the camping gear", "2026-09-12")
-    assert result.notes[:2] == ["receipts: 3 read, 7 items", "PayPal: 4 payments with a counterparty"]
+    assert result.notes[:2] == ["receipts: 3 read, 7 items", "PayPal: 4 payments and transfers"]
     # a return and an order paid in full with rewards charged no card
     assert "receipts: 2 that charged nothing (a return, a free order) left out" in result.notes
 

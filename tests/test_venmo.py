@@ -1,0 +1,44 @@
+"""Venmo's emails, as the exporter writes them, and the bank lines they name. Made-up emails in the layouts' shapes."""
+
+from pathlib import Path
+
+import pandas as pd
+
+from household import categorize, explain
+from household.parsers import email_receipts, identify
+
+
+FILE = (Path(__file__).parent / "fixtures" / "venmo.txt").read_text()
+
+
+def line(i, date, payee, amount):
+    return {"txn_id": f"t{i}", "date": date, "account_id": "checking", "amount": amount, "payee_raw": payee,
+            "category": "", "note": "", "era": "ledger", "source": "ofx"}
+
+
+def test_payments_sent_and_received_and_transfers_read_as_payment_details():
+    assert identify(FILE) is email_receipts
+    result = email_receipts.parse(FILE)
+    d = result.tables["payment_details"].set_index("detail_id")
+    rows = d.sort_values("date")[["date", "amount", "service", "kind", "counterparty", "memo"]].values.tolist()
+    assert rows == [["2026-08-01", 10.0, "venmo", "Transfer", "", ""],
+                    ["2026-09-01", -42.5, "venmo", "Payment", "sam", "Pizza night"],
+                    ["2026-09-03", 30.0, "venmo", "Payment Received", "partner", "Concert tickets"],
+                    ["2026-09-05", 20.0, "venmo", "Payment Received", "sam", ""],  # no note
+                    ["2026-09-06", 50.0, "venmo", "Transfer", "", ""]]
+    assert "Venmo: 5 payments and transfers" in result.notes
+    assert "order_items" not in result.tables
+
+
+def test_a_payment_line_takes_who_and_why_and_a_cash_out_takes_what_it_carried():
+    details = email_receipts.parse(FILE).tables["payment_details"]
+    lines = pd.DataFrame([line(1, "2026-09-02", "VENMO PAYMENT 1234", -42.50),
+                          line(2, "2026-09-08", "VENMO CASHOUT 5678", 50.00),
+                          line(3, "2026-09-09", "VENMO PAYMENT 4321", -15.00)])
+    found = explain.explain(lines, details=details)
+    # the cash-out carried what was received after the August transfer, up to its own
+    assert found["payee"] == {"t1": "sam Pizza night", "t2": "Venmo transfer: partner (Concert tickets); sam"}
+    assert found["coverage"]["venmo"] == ("2026-08-01", "2026-09-06")
+    # a payment after the latest email waits for the next; the named ones don't
+    status = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found).set_index("txn_id")
+    assert status.at["t3", "status"] == "waiting" and "waiting" not in set(status.loc[["t1", "t2"], "status"])

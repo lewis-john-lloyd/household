@@ -28,6 +28,8 @@ function exporter(mailbox, props = {},
                   searches = { version: 1, searches: [{ store: "co_op", senders: ["receipts@example.coop"], subjects: [] }] }) {
   const store = { FOLDER_ID: "folder1", ...(searches === null ? {} : { SEARCHES_ID: "searches1" }), ...props };
   const description = searches === null ? "" : typeof searches === "string" ? searches : JSON.stringify(searches);
+  const searchesParents = props.SEARCHES_PARENTS ? [props.SEARCHES_PARENTS] : ["folder1"];
+  const modifiedBy = props.MODIFIED_BY ? { me: false, emailAddress: props.MODIFIED_BY } : { me: true };
   const reads = [];
   const made = [];
   const files = [];
@@ -64,7 +66,8 @@ function exporter(mailbox, props = {},
       },
       get: (id, opts) => {
         reads.push([id, opts && opts.fields]);
-        return id === store.SEARCHES_ID ? { id, trashed: false, description } : { id, trashed: false };
+        return id === store.SEARCHES_ID ? { id, trashed: false, description, parents: searchesParents, lastModifyingUser: modifiedBy }
+          : { id, trashed: false };
       },
     } },
     MimeType: { PLAIN_TEXT: "text/plain" },
@@ -240,4 +243,14 @@ test("a searches file that isn't the list compute writes, or lists nothing, fail
     assert.throws(() => run.run(), said);
     assert.equal(run.files.length, 0);
   }
+});
+
+test("a searches file moved out of the folder, or changed by someone else, is not trusted", () => {
+  const box = { m1: message("m1", "2026-03-01T12:00:00Z", "Oats 4.00") };
+  const moved = exporter(box, { SEARCHES_PARENTS: "elsewhere" });
+  assert.throws(() => moved.run(), /no longer in the exporter's folder/);
+  assert.equal(moved.files.length, 0);
+  const changed = exporter(box, { MODIFIED_BY: "someone@example.com" });
+  assert.throws(() => changed.run(), /last changed by someone@example.com/);
+  assert.equal(changed.files.length, 0);
 });

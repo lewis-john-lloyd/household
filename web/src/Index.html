@@ -1298,7 +1298,7 @@
         var t0 = Math.max(rows[0].t, Date.UTC(new Date(t1).getUTCFullYear() - YEARS_SHOWN, 0, 1));
         rows = rows.filter(function (r, i) { return r.t >= t0 || !rows[i + 1] || rows[i + 1].t > t0; })
           .map(function (r) { return r.t < t0 ? Object.assign({}, r, { t: t0, clipped: true }) : r; });
-        var pays = rows.map(function (r) { return r.pay; });
+        var pays = rows.map(function (r) { return r.pay; }).concat(rows.map(function (r) { return r.salary; }));
         var lo = Math.min.apply(null, pays), hi = Math.max.apply(null, pays);
         var step = Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, hi * 0.2) / 3)));
         [1, 2, 2.5, 5, 10].some(function (k) { if ((hi - lo) / (step * k) <= 4) { step *= k; return true; } return false; });
@@ -1325,6 +1325,16 @@
           svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), stroke: colorOf(r.employer),
                           "stroke-width": 2, "stroke-linecap": "round" }, svg);
           if (i + 1 < rows.length) svgEl("line", { x1: x(end), x2: x(end), y1: y(r.pay), y2: y(rows[i + 1].pay), "class": "riser" }, svg);
+          // part time: a ghost of the full-time salary above what is paid, so the job's level stays in view
+          if (r.fte !== 1) {
+            svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.salary), y2: y(r.salary), stroke: colorOf(r.employer),
+                            "stroke-width": 2, "stroke-dasharray": "4 4", opacity: 0.45 }, svg);
+            var startsGhost = i === 0 || rows[i - 1].fte === 1 || rows[i - 1].employer.toLowerCase() !== r.employer.toLowerCase();
+            if (startsGhost) {
+              var g = svgEl("text", { x: x(end) - 4, y: y(r.salary) + 15, "text-anchor": "end", "class": "axis" }, svg);
+              g.textContent = "full time";
+            }
+          }
         });
         // callouts: the new employer, a change of hours, or the raise; raises closer together than a label are
         // told once, at the last, as the change across them. Raises and moves sit above their marker, a drop below;

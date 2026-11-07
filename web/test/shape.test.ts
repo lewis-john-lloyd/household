@@ -6,7 +6,7 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, withSubscriptions };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -21,6 +21,7 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
   reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
+  withSubscriptions: (lines: BudgetLine[], values: unknown[][], period: string, level: string) => BudgetLine[];
 };
 
 const VALUES: unknown[][] = [
@@ -291,4 +292,19 @@ test("the subscriptions page totals what is still charged", () => {
   assert.equal(page.total, 215.88);
   assert.deepEqual(page.subscriptions.map((r) => r.key), ["PAGE TURNER BOOKS", "QUILL & INK", "WILLOW ST"]);
   assert.equal("run_id" in page.subscriptions[0], false);
+});
+
+
+test("each subscription is its own entry under its budget line, added up over the period", () => {
+  const months = [["month", "key", "category", "group", "expected", "actual", "run_id"],
+    ["2026-09", "PAGE TURNER BOOKS", "media", "fun", "9.99", "9.99", "r1"],
+    ["2026-10", "PAGE TURNER BOOKS", "media", "fun", "9.99", "12.99", "r1"],
+    ["2026-10", "QUILL & INK", "hobby", "fun", "", "0", "r1"],
+    ["2026-10", "WILLOW ST", "hobby", "fun", "20", "20", "r1"]];
+  const line = (name: string): BudgetLine => ({ name, group: "fun", priority: "", target: 0, actual: 0, remaining: 0, categories: [name] });
+  const [media, hobby] = shape.withSubscriptions([line("media"), line("hobby")], months, "2026-10", "category");
+  assert.deepEqual(media.subscriptions, [{ name: "PAGE TURNER BOOKS", expected: 9.99, actual: 12.99 }]);
+  assert.deepEqual(hobby.subscriptions, [{ name: "WILLOW ST", expected: 20, actual: 20 }]);  // nothing spent or due: left out
+  const [fun] = shape.withSubscriptions([line("fun")], months, "2026", "group");
+  assert.deepEqual(fun.subscriptions?.map((e) => [e.name, e.expected, e.actual]), [["PAGE TURNER BOOKS", 19.98, 22.98], ["WILLOW ST", 20, 20]]);
 });

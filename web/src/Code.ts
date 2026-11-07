@@ -80,7 +80,8 @@ function getBudgetPeriods(): string[] {
 
 /** Budget against actuals for one month or year ("2026-10", "2026") by category or group. */
 function getBudget(period: string, level: string): BudgetLine[] {
-  return budgetLines(parseBudget(readTab_("budget_vs_actual")), period, level);
+  return withSubscriptions(budgetLines(parseBudget(readTab_("budget_vs_actual")), period, level),
+                           readTabIfAny_("subscription_months"), period, level);
 }
 
 /** The transactions behind one budget line: that period's, in those categories. */

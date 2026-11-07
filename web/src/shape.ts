@@ -166,6 +166,14 @@ interface BudgetLine {
   actual: number;
   remaining: number;
   categories: string[];
+  subscriptions?: SubscriptionEntry[];  // the subscriptions in it, each its own entry (withSubscriptions)
+}
+
+/** A subscription's spending in a budget line's period, and what its cadence expected (null: nothing to go by). */
+interface SubscriptionEntry {
+  name: string;
+  expected: number | null;
+  actual: number;
 }
 
 /** An item an order history says a charge bought: its name and price. */
@@ -257,6 +265,37 @@ function budgetLines(rows: BudgetRow[], period: string, level: string): BudgetLi
   });
   return out.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3)
     || a.remaining - b.remaining || a.name.localeCompare(b.name));
+}
+
+/**
+ * Each budget line with the subscriptions in it (subscription_months), added up over the period: by category,
+ * or by group at the group level. A line with none gets an empty list.
+ */
+function withSubscriptions(lines: BudgetLine[], values: unknown[][], period: string, level: string): BudgetLine[] {
+  const by = new Map<string, Map<string, SubscriptionEntry>>();
+  if (values.length) {
+    const [month, key, category, group, expected, actual] =
+      columnsAt(values, ["month", "key", "category", "group", "expected", "actual"], "subscription_months");
+    for (const v of values.slice(1)) {
+      if (!inPeriod(String(v[month] ?? ""), period)) continue;
+      const line = level === "group" ? String(v[group] ?? "") || String(v[category] ?? "") : String(v[category] ?? "");
+      const name = String(v[key] ?? "");
+      if (!line || !name) continue;
+      if (!by.has(line)) by.set(line, new Map());
+      const entries = by.get(line) as Map<string, SubscriptionEntry>;
+      const e = entries.get(name) || { name, expected: null, actual: 0 };
+      const want = String(v[expected] ?? "");
+      if (want !== "") e.expected = roundCents((e.expected ?? 0) + Number(want));
+      e.actual = roundCents(e.actual + (Number(v[actual]) || 0));
+      entries.set(name, e);
+    }
+  }
+  return lines.map((l) => ({
+    ...l,
+    subscriptions: Array.from((by.get(l.name) || new Map<string, SubscriptionEntry>()).values())
+      .filter((e) => e.actual || e.expected)
+      .sort((a, b) => b.actual - a.actual || a.name.localeCompare(b.name)),
+  }));
 }
 
 /** The items column: JSON [[category, name, amount, item_id], ...] (reports before item ids have three), or

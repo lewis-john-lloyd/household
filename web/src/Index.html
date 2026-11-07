@@ -19,6 +19,8 @@
         --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
         --ink: var(--on-surface); --muted: var(--on-surface-variant); --line: var(--outline-variant); --bg: var(--surface);
         --track: var(--surface-high); --ok: var(--success); --over: var(--error);
+        --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+        --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
         color-scheme: light;
       }
       @media (prefers-color-scheme: dark) {
@@ -32,6 +34,8 @@
           --waiting: #ffb870; --waiting-container: #6a3c00;
           --seg-1: #d3e3fd; --seg-2: #a8c7fa; --seg-3: #7cacf8; --seg-4: #4c8df6; --seg-5: #0b57d0;
           --shadow: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+          --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+          --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
           color-scheme: dark;
         }
       }
@@ -39,6 +43,7 @@
       body { margin: 0; font: 400 14px/20px "Roboto Flex", "Google Sans", Roboto, system-ui, sans-serif; letter-spacing: 0.1px;
         color: var(--on-surface); background: var(--surface); }
       main { padding: 16px 24px 32px; max-width: 1280px; }
+      main.wide { max-width: none; }  /* the flow chart takes the window's width */
       [hidden] { display: none !important; }
       :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
       h2 { font-size: 16px; line-height: 24px; font-weight: 500; margin: 0; }
@@ -122,6 +127,21 @@
       .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
       .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
       .stacked { display: flex; flex-direction: column; gap: 12px; }
+      .pay-charts { display: grid; gap: 12px; margin-bottom: 16px; }
+      .pay-chart { position: relative; }
+      .pay-chart h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+      .pay-chart .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+      .pay-chart .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+        margin-right: 6px; background: var(--swatch); vertical-align: -1px; }
+      .pay-chart svg { display: block; width: 100%; overflow: visible; }
+      .pay-chart .axis { font-size: 12px; fill: var(--muted); }
+      .pay-chart .grid { stroke: var(--outline-variant); stroke-width: 1; opacity: 0.6; }
+      .pay-chart .riser { stroke: var(--outline); stroke-width: 1; stroke-dasharray: 2 3; }
+      .pay-chart .callout { font-size: 12px; fill: var(--on-surface); }
+      .pay-chart .callout.move { font-weight: 600; }
+      .pay-chart .tip .strong { font-weight: 600; }
+      .pay-chart .tip { z-index: 10; position: absolute; pointer-events: none; background: var(--surface-high); color: var(--on-surface);
+        border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: var(--shadow); max-width: 22em; white-space: normal; }
       .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
       table.subscriptions td .support, table.subscriptions td .off { margin: 2px 0 0; font-size: 13px; }
       table.subscriptions td .off { color: var(--error); }
@@ -236,6 +256,9 @@
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
       tr.line { cursor: pointer; }
       tr.line:hover td { background: var(--surface-container); }
+      tr.subscription td { font-size: 13px; color: var(--muted); padding-top: 2px; padding-bottom: 2px; }
+      tr.subscription td:first-child { padding-left: 28px; }
+      tr.subscription.over td:nth-child(5) { color: var(--over); }
       tr.over td.left { color: var(--error); font-weight: 500; }
       .bar { width: 120px; height: 8px; background: var(--surface-high); border-radius: 4px; overflow: hidden; }
       .bar span { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
@@ -602,6 +625,19 @@
         used.title = l.target ? Math.round(100 * l.actual / l.target) + "% of budget" : "no budget";
         row.addEventListener("click", function () { toggleDetail(row, l); });
         body.appendChild(row);
+        // each subscription in the line is its own entry under it: spent, and what its cadence expected
+        (l.subscriptions || []).forEach(function (s) {
+          var sub = document.createElement("tr");
+          sub.className = "subscription" + (s.expected !== null && s.actual > s.expected + 0.005 ? " over" : "");
+          var name = cell(sub, s.name, "text");
+          name.title = "A subscription in " + l.name + "; its spending is part of the line above";
+          cell(sub, "subscription", "text");
+          cell(sub, s.expected === null ? "" : cents.format(s.expected));
+          cell(sub, cents.format(s.actual));
+          cell(sub, s.expected === null ? "" : cents.format(s.expected - s.actual), "left");
+          cell(sub, "");
+          body.appendChild(sub);
+        });
       });
 
       function drawBudget(result) {
@@ -1206,6 +1242,148 @@
         return form;
       }
 
+      // Pay over time, one chart per person, from comp_events: pay a year (salary times share of full time) as a
+      // step line colored by employer (the same employer the same color in every chart), a marker at each change
+      // with a callout (the new employer, a change of hours, or the raise in percent), and the detail on hover.
+      var SERIES = 8;
+      var YEARS_SHOWN = 12;  // a pay chart opens at the level in force this many years back
+      function payCharts(body, jobs) {
+        var rows = jobs.filter(function (j) { return /^\d{4}-\d{2}-\d{2}$/.test(j.effective) && Number(j.salary) > 0; })
+          .map(function (j) {
+            var fte = Number(j.fte) > 0 ? Number(j.fte) : 1;
+            return { at: j.effective, t: Date.parse(j.effective + "T00:00:00Z"), person: j.person, employer: j.employer,
+                     salary: Number(j.salary), fte: fte, pay: Number(j.salary) * fte, band: j.band, rating: j.rating, note: j.note };
+          })
+          .sort(function (a, b) { return a.t - b.t; });
+        if (!rows.length) return;
+        var slot = {}, next = 0;  // color follows the employer, by first appearance, across every chart
+        rows.forEach(function (r) {
+          var k = r.employer.toLowerCase();
+          if (!(k in slot)) { slot[k] = next < SERIES ? next + 1 : 0; next += 1; }
+        });
+        var colorOf = function (employer) {
+          var n = slot[employer.toLowerCase()];
+          return n ? "var(--series-" + n + ")" : "var(--outline)";
+        };
+        var wrap = el("div", null, "pay-charts");
+        body.appendChild(wrap);
+        var people = Array.from(new Set(rows.map(function (r) { return r.person; }))).sort();
+        people.forEach(function (person) {
+          var panel = el("section", null, "panel pay-chart");
+          wrap.appendChild(panel);
+          panel.appendChild(el("h3", person.charAt(0).toUpperCase() + person.slice(1) + ": pay a year"));
+          payChart(panel, rows.filter(function (r) { return r.person === person; }), colorOf);
+        });
+      }
+
+      function payChart(panel, rows, colorOf) {
+        var NS = "http://www.w3.org/2000/svg";
+        var svgEl = function (name, attrs, parent) {
+          var e = document.createElementNS(NS, name);
+          Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+          if (parent) parent.appendChild(e);
+          return e;
+        };
+        var legend = el("div", null, "legend");
+        Array.from(new Set(rows.map(function (r) { return r.employer; }))).forEach(function (e) {
+          var item = el("span", e);
+          item.style.setProperty("--swatch", colorOf(e));
+          legend.appendChild(item);
+        });
+        panel.appendChild(legend);
+        var width = Math.max(panel.clientWidth - 40, 320), height = 240;
+        var m = { top: 34, right: 16, bottom: 26, left: 56 };
+        var now = Date.now();
+        var t1 = Math.max(now, rows[rows.length - 1].t);
+        var t0 = Math.max(rows[0].t, Date.UTC(new Date(t1).getUTCFullYear() - YEARS_SHOWN, 0, 1));
+        rows = rows.filter(function (r, i) { return r.t >= t0 || !rows[i + 1] || rows[i + 1].t > t0; })
+          .map(function (r) { return r.t < t0 ? Object.assign({}, r, { t: t0, clipped: true }) : r; });
+        var pays = rows.map(function (r) { return r.pay; });
+        var lo = Math.min.apply(null, pays), hi = Math.max.apply(null, pays);
+        var step = Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, hi * 0.2) / 3)));
+        [1, 2, 2.5, 5, 10].some(function (k) { if ((hi - lo) / (step * k) <= 4) { step *= k; return true; } return false; });
+        var y0 = Math.max(0, Math.floor(lo * 0.9 / step) * step), y1 = Math.ceil(hi * 1.04 / step) * step;
+        var x = function (t) { return m.left + (t - t0) / Math.max(t1 - t0, 1) * (width - m.left - m.right); };
+        var y = function (v) { return m.top + (y1 - v) / Math.max(y1 - y0, 1) * (height - m.top - m.bottom); };
+        var svg = svgEl("svg", { viewBox: "0 0 " + width + " " + height, role: "img",
+                                 "aria-label": "Pay a year over time, by employer; the list below has every change" });
+        panel.appendChild(svg);
+        for (var v = y0; v <= y1 + 0.5; v += step) {  // recessive grid and axis
+          svgEl("line", { x1: m.left, x2: width - m.right, y1: y(v), y2: y(v), "class": "grid" }, svg);
+          var label = svgEl("text", { x: m.left - 8, y: y(v) + 4, "text-anchor": "end", "class": "axis" }, svg);
+          label.textContent = "$" + Math.round(v / 1000) + "k";
+        }
+        var firstYear = new Date(t0).getUTCFullYear() + 1, lastYear = new Date(t1).getUTCFullYear();
+        var every = Math.max(1, Math.ceil((lastYear - firstYear + 1) / Math.max(1, Math.floor((width - m.left) / 70))));
+        for (var yr = firstYear; yr <= lastYear; yr += every) {
+          var tx = svgEl("text", { x: x(Date.UTC(yr, 0, 1)), y: height - 6, "text-anchor": "middle", "class": "axis" }, svg);
+          tx.textContent = String(yr);
+        }
+        // the step line: a level per row until the next, risers in neutral ink so color stays the employer's
+        rows.forEach(function (r, i) {
+          var end = i + 1 < rows.length ? rows[i + 1].t : t1;
+          svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), stroke: colorOf(r.employer),
+                          "stroke-width": 2, "stroke-linecap": "round" }, svg);
+          if (i + 1 < rows.length) svgEl("line", { x1: x(end), x2: x(end), y1: y(r.pay), y2: y(rows[i + 1].pay), "class": "riser" }, svg);
+        });
+        // callouts: the new employer, a change of hours, or the raise; raises closer together than a label are
+        // told once, at the last, as the change across them. Raises and moves sit above their marker, a drop below;
+        // a second lane takes a neighbour that would collide. Every change keeps its marker and its hover detail.
+        var tip = el("div", null, "tip");
+        tip.hidden = true;
+        panel.appendChild(tip);
+        var lanes = { up: [-Infinity, -Infinity], down: [-Infinity, -Infinity] };
+        var runFrom = null;  // the pay before a run of raises told as one
+        rows.forEach(function (r, i) {
+          var prev = rows[i - 1], after = rows[i + 1];
+          var moved = !prev || prev.employer.toLowerCase() !== r.employer.toLowerCase();
+          var hours = !moved && r.fte !== prev.fte;
+          var raise = !moved && !hours && r.pay !== prev.pay;
+          var text = "";
+          if (moved) text = r.employer;
+          else if (hours) text = r.fte === 1 ? "full time" : Math.round(r.fte * 100) + "% time";
+          else if (raise) {
+            if (runFrom === null) runFrom = prev.pay;
+            var nextRaise = after && after.employer.toLowerCase() === r.employer.toLowerCase() && after.fte === r.fte &&
+              after.pay !== r.pay && x(after.t) - x(r.t) < 24;
+            if (!nextRaise) {
+              text = (r.pay > runFrom ? "+" : "") + (100 * (r.pay / runFrom - 1)).toFixed(1) + "%";
+              runFrom = null;
+            }
+          }
+          var cx = x(r.t), cy = y(r.pay);
+          if (r.clipped) return;  // older than the chart: it only sets the level the chart opens at
+          svgEl("circle", { cx: cx, cy: cy, r: 4, fill: colorOf(r.employer), stroke: "var(--surface-low)", "stroke-width": 2 }, svg);
+          if (text) {
+            var w = text.length * 6.6 + 6;
+            var down = prev && r.pay < prev.pay;  // a cut or a move to less pay: below, clear of the level before
+            var ends = lanes[down ? "down" : "up"];
+            var lane = cx - w / 2 > ends[0] ? 0 : cx - w / 2 > ends[1] ? 1 : -1;
+            if (lane >= 0) {
+              ends[lane] = cx + w / 2;
+              var ty = down ? cy + 18 + lane * 14 : cy - 10 - lane * 14;
+              var c = svgEl("text", { x: Math.min(Math.max(cx, m.left + w / 2), width - w / 2), y: Math.max(ty, 12),
+                                      "text-anchor": "middle", "class": "callout" + (moved ? " move" : "") }, svg);
+              c.textContent = text;
+            }
+          }
+          var change = moved ? "" : hours ? text : r.pay !== prev.pay ? (r.pay > prev.pay ? "+" : "") + (100 * (r.pay / prev.pay - 1)).toFixed(1) + "%" : "";
+          var detail = [r.at + ", " + r.employer,
+                        money.format(r.salary) + " a year" + (r.fte !== 1 ? " at " + Math.round(r.fte * 100) + "% time, " + money.format(r.pay) + " paid" : ""),
+                        [change, r.band, r.rating ? "rating " + r.rating : ""].filter(Boolean).join(", "), r.note].filter(Boolean);
+          var hit = svgEl("circle", { cx: cx, cy: cy, r: 12, fill: "transparent" }, svg);
+          hit.addEventListener("mouseenter", function () {
+            tip.textContent = "";
+            detail.forEach(function (line, n) { tip.appendChild(el("div", line, n ? "" : "strong")); });
+            tip.hidden = false;
+            var scale = svg.getBoundingClientRect().width / width;
+            tip.style.left = Math.max(0, Math.min(cx * scale + 12, panel.clientWidth - 280)) + "px";
+            tip.style.top = (svg.offsetTop + cy * scale + 14) + "px";
+          });
+          hit.addEventListener("mouseleave", function () { tip.hidden = true; });
+        });
+      }
+
       function parameterForm(p, done) {
         var form = el("form", null, "edit");
         var isNew = !p;
@@ -1744,6 +1922,7 @@
       // disagrees offers the row the paychecks suggest: the date its first period began, its pay on a yearly
       // footing, the employer of the row in force.
       function drawJobs(body) {
+        payCharts(body, editor.jobs);
         var items = editor.payCheck.map(function (r) { return { kind: "pay", row: r }; })
           .concat(editor.jobs.map(function (r) { return { kind: "job", row: r }; }));
         var money = function (v) { return v === "" || v === undefined ? "" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }); };
@@ -2509,6 +2688,7 @@
         document.getElementById("edit").hidden = view !== "edit";
         document.getElementById("taxes").hidden = view !== "taxes";
         document.getElementById("subscriptions").hidden = view !== "subscriptions";
+        document.querySelector("main").classList.toggle("wide", view === "flows");
         load();
       }
 
@@ -2547,6 +2727,11 @@
         if (window.matchMedia) {  // the chart takes its colors when drawn: redraw it when light and dark swap
           var scheme = window.matchMedia("(prefers-color-scheme: dark)");
           var redraw = function () { if (view === "flows") load(); };
+          var resized = null;  // a wider or narrower window redraws the flow chart to fit, once it settles
+          window.addEventListener("resize", function () {
+            clearTimeout(resized);
+            resized = setTimeout(function () { if (view === "flows") load(); }, 250);
+          });
           if (scheme.addEventListener) scheme.addEventListener("change", redraw); else if (scheme.addListener) scheme.addListener(redraw);
         }
         window.addEventListener("beforeunload", function (e) {  // unsaved changes, and a save not yet answered, live only here

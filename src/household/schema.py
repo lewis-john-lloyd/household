@@ -166,6 +166,7 @@ REPORTS = (
     # subscriptions you marked (recurring.subscriptions), and the Subscriptions editor's rows
     Table("subscriptions", ("key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
                             "next_expected", "status", "change", "example", "note", "run_id")),
+    Table("subscription_months", ("month", "key", "category", "group", "expected", "actual", "run_id")),
     Table("editor_subscriptions", ("key", "marked", "cadence", "charges", "last", "latest", "yearly", "category",
                                    "example", "note", "run_id")),
     # paychecks beside comp_events (paycheck.py): runs that agree, disagree or have no row in force

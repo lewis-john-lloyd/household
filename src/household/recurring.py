@@ -197,3 +197,42 @@ def editor_rows(subs, found, categorized, decisions):
     rows += [{"key": k, "marked": "no", "cadence": "", "charges": "", "last": "", "latest": None, "yearly": None,
               "category": "", "example": "", "note": note} for k, (on, note) in marked.items() if not on and k not in seen]
     return pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+
+
+
+MONTH_COLUMNS = ["month", "key", "category", "group", "expected", "actual"]
+
+
+def subscription_months(categorized, decisions, categories=None, today=None):
+    """Each marked subscription's spending each month from its first charge to this month (MONTH_COLUMNS),
+    for the budget view to show it as its own entry under its category. expected is what its cadence says
+    was due that month at the latest price before it: the last charge for a monthly one, that times the
+    charges a month for a weekly or biweekly one, and for a quarterly or yearly one the last charge only in
+    the month its next charge fell due. An irregular one expects nothing."""
+    today = pd.Timestamp(today or date.today())
+    subs = subscriptions(categorized, decisions, today)
+    groups = {} if categories is None or categories.empty else dict(zip(categories["category"], categories["group"]))
+    df = _charges(categorized)
+    rows = []
+    for sub in subs[subs["charges"] > 0].to_dict("records"):
+        g = df[df["key"].astype(str).map(lambda k: _covers(sub["key"], k))].sort_values("date", kind="stable")
+        g = g.assign(month=g["date"].astype(str).str[:7], spend=-g["amount"])
+        spent = g.groupby("month")["spend"].sum()
+        cadence = dict(CADENCES).get(sub["cadence"])
+        for month in pd.period_range(g["month"].iloc[0], today.strftime("%Y-%m"), freq="M").astype(str):
+            before = g[g["month"] < month]
+            expected = None
+            if cadence and len(before):
+                last = float(before["spend"].iloc[-1])
+                if sub["cadence"] == "monthly":
+                    expected = last
+                elif cadence < 28:
+                    expected = last * PER_YEAR[sub["cadence"]] / 12
+                else:
+                    due = pd.Timestamp(before["date"].iloc[-1]) + pd.Timedelta(days=round(cadence))
+                    expected = last if due.strftime("%Y-%m") == month else 0.0
+            rows.append({"month": month, "key": sub["key"], "category": sub["category"],
+                         "group": groups.get(sub["category"], ""),
+                         "expected": None if expected is None else round(expected, 2),
+                         "actual": round(float(spent.get(month, 0.0)), 2)})
+    return pd.DataFrame(rows, columns=MONTH_COLUMNS)

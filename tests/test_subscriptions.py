@@ -66,3 +66,15 @@ def test_a_subscription_edit_is_an_answer_and_a_fresh_change_is_in_the_weekly_em
                         changed=recurring.fresh_changes(subs, TODAY))
     mine = todo[todo["group"] == "Subscriptions that changed price"]
     assert mine[["item", "show_from", "show_until"]].values.tolist() == [["PAGE TURNER BOOKS", "2026-10-05", "2026-11-19"]]
+
+
+def test_each_subscription_is_its_own_entry_each_month_with_what_its_cadence_expected():
+    groups = pd.DataFrame([{"category": "media", "group": "fun"}, {"category": "hobby", "group": "fun"}])
+    months = recurring.subscription_months(LINES, DECISIONS, groups, TODAY)
+    books = months[months["key"] == "PAGE TURNER BOOKS"].set_index("month")
+    assert list(books.index) == [f"2026-{m:02d}" for m in range(1, 11)]
+    assert pd.isna(books.at["2026-01", "expected"])  # nothing before its first charge to go by
+    assert (books.at["2026-10", "expected"], books.at["2026-10", "actual"], books.at["2026-10", "group"]) == (9.99, 12.99, "fun")
+    yearly = months[months["key"] == "QUILL & INK"].set_index("month")
+    assert yearly.at["2026-03", "actual"] == 60.0 and yearly.at["2026-03", "expected"] == 60.0  # due a year on
+    assert yearly.at["2026-04", "expected"] == 0.0 and yearly.at["2025-04", "actual"] == 0.0

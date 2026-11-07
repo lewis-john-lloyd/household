@@ -178,3 +178,15 @@ test("the Jobs editor reads comp_events and only the runs of paychecks that disa
   assert.equal(edits.editTarget(job), edits.editTarget({ ...job, salary: "73000" }));
   assert.notEqual(edits.editTarget(job), edits.editTarget({ ...job, effective: "2026-05-10" }));
 });
+
+test("a subscription edit marks a merchant yes or no, one change per merchant", () => {
+  const data = edits.editorData({
+    run_log: RUN_LOG,
+    editor_subscriptions: [["key", "marked", "cadence", "run_id"], ["PAGE TURNER BOOKS", "yes", "monthly", "r3"], ["WILLOW ST", "", "monthly", "r3"]],
+  });
+  assert.deepEqual(data.subscriptions.map((r) => [r.key, r.marked]), [["PAGE TURNER BOOKS", "yes"], ["WILLOW ST", ""]]);
+  const yes = { kind: "subscription", key: "WILLOW ST", subscription: "yes" };
+  assert.deepEqual(edits.editProblems(yes), []);
+  assert.deepEqual(edits.editProblems({ kind: "subscription", key: "WILLOW ST" }), ["missing subscription"]);
+  assert.equal(edits.editTarget(yes), edits.editTarget({ ...yes, key: "willow st", subscription: "no" }));
+});

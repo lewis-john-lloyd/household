@@ -122,6 +122,12 @@
       .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
       .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
       .stacked { display: flex; flex-direction: column; gap: 12px; }
+      .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+      table.subscriptions td .support, table.subscriptions td .off { margin: 2px 0 0; font-size: 13px; }
+      table.subscriptions td .off { color: var(--error); }
+      table.subscriptions tr.muted td { opacity: 0.6; }
+      table.split-lines { flex-basis: 100%; width: 100%; }
+      table.split-lines select { max-width: 14em; }
       .panel { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; padding: 16px 20px 20px; }
       .panel h2 + .support { margin: 2px 0 16px; }
       .stack { display: flex; height: 16px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--surface-high); }
@@ -345,6 +351,7 @@
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
         <button id="view-taxes" aria-pressed="false">Taxes</button>
+        <button id="view-subscriptions" aria-pressed="false">Subscriptions</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
       </nav>
     </header>
@@ -404,6 +411,10 @@
       <div id="taxes-body">Loading…</div>
     </section>
 
+    <section id="subscriptions" hidden>
+      <div id="subscriptions-body">Loading…</div>
+    </section>
+
     <section id="edit" hidden>
       <div id="edit-tabs" role="group" aria-label="What to edit">
         <button data-tab="review" aria-pressed="true">Review</button>
@@ -413,6 +424,7 @@
         <button data-tab="settings" aria-pressed="false">Settings</button>
         <button data-tab="withholding" aria-pressed="false">Withholding</button>
         <button data-tab="jobs" aria-pressed="false">Jobs</button>
+        <button data-tab="subscriptions" aria-pressed="false">Subscriptions</button>
         <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
         <button data-tab="waiting" aria-pressed="false">Saved</button>
       </div>
@@ -696,6 +708,7 @@
           case "not_duplicate": return "not_duplicate|" + [e.txn_a, e.txn_b].sort().join("|");
           case "item": return "item|" + e.item_id;
           case "job": return "job|" + e.person + "|" + e.effective + "|" + e.employer;
+          case "subscription": return "subscription|" + e.key.toUpperCase();
         }
         return e.kind + "|" + JSON.stringify(e);
       }
@@ -994,7 +1007,8 @@
           return;
         }
         ({ review: drawReview, budget: drawBudgetLines, rules: drawRules, categories: drawCategories, settings: drawSettings,
-           withholding: drawWithholding, jobs: drawJobs, duplicates: drawDuplicates })[editTab](body);
+           withholding: drawWithholding, jobs: drawJobs, subscriptions: drawSubscriptionMarks,
+           duplicates: drawDuplicates })[editTab](body);
       }
 
       // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
@@ -1548,11 +1562,63 @@
               done();
             }, "filled"));
             if (now) actions.appendChild(button("Undo", function () { unstage(target); done(); }, "text"));
+            actions.appendChild(button("Split into its lines", function () {
+              form.remove();
+              splitIntoLines(r, panel, done);
+            }, "text"));
             form.appendChild(actions);
             form.appendChild(error);
             panel.appendChild(form);
           },
         });
+      }
+
+      // A merchant question's lines, each with its own category: the answers are line edits, so the merchant
+      // stays unanswered and its later lines are asked again.
+      function splitIntoLines(r, panel, done) {
+        var box = el("div", "Loading its lines…", "support");
+        box.id = "split-lines";
+        panel.appendChild(box);
+        var alone = editor.review.filter(function (q) { return q.kind === "line"; }).map(function (q) { return q.key; });
+        call("getReviewLines", [r.key], function (lines) {
+          box.textContent = "";
+          box.className = "";
+          lines = lines.filter(function (l) { return alone.indexOf(l.id) < 0; });
+          if (!lines.length) { box.appendChild(el("p", "No open lines for " + r.key + " in the latest compute.", "support")); return; }
+          section(box, lines.length === 1 ? "1 line" : lines.length + " lines",
+                  "Give each line its own category; a line left on (choose) stays a question.");
+          var form = el("form", null, "edit");
+          var table = el("table", null, "split-lines");
+          var picks = lines.map(function (l) {
+            var row = el("tr");
+            cell(row, l.date);
+            cell(row, l.payee);
+            cell(row, l.account);
+            cell(row, cents.format(l.amount), "num");
+            var now = staged["line|" + l.id + "|category"];
+            var pick = categoryChoice(now ? now.edit.value : r.guess || "");
+            pick.setAttribute("aria-label", "Category for " + l.payee + " on " + l.date);
+            row.appendChild(el("td")).appendChild(pick);
+            table.appendChild(row);
+            return [l, pick];
+          });
+          form.appendChild(table);
+          var error = el("div", "", "error");
+          var actions = el("div", null, "actions");
+          actions.appendChild(button("Keep answers", function () {
+            var chosen = picks.filter(function (p) { return p[1].value; });
+            if (!chosen.length) { error.textContent = "Choose a category for at least one line."; return; }
+            chosen.forEach(function (p) {
+              var l = p[0];
+              stage({ kind: "line", txn_id: l.id, field: "category", value: p[1].value },
+                    l.payee + " " + l.date + ": " + p[1].value);
+            });
+            done();
+          }, "filled"));
+          form.appendChild(actions);
+          form.appendChild(error);
+          box.appendChild(form);
+        }, "split-lines");
       }
 
       function drawBudgetLines(body) {
@@ -1721,6 +1787,97 @@
             }
           },
         });
+      }
+
+      // The Subscriptions page: what you marked, its cadence, latest charge and yearly cost, a price change first.
+      function drawSubscriptions(data) {
+        var body = document.getElementById("subscriptions-body");
+        body.textContent = "";
+        var head = el("div", null, "page-head");
+        head.appendChild(el("h2", "Subscriptions"));
+        var mark = button("Mark subscriptions", function () { setView("edit"); setEditTab("subscriptions"); });
+        head.appendChild(mark);
+        body.appendChild(head);
+        if (!data.subscriptions.length) {
+          body.appendChild(el("p", "Nothing marked yet. Mark a merchant as a subscription in Edit, where charges that come back regularly are listed for you.", "support"));
+          return;
+        }
+        body.appendChild(el("p", cents.format(data.total) + " a year for the ones still charged.", "support"));
+        var table = el("table", null, "subscriptions");
+        var hr = el("tr");
+        ["Subscription", "Every", "Latest", "Last charged", "Next", "A year"].forEach(function (h, i) {
+          hr.appendChild(el("th", h, i >= 2 && i !== 3 && i !== 4 ? "num" : ""));
+        });
+        table.appendChild(el("thead")).appendChild(hr);
+        var tbody = el("tbody");
+        data.subscriptions.forEach(function (r) {
+          var row = el("tr", null, r.status === "stopped" ? "muted" : "");
+          var name = el("td");
+          name.appendChild(el("strong", r.key));
+          var about = [r.example !== r.key ? r.example : "", r.category, r.note].filter(Boolean).join(", ");
+          if (about) name.appendChild(el("div", about, "support"));
+          if (r.status === "price changed") name.appendChild(el("div", "Price changed: " + r.change, "off"));
+          if (r.status === "stopped") name.appendChild(el("div", "No charge since " + r.last, "support"));
+          row.appendChild(name);
+          cell(row, r.cadence);
+          cell(row, r.latest ? cents.format(Number(r.latest)) : "", "num");
+          cell(row, r.last);
+          cell(row, r.status === "stopped" ? "" : r.next_expected);
+          cell(row, r.yearly ? cents.format(Number(r.yearly)) : "", "num");
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        body.appendChild(table);
+      }
+
+      // Edit, Subscriptions: mark a merchant as a subscription or not. Charges that come back regularly and
+      // are not marked either way are listed to choose from; a merchant can also be named by hand.
+      function drawSubscriptionMarks(body) {
+        var section_ = { yes: "Your subscriptions", "": "Charges that come back: subscriptions?", no: "Not subscriptions" };
+        var order = { yes: 0, "": 1, no: 2 };
+        var items = editor.subscriptions.slice().sort(function (a, b) { return order[a.marked] - order[b.marked]; });
+        masterDetail(body, {
+          items: items, noun: "merchants", key: function (r) { return r.key; },
+          title: function (r) { return r.key; },
+          sub: function (r) {
+            return [r.cadence, r.latest ? cents.format(Number(r.latest)) : "", r.yearly ? cents.format(Number(r.yearly)) + " a year" : ""]
+              .filter(Boolean).join(", ");
+          },
+          section: function (r) { return section_[r.marked] || section_[""]; },
+          staged: function (r) { return stagedText("subscription|" + r.key.toUpperCase()); },
+          empty: "Mark what you pay for on a schedule. Your subscriptions are on the Subscriptions page, with a yearly total and any change in price.",
+          none: "No charges come back regularly yet.",
+          add: [{ label: "Mark a merchant", form: function (panel, done) { panel.appendChild(subscriptionForm(null, done)); } }],
+          detail: function (r, panel, done) {
+            facts(panel, [["Every", r.cadence], ["Charges", r.charges], ["Last charged", r.last],
+                          ["Latest", r.latest ? cents.format(Number(r.latest)) : ""], ["A year", r.yearly ? cents.format(Number(r.yearly)) : ""],
+                          ["Category", r.category], ["Spelled", r.example], ["Note", r.note]]);
+            panel.appendChild(subscriptionForm(r, done));
+          },
+        });
+      }
+
+      function subscriptionForm(r, done) {
+        var form = el("form", null, "edit");
+        var key = r ? null : field(form, "Merchant, as review names it", textInput("", "wide", "APPLE ONE"));
+        var note = field(form, "Note", textInput(r ? r.note : "", "wide"));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        var mark = function (yes) {
+          var name = r ? r.key : key.value.trim().toUpperCase();
+          if (!name) { error.textContent = "Name the merchant as review does."; return; }
+          var e = { kind: "subscription", key: name, subscription: yes ? "yes" : "no" };
+          if (note.value.trim()) e.note = note.value.trim();
+          unstage("subscription|" + name);
+          stage(e, name + (yes ? ": a subscription" : ": not a subscription"));
+          done();
+        };
+        if (!r || r.marked !== "yes") actions.appendChild(button("A subscription", function () { mark(true); }, "filled"));
+        if (!r || r.marked !== "no") actions.appendChild(button("Not a subscription", function () { mark(false); }, r ? "" : "text"));
+        if (r && r.marked === "yes") actions.appendChild(button("Keep note", function () { mark(true); }, "text"));
+        form.appendChild(actions);
+        form.appendChild(error);
+        return form;
       }
 
       function drawDuplicates(body) {
@@ -2129,7 +2286,7 @@
       var CARD_ICON = { review_open_lines: "edit", downloads_due: "download", inbox_unread: "inbox", possible_duplicates: "copy",
                         transfers_unmatched: "edit", waiting_changes: "sync" };
       var ACTION_LABEL = { review: "Answer in Review", duplicates: "Settle duplicates", withholding: "Explain stubs",
-                           waiting: "See saved changes" };
+                           waiting: "See saved changes", jobs: "Open Jobs", "view:subscriptions": "Open Subscriptions" };
       var CARD_NOTE = { downloads_due: "Download each one into the inbox, then run ingest." };
 
       function icon(name) {
@@ -2171,6 +2328,7 @@
         if (a.action) {
           var actions = el("div", null, "actions");
           actions.appendChild(button(ACTION_LABEL[a.action] || "Open", function () {
+            if (a.action.indexOf("view:") === 0) { setView(a.action.slice(5)); return; }
             setView("edit");
             setEditTab(a.action);
           }, "filled"));
@@ -2297,7 +2455,7 @@
       }
 
       function load() {
-        document.getElementById("controls").hidden = view === "status" || view === "edit" || view === "taxes";
+        document.getElementById("controls").hidden = view === "status" || view === "edit" || view === "taxes" || view === "subscriptions";
         if (view === "status") {
           document.getElementById("status-title").textContent = "Loading…";
           call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); loadAppliedAnywayCard(); }, "status-title");
@@ -2309,6 +2467,10 @@
         }
         if (view === "taxes") {
           loadTaxes();
+          return;
+        }
+        if (view === "subscriptions") {
+          call("getSubscriptions", [], drawSubscriptions, "subscriptions-body");
           return;
         }
         if (!periods[view]) {
@@ -2340,12 +2502,13 @@
 
       function setView(next) {
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-edit"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-subscriptions", "view-edit"], "view-" + view);
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
         document.getElementById("edit").hidden = view !== "edit";
         document.getElementById("taxes").hidden = view !== "taxes";
+        document.getElementById("subscriptions").hidden = view !== "subscriptions";
         load();
       }
 
@@ -2366,6 +2529,7 @@
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
         document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
         document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
+        document.getElementById("view-subscriptions").addEventListener("click", function () { setView("subscriptions"); });
         document.querySelectorAll("#edit-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
         });
@@ -2400,7 +2564,7 @@
           editTab = p.tab;
           document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });
         }
-        if (["flows", "budget", "taxes", "edit"].indexOf(p.view) >= 0) setView(p.view); else load();
+        if (["flows", "budget", "taxes", "subscriptions", "edit"].indexOf(p.view) >= 0) setView(p.view); else load();
       }
     </script>
   </body>

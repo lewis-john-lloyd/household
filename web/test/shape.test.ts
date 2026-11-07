@@ -6,7 +6,7 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary };`)() as {
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -19,6 +19,8 @@ const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRo
   parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
   findLine: (values: unknown[][], id: string) => Line | null;
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
+  reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
+  subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
 };
 
 const VALUES: unknown[][] = [
@@ -270,4 +272,23 @@ test("shares sold count only their gain or loss as income; the proceeds and mone
   assert.deepEqual(lost.income.map((i) => [i.name, i.amount]), [["gross pay (alex)", 5000], ["capital losses", -15]]);
   assert.deepEqual(lost.other, []);
   assert.deepEqual(lost.went, []);
+});
+
+
+test("a merchant question's open lines, newest first, for answering one by one", () => {
+  const values = [["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "status"],
+    ["t1", "2026-09-01", "checking", "-20", "WILLOW ST 1", "WILLOW ST 1", "WILLOW ST", "open"],
+    ["t2", "2026-10-01", "card", "-35", "WILLOW ST CAFE", "WILLOW ST CAFE", "WILLOW ST CAFE", "open"],
+    ["t3", "2026-10-02", "card", "-10", "WILLOW ST", "WILLOW ST", "WILLOW ST", "decided"],
+    ["t4", "2026-10-03", "card", "-12", "ACME GROCER", "ACME GROCER", "ACME GROCER", "open"],
+    ["t5", "2026-10-04", "card", "-15", "WILLOW ST", "WILLOW ST", "WILLOW ST", "open"]];
+  assert.deepEqual(shape.reviewLines(values, "WILLOW ST", ["t5"]).map((l) => [l.id, l.amount]), [["t2", -35], ["t1", -20]]);
+});
+
+test("the subscriptions page totals what is still charged", () => {
+  const page = shape.subscriptionsPage([["key", "status", "yearly", "run_id"], ["PAGE TURNER BOOKS", "price changed", "155.88", "r1"],
+                                        ["QUILL & INK", "active", "60", "r1"], ["WILLOW ST", "stopped", "240", "r1"]]);
+  assert.equal(page.total, 215.88);
+  assert.deepEqual(page.subscriptions.map((r) => r.key), ["PAGE TURNER BOOKS", "QUILL & INK", "WILLOW ST"]);
+  assert.equal("run_id" in page.subscriptions[0], false);
 });

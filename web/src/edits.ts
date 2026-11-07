@@ -31,6 +31,7 @@ interface EditorData {
   withholding: Row[];  // stubs whose withholding is unexplained, federal and wi
   jobs: Row[];  // comp_events, newest first per person, each with what the paychecks under it say
   payCheck: Row[];  // runs of paychecks beside comp_events that disagree or have no row in force
+  subscriptions: Row[];  // yours, then recurring charges not marked, then the ones you said are not
 }
 
 const CHANGE_FORMAT = "household_changes";
@@ -52,6 +53,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   not_duplicate: [["txn_a", "txn_b"], []],
   item: [["item_id", "category"], []],
   job: [["effective", "person", "employer"], ["salary", "band", "rating", "fte", "note"]],
+  subscription: [["key", "subscription"], ["note"]],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -104,6 +106,7 @@ function editorData(tabs: Record<string, unknown[][]>): EditorData {
     withholding: drop(unexplained(tab("withholding_backtest"), "federal").concat(unexplained(tab("wi_withholding_backtest"), "wi"))),
     jobs: drop(tab("editor_jobs")),
     payCheck: drop(tab("pay_check")).filter((r) => r.status !== "agrees"),
+    subscriptions: drop(tab("editor_subscriptions")),
   };
 }
 
@@ -147,6 +150,7 @@ function editTarget(edit: Edit): string {
     case "not_duplicate": return `not_duplicate|${[f("txn_a"), f("txn_b")].sort().join("|")}`;
     case "item": return `item|${f("item_id")}`;
     case "job": return `job|${f("person")}|${f("effective")}|${f("employer")}`;
+    case "subscription": return `subscription|${f("key").toUpperCase()}`;
     default: return `${edit.kind}|${JSON.stringify(edit)}`;
   }
 }

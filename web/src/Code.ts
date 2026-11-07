@@ -171,7 +171,7 @@ function keepSaved_(id: string, record: string): void {
 function getEditor(): EditorData {
   const names = ["run_log", "editor_budget_lines", "editor_scheduled", "editor_payee_rules", "editor_categories", "editor_aliases",
                  "editor_parameters", "editor_review", "possible_duplicates", "withholding_backtest",
-                 "wi_withholding_backtest", "editor_jobs", "pay_check"];
+                 "wi_withholding_backtest", "editor_jobs", "pay_check", "editor_subscriptions"];
   const tabs: Record<string, unknown[][]> = {};
   for (const name of names) tabs[name] = readTabIfAny_(name);
   const data = editorData(tabs);
@@ -371,6 +371,16 @@ function forgetDiscarded(id: string): void {
 /** One transaction, whole, for the transaction page (null when Reports has no such line). */
 function getTransaction(id: string): Line | null {
   return findLine(readTab_("categorized"), String(id || "").trim());
+}
+
+/** The open lines a review question covers, to answer them one by one (shape.ts reviewLines). */
+function getReviewLines(key: string): ReviewLine[] {
+  return reviewLines(readTab_("categorized"), String(key || "").trim());
+}
+
+/** The Subscriptions page (shape.ts subscriptionsPage). */
+function getSubscriptions(): SubscriptionsPage {
+  return subscriptionsPage(readTabIfAny_("subscriptions"));
 }
 
 /** Everything the tax page shows (taxes.ts). */

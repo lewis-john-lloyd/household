@@ -19,6 +19,9 @@ row a person would otherwise have typed:
   item             one item's category, from an order  -> item_categories
                    history or receipt (the line it
                    explains splits by it)
+  subscription     whether a merchant's charges are a  -> proposal_decisions
+                   subscription (yes or no), from the
+                   Subscriptions editor
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -77,6 +80,7 @@ KINDS = {
     "not_duplicate": ({"txn_a", "txn_b"}, set()),
     "item": ({"item_id", "category"}, set()),
     "job": ({"effective", "person", "employer"}, {"salary", "band", "rating", "fte", "note"}),
+    "subscription": ({"key", "subscription"}, {"note"}),
 }
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
@@ -189,8 +193,10 @@ def _pattern(text, what):
 def _values(kind, e):
     """Per-kind checks of values that need no ledger."""
     out = []
-    if kind == "payee" and not e["key"]:
+    if kind in ("payee", "subscription") and not e["key"]:
         out.append("key is empty")
+    if kind == "subscription" and e["subscription"] not in ("yes", "no"):
+        out.append("subscription must be yes or no")
     if kind == "line":
         if e["field"] not in LINE_FIELDS:
             out.append(f"field must be one of {', '.join(LINE_FIELDS)}")
@@ -280,8 +286,8 @@ def _target(e):
     if kind == "line":
         field = "category" if e["field"] == "split" else e["field"]  # a category and a split replace each other
         return ("line", e["txn_id"], field)
-    if kind == "payee":
-        return ("payee", categorize.payee_key(e["key"]) or e["key"].upper())
+    if kind in ("payee", "subscription"):
+        return (kind, categorize.payee_key(e["key"]) or e["key"].upper())
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
     key = {"payee_rule": "pattern", "category": "category", "alias": "alias", "parameter": "key",
@@ -347,6 +353,8 @@ def _describe(e):
     kind = e["kind"]
     if kind == "payee":
         return f"payee {e['key']}: {e['category']}"
+    if kind == "subscription":
+        return f"subscription {e['key']}: {e['subscription']}"
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -394,6 +402,11 @@ def _rows(edits, at):
             add("proposal_decisions", {"proposal_key": f"payee:{categorize.payee_key(e['key']) or e['key'].upper()}",
                                        "kind": categorize.DECISION_KIND, "decided_at": at, "decision": "approve",
                                        "note": e["category"]})
+        elif kind == "subscription":
+            add("proposal_decisions", {"proposal_key": f"subscription:{categorize.payee_key(e['key']) or e['key'].upper()}",
+                                       "kind": "subscription", "decided_at": at,
+                                       "decision": "approve" if e["subscription"] == "yes" else "reject",
+                                       "note": e.get("note", "")})
         elif kind == "line":
             add("txn_corrections", {"txn_id": e["txn_id"], "field": e["field"], "value": e["value"],
                                     "recorded_at": at, "reason": SOURCE, "source": "hand"})

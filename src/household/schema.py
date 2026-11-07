@@ -163,6 +163,11 @@ REPORTS = (
     # the pay history (comp_events) for the Jobs editor, each row with how the stubs since it compare
     Table("editor_jobs", ("effective", "person", "employer", "salary", "band", "rating", "fte", "note", "stubs",
                           "run_id")),
+    # subscriptions you marked (recurring.subscriptions), and the Subscriptions editor's rows
+    Table("subscriptions", ("key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
+                            "next_expected", "status", "change", "example", "note", "run_id")),
+    Table("editor_subscriptions", ("key", "marked", "cadence", "charges", "last", "latest", "yearly", "category",
+                                   "example", "note", "run_id")),
     # paychecks beside comp_events (paycheck.py): runs that agree, disagree or have no row in force
     Table("pay_check", ("person", "employer", "kind", "from", "to", "paychecks", "stubs_annual", "comp_effective",
                         "comp_employer", "comp_salary", "comp_fte", "comp_annual", "off", "status", "finding",

@@ -372,6 +372,7 @@ const CHECKS: [string, string, string, string][] = [
   ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
   ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
   ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "jobs"],
+  ["subscription_price_changes", "subscriptions changed price", "subscription: ", "view:subscriptions"],
   ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
   ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
   ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],
@@ -544,6 +545,54 @@ function findLine(values: unknown[][], id: string): Line | null {
     decidedBy: col("decided_by"), status: col("status"), note: col("note"), key: col("key"),
     oneOff: col("one_off").toUpperCase() === "TRUE",
   };
+}
+
+/** One open line a merchant question in review covers, for answering it on its own. */
+interface ReviewLine {
+  id: string;
+  date: string;
+  account: string;
+  payee: string;  // what an email or download named it, else the bank's
+  amount: number;
+}
+
+/**
+ * The open lines a merchant question covers, newest first: open lines whose key is the question's key or starts
+ * with it (a question can gather keys that begin the same), leaving out the ones in skip (asked on their own).
+ */
+function reviewLines(values: unknown[][], key: string, skip: string[] = []): ReviewLine[] {
+  if (!values.length || !key) return [];
+  const header = values[0].map((h) => String(h).trim());
+  const at = (name: string): number => header.indexOf(name);
+  for (const name of ["txn_id", "key", "status"]) {
+    if (at(name) < 0) throw new Error(`categorized tab is missing columns: ${name}`);
+  }
+  const col = (v: unknown[], name: string): string => (at(name) < 0 ? "" : String(v[at(name)] ?? "").trim());
+  return values.slice(1)
+    .filter((v) => col(v, "status") === "open" && skip.indexOf(col(v, "txn_id")) < 0 &&
+                   (col(v, "key") === key || col(v, "key").startsWith(key)))
+    .map((v) => ({ id: col(v, "txn_id"), date: col(v, "date").slice(0, 10), account: col(v, "account_id"),
+                   payee: col(v, "payee_text") || col(v, "payee_raw"), amount: Number(col(v, "amount")) || 0 }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+/** The Subscriptions page: your subscriptions with their yearly cost, and the total of the ones still charged. */
+interface SubscriptionsPage {
+  subscriptions: Record<string, string>[];
+  total: number;
+  computedAt: string;
+}
+
+function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
+  if (!values.length) return { subscriptions: [], total: 0, computedAt: "" };
+  const header = values[0].map((h) => String(h).trim());
+  const rows = values.slice(1).map((v) => {
+    const r: Record<string, string> = {};
+    header.forEach((h, i) => { if (h && h !== "run_id") r[h] = String(v[i] ?? "").trim(); });
+    return r;
+  }).filter((r) => r.key);
+  const total = rows.filter((r) => r.status !== "stopped").reduce((t, r) => t + (Number(r.yearly) || 0), 0);
+  return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
 }
 
 /**

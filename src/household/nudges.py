@@ -22,7 +22,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import projection, settings
+from . import projection, recurring, settings
 
 STALE_DAYS = 30
 LEAD_DAYS = 30
@@ -42,6 +42,7 @@ GROUPS = {  # the email's sections, in order
     "tax": "Change before the year's last paychecks",
     "download": "Download into the inbox",
     "review": "Answer in Review",
+    "subscriptions": "Subscriptions that changed price",
 }
 MIN_401K_GAP = 100  # dollars a 401(k) projection may miss its limit by before it is worth an email
 
@@ -152,7 +153,7 @@ def _last_paycheck(stubs, person, employer, year):
     return dates[-1] if dates else None
 
 
-def build(today, params, coverage=None, review=None, plan=None, elections=None, stubs=None, fsa=None):
+def build(today, params, coverage=None, review=None, plan=None, elections=None, stubs=None, fsa=None, changed=None):
     """The nudges: one row per thing to do, with the dates between which it belongs in the weekly email."""
     rows = []
 
@@ -244,6 +245,11 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
             add("review", f"{len(review)} question{'' if len(review) == 1 else 's'}",
                 f"covering {_lines(lines)}, the oldest from {oldest:%B} {oldest.day}, "
                 f"{oldest.year}", oldest + timedelta(days=STALE_DAYS), link=_view(params, "edit", "review"))
+    if changed is not None and len(changed):
+        for r in changed.to_dict("records"):  # in the email for the weeks after the charge
+            charged = _day(r["last"])
+            add("subscriptions", r["key"], f"{r['cadence']} charge now {r['change']}", charged,
+                charged + timedelta(days=recurring.FRESH_DAYS), link=_view(params, "subscriptions"))
     order = list(GROUPS.values())
     return pd.DataFrame(rows, columns=COLUMNS).sort_values(
         "group", key=lambda g: g.map(order.index), kind="stable").reset_index(drop=True)

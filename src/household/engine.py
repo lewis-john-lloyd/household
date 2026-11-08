@@ -10,8 +10,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, mortgage, paycheck,
-               nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
+from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_investments, mortgage,
+               paycheck, nudges, prices, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
 
@@ -54,6 +54,94 @@ def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
     incoming = ingest.legacy_to_transactions(legacy.parse_data_rows(rows))
     appended, skipped = ingest.append_transactions(ledger, incoming)
     return {"run_id": run_id, "read": len(incoming), "appended": appended, "skipped": skipped}
+
+
+def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="Equities", run_id=None, log=print):
+    """Stage 1 for the migration: back up the ledger, then add the legacy investments workbook's funds to
+    `securities` and its account tabs' readings to `holdings` (legacy_investments.py).
+
+    tabs maps each account tab's name to the ledger account_id it belongs to ({"tab": "account_id"}); several
+    tabs can name one account. Only the tabs named are read. A fund the ledger already lists, or a reading it
+    already holds (same date, account and fund), is not added again, so running it twice adds nothing.
+    """
+    run_id = run_id or new_run_id()
+    ledger, _, _ = bootstrap(session, folder_id)
+    known = set(_read(ledger, "accounts")["account_id"].astype(str).str.strip())
+    unknown = sorted({a for a in tabs.values() if a not in known})
+    if unknown:
+        raise ValueError(f"no such accounts in the ledger: {', '.join(unknown)} (add them first)")
+    backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
+    workbook = session.sheets.open_by_key(workbook_id)
+    names = [funds_tab] + list(tabs)
+    got = workbook.values_batch_get([f"'{n}'" for n in names], params={"valueRenderOption": sheets.UNFORMATTED})
+    read = {n: vr.get("values", []) for n, vr in zip(names, got.get("valueRanges", []))}
+    funds, notes = legacy_investments.securities(read[funds_tab])
+    frames = []
+    for tab, account in tabs.items():
+        df, more = legacy_investments.holdings(read[tab], account)
+        frames.append(df)
+        notes += more
+    held = legacy_investments.merge(frames)
+    have_funds = set(_read(ledger, "securities")["symbol"].astype(str).str.strip())
+    funds = funds[~funds["symbol"].isin(have_funds)]
+    have = _read(ledger, "holdings")
+    keys = set(zip(have["as_of"].astype(str), have["account_id"].astype(str), have["symbol"].astype(str)))
+    new = held[[k not in keys for k in zip(held["as_of"], held["account_id"], held["symbol"])]]
+    counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "securities"), funds),
+                                           (schema.table(schema.LEDGER, "holdings"), new)])
+    for note in notes:
+        _say(log, note)
+    _say(log, f"legacy investments: {counts['securities']} funds and {counts['holdings']} readings added "
+              f"({len(held) - len(new)} already held), {held['as_of'].nunique()} dates")
+    return {"run_id": run_id, "securities": counts["securities"], "holdings": counts["holdings"],
+            "already_held": len(held) - len(new), "dates": int(held["as_of"].nunique()), "notes": notes}
+
+
+PRICE_POLL_SECONDS = 60  # how long ingest waits for Sheets to answer the price requests it just wrote
+PRICE_POLL_EVERY = 10
+
+
+def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, sleep=time.sleep):
+    """Read the prices Sheets has answered into the ledger, then ask for the ones still wanted (prices.py).
+
+    Ingest waits up to `wait` seconds for the new requests' answers; whatever isn't answered by then is read
+    by the next ingest.
+    """
+    today = today or date.today()
+    table, requests_table = schema.table(schema.LEDGER, "prices"), schema.table(schema.LEDGER, "price_requests")
+    securities = _read(ledger, "securities")
+    usable, refused = prices.quotes(securities)
+    for symbol in refused:
+        _say(log, f"prices: {symbol}'s quote can't be used (capitals and digits, as VEMAX or MUTF:VEMAX)")
+    holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
+    added = 0
+
+    def collect():
+        nonlocal added
+        held = _read(ledger, "prices")
+        got, waiting = prices.harvest(_read(ledger, "price_requests"))
+        if len(held) and len(got):
+            have = set(zip(held["symbol"].astype(str), held["date"].astype(str)))
+            got = got[[k not in have for k in zip(got["symbol"], got["date"])]]
+        added += sheets.append_tables(ledger, [(table, got)])["prices"]
+        return held if got.empty else pd.concat([held, got], ignore_index=True), len(waiting)
+
+    held, _ = collect()
+    ask, wanted = prices.requests(securities, holdings, activity, held, today)
+    sheets.rewrite_price_requests(ledger, requests_table, ask)
+    waited = 0
+    while len(ask) and waited < wait:
+        sleep(PRICE_POLL_EVERY)
+        waited += PRICE_POLL_EVERY
+        held, waiting = collect()
+        if not waiting:
+            break
+    ask, wanted = prices.requests(securities, holdings, activity, held, today)
+    sheets.rewrite_price_requests(ledger, requests_table, ask)
+    if usable or added:
+        _say(log, f"prices: {added} read from GOOGLEFINANCE, {wanted} still wanted"
+                  + (f" ({len(ask)} asked in price_requests; run ingest again for the rest)" if wanted else ""))
+    return {"added": added, "wanted": wanted, "asked": len(ask)}
 
 
 def _say(log, message):
@@ -135,13 +223,16 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     started = time.perf_counter()
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
+    started = time.perf_counter()
+    priced = _price_requests(ledger, log)
+    timing["prices"] = round(time.perf_counter() - started, 2)
     written = changes_written(_read(ledger, "source_documents"))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
     _say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
     for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are printed above)
         if f.get("parser") != "changes":
             said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
-    result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "seconds": timing,
+    result = {"run_id": run_id, "files": files, "counts": counts, "review": answered, "prices": priced, "seconds": timing,
               # where the inbox is, so the weekly email can list what waits in it with nothing to set up
               "inbox": backup.find_or_create_folder(drive, "inbox", folder_id)}
     _record(reports, "ingest", run_id, started_at, {k: v for k, v in result.items() if k != "files"}

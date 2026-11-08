@@ -78,7 +78,14 @@ LEDGER = (
                                   "shares", "price", "value", "amount", "cash_balance", "doc_id"),
           {"kind": ("contribution", "buy", "sell", "exchange", "reinvest", "dividend", "interest", "conversion_in",
                     "conversion_out", "transfer_in", "transfer_out", "withdrawal", "fee", "adjustment", "other")}),
-    Table("securities", ("symbol", "asset_class", "expense_ratio", "wash_group")),
+    # each fund or stock the household holds: its name, asset class and expense ratio, and the symbol
+    # GOOGLEFINANCE knows it by (quote; blank for a fund with no public price, such as a plan-only trust)
+    Table("securities", ("symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group")),
+    # a security's closing price on or before a date (priced_date is the trading day it came from); a row with
+    # no close records that GOOGLEFINANCE had none, so the date is not asked again (prices.py)
+    Table("prices", ("symbol", "date", "priced_date", "close", "source")),
+    # a work surface like review: GOOGLEFINANCE formulas for the prices still wanted, rewritten by ingest
+    Table("price_requests", ("symbol", "quote", "date", "result")),
     Table("loans", ("loan_id", "lender", "originated", "principal", "rate", "term_months", "escrow")),
     Table("loan_events", ("date", "loan_id", "kind", "amount", "doc_id"),
           {"kind": ("payment", "prepayment", "recast", "rate_change")}),

@@ -247,6 +247,41 @@ def rewrite_review(spreadsheet, t, df, answers=()):
     return len(values) - 1
 
 
+PRICE_REQUESTS = "price_requests"
+QUOTE = re.compile(r"^[A-Z0-9]{1,10}(?:[:.][A-Z0-9]{1,10})?$")  # VEMAX, MUTF:VEMAX, BRK.B
+
+
+def rewrite_price_requests(spreadsheet, t, df):
+    """Rewrite the ledger's price_requests tab, the one place a formula is written: each row's result is a
+    GOOGLEFINANCE formula Sheets evaluates, which ingest reads back as prices (prices.py).
+
+    The formula is built here from the row's quote and date alone, after both are checked (a quote of capitals
+    and digits, a YYYY-MM-DD date), so nothing typed into the ledger can become a formula of its own.
+    """
+    if t.name != PRICE_REQUESTS:
+        raise PermissionError(f"rewrite_price_requests refused on '{t.name}'")
+    rows = []
+    for r in df[["symbol", "quote", "date"]].astype(str).values.tolist():
+        symbol, quote, day = (c.strip() for c in r)
+        if not QUOTE.match(quote) or not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+            raise ValueError(f"price request refused: quote {quote!r}, date {day!r}")
+        rows.append([symbol, quote, day, price_formula(quote, day)])
+    ws = spreadsheet.worksheet(t.name)
+    ws.clear()
+    values = [list(t.columns)] + rows
+    ws.resize(rows=max(len(values), 2), cols=len(t.columns))
+    ws.update(values=values, range_name="A1", value_input_option="USER_ENTERED")
+    return len(rows)
+
+
+def price_formula(quote, day):
+    """The last close on or before day, in the week before it, as "YYYY-MM-DD close"; "none" when there is none."""
+    y, m, d = (int(p) for p in day.split("-"))
+    when = f"DATE({y},{m},{d})"
+    return (f'=IFERROR(LET(r,GOOGLEFINANCE("{quote}","close",{when}-7,{when}),'
+            f'TEXT(INDEX(r,ROWS(r),1),"yyyy-mm-dd")&" "&INDEX(r,ROWS(r),2)),"none")')
+
+
 def replace_table(spreadsheet, t, df):
     """Overwrite a derived table. Allowed only on the Reports spreadsheet."""
     if spreadsheet.title != REPORTS_TITLE:

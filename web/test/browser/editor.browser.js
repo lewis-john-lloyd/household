@@ -396,3 +396,53 @@ test("a link opens the page it names, and a known setting not set yet is added a
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("a merchant split into its lines leaves review once every line has a category, and comes back on undo", async () => {
+  const page = await open("window.__location = { parameter: { view: 'edit', tab: 'review' } };" +
+    "window.__answers.getEditor.review = [{ key: 'ACME GROCER', kind: 'payee', lines: '2', total: '-60', first: '2001-02-01', " +
+    "last: '2001-02-15', accounts: 'checking', example: 'ACME GROCER 12', guess: '', guessed_by: '', note: '' }];" +
+    "window.__answers.getReviewLines = [{ id: 't1', date: '2001-02-01', payee: 'ACME GROCER 12', account: 'checking', amount: -20 }, " +
+    "{ id: 't2', date: '2001-02-15', payee: 'ACME GROCER 12', account: 'checking', amount: -40 }];");
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  const split = async (choices) => {
+    await page.click(".md-row:has-text('ACME GROCER')");
+    await page.click(".md-detail button:has-text('Split into its lines')");
+    await page.waitForSelector("table.split-lines");
+    const picks = await page.$$("table.split-lines select");
+    for (let i = 0; i < choices.length; i++) if (choices[i]) await picks[i].selectOption(choices[i]);
+    await page.click(".md-detail button:has-text('Keep answers')");
+  };
+  await split(["food", ""]);  // one line left on (choose): the question stays for it
+  assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 1);
+  await split(["food", "kids"]);
+  assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 0);
+  assert.deepEqual(await staged(page), ["ACME GROCER 12 2001-02-01: food", "ACME GROCER 12 2001-02-15: kids"]);
+  await page.evaluate(() => Array.from(document.querySelectorAll("#pending-list li"))  // undo one: the question is back
+    .filter((li) => li.textContent.includes("2001-02-15"))[0].querySelector("button").click());
+  assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 1);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("recurring charges that seem to have stopped come after the ongoing ones, and one merges into another", async () => {
+  const row = (key, status, last) => ({ key, marked: "", status, cadence: "monthly", charges: "4", last, latest: "30",
+                                        yearly: "360", category: "petrol", example: key, note: "", includes: "", merged: "" });
+  const page = await open("window.__location = { parameter: { view: 'edit', tab: 'subscriptions' } };" +
+    "window.__answers.getEditor.subscriptions = " + JSON.stringify([
+      row("BLUE PUMP FUEL", "stopped", "2001-01-03"), row("WILLOW ST", "active", "2001-06-03")]) + ";");
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  const order = await page.$$eval(".md-list .md-row", (rows) => rows.map((r) => r.textContent));
+  assert.match(order[0], /WILLOW ST/);
+  assert.match(order[1], /BLUE PUMP FUEL.*last charged 2001-01-03/);
+  assert.match(await page.textContent(".md-list"), /Seem to have stopped/);
+  await page.click(".md-row:has-text('BLUE PUMP FUEL')");
+  await page.selectOption(".md-detail label:has-text('Merge into') select", "WILLOW ST");
+  await page.click(".md-detail button:has-text('Merge')");
+  assert.deepEqual(await staged(page), ["BLUE PUMP FUEL: part of WILLOW ST"]);
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "recurring_merge", key: "BLUE PUMP FUEL", same_as: "WILLOW ST" }]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

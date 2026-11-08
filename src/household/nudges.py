@@ -42,7 +42,7 @@ GROUPS = {  # the email's sections, in order
     "tax": "Change before the year's last paychecks",
     "download": "Download into the inbox",
     "review": "Answer in Review",
-    "subscriptions": "Subscriptions that changed price",
+    "subscriptions": "Recurring charges that changed price",
 }
 MIN_401K_GAP = 100  # dollars a 401(k) projection may miss its limit by before it is worth an email
 

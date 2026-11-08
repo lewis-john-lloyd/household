@@ -1,9 +1,11 @@
 """Subscriptions you mark, their yearly cost and price changes, on made-up charges."""
 
 import pandas as pd
+import pytest
 
 from household import nudges, recurring
 from household.parsers import changes
+from household.parsers.common import ParseError
 
 
 def charge(n, day, key, amount, category="media", text=None):
@@ -51,7 +53,7 @@ def test_the_editor_lists_yours_then_what_recurs_unmarked_then_what_you_said_no_
     found = recurring.discover(LINES, TODAY)
     rows = recurring.editor_rows(subs, found, LINES, DECISIONS)
     assert rows[["key", "marked"]].values.tolist() == [
-        ["PAGE TURNER BOOKS", "yes"], ["QUILL & INK", "yes"], ["ACME GROCER", "no"], ["WILLOW ST", ""]]
+        ["PAGE TURNER BOOKS", "yes"], ["QUILL & INK", "yes"], ["WILLOW ST", ""], ["ACME GROCER", "no"]]
     assert rows.set_index("key").at["WILLOW ST", "yearly"] == 240.0
 
 
@@ -64,7 +66,7 @@ def test_a_subscription_edit_is_an_answer_and_a_fresh_change_is_in_the_weekly_em
     subs = recurring.subscriptions(LINES, DECISIONS, TODAY)
     todo = nudges.build(pd.Timestamp(TODAY).date(), pd.DataFrame(columns=["key", "value"]),
                         changed=recurring.fresh_changes(subs, TODAY))
-    mine = todo[todo["group"] == "Subscriptions that changed price"]
+    mine = todo[todo["group"] == "Recurring charges that changed price"]
     assert mine[["item", "show_from", "show_until"]].values.tolist() == [["PAGE TURNER BOOKS", "2026-10-05", "2026-11-19"]]
 
 
@@ -78,3 +80,64 @@ def test_each_subscription_is_its_own_entry_each_month_with_what_its_cadence_exp
     yearly = months[months["key"] == "QUILL & INK"].set_index("month")
     assert yearly.at["2026-03", "actual"] == 60.0 and yearly.at["2026-03", "expected"] == 60.0  # due a year on
     assert yearly.at["2026-04", "expected"] == 0.0 and yearly.at["2025-04", "actual"] == 0.0
+
+
+def merge(key, into, at="2026-10-02T00:00:00Z"):
+    return {"proposal_key": f"subscription_merge:{key}", "kind": "subscription_merge", "decided_at": at,
+            "decision": "approve" if into else "reject", "note": into}
+
+
+# BLUE PUMP FUEL monthly at 30 until April, then the same charge as WILLOW ST from May (32 in October); ACME GROCER monthly
+# at 40 in 2025 and nothing since
+RENAMED = pd.DataFrame(
+    [charge(i, f"2026-{m:02d}-03", "BLUE PUMP FUEL", 30) for i, m in enumerate(range(1, 5))]
+    + [charge(10 + m, f"2026-{m:02d}-03", "WILLOW ST", 30 if m < 10 else 32) for m in range(5, 11)]
+    + [charge(30 + m, f"2025-{m:02d}-10", "ACME GROCER", 40) for m in range(1, 7)])
+
+
+def test_a_merged_key_adds_its_charges_to_the_one_it_joins():
+    decisions = pd.DataFrame([answer("WILLOW ST", True), merge("BLUE PUMP FUEL", "WILLOW ST")])
+    subs = recurring.subscriptions(RENAMED, decisions, TODAY).set_index("key")
+    assert list(subs.index) == ["WILLOW ST"]
+    one = subs.loc["WILLOW ST"]
+    assert (one["charges"], one["first"], one["cadence"], one["status"]) == (10, "2026-01-03", "monthly", "price changed")
+    assert (one["includes"], one["merged"]) == ("BLUE PUMP FUEL", "BLUE PUMP FUEL")
+    months = recurring.subscription_months(RENAMED, decisions, today=TODAY)
+    assert months[months["month"] == "2026-02"]["actual"].tolist() == [30.0]
+    # separated again, it is its own entry in the editor
+    apart = pd.concat([decisions, pd.DataFrame([merge("BLUE PUMP FUEL", "", at="2026-10-03T00:00:00Z")])])
+    rows = recurring.editor_rows(recurring.subscriptions(RENAMED, apart, TODAY), recurring.discover(RENAMED, TODAY),
+                                 RENAMED, apart, TODAY)
+    assert rows[["key", "marked", "status"]].values.tolist() == [
+        ["WILLOW ST", "yes", "price changed"], ["ACME GROCER", "", "stopped"], ["BLUE PUMP FUEL", "", "stopped"]]
+
+
+def test_the_editor_lists_ongoing_charges_before_the_ones_that_seem_to_have_stopped():
+    merged = pd.DataFrame([merge("BLUE PUMP FUEL", "WILLOW ST")])  # merged, neither tracked yet
+    rows = recurring.editor_rows(recurring.subscriptions(RENAMED, merged, TODAY), recurring.discover(RENAMED, TODAY),
+                                 RENAMED, merged, TODAY)
+    assert rows[["key", "marked", "status", "charges", "merged"]].values.tolist() == [
+        ["WILLOW ST", "", "price changed", 10, "BLUE PUMP FUEL"], ["ACME GROCER", "", "stopped", 6, ""]]
+    # tracking a key that was merged tracks the group it joined
+    tracked = pd.concat([merged, pd.DataFrame([answer("BLUE PUMP FUEL", True)])])
+    assert list(recurring.subscriptions(RENAMED, tracked, TODAY)["key"]) == ["WILLOW ST"]
+
+
+def test_a_chain_of_merges_ends_at_one_key_and_a_cycle_merges_nothing():
+    chain = pd.DataFrame([merge("ACME GROCER", "BLUE PUMP FUEL"), merge("BLUE PUMP FUEL", "WILLOW ST")])
+    assert recurring.merges(chain) == {"ACME GROCER": "WILLOW ST", "BLUE PUMP FUEL": "WILLOW ST"}
+    cycle = pd.DataFrame([merge("ACME GROCER", "WILLOW ST"), merge("WILLOW ST", "ACME GROCER")])
+    assert recurring.merges(cycle) == {}
+
+
+def test_a_recurring_merge_edit_is_an_answer_and_cannot_join_itself():
+    doc = ('{"format": "household_changes", "version": 1, "created_at": "2026-10-20T00:00:00Z", "base_run": "r1", '
+           '"edits": [%s]}')
+    result = changes.parse(doc % '{"kind": "recurring_merge", "key": "blue pump fuel", "same_as": "willow st"}')
+    row = result.tables["proposal_decisions"].iloc[0]
+    assert (row["proposal_key"], row["kind"], row["decision"], row["note"]) == (
+        "subscription_merge:BLUE PUMP FUEL", "subscription_merge", "approve", "WILLOW ST")
+    apart = changes.parse(doc % '{"kind": "recurring_merge", "key": "BLUE PUMP FUEL", "same_as": ""}')
+    assert apart.tables["proposal_decisions"].iloc[0]["decision"] == "reject"
+    with pytest.raises(ParseError, match="same_as must be another key"):
+        changes.parse(doc % '{"kind": "recurring_merge", "key": "WILLOW ST", "same_as": "willow st"}')

@@ -411,7 +411,7 @@ const CHECKS: [string, string, string, string][] = [
   ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
   ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
   ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "jobs"],
-  ["subscription_price_changes", "subscriptions changed price", "subscription: ", "view:subscriptions"],
+  ["subscription_price_changes", "recurring charges changed price", "recurring charge: ", "view:subscriptions"],
   ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
   ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
   ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],
@@ -615,7 +615,7 @@ function reviewLines(values: unknown[][], key: string, skip: string[] = []): Rev
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }
 
-/** The Subscriptions page: your subscriptions with their yearly cost, and the total of the ones still charged. */
+/** The Recurring page: the charges you track with their yearly cost, and the total of the ones still charged. */
 interface SubscriptionsPage {
   subscriptions: Record<string, string>[];
   total: number;

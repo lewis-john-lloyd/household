@@ -355,15 +355,16 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     subs = recurring.subscriptions(categorized, books["decisions"], today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "subscriptions"), subs.assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "editor_subscriptions"),
-                         recurring.editor_rows(subs, subscriptions, categorized, books["decisions"]).assign(run_id=run_id))
+                         recurring.editor_rows(subs, subscriptions, categorized, books["decisions"], today)
+                         .assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "subscription_months"),
                          recurring.subscription_months(categorized, books["decisions"], books["categories"], today)
                          .assign(run_id=run_id))
     changed = recurring.fresh_changes(subs, today)
     yearly = pd.to_numeric(subs["yearly"], errors="coerce")[subs["status"] != "stopped"].sum()
-    _say(log, f"subscriptions: {len(subs)} marked, {yearly:,.0f} a year, {len(changed)} changed price lately")
+    _say(log, f"tracked recurring charges: {len(subs)}, {yearly:,.0f} a year, {len(changed)} changed price lately")
     for r in changed.to_dict("records"):
-        _say(log, f"subscription: {r['key']} now {r['change']}")
+        _say(log, f"recurring charge: {r['key']} now {r['change']}")
     money = flows.build(_read(ledger, "paystubs"), categorized, books["categories"], _read(ledger, "equity_sales"))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "flows"), money.assign(run_id=run_id))
     _say(log, f"flows: {money['period'].nunique()} months and years for the Sankey view")

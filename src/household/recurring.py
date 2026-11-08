@@ -85,6 +85,9 @@ def discover(categorized, today=None):
 #   stopped        not charged for 1.5 cadences (400 days when irregular)
 #   active         otherwise
 #
+# A key can be merged into another (a "subscription_merge" edit): a merchant whose name on the statement
+# changed, or a loan that was sold, is then one charge with one history.
+#
 # A price change is news for FRESH_DAYS after the charge: compute counts those for the status page and
 # the weekly email.
 
@@ -93,8 +96,9 @@ RAISE_MIN = 0.5
 FRESH_DAYS = 45
 PER_YEAR = {"weekly": 52, "biweekly": 26, "monthly": 12, "quarterly": 4, "yearly": 1}
 SUB_COLUMNS = ["key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
-               "next_expected", "status", "change", "example", "note"]
-EDITOR_COLUMNS = ["key", "marked", "cadence", "charges", "last", "latest", "yearly", "category", "example", "note"]
+               "next_expected", "status", "change", "example", "note", "includes", "merged"]
+EDITOR_COLUMNS = ["key", "marked", "status", "cadence", "charges", "last", "latest", "yearly", "category", "example",
+                  "note", "includes", "merged"]
 
 
 def marks(decisions):
@@ -123,44 +127,108 @@ def _example(g):
     return str(text.astype(str).value_counts().index[0]) if len(g) else ""
 
 
+def merges(decisions):
+    """{key: the key it is part of} from proposal_decisions: the latest merge answer per key (a
+    "subscription_merge" edit, the key it joins in its note; a reject separates it again), a chain followed
+    to its end. A key in a cycle stays on its own."""
+    if decisions is None or decisions.empty:
+        return {}
+    d = decisions[(decisions["kind"] == "subscription_merge")
+                  & decisions["proposal_key"].astype(str).str.startswith("subscription_merge:")]
+    d = d.sort_values("decided_at", kind="stable")
+    raw = {}
+    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
+        key, into = str(k)[len("subscription_merge:"):], str(n if n is not None else "").strip().upper()
+        if v == "approve" and into and into != key:
+            raw[key] = into
+        else:
+            raw.pop(key, None)
+    out = {}
+    for key, into in raw.items():
+        seen = [key]
+        while into in raw and into not in seen:
+            seen.append(into)
+            into = raw[into]
+        if into not in seen:
+            out[key] = into
+    return out
+
+
+def members(key, merged):
+    """The keys whose charges count as key's: itself and the keys merged into it."""
+    return [key] + sorted(k for k, into in merged.items() if into == key)
+
+
+def group_lines(df, key, merged):
+    """The charges in df that count as key's, oldest first: their key is a member or starts with one and a space."""
+    keys = members(key, merged)
+    return df[df["key"].astype(str).map(lambda k: any(_covers(m, k) for m in keys))].sort_values("date", kind="stable")
+
+
+def _empty(key, note):
+    return {"key": key, "category": "", "cadence": "", "charges": 0, "first": "", "last": "", "latest": None,
+            "previous": None, "yearly": None, "next_expected": "", "status": "no charges", "change": "", "example": "",
+            "note": note, "includes": "", "merged": ""}
+
+
+def _row(key, g, today, note, merged):
+    """A SUB_COLUMNS row from a group's charges g (oldest first, at least one)."""
+    days = pd.to_datetime(g["date"])
+    spend = -g["amount"].to_numpy()
+    name, cadence = _cadence(days.diff().dt.days.dropna().to_numpy()) if len(g) >= 2 else (None, None)
+    last, latest = days.iloc[-1], float(spend[-1])
+    previous = float(spend[-2]) if len(spend) >= 2 else None
+    if name:
+        yearly = latest * PER_YEAR[name]
+        following = (last + pd.Timedelta(days=round(cadence))).date().isoformat()
+    else:
+        yearly = float(spend[(days > today - pd.Timedelta(days=365)).to_numpy()].sum())
+        following = ""
+    changed = previous is not None and abs(latest - previous) > max(PRICE_STEP * previous, RAISE_MIN)
+    if (today - last).days > (1.5 * cadence if cadence else 400):
+        status = "stopped"
+    elif changed:
+        status = "price changed"
+    else:
+        status = "active"
+    change = (f"{latest:,.2f}, was {previous:,.2f} ({latest / previous - 1:+.0%}) from {g['date'].iloc[-1]}"
+              if changed else "")
+    others = sorted(set(g["key"].astype(str)) - {key})
+    return {"key": key, "category": g["category"].mode().iloc[0], "cadence": name or "irregular",
+            "charges": len(g), "first": g["date"].iloc[0], "last": g["date"].iloc[-1],
+            "latest": round(latest, 2), "previous": None if previous is None else round(previous, 2),
+            "yearly": round(yearly, 2), "next_expected": following, "status": status, "change": change,
+            "example": _example(g), "note": note, "includes": ", ".join(others),
+            "merged": ", ".join(members(key, merged)[1:])}
+
+
+def tracked(decisions):
+    """{key: note} for each group you track: its own answer is yes, or it has none and a key merged into it
+    does. A key merged into another is never a group of its own."""
+    marked, merged = marks(decisions), merges(decisions)
+    out = {}
+    for key in list(marked) + list(merged.values()):
+        if key in merged or key in out:
+            continue
+        own = marked.get(key)
+        yes = own[0] if own else any(marked.get(m, (False, ""))[0] for m in members(key, merged))
+        if yes:
+            out[key] = own[1] if own else ""
+    return out
+
+
 def subscriptions(categorized, decisions, today=None):
-    """One row per marked subscription (SUB_COLUMNS), newest price change first, then by yearly cost."""
+    """One row per recurring charge you track (SUB_COLUMNS), newest price change first, then by yearly cost.
+    A key merged into another adds its charges to that one's, so a merchant that changed its name on the
+    statement (or a lender that sold the loan) is one charge with one history."""
     today = pd.Timestamp(today or date.today())
-    yes = {k: note for k, (on, note) in marks(decisions).items() if on}
+    merged = merges(decisions)
     df = _charges(categorized)
     rows = []
-    for key, note in yes.items():
-        g = df[df["key"].astype(str).map(lambda k: _covers(key, k))].sort_values("date", kind="stable")
-        if g.empty:
-            rows.append({"key": key, "category": "", "cadence": "", "charges": 0, "first": "", "last": "",
-                         "latest": None, "previous": None, "yearly": None, "next_expected": "", "status": "no charges",
-                         "change": "", "example": "", "note": note})
-            continue
-        days = pd.to_datetime(g["date"])
-        spend = -g["amount"].to_numpy()
-        name, cadence = _cadence(days.diff().dt.days.dropna().to_numpy()) if len(g) >= 2 else (None, None)
-        last, latest = days.iloc[-1], float(spend[-1])
-        previous = float(spend[-2]) if len(spend) >= 2 else None
-        if name:
-            yearly = latest * PER_YEAR[name]
-            following = (last + pd.Timedelta(days=round(cadence))).date().isoformat()
-        else:
-            yearly = float(spend[(days > today - pd.Timedelta(days=365)).to_numpy()].sum())
-            following = ""
-        changed = previous is not None and abs(latest - previous) > max(PRICE_STEP * previous, RAISE_MIN)
-        if (today - last).days > (1.5 * cadence if cadence else 400):
-            status = "stopped"
-        elif changed:
-            status = "price changed"
-        else:
-            status = "active"
-        change = (f"{latest:,.2f}, was {previous:,.2f} ({latest / previous - 1:+.0%}) from {g['date'].iloc[-1]}"
-                  if changed else "")
-        rows.append({"key": key, "category": g["category"].mode().iloc[0], "cadence": name or "irregular",
-                     "charges": len(g), "first": g["date"].iloc[0], "last": g["date"].iloc[-1],
-                     "latest": round(latest, 2), "previous": None if previous is None else round(previous, 2),
-                     "yearly": round(yearly, 2), "next_expected": following, "status": status, "change": change,
-                     "example": _example(g), "note": note})
+    for key, note in tracked(decisions).items():
+        g = group_lines(df, key, merged)
+        rows.append({**_empty(key, note), "merged": ", ".join(members(key, merged)[1:])} if g.empty
+                    else _row(key, g, today, note, merged))
     out = pd.DataFrame(rows, columns=SUB_COLUMNS)
     order = {"price changed": 0, "active": 1, "no charges": 2, "stopped": 3}
     out["_o"] = out["status"].map(order)
@@ -177,27 +245,44 @@ def fresh_changes(subs, today=None):
     return subs[(subs["status"] == "price changed") & recent]
 
 
-def editor_rows(subs, found, categorized, decisions):
-    """The Subscriptions editor's rows (EDITOR_COLUMNS): your subscriptions, the recurring charges discover
-    found that you have not marked either way, and the ones you said are not subscriptions."""
-    marked = marks(decisions)
-    rows = [{"key": r["key"], "marked": "yes", "cadence": r["cadence"], "charges": r["charges"], "last": r["last"],
-             "latest": r["latest"], "yearly": r["yearly"], "category": r["category"], "example": r["example"],
-             "note": r["note"]} for r in subs.to_dict("records")]
-    df = _charges(categorized) if len(found) else None
-    for r in found.to_dict("records"):
-        on = marked.get(r["key"])
-        if on and on[0]:
-            continue
-        g = df[df["key"] == r["key"]]
-        rows.append({"key": r["key"], "marked": "no" if on else "", "cadence": r["cadence"], "charges": r["charges"],
-                     "last": r["last"], "latest": r["latest"], "yearly": round(r["latest"] * PER_YEAR[r["cadence"]], 2),
-                     "category": r["category"], "example": _example(g), "note": on[1] if on else ""})
+def editor_rows(subs, found, categorized, decisions, today=None):
+    """The Recurring editor's rows (EDITOR_COLUMNS): what you track, then the recurring charges discover found
+    that you have not answered either way (ongoing ones before the ones that seem to have stopped), then the
+    ones you said not to track. A found key merged into another, or whose charges a tracked one already
+    covers, is listed only as part of that one; a merged group is judged on all its charges."""
+    today = pd.Timestamp(today or date.today())
+    marked, merged = marks(decisions), merges(decisions)
+    pick = ["key", "status", "cadence", "charges", "last", "latest", "yearly", "category", "example", "note",
+            "includes", "merged"]
+    rows = [{**{c: r[c] for c in pick}, "marked": "yes"} for r in subs.to_dict("records")]
+    df = _charges(categorized)
+    covered = set()
+    for r in subs.to_dict("records"):
+        covered |= set(group_lines(df, r["key"], merged)["key"].astype(str))
     seen = {r["key"] for r in rows}
-    rows += [{"key": k, "marked": "no", "cadence": "", "charges": "", "last": "", "latest": None, "yearly": None,
-              "category": "", "example": "", "note": note} for k, (on, note) in marked.items() if not on and k not in seen]
-    return pd.DataFrame(rows, columns=EDITOR_COLUMNS)
-
+    found_rows = []
+    for r in found.to_dict("records"):
+        key = merged.get(r["key"], r["key"])
+        if key in seen or r["key"] in covered:
+            continue
+        seen.add(key)
+        on = marked.get(key)
+        g = group_lines(df, key, merged)
+        if key != r["key"] or len(members(key, merged)) > 1:  # a merged group: judged on all its charges
+            base = _row(key, g, today, on[1] if on else "", merged)
+        else:
+            base = {"key": key, "status": r["status"], "cadence": r["cadence"], "charges": r["charges"],
+                    "last": r["last"], "latest": r["latest"], "yearly": round(r["latest"] * PER_YEAR[r["cadence"]], 2),
+                    "category": r["category"], "example": _example(g), "note": on[1] if on else "",
+                    "includes": "", "merged": ""}
+        found_rows.append({**{c: base[c] for c in pick}, "marked": "no" if on else ""})
+    later = {"": 0, "no": 1}
+    found_rows.sort(key=lambda r: (later[r["marked"]], r["status"] == "stopped"))
+    rows += found_rows
+    rows += [{**_empty(k, note), "marked": "no", "status": ""} for k, (on, note) in marked.items()
+             if not on and k not in seen and k not in merged]
+    out = pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+    return out[[c for c in EDITOR_COLUMNS]]
 
 
 MONTH_COLUMNS = ["month", "key", "category", "group", "expected", "actual"]
@@ -211,11 +296,12 @@ def subscription_months(categorized, decisions, categories=None, today=None):
     the month its next charge fell due. An irregular one expects nothing."""
     today = pd.Timestamp(today or date.today())
     subs = subscriptions(categorized, decisions, today)
+    merged = merges(decisions)
     groups = {} if categories is None or categories.empty else dict(zip(categories["category"], categories["group"]))
     df = _charges(categorized)
     rows = []
     for sub in subs[subs["charges"] > 0].to_dict("records"):
-        g = df[df["key"].astype(str).map(lambda k: _covers(sub["key"], k))].sort_values("date", kind="stable")
+        g = group_lines(df, sub["key"], merged)
         g = g.assign(month=g["date"].astype(str).str[:7], spend=-g["amount"])
         spent = g.groupby("month")["spend"].sum()
         cadence = dict(CADENCES).get(sub["cadence"])

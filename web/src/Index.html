@@ -396,7 +396,7 @@
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget against actual</button>
         <button id="view-taxes" aria-pressed="false">Taxes</button>
-        <button id="view-subscriptions" aria-pressed="false">Subscriptions</button>
+        <button id="view-subscriptions" aria-pressed="false">Recurring</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
       </nav>
     </header>
@@ -469,7 +469,7 @@
         <button data-tab="settings" aria-pressed="false">Settings</button>
         <button data-tab="withholding" aria-pressed="false">Withholding</button>
         <button data-tab="jobs" aria-pressed="false">Jobs</button>
-        <button data-tab="subscriptions" aria-pressed="false">Subscriptions</button>
+        <button data-tab="subscriptions" aria-pressed="false">Recurring</button>
         <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
         <button data-tab="waiting" aria-pressed="false">Saved</button>
       </div>
@@ -647,13 +647,13 @@
         used.title = l.target ? Math.round(100 * l.actual / l.target) + "% of budget" : "no budget";
         row.addEventListener("click", function () { toggleDetail(row, l); });
         body.appendChild(row);
-        // each subscription in the line is its own entry under it: spent, and what its cadence expected
+        // each recurring charge in the line is its own entry under it: spent, and what its cadence expected
         (l.subscriptions || []).forEach(function (s) {
           var sub = document.createElement("tr");
           sub.className = "subscription" + (s.expected !== null && s.actual > s.expected + 0.005 ? " over" : "");
           var name = cell(sub, s.name, "text");
-          name.title = "A subscription in " + l.name + "; its spending is part of the line above";
-          cell(sub, "subscription", "text");
+          name.title = "A recurring charge in " + l.name + "; its spending is part of the line above";
+          cell(sub, "recurring", "text");
           cell(sub, s.expected === null ? "" : cents.format(s.expected));
           cell(sub, cents.format(s.actual));
           cell(sub, s.expected === null ? "" : cents.format(s.expected - s.actual), "left");
@@ -767,6 +767,7 @@
           case "item": return "item|" + e.item_id;
           case "job": return "job|" + e.person + "|" + e.effective + "|" + e.employer;
           case "subscription": return "subscription|" + e.key.toUpperCase();
+          case "recurring_merge": return "recurring_merge|" + e.key.toUpperCase();
         }
         return e.kind + "|" + JSON.stringify(e);
       }
@@ -1774,9 +1775,17 @@
       }
 
       // --- the tabs ---------------------------------------------------------------------------------------
+      // A merchant question split into its lines leaves the list once each of those lines has a category
+      // waiting to be saved; undoing one brings the question back. splits: question key -> its open line ids.
+      var splits = {};
+      function splitAnswered(r) {
+        var ids = splits[r.key];
+        return !!(ids && ids.length && ids.every(function (id) { return staged["line|" + id + "|category"]; }));
+      }
+
       function drawReview(body) {
         masterDetail(body, {
-          items: editor.review, noun: "questions", key: function (r) { return r.key; },
+          items: editor.review.filter(function (r) { return r.kind === "line" || !splitAnswered(r); }), noun: "questions", key: function (r) { return r.key; },
           title: function (r) { return r.kind === "line" ? r.example : r.key; },
           sub: function (r) {
             return (r.kind === "line" ? "one line, " + r.first : r.lines + " lines") + ", " + cents.format(Number(r.total) || 0) +
@@ -1817,7 +1826,8 @@
       }
 
       // A merchant question's lines, each with its own category: the answers are line edits, so the merchant
-      // stays unanswered and its later lines are asked again.
+      // stays unanswered and its later lines are asked again. With every line answered the question leaves
+      // the list (splits); with some left on (choose) it stays, for the rest.
       function splitIntoLines(r, panel, done) {
         var box = el("div", "Loading its lines…", "support");
         box.id = "split-lines";
@@ -1856,6 +1866,8 @@
               stage({ kind: "line", txn_id: l.id, field: "category", value: p[1].value },
                     l.payee + " " + l.date + ": " + p[1].value);
             });
+            splits[r.key] = lines.map(function (l) { return l.id; });
+            if (splitAnswered(r)) selected[editTab] = null;  // its question is gone, so nothing stays open
             done();
           }, "filled"));
           form.appendChild(actions);
@@ -2033,23 +2045,23 @@
         });
       }
 
-      // The Subscriptions page: what you marked, its cadence, latest charge and yearly cost, a price change first.
+      // The Recurring page: what you marked, its cadence, latest charge and yearly cost, a price change first.
       function drawSubscriptions(data) {
         var body = document.getElementById("subscriptions-body");
         body.textContent = "";
         var head = el("div", null, "page-head");
-        head.appendChild(el("h2", "Subscriptions"));
-        var mark = button("Mark subscriptions", function () { setView("edit"); setEditTab("subscriptions"); });
+        head.appendChild(el("h2", "Recurring charges"));
+        var mark = button("Choose what to track", function () { setView("edit"); setEditTab("subscriptions"); });
         head.appendChild(mark);
         body.appendChild(head);
         if (!data.subscriptions.length) {
-          body.appendChild(el("p", "Nothing marked yet. Mark a merchant as a subscription in Edit, where charges that come back regularly are listed for you.", "support"));
+          body.appendChild(el("p", "Nothing tracked yet. Choose what you pay on a schedule (a mortgage, a lease, insurance, a streaming service) in Edit, where charges that come back regularly are listed for you.", "support"));
           return;
         }
         body.appendChild(el("p", cents.format(data.total) + " a year for the ones still charged.", "support"));
         var table = el("table", null, "subscriptions");
         var hr = el("tr");
-        ["Subscription", "Every", "Latest", "Last charged", "Next", "A year"].forEach(function (h, i) {
+        ["Charge", "Every", "Latest", "Last charged", "Next", "A year"].forEach(function (h, i) {
           hr.appendChild(el("th", h, i >= 2 && i !== 3 && i !== 4 ? "num" : ""));
         });
         table.appendChild(el("thead")).appendChild(hr);
@@ -2060,6 +2072,7 @@
           name.appendChild(el("strong", r.key));
           var about = [r.example !== r.key ? r.example : "", r.category, r.note].filter(Boolean).join(", ");
           if (about) name.appendChild(el("div", about, "support"));
+          if (r.includes) name.appendChild(el("div", "Includes " + r.includes, "support"));
           if (r.status === "price changed") name.appendChild(el("div", "Price changed: " + r.change, "off"));
           if (r.status === "stopped") name.appendChild(el("div", "No charge since " + r.last, "support"));
           row.appendChild(name);
@@ -2074,31 +2087,73 @@
         body.appendChild(table);
       }
 
-      // Edit, Subscriptions: mark a merchant as a subscription or not. Charges that come back regularly and
-      // are not marked either way are listed to choose from; a merchant can also be named by hand.
+      // Edit, Recurring: track a merchant as a recurring charge or not. Charges that come back regularly and
+      // are not answered either way are listed to choose from, the ones that seem ongoing first; a merchant
+      // can also be named by hand. Two entries that are one charge (a new name on the statement, a loan that
+      // was sold) can be merged into one.
+      var RECURRING_SECTION = { yes: "Tracked", "": "Charges that come back: track them?",
+                                stopped: "Seem to have stopped: track them?", no: "Not tracked" };
+      function recurringSection(r) { return r.marked === "" && r.status === "stopped" ? "stopped" : r.marked || ""; }
       function drawSubscriptionMarks(body) {
-        var section_ = { yes: "Your subscriptions", "": "Charges that come back: subscriptions?", no: "Not subscriptions" };
-        var order = { yes: 0, "": 1, no: 2 };
-        var items = editor.subscriptions.slice().sort(function (a, b) { return order[a.marked] - order[b.marked]; });
+        var order = { yes: 0, "": 1, stopped: 2, no: 3 };
+        var items = editor.subscriptions.slice().sort(function (a, b) {
+          return order[recurringSection(a)] - order[recurringSection(b)];
+        });
         masterDetail(body, {
           items: items, noun: "merchants", key: function (r) { return r.key; },
           title: function (r) { return r.key; },
           sub: function (r) {
-            return [r.cadence, r.latest ? cents.format(Number(r.latest)) : "", r.yearly ? cents.format(Number(r.yearly)) + " a year" : ""]
+            return [r.cadence, r.latest ? cents.format(Number(r.latest)) : "",
+                    r.status === "stopped" ? "last charged " + r.last : (r.yearly ? cents.format(Number(r.yearly)) + " a year" : ""),
+                    r.includes ? "includes " + r.includes : ""]
               .filter(Boolean).join(", ");
           },
-          section: function (r) { return section_[r.marked] || section_[""]; },
-          staged: function (r) { return stagedText("subscription|" + r.key.toUpperCase()); },
-          empty: "Mark what you pay for on a schedule. Your subscriptions are on the Subscriptions page, with a yearly total and any change in price.",
+          section: function (r) { return RECURRING_SECTION[recurringSection(r)]; },
+          staged: function (r) {
+            return [stagedText("subscription|" + r.key.toUpperCase()), stagedText("recurring_merge|" + r.key.toUpperCase())]
+              .filter(Boolean).join("; ");
+          },
+          empty: "Track what you pay on a schedule, from a mortgage to a streaming service. What you track is on the Recurring page, with a yearly total and any change in price.",
           none: "No charges come back regularly yet.",
-          add: [{ label: "Mark a merchant", form: function (panel, done) { panel.appendChild(subscriptionForm(null, done)); } }],
+          add: [{ label: "Track a merchant", form: function (panel, done) { panel.appendChild(subscriptionForm(null, done)); } }],
           detail: function (r, panel, done) {
             facts(panel, [["Every", r.cadence], ["Charges", r.charges], ["Last charged", r.last],
                           ["Latest", r.latest ? cents.format(Number(r.latest)) : ""], ["A year", r.yearly ? cents.format(Number(r.yearly)) : ""],
-                          ["Category", r.category], ["Spelled", r.example], ["Note", r.note]]);
+                          ["Category", r.category], ["Spelled", r.example], ["Includes", r.includes], ["Note", r.note]]);
+            if (r.status === "stopped") panel.appendChild(el("p", "No charge since " + r.last + ", so this seems to have ended. Track it to keep its history, or merge it into the charge that took its place.", "support"));
             panel.appendChild(subscriptionForm(r, done));
+            panel.appendChild(mergeForm(r, items, done));
           },
         });
+      }
+
+      // Merge one entry into another, so their charges are one history; or separate a key merged into this one.
+      function mergeForm(r, items, done) {
+        var box = el("div");
+        section(box, "Same charge as another entry?",
+                "Merge it into the entry it is part of: their charges become one history, under that entry's name.");
+        var form = el("form", null, "edit");
+        box.appendChild(form);
+        var others = items.map(function (i) { return i.key; }).filter(function (k) { return k !== r.key; });
+        var into = field(form, "Merge into", choice([""].concat(others), "", { "": "(choose an entry)" }));
+        var error = el("div", "", "error");
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Merge", function () {
+          if (!into.value) { error.textContent = "Choose the entry this one is part of."; return; }
+          unstage("recurring_merge|" + r.key.toUpperCase());
+          stage({ kind: "recurring_merge", key: r.key, same_as: into.value }, r.key + ": part of " + into.value);
+          done();
+        }));
+        (r.merged ? String(r.merged).split(", ") : []).forEach(function (k) {
+          actions.appendChild(button("Separate " + k, function () {
+            unstage("recurring_merge|" + k.toUpperCase());
+            stage({ kind: "recurring_merge", key: k, same_as: "" }, k + ": on its own again");
+            done();
+          }, "text"));
+        });
+        form.appendChild(actions);
+        form.appendChild(error);
+        return box;
       }
 
       function subscriptionForm(r, done) {
@@ -2113,11 +2168,11 @@
           var e = { kind: "subscription", key: name, subscription: yes ? "yes" : "no" };
           if (note.value.trim()) e.note = note.value.trim();
           unstage("subscription|" + name);
-          stage(e, name + (yes ? ": a subscription" : ": not a subscription"));
+          stage(e, name + (yes ? ": track as recurring" : ": don't track"));
           done();
         };
-        if (!r || r.marked !== "yes") actions.appendChild(button("A subscription", function () { mark(true); }, "filled"));
-        if (!r || r.marked !== "no") actions.appendChild(button("Not a subscription", function () { mark(false); }, r ? "" : "text"));
+        if (!r || r.marked !== "yes") actions.appendChild(button("Track it", function () { mark(true); }, "filled"));
+        if (!r || r.marked !== "no") actions.appendChild(button("Don't track", function () { mark(false); }, r ? "" : "text"));
         if (r && r.marked === "yes") actions.appendChild(button("Keep note", function () { mark(true); }, "text"));
         form.appendChild(actions);
         form.appendChild(error);
@@ -2716,7 +2771,7 @@
       var CARD_ICON = { review_open_lines: "edit", downloads_due: "download", inbox_unread: "inbox", possible_duplicates: "copy",
                         transfers_unmatched: "edit", waiting_changes: "sync" };
       var ACTION_LABEL = { review: "Answer in Review", duplicates: "Settle duplicates", withholding: "Explain stubs",
-                           waiting: "See saved changes", jobs: "Open Jobs", "view:subscriptions": "Open Subscriptions" };
+                           waiting: "See saved changes", jobs: "Open Jobs", "view:subscriptions": "Open Recurring" };
       var CARD_NOTE = { downloads_due: "Download each one into the inbox, then run ingest." };
 
       function icon(name) {

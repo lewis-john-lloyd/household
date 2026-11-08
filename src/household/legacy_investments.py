@@ -8,7 +8,9 @@ fund's symbol (and its type, beside it) in the first row, and in the second what
 
   Shares, Val   shares held and their value
   Per, Val      a share of a target-date fund the plan held, and that share's value (the fund itself is
-                named in a Fund column); the value is kept, with no shares, under the underlying fund
+                named in a Fund column); the value is kept, with no shares, under the underlying fund. A
+                Per cell above 1 is a count of shares: later rows held the plan's funds directly and
+                kept their shares in the same column
   <label>, Val  a balance under a label (Safety-Net cash), kept as a value
   Val           a value alone, under a name in the first row (one per child in an education tab)
 
@@ -85,7 +87,8 @@ def _roles(second):
 
 
 def groups(first, second):
-    """[(value column, shares column or None, symbol, name)] for an account tab's two header rows."""
+    """[(value column, shares or share-of-fund column or None, its role, symbol, name)] for an account tab's two
+    header rows."""
     width = max(len(first), len(second))
     first = list(first) + [""] * (width - len(first))
     roles = _roles(list(second) + [""] * (width - len(second)))
@@ -96,16 +99,16 @@ def groups(first, second):
         before = roles[j - 1] if j >= 3 else ""
         start = j - 1 if before in ("shares", "per", "label") else j
         name = _text(first[start])
-        out.append((j, j - 1 if before == "shares" else None, _symbol(name), name))
+        out.append((j, j - 1 if before in ("shares", "per") else None, before, _symbol(name), name))
     return out
 
 
 def holdings(rows, account_id):
     """An account tab's rows to holdings rows for account_id, and notes about rows left out."""
     if len(rows) < 3:
-        return pd.DataFrame(columns=COLUMNS), []
+        return pd.DataFrame(columns=COLUMNS[:-1]), []
     cols = groups(rows[0], rows[1])
-    out, notes = [], []
+    out, notes, dates = [], [], []
     for n, row in enumerate(rows[2:], start=3):
         row = list(row)
         if not row or _text(row[0]) == "":
@@ -115,25 +118,54 @@ def holdings(rows, account_id):
         except ValueError:
             notes.append(f"{account_id}: row {n}: {row[0]!r} is not a date, left out")
             continue
-        for value_at, shares_at, symbol, _ in cols:
+        dates.append(as_of)
+        for value_at, shares_at, role, symbol, _ in cols:
             cell = row[value_at] if value_at < len(row) else ""
             if _text(cell) == "":
                 continue
             value = round(parse_money(cell), 2)
             shares = ""
             if shares_at is not None and shares_at < len(row) and _text(row[shares_at]) != "":
-                shares = round(parse_money(row[shares_at]), 6)
+                count = round(parse_money(row[shares_at]), 6)
+                # a Per column holds a share of a target-date fund (0.54), until the plan's own funds were
+                # held directly and the same column took their shares (5048.48)
+                shares = count if role == "shares" or count > 1 else ""
             if value == 0 and shares in ("", 0):
                 continue
             out.append({"as_of": as_of, "account_id": account_id, "symbol": symbol, "shares": shares, "value": value})
-    return pd.DataFrame(out, columns=COLUMNS[:-1]), notes
+    df = pd.DataFrame(out, columns=COLUMNS[:-1])
+    df.attrs["dates"] = sorted(set(dates))  # every date the tab has a row for, a row of zeros included
+    return df, notes
+
+
+def _carried(frame, dates):
+    """frame's readings, plus its last reading carried to each of dates it has no row for that falls
+    between its own first and last dates (another tab of the same account recorded that day; this one didn't)."""
+    read = frame.attrs.get("dates") or sorted(set(frame["as_of"]))
+    if not read:
+        return frame
+    extra = []
+    for d in dates:
+        if read[0] < d < read[-1] and d not in read:
+            before = max(r for r in read if r < d)
+            extra.append(frame[frame["as_of"] == before].assign(as_of=d))
+    return pd.concat([frame] + extra, ignore_index=True) if extra else frame
 
 
 def merge(frames):
-    """Holdings from several tabs as one table: readings of one fund in one account on one date add up."""
+    """Holdings from several tabs as one table: readings of one fund in one account on one date add up.
+
+    Tabs of one account don't always share their dates: on a date one tab recorded and another skipped, the
+    other's previous reading counts, so the account's total that day is whole.
+    """
     frames = [f for f in frames if f is not None and len(f)]
     if not frames:
         return pd.DataFrame(columns=COLUMNS)
+    by_account = {}
+    for f in frames:
+        for account in set(f["account_id"]):
+            by_account.setdefault(account, set()).update(f.attrs.get("dates") or f["as_of"])
+    frames = [_carried(f, sorted(by_account[f["account_id"].iloc[0]])) for f in frames]
     df = pd.concat(frames, ignore_index=True)
     df["shares"] = pd.to_numeric(df["shares"], errors="coerce")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")

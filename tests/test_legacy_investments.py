@@ -32,7 +32,8 @@ IRA = [["", "", "ACMEX", " SDT ", "WILLX", " BT ", "cash", " BA "],
 # a plan's target-date fund, kept as its share of each underlying fund's value
 PLAN = [["", "", "", "ACMEX", " SDT ", "WILLX", " BT "],
         ["Date", " Value ", "Fund", "Per", " Val ", "Per", " Val "],
-        [serial(2001, 3, 3), 100, "TR50", 0.6, 60, 0.4, 40]]
+        [serial(2001, 3, 3), 100, "TR50", 0.6, 60, 0.4, 40],
+        [serial(2001, 4, 1), 90, "", 5.5, 55, 3.5, 35]]  # later, the funds held directly: shares in the Per column
 
 # a balance under a label, and one value per child
 RESERVE = [["", "", "Cash", " BA "], ["Date", " Value ", "Reserve", " Val "], [serial(2001, 3, 3), 70, "", 70]]
@@ -57,7 +58,9 @@ def test_an_account_tab_reads_shares_and_value_per_fund_on_each_date():
 
 def test_a_plan_fund_a_label_and_a_value_per_name_read_as_values():
     plan, _ = li.holdings(PLAN, "a_plan")
-    assert plan[["symbol", "shares", "value"]].values.tolist() == [["ACMEX", "", 60], ["WILLX", "", 40]]
+    assert plan[["as_of", "symbol", "shares", "value"]].values.tolist() == [
+        ["2001-03-03", "ACMEX", "", 60], ["2001-03-03", "WILLX", "", 40],
+        ["2001-04-01", "ACMEX", 5.5, 55], ["2001-04-01", "WILLX", 3.5, 35]]
     reserve, _ = li.holdings(RESERVE, "a_cash")
     assert reserve[["symbol", "value"]].values.tolist() == [["cash", 70]]
     college, _ = li.holdings(COLLEGE, "a_529")
@@ -101,11 +104,11 @@ def test_the_migration_adds_funds_and_readings_once(session):  # noqa: F811
     session.sheets.legacy = _workbook()
     ledger = _ledger_with_accounts(session, ["a_ira", "a_401k"])
     out = engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira", "plan": "a_401k"}, log=None)
-    assert (out["securities"], out["holdings"], out["dates"]) == (3, 6, 2)
+    assert (out["securities"], out["holdings"], out["dates"]) == (3, 8, 3)
     held = sheets.read_table(ledger, schema.table(schema.LEDGER, "holdings"))
     assert set(held["account_id"]) == {"a_ira", "a_401k"} and "other" not in set(held["account_id"])
     again = engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira", "plan": "a_401k"}, log=None)
-    assert (again["securities"], again["holdings"], again["already_held"]) == (0, 0, 6)
+    assert (again["securities"], again["holdings"], again["already_held"]) == (0, 0, 8)
 
 
 def test_the_migration_refuses_an_account_the_ledger_doesnt_have(session):  # noqa: F811
@@ -113,3 +116,16 @@ def test_the_migration_refuses_an_account_the_ledger_doesnt_have(session):  # no
     _ledger_with_accounts(session, ["a_ira"])
     with pytest.raises(ValueError, match="no such accounts in the ledger: a_roth"):
         engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_roth"}, log=None)
+
+
+def test_a_tab_that_skipped_a_date_another_tab_of_its_account_recorded_carries_its_last_reading():
+    pre = [IRA[0], IRA[1], [serial(2001, 1, 12), 50, 1, 50, "", "", "", ""], [serial(2001, 2, 9), 55, 1, 55, "", "", "", ""],
+           [serial(2001, 3, 3), 60, 1, 60, "", "", "", ""]]
+    old = [IRA[0], IRA[1], [serial(2001, 1, 12), 20, "", "", 2, 20, "", ""], [serial(2001, 3, 3), 30, "", "", 2, 30, "", ""],
+           [serial(2001, 4, 1), 0, "", "", "", "", "", ""]]
+    a, _ = li.holdings(pre, "a_401k")
+    b, _ = li.holdings(old, "a_401k")
+    df = li.merge([a, b])
+    totals = df.groupby("as_of")["value"].sum().to_dict()
+    assert totals == {"2001-01-12": 70, "2001-02-09": 75, "2001-03-03": 90}  # 2001-02-09 carries the old tab's 20
+

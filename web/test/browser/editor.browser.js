@@ -21,6 +21,7 @@ window.__answers = {
   getAppliedAnyway: [],
   discardWaiting: { remembered: true, warning: "" },
   findSave: null,
+  getBudgetBook: { book: { targets: [], days: [], groups: {}, recurring: [] }, tracked: [] },
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
     parameters: [{ key: "transfer_account", value: "checking", source: "seed" }, { key: "target_refund", value: "2000", source: "web" }] },
@@ -232,14 +233,13 @@ test("a scheduled amount on a date that has one says what it replaces, so ingest
   const page = await open("window.__answers.getEditor.budgetLines = [" + JSON.stringify(line) + "];" +
     "window.__answers.getEditor.scheduled = [" + JSON.stringify({ line: "camp", effective: "2001-06-01", category: "kids",
       account: "", priority: "", rule: "scheduled", amount: "90", per: "", note: "" }) + "];");
-  await page.click("#view-edit");
-  await page.click("#edit-tabs button[data-tab=budget]");
-  await page.click(".md-row:has-text('camp')");
-  for (const [date, amount] of [["2001-06-01", "100"], ["2001-07-01", "40"]]) {
-    await page.fill(".md-detail label:has-text('Scheduled on') input", date);
-    await page.fill(".md-detail label:has-text('Scheduled amount') input", amount);
-    await page.click(".md-detail button:has-text('Add scheduled amount')");
-    if (date === "2001-06-01") await page.click(".md-row:has-text('camp')");
+  await page.evaluate(() => { window.__answers.getBudgetBook.book.days = [[(function (d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); })(new Date()), "kids", 30]]; });
+  await page.click("#view-budget");
+  await page.click("table.bv tr.line:has-text('kids')");
+  for (const [date, amount] of [["2001-06-01", "100"], ["2001-07-01", "40"]]) {  // the drawer stays open between them
+    await page.fill(".drawer label:has-text('Scheduled on') input", date);
+    await page.fill(".drawer label:has-text('Scheduled amount') input", amount);
+    await page.click(".drawer button:has-text('Add scheduled amount')");
   }
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.saved");
@@ -424,25 +424,83 @@ test("a merchant split into its lines leaves review once every line has a catego
   await page.close();
 });
 
-test("recurring charges that seem to have stopped come after the ongoing ones, and one merges into another", async () => {
+test("recurring: a charge that comes back is offered to track, and one that stopped merges into the one that replaced it", async () => {
   const row = (key, status, last) => ({ key, marked: "", status, cadence: "monthly", charges: "4", last, latest: "30",
                                         yearly: "360", category: "petrol", example: key, note: "", includes: "", merged: "" });
-  const page = await open("window.__location = { parameter: { view: 'edit', tab: 'subscriptions' } };" +
+  const page = await open("window.__location = { parameter: { view: 'budget', tab: 'recurring' } };" +
     "window.__answers.getEditor.subscriptions = " + JSON.stringify([
       row("BLUE PUMP FUEL", "stopped", "2001-01-03"), row("WILLOW ST", "active", "2001-06-03")]) + ";");
-  await page.waitForSelector("#edit:not([hidden]) .md-list");
-  const order = await page.$$eval(".md-list .md-row", (rows) => rows.map((r) => r.textContent));
-  assert.match(order[0], /WILLOW ST/);
-  assert.match(order[1], /BLUE PUMP FUEL.*last charged 2001-01-03/);
-  assert.match(await page.textContent(".md-list"), /Seem to have stopped/);
-  await page.click(".md-row:has-text('BLUE PUMP FUEL')");
-  await page.selectOption(".md-detail label:has-text('Merge into') select", "WILLOW ST");
-  await page.click(".md-detail button:has-text('Merge')");
-  assert.deepEqual(await staged(page), ["BLUE PUMP FUEL: part of WILLOW ST"]);
+  await page.waitForSelector("#budget:not([hidden]) .alert");
+  assert.match(await page.textContent(".alert"), /WILLOW ST comes back monthly for about \$30.00 and isn't tracked/);  // leak-guard: allow (made up)
+  assert.match(await page.textContent(".rec-card.wide"), /Seem to have stopped.*BLUE PUMP FUEL.*last charged 2001-01-03/s);
+  await page.click(".alert button:has-text('Track it')");
+  await page.click(".rec-row:has-text('BLUE PUMP FUEL')");
+  await page.selectOption(".drawer label:has-text('Merge into') select", "WILLOW ST");
+  await page.click(".drawer button:has-text('Merge')");
+  assert.deepEqual(await staged(page), ["WILLOW ST: track as recurring", "BLUE PUMP FUEL: part of WILLOW ST"]);
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.saved");
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
-  assert.deepEqual(sent, [{ kind: "recurring_merge", key: "BLUE PUMP FUEL", same_as: "WILLOW ST" }]);
+  assert.deepEqual(sent, [{ kind: "subscription", key: "WILLOW ST", subscription: "yes" },
+                          { kind: "recurring_merge", key: "BLUE PUMP FUEL", same_as: "WILLOW ST" }]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("the budget compares any period with another, and a line's target can come from its recurring charges", async () => {
+  // made-up spending: today, and the same day a year earlier; food budgeted at 60 this month
+  const page = await open("window.__location = { parameter: { view: 'budget' } };" +
+    "(function () { var t = (function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })(new Date()), y = (Number(t.slice(0, 4)) - 1) + t.slice(4);" +
+    "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living', media: 'fun' }, recurring: []," +
+    "    targets: [{ month: t.slice(0, 7), category: 'food', priority: 'high', target: 60 }]," +
+    "    days: [[t, 'food', 12], [y, 'food', 8], [t, 'media', 5]] } };" +
+    "  window.__answers.getEditor.budgetLines = [{ line: 'food', effective: '2001-01-01', category: 'food', account: '', priority: 'high'," +
+    "    rule: 'fixed', amount: '60', per: 'monthly', note: '', in_force: 'yes', in_words: '60.00 a month', this_month: '12'," +
+    "    last_12_months: '0', scheduled: '', spends_from: 'food' }];" +
+    "  window.__answers.getEditor.subscriptions = [{ key: 'PAGE TURNER BOOKS', marked: 'yes', status: 'active', cadence: 'monthly'," +
+    "    charges: '9', last: t, latest: '10', yearly: '120', category: 'food', example: '', note: '', includes: '', merged: '' }];" +
+    "})();");
+  await page.waitForSelector("table.bv");
+  const food = await page.$$eval("table.bv tr.line:has-text('food') td", (tds) => tds.map((td) => td.textContent));
+  assert.deepEqual([food[0], food[1], food[3], food[5], food[6]], ["food", "60.00 a month", "$12", "$8", "+$4"]);  // leak-guard: allow (made up)
+  assert.match(await page.textContent("table.bv thead"), /same weeks/);
+  assert.match(await page.textContent(".bv-summary"), /\$17spent of/);  // leak-guard: allow (made up)
+  assert.equal(await page.$$eval("table.bv tr.group", (rows) => rows.length), 2);  // living, then fun
+  await page.click(".bv-controls button:has-text('Year')");
+  const year = String(new Date().getFullYear());
+  assert.equal(await page.inputValue(".bv-picker select"), year);
+  assert.equal(await page.inputValue(".bv-compare select"), String(Number(year) - 1));
+  await page.click(".bv-controls button:has-text('Quarter')");
+  assert.match(await page.inputValue(".bv-picker select"), /^\d{4}-Q[1-4]$/);
+  await page.click("table.bv tr.line:has-text('food')");
+  await page.waitForSelector(".drawer svg.history");
+  await page.selectOption(".drawer label:has-text('Target from') select", "recurring");
+  await page.fill(".drawer label:has-text('Allowance') input", "20");
+  assert.match(await page.textContent(".drawer .recurring-sum"), /PAGE TURNER BOOKS \(monthly\)\$10\.00 a month.*Monthly target\$30\.00/s);  // leak-guard: allow (made up)
+  await page.click(".drawer button:has-text('Keep this change')");
+  assert.match((await staged(page))[0], /^budget line food: recurring 20 monthly for food from /);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$$eval(".drawer", (d) => d.length), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("jobs: choosing a stretch of a pay line shows it, and a correction is staged like any change", async () => {
+  const j = (effective, employer, salary, fte) => ({ effective, person: "alex", employer, salary: String(salary), band: "", rating: "",
+                                                      fte: fte ? String(fte) : "", note: "", stubs: effective === "2020-01-15" ? "agrees" : "" });
+  const page = await open("window.__location = { parameter: { view: 'jobs' } };" +
+    "window.__answers.getEditor.jobs = " + JSON.stringify([j("2016-04-01", "Acme Widgets", 80000), j("2020-01-15", "Quill & Ink", 90000),
+                                                           j("2022-05-01", "Quill & Ink", 90000, 0.6)]) + "; window.__answers.getEditor.payCheck = [];");
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.waitForSelector(".pay-chart svg");
+  assert.equal(await page.isVisible("#edit-tabs button[data-tab=jobs]"), false);
+  await page.focus(".seg-hit[aria-label^='Quill & Ink from 2020-01-15']");
+  await page.keyboard.press("Enter");
+  assert.match(await page.textContent(".job-detail"), /Quill & Ink, 2020-01-15 to 2022-05-01.*\$90,000.*agree with it/s);  // leak-guard: allow (made up)
+  await page.click(".job-detail button:has-text('Correct this')");
+  await page.fill("dialog.job-dialog label:has-text('Band') input", "L4");
+  await page.click("dialog.job-dialog button:has-text('Keep this correction')");
+  assert.deepEqual(await staged(page), ["job: alex at Quill & Ink at 90000 from 2020-01-15"]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

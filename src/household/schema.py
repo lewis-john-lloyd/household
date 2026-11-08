@@ -55,7 +55,7 @@ LEDGER = (
     # one row per budget line per change (see budget.py); scheduled rows are one-off amounts in their month
     Table("budget_rules", ("line", "effective", "category", "account", "priority", "rule", "amount", "per",
                            "note"),
-          {"rule": ("fixed", "seasonal", "trailing", "lookback", "sinking_fund", "scheduled", "end"),
+          {"rule": ("fixed", "seasonal", "trailing", "lookback", "sinking_fund", "recurring", "scheduled", "end"),
            "priority": ("high", "medium", "low"),
            "per": ("monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually")}),
     Table("allocation_targets", ("effective", "node", "parent", "weight")),
@@ -139,6 +139,8 @@ REPORTS = (
                              "run_id")),
     Table("budget_vs_actual", ("month", "category", "group", "priority", "target", "actual", "remaining",
                                "run_id")),
+    # spending per category per day, every era, for the budget's comparisons of part of a period
+    Table("daily_actuals", ("date", "category", "spend", "run_id")),
     Table("sinking_funds", ("month", "line", "category", "set_aside", "spent", "balance", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),

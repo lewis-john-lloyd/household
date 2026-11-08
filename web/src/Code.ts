@@ -73,20 +73,20 @@ function getFlows(period: string, level: string): { rows: SankeyRow[]; dropped: 
   return { rows, dropped, totals, summary: flowSummary(totals) };
 }
 
-/** Months and years with budget rows, newest first. */
-function getBudgetPeriods(): string[] {
-  return budgetPeriods(parseBudget(readTab_("budget_vs_actual")));
+/** The transactions behind one budget line: that period's (through a day, when given), in those categories. */
+function getTransactions(period: string, categories: string[], through?: string): Txn[] {
+  return transactionsFor(parseTransactions(readTab_("categorized")), period, categories, through || "");
 }
 
-/** Budget against actuals for one month or year ("2026-10", "2026") by category or group. */
-function getBudget(period: string, level: string): BudgetLine[] {
-  return withSubscriptions(budgetLines(parseBudget(readTab_("budget_vs_actual")), period, level),
-                           readTabIfAny_("subscription_months"), period, level);
-}
-
-/** The transactions behind one budget line: that period's, in those categories. */
-function getTransactions(period: string, categories: string[]): Txn[] {
-  return transactionsFor(parseTransactions(readTab_("categorized")), period, categories);
+/**
+ * The Budget page's data (shape.ts budgetView shapes it in the page): each month's targets, every day's
+ * spending, the recurring charges' months, and the recurring charges you track.
+ */
+function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] } {
+  const book = budgetBook(readTab_("budget_vs_actual"), readTabIfAny_("daily_actuals"),
+                          readTabIfAny_("subscription_months"), readTabIfAny_("editor_categories"));
+  console.log(`budget book: ${book.targets.length} targets, ${book.days.length} days, ${book.recurring.length} recurring months`);
+  return { book, tracked: subscriptionsPage(readTabIfAny_("subscriptions")).subscriptions };
 }
 
 /**
@@ -377,11 +377,6 @@ function getTransaction(id: string): Line | null {
 /** The open lines a review question covers, to answer them one by one (shape.ts reviewLines). */
 function getReviewLines(key: string): ReviewLine[] {
   return reviewLines(readTab_("categorized"), String(key || "").trim());
-}
-
-/** The Subscriptions page (shape.ts subscriptionsPage). */
-function getSubscriptions(): SubscriptionsPage {
-  return subscriptionsPage(readTabIfAny_("subscriptions"));
 }
 
 /** Everything the tax page shows (taxes.ts). */

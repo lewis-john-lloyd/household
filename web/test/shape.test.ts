@@ -5,23 +5,28 @@ import { join } from "node:path";
 
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
-const compiled = readFileSync(join(__dirname, "..", "src", "shape.js"), "utf8");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, budgetPeriods, budgetLines, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, withSubscriptions };`)() as {
+const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
+const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
   nodeTotals: (rows: SankeyRow[]) => NodeTotal[];
   parseBudget: (values: unknown[][]) => BudgetRow[];
-  budgetPeriods: (rows: BudgetRow[]) => string[];
-  budgetLines: (rows: BudgetRow[], period: string, level: string) => BudgetLine[];
   parseTransactions: (values: unknown[][]) => Txn[];
-  transactionsFor: (txns: Txn[], period: string, categories: string[]) => Txn[];
+  transactionsFor: (txns: Txn[], period: string, categories: string[], through?: string) => Txn[];
   parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
   findLine: (values: unknown[][], id: string) => Line | null;
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
   reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
-  withSubscriptions: (lines: BudgetLine[], values: unknown[][], period: string, level: string) => BudgetLine[];
+  budgetBook: (budget: unknown[][], daily: unknown[][], recurring: unknown[][], categories: unknown[][]) => BudgetBook;
+  budgetView: (book: BudgetBook, period: string, compare: string, sameWeeks: boolean, today: string) => BudgetView;
+  periodOf: (date: string, lens: string) => string;
+  periodDays: (period: string) => [string, string];
+  shiftPeriod: (period: string, n: number) => string;
+  periodName: (period: string) => string;
+  quickPicks: (period: string) => string[];
+  lensPeriods: (book: BudgetBook, lens: string, today: string) => string[];
 };
 
 const VALUES: unknown[][] = [
@@ -107,27 +112,6 @@ const BUDGET: unknown[][] = [
   ["2000-12", "food", "food", "medium", 900, 950, -50, "r1"],
 ];
 
-test("budget periods: each year so far, then its months, newest first", () => {
-  assert.deepEqual(shape.budgetPeriods(shape.parseBudget(BUDGET)), ["2001", "2001-02", "2001-01", "2000", "2000-12"]);
-});
-
-test("budget lines for a month by category: over budget first within each priority", () => {
-  const lines = shape.budgetLines(shape.parseBudget(BUDGET), "2001-02", "category");
-  assert.deepEqual(lines.map((l) => [l.name, l.priority, l.target, l.actual, l.remaining]), [
-    ["food", "high", 1000, 1100, -100],
-    ["restaurant", "low", 300, 120.5, 179.5],
-    ["booze", "", 0, 40, -40],
-  ]);
-});
-
-test("budget lines for a year by group add the months and keep the highest priority", () => {
-  const lines = shape.budgetLines(shape.parseBudget(BUDGET), "2001", "group");
-  assert.deepEqual(lines.map((l) => [l.name, l.priority, l.target, l.actual, l.remaining, l.categories]), [
-    ["food", "high", 2600, 2430.5, 169.5, ["food", "restaurant"]],
-    ["family_fun", "", 0, 40, -40, ["booze"]],
-  ]);
-});
-
 test("transactions: split charges become one row per part, filtered to the period and categories", () => {
   const txns = shape.parseTransactions([
     ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits"],
@@ -141,6 +125,8 @@ test("transactions: split charges become one row per part, filtered to the perio
     ["2001-02-10", "GROCER", -12.5],
   ]);
   assert.equal(shape.transactionsFor(txns, "2001", ["food"]).length, 3);
+  assert.equal(shape.transactionsFor(txns, "2001-Q1", ["food"]).length, 3);
+  assert.deepEqual(shape.transactionsFor(txns, "2001-Q1", ["food"], "2001-02-05").map((t) => t.id), ["t1"]);  // the same weeks
   assert.deepEqual(txns[0].items, []);  // a report without an items column
   assert.deepEqual([txns[0].id, txns[0].split, txns[2].split], ["t1", "household -30.00; food -20.00", ""]);
 });
@@ -294,17 +280,58 @@ test("the subscriptions page totals what is still charged", () => {
   assert.equal("run_id" in page.subscriptions[0], false);
 });
 
+test("periods: a month, a quarter or a calendar year, shifted and named", () => {
+  assert.deepEqual(["month", "quarter", "year"].map((l) => shape.periodOf("2026-11-07", l)), ["2026-11", "2026-Q4", "2026"]);
+  assert.deepEqual(shape.periodDays("2024-02"), ["2024-02-01", "2024-02-29"]);
+  assert.deepEqual(shape.periodDays("2026-Q4"), ["2026-10-01", "2026-12-31"]);
+  assert.deepEqual(shape.periodDays("2025"), ["2025-01-01", "2025-12-31"]);
+  assert.deepEqual([shape.shiftPeriod("2026-01", -1), shape.shiftPeriod("2026-Q1", -1), shape.shiftPeriod("2026-11", -12),
+                    shape.shiftPeriod("2026", -3)], ["2025-12", "2025-Q4", "2025-11", "2023"]);
+  assert.deepEqual([shape.periodName("2026-10"), shape.periodName("2026-Q4"), shape.periodName("2026")], ["October 2026", "Q4 2026", "2026"]);
+  assert.deepEqual(shape.quickPicks("2026-Q4"), ["2026-Q3", "2025-Q4"]);
+  assert.deepEqual(shape.quickPicks("2026"), ["2025"]);
+});
 
-test("each subscription is its own entry under its budget line, added up over the period", () => {
-  const months = [["month", "key", "category", "group", "expected", "actual", "run_id"],
-    ["2026-09", "PAGE TURNER BOOKS", "media", "fun", "9.99", "9.99", "r1"],
-    ["2026-10", "PAGE TURNER BOOKS", "media", "fun", "9.99", "12.99", "r1"],
-    ["2026-10", "QUILL & INK", "hobby", "fun", "", "0", "r1"],
-    ["2026-10", "WILLOW ST", "hobby", "fun", "20", "20", "r1"]];
-  const line = (name: string): BudgetLine => ({ name, group: "fun", priority: "", target: 0, actual: 0, remaining: 0, categories: [name] });
-  const [media, hobby] = shape.withSubscriptions([line("media"), line("hobby")], months, "2026-10", "category");
-  assert.deepEqual(media.subscriptions, [{ name: "PAGE TURNER BOOKS", expected: 9.99, actual: 12.99 }]);
-  assert.deepEqual(hobby.subscriptions, [{ name: "WILLOW ST", expected: 20, actual: 20 }]);  // nothing spent or due: left out
-  const [fun] = shape.withSubscriptions([line("fun")], months, "2026", "group");
-  assert.deepEqual(fun.subscriptions?.map((e) => [e.name, e.expected, e.actual]), [["PAGE TURNER BOOKS", 19.98, 22.98], ["WILLOW ST", 20, 20]]);
+// food: 60 a month budgeted in October and November 2026; spending in November 2026 so far, and November 2025
+const BOOK_VALUES = {
+  budget: [["month", "category", "group", "priority", "target", "actual"],
+           ["2026-10", "food", "living", "high", 60, 55], ["2026-11", "food", "living", "high", 60, 12],
+           ["2026-11", "media", "fun", "", 20, 13]],
+  daily: [["date", "category", "spend", "run_id"],
+          ["2026-10-12", "food", 55, "r1"], ["2026-11-03", "food", 10, "r1"], ["2026-11-06", "food", 2, "r1"],
+          ["2026-11-05", "media", 13, "r1"], ["2025-11-02", "food", 8, "r1"], ["2025-11-15", "food", 40, "r1"],
+          ["2024-10-20", "food", 30, "r1"], ["2024-11-01", "gifts", 25, "r1"]],
+  recurring: [["month", "key", "category", "group", "expected", "actual", "run_id"],
+              ["2026-11", "PAGE TURNER BOOKS", "media", "fun", "10", "13", "r1"],
+              ["2025-11", "PAGE TURNER BOOKS", "media", "fun", "10", "10", "r1"]],
+  categories: [["category", "group", "priority", "run_id"], ["food", "living", "high", "r1"], ["media", "fun", "", "r1"]],
+};
+const book = (): BudgetBook => shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, BOOK_VALUES.categories);
+
+test("a month not over, beside the same days of another: the whole month's target, the other cut to as many days", () => {
+  const v = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07");
+  assert.deepEqual([v.partial, v.sameWeeks, v.from, v.through, v.compareFrom, v.compareThrough],
+                   [true, true, "2026-11-01", "2026-11-07", "2025-11-01", "2025-11-07"]);
+  assert.deepEqual(v.groups.map((g) => [g.name, g.target, g.actual, g.compared]), [["living", 60, 12, 8], ["fun", 20, 13, 0]]);
+  const media = v.groups[1].lines[0];
+  assert.deepEqual(media.recurring, [{ key: "PAGE TURNER BOOKS", expected: 10, actual: 13, compared: 10 }]);
+  assert.deepEqual([v.target, v.actual, v.compared, v.recurring], [80, 25, 8, 13]);
+  const whole = shape.budgetView(book(), "2026-11", "2025-11", false, "2026-11-07");
+  assert.deepEqual([whole.sameWeeks, whole.through, whole.compareThrough, whole.target, whole.compared],
+                   [false, "2026-11-30", "2025-11-30", 80, 48]);
+});
+
+test("a quarter beside any other: every month's target, and a category only spent in the other still shows", () => {
+  const v = shape.budgetView(book(), "2026-Q4", "2024-Q4", true, "2026-11-07");
+  assert.deepEqual([v.through, v.compareThrough], ["2026-11-07", "2024-11-07"]);
+  assert.deepEqual(v.groups.map((g) => [g.name, g.target, g.actual, g.compared, g.lines.map((l) => l.category)]),
+                   [["living", 120, 67, 30, ["food"]], ["fun", 20, 13, 0, ["media"]], ["Other", 0, 0, 25, ["gifts"]]]);
+  const past = shape.budgetView(book(), "2025", "2024", true, "2026-11-07");  // a year that is over is whole
+  assert.deepEqual([past.partial, past.sameWeeks, past.through, past.actual, past.compared], [false, false, "2025-12-31", 48, 55]);
+});
+
+test("a lens's periods run from the first spending to today's, newest first", () => {
+  assert.deepEqual(shape.lensPeriods(book(), "quarter", "2026-11-07").slice(0, 3), ["2026-Q4", "2026-Q3", "2026-Q2"]);
+  assert.deepEqual(shape.lensPeriods(book(), "year", "2026-11-07"), ["2026", "2025", "2024"]);
+  assert.equal(shape.lensPeriods(book(), "month", "2026-11-07").slice(-1)[0], "2024-10");
 });

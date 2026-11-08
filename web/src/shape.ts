@@ -158,24 +158,6 @@ interface BudgetRow {
   actual: number;
 }
 
-interface BudgetLine {
-  name: string;
-  group: string;
-  priority: string;
-  target: number;
-  actual: number;
-  remaining: number;
-  categories: string[];
-  subscriptions?: SubscriptionEntry[];  // the subscriptions in it, each its own entry (withSubscriptions)
-}
-
-/** A subscription's spending in a budget line's period, and what its cadence expected (null: nothing to go by). */
-interface SubscriptionEntry {
-  name: string;
-  expected: number | null;
-  actual: number;
-}
-
 /** An item an order history says a charge bought: its name and price. */
 interface Item {
   name: string;
@@ -219,83 +201,6 @@ function parseBudget(values: unknown[][]): BudgetRow[] {
     if (month && category) rows.push({ month, category, group, priority, target, actual });
   }
   return rows;
-}
-
-/** Years and months with budget rows, newest first: "2026" (the year so far), "2026-10", "2026-09", ... */
-function budgetPeriods(rows: BudgetRow[]): string[] {
-  const months = Array.from(new Set(rows.map((r) => r.month))).sort().reverse();
-  const out: string[] = [];
-  for (const m of months) {
-    const year = m.slice(0, 4);
-    if (!out.includes(year)) out.push(year);
-    out.push(m);
-  }
-  return out;
-}
-
-function inPeriod(month: string, period: string): boolean {
-  return period.length === 4 ? month.slice(0, 4) === period : month === period;
-}
-
-/**
- * One line per category (or per group) for a month, or for a year so far (its months added up): target,
- * actual and what remains, the highest priority among its lines. Sorted by priority, then by what remains,
- * least first, so what is over budget comes first within each priority.
- */
-function budgetLines(rows: BudgetRow[], period: string, level: string): BudgetLine[] {
-  const by = new Map<string, BudgetLine>();
-  for (const r of rows) {
-    if (!inPeriod(r.month, period)) continue;
-    const name = level === "group" ? r.group || r.category : r.category;
-    let line = by.get(name);
-    if (!line) {
-      line = { name, group: r.group, priority: "", target: 0, actual: 0, remaining: 0, categories: [] };
-      by.set(name, line);
-    }
-    line.target += r.target;
-    line.actual += r.actual;
-    if (!line.categories.includes(r.category)) line.categories.push(r.category);
-    const rank = (p: string): number => PRIORITY_RANK[p] ?? 3;
-    if (rank(r.priority) < rank(line.priority)) line.priority = r.priority;
-  }
-  const out = Array.from(by.values()).map((l) => {
-    const target = roundCents(l.target);
-    const actual = roundCents(l.actual);
-    return { ...l, target, actual, remaining: roundCents(target - actual), categories: l.categories.sort() };
-  });
-  return out.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3)
-    || a.remaining - b.remaining || a.name.localeCompare(b.name));
-}
-
-/**
- * Each budget line with the subscriptions in it (subscription_months), added up over the period: by category,
- * or by group at the group level. A line with none gets an empty list.
- */
-function withSubscriptions(lines: BudgetLine[], values: unknown[][], period: string, level: string): BudgetLine[] {
-  const by = new Map<string, Map<string, SubscriptionEntry>>();
-  if (values.length) {
-    const [month, key, category, group, expected, actual] =
-      columnsAt(values, ["month", "key", "category", "group", "expected", "actual"], "subscription_months");
-    for (const v of values.slice(1)) {
-      if (!inPeriod(String(v[month] ?? ""), period)) continue;
-      const line = level === "group" ? String(v[group] ?? "") || String(v[category] ?? "") : String(v[category] ?? "");
-      const name = String(v[key] ?? "");
-      if (!line || !name) continue;
-      if (!by.has(line)) by.set(line, new Map());
-      const entries = by.get(line) as Map<string, SubscriptionEntry>;
-      const e = entries.get(name) || { name, expected: null, actual: 0 };
-      const want = String(v[expected] ?? "");
-      if (want !== "") e.expected = roundCents((e.expected ?? 0) + Number(want));
-      e.actual = roundCents(e.actual + (Number(v[actual]) || 0));
-      entries.set(name, e);
-    }
-  }
-  return lines.map((l) => ({
-    ...l,
-    subscriptions: Array.from((by.get(l.name) || new Map<string, SubscriptionEntry>()).values())
-      .filter((e) => e.actual || e.expected)
-      .sort((a, b) => b.actual - a.actual || a.name.localeCompare(b.name)),
-  }));
 }
 
 /** The items column: JSON [[category, name, amount, item_id], ...] (reports before item ids have three), or
@@ -348,9 +253,47 @@ function parseTransactions(values: unknown[][]): Txn[] {
 }
 
 /** The period's transactions in these categories, biggest spending first. */
-function transactionsFor(txns: Txn[], period: string, categories: string[]): Txn[] {
+// The Budget page's book (budgetview.ts shapes it, in the page and in tests).
+/** The BudgetBook from the Reports tabs budget_vs_actual, daily_actuals, subscription_months and editor_categories. */
+function budgetBook(budgetValues: unknown[][], dailyValues: unknown[][], recurringValues: unknown[][],
+                    categoryValues: unknown[][]): BudgetBook {
+  const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [] };
+  for (const r of parseBudget(budgetValues)) {
+    if (r.group) book.groups[r.category] = r.group;
+    if (r.target) book.targets.push({ month: r.month, category: r.category, priority: r.priority, target: r.target });
+  }
+  if (categoryValues.length) {
+    const [category, group] = columnsAt(categoryValues, ["category", "group"], "editor_categories");
+    for (const v of categoryValues.slice(1)) {
+      const c = String(v[category] ?? "").trim();
+      if (c && String(v[group] ?? "").trim()) book.groups[c] = String(v[group]).trim();
+    }
+  }
+  if (dailyValues.length) {
+    const [date, category, spend] = columnsAt(dailyValues, ["date", "category", "spend"], "daily_actuals");
+    for (const v of dailyValues.slice(1)) {
+      const d = String(v[date] ?? "").slice(0, 10), c = String(v[category] ?? "").trim(), n = Number(v[spend]) || 0;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d) && c && n) book.days.push([d, c, n]);
+    }
+  }
+  if (recurringValues.length) {
+    const [month, key, category, expected, actual] =
+      columnsAt(recurringValues, ["month", "key", "category", "expected", "actual"], "subscription_months");
+    for (const v of recurringValues.slice(1)) {
+      const want = String(v[expected] ?? "");
+      book.recurring.push({ month: String(v[month] ?? ""), key: String(v[key] ?? ""), category: String(v[category] ?? ""),
+                            expected: want === "" ? null : Number(want), actual: Number(v[actual]) || 0 });
+    }
+  }
+  return book;
+}
+
+/** A period's transactions in these categories, from its first day through `through` ("" for its last). */
+function transactionsFor(txns: Txn[], period: string, categories: string[], through = ""): Txn[] {
   const wanted = new Set(categories);
-  return txns.filter((t) => wanted.has(t.category) && inPeriod(t.date.slice(0, 7), period))
+  const [from, end] = periodDays(period);
+  const last = through || end;
+  return txns.filter((t) => wanted.has(t.category) && t.date >= from && t.date <= last)
     .sort((a, b) => a.amount - b.amount || b.date.localeCompare(a.date));
 }
 
@@ -410,8 +353,8 @@ const CHECKS: [string, string, string, string][] = [
   ["pay_not_deposited", "pay stubs have no deposit", "paychecks:", ""],
   ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
   ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
-  ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "jobs"],
-  ["subscription_price_changes", "recurring charges changed price", "recurring charge: ", "view:subscriptions"],
+  ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "view:jobs"],
+  ["subscription_price_changes", "recurring charges changed price", "recurring charge: ", "view:recurring"],
   ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
   ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
   ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],

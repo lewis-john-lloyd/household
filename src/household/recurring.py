@@ -322,3 +322,39 @@ def subscription_months(categorized, decisions, categories=None, today=None):
                          "expected": None if expected is None else round(expected, 2),
                          "actual": round(float(spent.get(month, 0.0)), 2)})
     return pd.DataFrame(rows, columns=MONTH_COLUMNS)
+
+
+def monthly_expected(categorized, decisions, through, today=None):
+    """{(category, month): (expected, charges)}: what the recurring charges you track were expected to cost in
+    each month from their first charge through `through` (YYYY-MM), on a monthly footing, for the budget's
+    `recurring` rule. A charge counts at its latest price on or before the month's end times its charges a
+    year over twelve (a yearly one is a twelfth of its price every month), and only from its first charge
+    until it has missed 1.5 cadences; an irregular one counts the twelve months' spending to the month's end
+    over twelve, until it has gone 400 days without a charge. Its category is where its charges mostly go."""
+    merged = merges(decisions)
+    df = _charges(categorized)
+    out = {}
+    for key in tracked(decisions):
+        g = group_lines(df, key, merged)
+        if g.empty:
+            continue
+        days = pd.to_datetime(g["date"])
+        spend = -g["amount"].to_numpy()
+        name, cadence = _cadence(days.diff().dt.days.dropna().to_numpy()) if len(g) >= 2 else (None, None)
+        category = str(g["category"].mode().iloc[0])
+        for month in pd.period_range(days.iloc[0].strftime("%Y-%m"), through, freq="M"):
+            start, end = month.start_time, month.end_time
+            before = (days <= end).to_numpy()
+            last = days[before].iloc[-1]
+            if name:
+                if (start - last).days > 1.5 * cadence:
+                    continue
+                cost = float(spend[before][-1]) * PER_YEAR[name] / 12
+            else:
+                if (start - last).days > 400:
+                    continue
+                cost = float(spend[before & (days > end - pd.Timedelta(days=365)).to_numpy()].sum()) / 12
+            month = month.strftime("%Y-%m")
+            total, n = out.get((category, month), (0.0, 0))
+            out[(category, month)] = (round(total + cost, 2), n + 1)
+    return out

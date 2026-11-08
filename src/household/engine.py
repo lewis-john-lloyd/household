@@ -294,12 +294,15 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     actuals["run_id"], actuals["computed_at"] = run_id, computed_at
     sheets.replace_table(reports, schema.table(schema.REPORTS, "monthly_actuals"), actuals)
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
+    daily = compute.daily_actuals(categorize.actual_rows(categorized), budget._not_spending(books["categories"]))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "daily_actuals"), daily.assign(run_id=run_id))
 
     today = computed_at[:10]
     rules = _read(ledger, "budget_rules")
     planned = pd.DataFrame(columns=budget.TARGET_COLUMNS)
     if not rules.empty:
-        planned = budget.targets(rules, actuals, today[:7])
+        expected = recurring.monthly_expected(categorized, books["decisions"], today[:7], today)
+        planned = budget.targets(rules, actuals, today[:7], expected)
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
         compared = budget.versus(planned, actuals, books["categories"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_vs_actual"),

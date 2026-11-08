@@ -58,7 +58,7 @@ def test_the_manifest_enables_what_the_code_calls_and_nothing_more(project):
 
 def test_the_views_build_pushes_this_manifest():
     copy = (ROOT / "web" / "scripts" / "copy.mjs").read_text()
-    assert '["appsscript.json", "dist/appsscript.json"]' in copy
+    assert 'copyFileSync("appsscript.json", "dist/appsscript.json")' in copy
 
 
 def test_the_views_and_the_exporter_each_need_what_they_have():

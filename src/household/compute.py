@@ -109,6 +109,15 @@ def monthly_actuals(transactions):
     return out.sort_values(["month", "category"]).reset_index(drop=True)
 
 
+def daily_actuals(transactions, leave_out=()):
+    """Spend per category per day (positive for outflows), without the categories in leave_out."""
+    df = transactions[~transactions["category"].astype(str).str.strip().isin(set(leave_out))].copy()
+    df["amount"] = pd.to_numeric(df["amount"])
+    df["date"] = df["date"].astype(str).str[:10]
+    out = df.groupby(["date", "category"], as_index=False).agg(spend=("amount", lambda s: round(-s.sum(), 2)))
+    return out[out["spend"] != 0].sort_values(["date", "category"]).reset_index(drop=True)
+
+
 TOTAL = "TOTAL"
 
 

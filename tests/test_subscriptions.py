@@ -141,3 +141,29 @@ def test_a_recurring_merge_edit_is_an_answer_and_cannot_join_itself():
     assert apart.tables["proposal_decisions"].iloc[0]["decision"] == "reject"
     with pytest.raises(ParseError, match="same_as must be another key"):
         changes.parse(doc % '{"kind": "recurring_merge", "key": "WILLOW ST", "same_as": "willow st"}')
+
+
+def test_tracked_charges_set_a_recurring_budget_line_with_its_allowance():
+    from household import budget
+    # PAGE TURNER BOOKS monthly in media, 9.99 then 12.99 from October; QUILL & INK yearly at 60, also media
+    expected = recurring.monthly_expected(LINES, DECISIONS, "2026-10", TODAY)
+    assert expected[("media", "2025-03")] == (5.0, 1)  # a yearly charge counts a twelfth a month, from its first
+    assert expected[("media", "2026-01")] == (14.99, 2)
+    assert expected[("media", "2026-10")] == (17.99, 2)  # the new price from the month it was charged
+    rules = pd.DataFrame([["media", "2026-09-01", "media", "", "", "recurring", "20", "monthly", ""]],
+                         columns=["line", "effective", "category", "account", "priority", "rule", "amount", "per", "note"])
+    out = budget.targets(rules, None, "2026-10", expected).set_index("month")
+    assert out["target"].to_dict() == {"2026-09": 34.99, "2026-10": 37.99}
+    assert out.at["2026-10", "basis"] == "recurring: 2 charges 17.99 + allowance 20.00"
+    none = rules.assign(amount="")  # no allowance: the charges alone
+    assert budget.targets(none, None, "2026-10", expected).set_index("month").at["2026-10", "target"] == 17.99
+
+
+def test_daily_spending_leaves_out_what_is_not_spending():
+    from household import compute
+    lines = pd.DataFrame([{"date": "2026-10-05", "category": "media", "amount": -10},
+                          {"date": "2026-10-05", "category": "media", "amount": -2.5},
+                          {"date": "2026-10-06", "category": "transfer", "amount": -50},
+                          {"date": "2026-10-07", "category": "hobby", "amount": 4}])
+    out = compute.daily_actuals(lines, {"transfer"})
+    assert out.values.tolist() == [["2026-10-05", "media", 12.5], ["2026-10-07", "hobby", -4.0]]

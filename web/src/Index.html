@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8">
     <base target="_top">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -355,12 +356,90 @@
 
       /* editing */
       body.editing { padding-bottom: 88px; }
-      #edit-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
-      #edit-tabs button { min-height: 32px; padding: 0 16px; border-radius: 8px; background: transparent;
+      #edit-tabs, .subtabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 16px; }
+      #edit-tabs button, .subtabs button { min-height: 32px; padding: 0 16px; border-radius: 8px; background: transparent;
         border: 1px solid var(--outline); color: var(--on-surface-variant); }
-      #edit-tabs button:hover { box-shadow: none; background: var(--surface-container); }
-      #edit-tabs button[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container);
-        border-color: transparent; }
+      #edit-tabs button:hover, .subtabs button:hover { box-shadow: none; background: var(--surface-container); }
+      #edit-tabs button[aria-pressed="true"], .subtabs button[aria-pressed="true"] { background: var(--secondary-container);
+        color: var(--on-secondary-container); border-color: transparent; }
+
+      /* the Budget page: lens and period controls, a summary, the lines table, a drawer for a line or a charge */
+      .bv-controls { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin-bottom: 16px; }
+      .bv-picker { display: inline-flex; align-items: center; gap: 4px; }
+      .bv-compare { display: inline-flex; align-items: center; gap: 8px; }
+      .bv-controls select { min-height: 40px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--outline);
+        background: var(--surface-low); color: var(--on-surface); font-weight: 400; }
+      .bv-controls .check { display: inline-flex; align-items: center; gap: 6px; color: var(--on-surface-variant); }
+      .bv-controls .check input { width: 18px; height: 18px; accent-color: var(--primary); }
+      .bv-summary { display: flex; flex-wrap: wrap; gap: 12px 40px; padding: 14px 20px; margin-bottom: 16px;
+        background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; }
+      .bv-summary b { display: block; font-size: 22px; line-height: 28px; font-weight: 400; font-variant-numeric: tabular-nums; }
+      .bv-summary span { color: var(--on-surface-variant); font-size: 13px; }
+      table.bv { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface-low);
+        border: 1px solid var(--outline-variant); border-radius: 12px; overflow: hidden; }
+      table.bv th, table.bv td { padding-left: 12px; }
+      table.bv th.text { text-align: left; }
+      table.bv tr.group td { background: var(--surface-container); font-weight: 500; }
+      table.bv tr.line { cursor: pointer; }
+      table.bv tr.line:hover td, table.bv tr.line.chosen td { background: var(--surface-container); }
+      table.bv tr.line:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+      table.bv td.rule { color: var(--on-surface-variant); font-size: 13px; white-space: normal; max-width: 280px; }
+      table.bv td.over { color: var(--error); font-weight: 500; }
+      table.bv tr.rec td { font-size: 13px; color: var(--on-surface-variant); padding-top: 2px; padding-bottom: 6px; }
+      table.bv tr.rec td:first-child { padding-left: 32px; }
+      .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
+        background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
+      .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }
+      .tag.warn { background: var(--waiting-container); color: var(--on-surface); }
+      .spent-bar { position: relative; display: inline-block; width: 140px; height: 8px; border-radius: 4px;
+        background: var(--surface-high); vertical-align: middle; }
+      .spent-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--series-1); }
+      .spent-bar i.over { background: var(--error); }
+      .spent-bar i.unbudgeted { background: var(--outline); }
+      .spent-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--on-surface); }
+      .over-text { color: var(--error); font-weight: 500; font-size: 13px; margin-left: 8px; }
+      .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.32); z-index: 4; }
+      .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%); z-index: 4; overflow-y: auto;
+        background: var(--surface-low); box-shadow: var(--shadow); padding: 20px 24px 120px; }
+      .drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+      .drawer h2 { font-size: 22px; line-height: 28px; font-weight: 400; }
+      .drawer-section { margin: 8px 0 4px; }
+      .drawer table.txns { width: 100%; font-size: 13px; }
+      .drawer table.txns td { padding: 6px 8px 6px 0; }
+      svg.history { display: block; width: 100%; margin: 12px 0 4px; }
+      svg.history .axis { font-size: 11px; fill: var(--on-surface-variant); }
+      svg.history .axis.strong { fill: var(--on-surface); }
+      svg.history .grid { stroke: var(--outline-variant); opacity: 0.6; }
+      svg.history .bar-mark { fill: var(--series-1); }
+      svg.history .bar-mark.over { fill: var(--error); }
+      svg.history .bar-mark.faint { opacity: 0.45; }
+      svg.history .target-line { stroke: var(--on-surface); stroke-width: 2; stroke-dasharray: 5 3; fill: none; }
+      .recurring-sum { width: 100%; padding: 8px 12px; border-radius: 8px; background: var(--surface-container); }
+      .sum-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-variant-numeric: tabular-nums; }
+      .sum-row.total { border-top: 1px solid var(--outline-variant); margin-top: 4px; padding-top: 6px; }
+      .staged-note { color: var(--waiting); font-size: 13px; }
+      .alert { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+        padding: 12px 16px; border-radius: 12px; margin-bottom: 12px; background: var(--surface-container); }
+      .alert.changed { background: var(--waiting-container); color: var(--on-surface); }
+      .alert .actions { margin: 0; }
+      .rec-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+      .rec-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+      .rec-card.wide { margin: 12px 0; }
+      .rec-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 4px;
+        border-top: 1px solid var(--surface-high); cursor: pointer; border-radius: 4px; }
+      .rec-row:hover { background: var(--surface-container); }
+      .rec-row:focus-visible { outline: 2px solid var(--primary); }
+      .rec-row .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+      details .rec-row { margin-left: 8px; }
+
+      /* the Jobs page: a chosen stretch of a pay line, and its details under the chart */
+      .pay-chart .seg-hit { stroke: transparent; stroke-width: 16; cursor: pointer; }
+      .pay-chart .seg-hit:focus { outline: none; }
+      .pay-chart .seg-hit:focus-visible { stroke: var(--primary); stroke-opacity: 0.35; }
+      .pay-chart .mark-hit { cursor: pointer; }
+      .pay-chart .callout { pointer-events: none; }
+      .job-detail { margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: var(--surface-container); }
+      .job-detail .actions { align-items: center; }
       #edit th, #edit td { text-align: left; }
       #edit h3 { font-size: 16px; font-weight: 500; margin: 24px 0 4px; }
       #edit .actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -394,9 +473,9 @@
       <nav class="tabs" aria-label="Views">
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
-        <button id="view-budget" aria-pressed="false">Budget against actual</button>
+        <button id="view-budget" aria-pressed="false">Budget</button>
         <button id="view-taxes" aria-pressed="false">Taxes</button>
-        <button id="view-subscriptions" aria-pressed="false">Recurring</button>
+        <button id="view-jobs" aria-pressed="false">Jobs</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
       </nav>
     </header>
@@ -437,39 +516,28 @@
     </section>
 
     <section id="budget" hidden>
-      <div id="budget-summary">Loading…</div>
-      <div class="scroll"><table id="lines">
-        <thead><tr>
-          <th><button class="sort" data-key="name">Line</button></th>
-          <th><button class="sort" data-key="priority">Priority</button></th>
-          <th><button class="sort" data-key="target">Budget</button></th>
-          <th><button class="sort" data-key="actual">Spent</button></th>
-          <th><button class="sort" data-key="remaining">Left</button></th>
-          <th><button class="sort" data-key="used">Used</button></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table></div>
-      <div class="note">Click a line for its transactions, and "edit" on one to correct it. Transfers and income are left out; a line with no budget shows what was spent.</div>
+      <div id="budget-tabs" class="subtabs" role="group" aria-label="Budget">
+        <button data-tab="lines" aria-pressed="true">Lines</button>
+        <button data-tab="recurring" aria-pressed="false">Recurring</button>
+      </div>
+      <div id="budget-body">Loading…</div>
     </section>
 
     <section id="taxes" hidden>
       <div id="taxes-body">Loading…</div>
     </section>
 
-    <section id="subscriptions" hidden>
-      <div id="subscriptions-body">Loading…</div>
+    <section id="jobs" hidden>
+      <div id="jobs-body">Loading…</div>
     </section>
 
     <section id="edit" hidden>
       <div id="edit-tabs" role="group" aria-label="What to edit">
         <button data-tab="review" aria-pressed="true">Review</button>
-        <button data-tab="budget" aria-pressed="false">Budget lines</button>
         <button data-tab="rules" aria-pressed="false">Payee rules</button>
         <button data-tab="categories" aria-pressed="false">Categories</button>
         <button data-tab="settings" aria-pressed="false">Settings</button>
         <button data-tab="withholding" aria-pressed="false">Withholding</button>
-        <button data-tab="jobs" aria-pressed="false">Jobs</button>
-        <button data-tab="subscriptions" aria-pressed="false">Recurring</button>
         <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
         <button data-tab="waiting" aria-pressed="false">Saved</button>
       </div>
@@ -489,6 +557,7 @@
     </div>
 
     </main>
+    <script>/* budgetview.js */</script>
     <script src="https://www.gstatic.com/charts/loader.js"></script>
     <script>
       var view = "status", level = "group";
@@ -513,40 +582,6 @@
         row.appendChild(td);
         return td;
       }
-
-      // A table whose column headers sort it: names and words A to Z first, amounts biggest first.
-      function Sortable(tableId, key, dir, render) {
-        var self = this;
-        this.table = document.getElementById(tableId);
-        this.key = key;
-        this.dir = dir;
-        this.rows = [];
-        this.render = render;
-        this.table.querySelectorAll("th button.sort").forEach(function (b) {
-          b.addEventListener("click", function () {
-            var k = b.dataset.key;
-            if (self.key === k) self.dir = self.dir === "asc" ? "desc" : "asc";
-            else { self.key = k; self.dir = (k === "name" || k === "priority") ? "asc" : "desc"; }
-            self.draw(self.rows);
-          });
-        });
-      }
-      Sortable.prototype.draw = function (rows) {
-        var key = this.key, sign = this.dir === "asc" ? 1 : -1;
-        this.rows = rows;
-        this.table.querySelectorAll("th button.sort").forEach(function (b) {
-          if (b.dataset.key === key) b.dataset.dir = sign > 0 ? "asc" : "desc"; else delete b.dataset.dir;
-        });
-        var value = function (r) { return key === "priority" ? (PRIORITY[r.priority] !== undefined ? PRIORITY[r.priority] : 3) : r[key]; };
-        var body = this.table.querySelector("tbody");
-        body.textContent = "";
-        var render = this.render;
-        rows.slice().sort(function (a, b) {
-          var x = value(a), y = value(b);
-          var by = typeof x === "string" ? x.localeCompare(y) : x - y;
-          return sign * by || a.name.localeCompare(b.name);
-        }).forEach(function (r) { render(body, r); });
-      };
 
       // Where the money went: the Sankey, and beside it the same money by what it is to the household.
       function drawFlowSummary(s) {
@@ -628,56 +663,6 @@
           : "";
       }
 
-      // Budget against actual: one line per category or group, a bar for how much of its budget is spent.
-      var lines = new Sortable("lines", "priority", "asc", function (body, l) {
-        var row = document.createElement("tr");
-        row.className = "line" + (l.target && l.remaining < 0 ? " over" : "") + (l.target ? "" : " unbudgeted");
-        cell(row, l.name);
-        cell(row, l.priority || "", "text");
-        cell(row, l.target ? money.format(l.target) : "no budget");
-        cell(row, money.format(l.actual));
-        cell(row, l.target ? money.format(l.remaining) : "", "left");
-        var bar = document.createElement("div");
-        bar.className = "bar";
-        var fill = document.createElement("span");
-        fill.style.width = Math.min(100, l.target ? 100 * l.actual / l.target : 100) + "%";
-        bar.appendChild(fill);
-        var used = cell(row, "");
-        used.appendChild(bar);
-        used.title = l.target ? Math.round(100 * l.actual / l.target) + "% of budget" : "no budget";
-        row.addEventListener("click", function () { toggleDetail(row, l); });
-        body.appendChild(row);
-        // each recurring charge in the line is its own entry under it: spent, and what its cadence expected
-        (l.subscriptions || []).forEach(function (s) {
-          var sub = document.createElement("tr");
-          sub.className = "subscription" + (s.expected !== null && s.actual > s.expected + 0.005 ? " over" : "");
-          var name = cell(sub, s.name, "text");
-          name.title = "A recurring charge in " + l.name + "; its spending is part of the line above";
-          cell(sub, "recurring", "text");
-          cell(sub, s.expected === null ? "" : cents.format(s.expected));
-          cell(sub, cents.format(s.actual));
-          cell(sub, s.expected === null ? "" : cents.format(s.expected - s.actual), "left");
-          cell(sub, "");
-          body.appendChild(sub);
-        });
-      });
-
-      function drawBudget(result) {
-        result.forEach(function (l) { l.used = l.target ? l.actual / l.target : (l.actual > 0 ? Infinity : 0); });
-        lines.draw(result);
-        var target = 0, actual = 0, over = 0, unbudgeted = 0;
-        result.forEach(function (l) {
-          target += l.target;
-          actual += l.actual;
-          if (l.target && l.remaining < 0) over += 1;
-          if (!l.target && l.actual > 0) unbudgeted += 1;
-        });
-        document.getElementById("budget-summary").textContent = result.length
-          ? money.format(target) + " budgeted, " + money.format(actual) + " spent, " + money.format(target - actual) +
-            " left; " + over + " over budget" + (unbudgeted ? ", " + unbudgeted + " with spending but no budget" : "") + "."
-          : "No budget for this period.";
-      }
-
       // What an order history says a charge bought: the first few items, the rest behind "+N more".
       function itemList(items) {
         var list = document.createElement("ul");
@@ -704,43 +689,657 @@
         return list;
       }
 
-      function toggleDetail(row, line) {
-        var next = row.nextSibling;
-        if (next && next.classList && next.classList.contains("detail")) { next.remove(); return; }
-        var detail = document.createElement("tr");
-        detail.className = "detail";
-        var td = cell(detail, "Loading…");
-        td.colSpan = 6;
-        td.id = "detail-" + Math.random().toString(36).slice(2);
-        row.parentNode.insertBefore(detail, row.nextSibling);
-        call("getTransactions", [chosen.budget, line.categories], function (txns) {
-          td.textContent = "";
-          if (!txns.length) { td.textContent = "No transactions."; return; }
-          var table = document.createElement("table");
-          txns.forEach(function (t) {
-            var r = document.createElement("tr");
-            cell(r, t.date);
-            var payee = cell(r, t.payee, "text");
-            if (t.split) {  // one part of a split charge: the badge names every part
-              var badge = document.createElement("span");
-              badge.className = "badge";
-              badge.textContent = "split";
-              badge.title = t.split.split("; ").join("\n");
-              payee.appendChild(document.createTextNode(" "));
-              payee.appendChild(badge);
-            }
-            if (t.items && t.items.length) payee.appendChild(itemList(t.items));
-            cell(r, line.categories.length > 1 ? t.category : "", "text");
-            cell(r, t.account, "text");
-            cell(r, cents.format(t.amount));
-            var open = button(t.id, function (e) { e.stopPropagation(); openTransaction(t.id); }, "link txn-link");
-            open.title = "Edit this transaction: its category, split, note and flags";
-            cell(r, "", "text").appendChild(open);
-            if (stagedText("line|" + t.id)) r.className = "staged";
-            table.appendChild(r);
+      // --- the Budget page -----------------------------------------------------------------------------
+      // Lines: one period (a month, a quarter or a calendar year) beside any other of the same kind, shaped here
+      // by budgetview.js from the book getBudgetBook sends once, so a new lens or comparison asks the server
+      // nothing. A line opens a drawer with its months and its budget line. Recurring: the charges you track,
+      // by the line they belong to, with what changed first.
+      var budget = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
+      var LENS_NAMES = { month: "Month", quarter: "Quarter", year: "Year" };
+      var RULE_NAMES = { fixed: "A fixed amount", recurring: "Its recurring charges, plus an allowance",
+                         trailing: "What the last 4 months spent", lookback: "What the last 12 months spent",
+                         seasonal: "What the same months last year spent", sinking_fund: "Set aside, spent from a balance" };
+      var PER_MONTH = { monthly: 1, biweekly: 26 / 12, weekly: 52 / 12, semi_monthly: 2, quarterly: 1 / 3, semi_annually: 1 / 6,
+                        annually: 1 / 12, "": 1 };
+      var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+      function loadBudget() {
+        if (budget.data && editor) { drawBudgetPage(); return; }
+        document.getElementById("budget-body").textContent = "Loading…";
+        var waiting = 0;
+        var ready = function () { waiting -= 1; if (!waiting) drawBudgetPage(); };
+        if (!budget.data) { waiting += 1; call("getBudgetBook", [], function (d) { budget.data = d; ready(); }, "budget-body"); }
+        if (!editor) { waiting += 1; call("getEditor", [], function (d) { editor = d; ready(); }, "budget-body"); }
+      }
+
+      function setBudgetTab(tab) {
+        budget.tab = tab;
+        budget.open = null;
+        drawBudgetPage();
+      }
+
+      function drawBudgetPage() {
+        if (view !== "budget" || !budget.data || !editor) return;
+        document.querySelectorAll("#budget-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === budget.tab)); });
+        var body = document.getElementById("budget-body");
+        body.textContent = "";
+        closeDrawer(true);
+        if (budget.tab === "recurring") drawRecurring(body); else drawLinesTab(body);
+      }
+
+      function shortDay(d) { return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10)); }
+      function shortPeriod(p) { return lensOf(p) === "month" ? MONTH_SHORT[Number(p.slice(5, 7)) - 1] + " " + p.slice(0, 4) : periodName(p); }
+      function signedMoney(n) { return (n > 0.5 ? "+" : n < -0.5 ? "-" : "") + money.format(Math.abs(n)); }
+      function defaultCompare(p) { var q = quickPicks(p); return q[q.length - 1]; }
+
+      function setLens(lens) {
+        var day = today();
+        if (budget.period && budget.period !== periodOf(today(), lensOf(budget.period))) day = periodDays(budget.period)[0];
+        budget.lens = lens;
+        budget.period = periodOf(day, lens);
+        budget.compare = defaultCompare(budget.period);
+      }
+
+      // The budget lines in force (or ended) that pay for a category, from the editor's budget lines.
+      function linesFor(category) {
+        return editor.budgetLines.filter(function (l) { return (l.category || l.spends_from) === category; });
+      }
+
+      function drawLinesTab(body) {
+        if (!budget.period) setLens(budget.lens);
+        var book = budget.data.book;
+        var v = budgetView(book, budget.period, budget.compare, budget.sameWeeks, today());
+        body.appendChild(budgetControls(v));
+        if (!book.targets.length && !book.days.length) {
+          body.appendChild(el("p", "No budget yet: add a budget line, then run ingest and compute.", "support"));
+        } else {
+          body.appendChild(budgetSummary(v));
+          body.appendChild(budgetTable(v));
+        }
+        var add = el("div", null, "actions");
+        add.appendChild(button("New budget line", function () { budget.open = { line: "" }; openNewLine(); }, "small"));
+        body.appendChild(add);
+        body.appendChild(el("div", "Choose a line for its months, its transactions and its budget line. Transfers and income are left out.", "note"));
+        if (budget.open && budget.open.category) openLine(budget.open.category, v);
+        else if (budget.open && budget.open.line === "") openNewLine();
+      }
+
+      function budgetControls(v) {
+        var c = el("div", null, "bv-controls");
+        var seg = el("span", null, "segmented");
+        seg.setAttribute("role", "group");
+        seg.setAttribute("aria-label", "Length of the period");
+        ["month", "quarter", "year"].forEach(function (l) {
+          var b = button(LENS_NAMES[l], function () { setLens(l); drawBudgetPage(); });
+          b.setAttribute("aria-pressed", String(budget.lens === l));
+          seg.appendChild(b);
+        });
+        c.appendChild(seg);
+        var list = lensPeriods(budget.data.book, budget.lens, today());
+        var at = list.indexOf(budget.period);
+        var move = function (n) { budget.period = list[at + n]; budget.compare = defaultCompare(budget.period); drawBudgetPage(); };
+        var picker = el("span", null, "bv-picker");
+        var earlier = button("\u2039", function () { move(1); }, "icon-button");
+        earlier.setAttribute("aria-label", "The " + budget.lens + " before");
+        earlier.disabled = at < 0 || at >= list.length - 1;
+        var labels = {};
+        var current = periodOf(today(), budget.lens);
+        list.forEach(function (p) { labels[p] = periodName(p) + (p === current ? ", so far" : ""); });
+        var pick = choice(list, budget.period, labels);
+        pick.setAttribute("aria-label", "Period");
+        pick.onchange = function () { budget.period = pick.value; budget.compare = defaultCompare(pick.value); drawBudgetPage(); };
+        var later = button("\u203a", function () { move(-1); }, "icon-button");
+        later.setAttribute("aria-label", "The " + budget.lens + " after");
+        later.disabled = at <= 0;
+        picker.appendChild(earlier);
+        picker.appendChild(pick);
+        picker.appendChild(later);
+        c.appendChild(picker);
+        var label = el("label", null, "bv-compare");
+        label.appendChild(el("span", "Compare to", "support"));
+        var cmp = document.createElement("select");
+        var quick = document.createElement("optgroup");
+        quick.label = "Quick picks";
+        var words = { month: "month", quarter: "quarter", year: "year" }[budget.lens];
+        quickPicks(budget.period).forEach(function (p, i) {
+          var o = el("option", (i === 0 ? "Previous " + words : "A year earlier") + " (" + periodName(p) + ")");
+          o.value = p;
+          quick.appendChild(o);
+        });
+        cmp.appendChild(quick);
+        var any = document.createElement("optgroup");
+        any.label = "Any " + words;
+        list.filter(function (p) { return p !== budget.period; }).forEach(function (p) {
+          var o = el("option", periodName(p));
+          o.value = p;
+          any.appendChild(o);
+        });
+        cmp.appendChild(any);
+        cmp.value = budget.compare;
+        cmp.onchange = function () { budget.compare = cmp.value; drawBudgetPage(); };
+        label.appendChild(cmp);
+        c.appendChild(label);
+        if (v.partial) {
+          var same = el("label", null, "check");
+          var box = document.createElement("input");
+          box.type = "checkbox";
+          box.checked = budget.sameWeeks;
+          box.onchange = function () { budget.sameWeeks = box.checked; drawBudgetPage(); };
+          same.appendChild(box);
+          same.appendChild(document.createTextNode(" Same weeks only (" + shortDay(v.from) + " to " + shortDay(today()) + ")"));
+          c.appendChild(same);
+        }
+        return c;
+      }
+
+      function compareName(v) { return (v.sameWeeks ? "the same weeks of " : "") + periodName(v.compare); }
+
+      function budgetSummary(v) {
+        var box = el("div", null, "bv-summary");
+        var stat = function (big, small) {
+          var s = el("div");
+          s.appendChild(el("b", big));
+          s.appendChild(el("span", small));
+          box.appendChild(s);
+        };
+        stat(money.format(v.actual), "spent of " + money.format(v.target) + " budgeted for " + periodName(v.period));
+        if (v.target) stat(Math.round(100 * v.actual / v.target) + "%", "of the budget" + (v.partial ? " used so far" : ""));
+        var d = v.actual - v.compared;
+        stat(Math.abs(d) < 0.5 ? money.format(0) : signedMoney(d), (Math.abs(d) < 0.5 ? "the same as " : d > 0 ? "more than " : "less than ") +
+             compareName(v) + " (" + money.format(v.compared) + ")");
+        if (v.recurring && v.actual > 0) stat(money.format(v.recurring), "of it recurring (" + Math.round(100 * v.recurring / v.actual) + "%)");
+        return box;
+      }
+
+      // A bar for how much of a budget is spent: full and red past it, with a mark where the budget ends.
+      function spentBar(actual, target) {
+        var m = el("span", null, "spent-bar");
+        var fill = el("i");
+        var over = target > 0 && actual > target + 0.5;
+        fill.style.width = (target > 0 ? Math.max(0, Math.min(100, 100 * actual / target)) : actual > 0 ? 100 : 0) + "%";
+        if (over) fill.className = "over";
+        if (!target) fill.className = "unbudgeted";
+        m.appendChild(fill);
+        if (over) {
+          var mark = el("b");
+          mark.style.left = (100 * target / actual) + "%";
+          m.appendChild(mark);
+        }
+        return m;
+      }
+
+      function trackedByKey() {
+        var by = {};
+        budget.data.tracked.forEach(function (t) { by[t.key] = t; });
+        return by;
+      }
+
+      function budgetTable(v) {
+        var wrap = el("div", null, "scroll");
+        var table = el("table", null, "bv");
+        var head = el("tr");
+        ["Line", "Target from", "Budget", "Spent", "", shortPeriod(v.compare) + (v.sameWeeks ? ", same weeks" : ""), "Change"].forEach(function (h, i) {
+          head.appendChild(el("th", h, i === 1 ? "text" : ""));
+        });
+        table.appendChild(el("thead")).appendChild(head);
+        var body = el("tbody");
+        var tracked = trackedByKey();
+        v.groups.forEach(function (g) {
+          var gr = el("tr", null, "group");
+          cell(gr, g.name);
+          cell(gr, "", "text");
+          cell(gr, g.target ? money.format(g.target) : "");
+          cell(gr, money.format(g.actual));
+          cell(gr, "");
+          cell(gr, money.format(g.compared));
+          cell(gr, signedMoney(g.actual - g.compared));
+          body.appendChild(gr);
+          g.lines.forEach(function (l) {
+            var lines = linesFor(l.category).filter(function (x) { return x.in_force !== "ended"; });
+            var row = el("tr", null, "line" + (budget.open && budget.open.category === l.category ? " chosen" : ""));
+            row.tabIndex = 0;
+            var name = cell(row, l.category);
+            if (lines.some(function (x) { return x.rule === "recurring"; })) name.appendChild(el("span", "recurring", "tag"));
+            if (stagedText("budget_line|" + (lines[0] ? lines[0].line : "\u0000"))) name.appendChild(el("span", "changed", "tag warn"));
+            cell(row, lines.length ? lines.map(function (x) { return x.in_words; }).join("; ") : (l.target ? "scheduled" : "no budget line"), "text rule");
+            cell(row, l.target ? money.format(l.target) : "");
+            var over = l.target > 0 && l.actual > l.target + 0.5;
+            cell(row, money.format(l.actual), over ? "over" : "");
+            var used = cell(row, "", "text");
+            used.appendChild(spentBar(l.actual, l.target));
+            if (over) used.appendChild(el("span", "over " + money.format(l.actual - l.target), "over-text"));
+            cell(row, money.format(l.compared));
+            cell(row, signedMoney(l.actual - l.compared));
+            var open = function () { budget.open = { category: l.category }; openLine(l.category, v); };
+            row.onclick = open;
+            row.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+            body.appendChild(row);
+            l.recurring.forEach(function (r) {
+              var t = tracked[r.key] || {};
+              var rec = el("tr", null, "rec");
+              cell(rec, r.key);
+              var about = [t.cadence, t.status === "price changed" && t.previous ? "now " + cents.format(Number(t.latest)) + " (was " + cents.format(Number(t.previous)) + ")" : ""];
+              cell(rec, about.filter(Boolean).join(", "), "text");
+              cell(rec, r.expected === null ? "" : money.format(r.expected));
+              cell(rec, money.format(r.actual));
+              cell(rec, "");
+              cell(rec, money.format(r.compared));
+              cell(rec, "");
+              body.appendChild(rec);
+            });
           });
-          td.appendChild(table);
-        }, td.id);
+        });
+        table.appendChild(body);
+        wrap.appendChild(table);
+        return wrap;
+      }
+
+      // --- the drawer: one line's months, transactions and budget line, or one recurring charge ---------------
+      function closeDrawer(quiet) {
+        document.querySelectorAll(".drawer, .scrim").forEach(function (n) { n.remove(); });
+        document.removeEventListener("keydown", drawerKey);
+        if (!quiet) {
+          budget.open = null;
+          document.querySelectorAll("table.bv tr.chosen").forEach(function (r) { r.classList.remove("chosen"); });
+        }
+      }
+
+      function drawerKey(e) { if (e.key === "Escape") closeDrawer(); }
+
+      function drawer(title, sub) {
+        closeDrawer(true);
+        var scrim = el("div", null, "scrim");
+        scrim.onclick = function () { closeDrawer(); };
+        var d = el("aside", null, "drawer");
+        d.setAttribute("role", "dialog");
+        d.setAttribute("aria-label", title);
+        var head = el("div", null, "drawer-head");
+        var titles = el("div");
+        titles.appendChild(el("h2", title));
+        if (sub) titles.appendChild(el("div", sub, "support"));
+        head.appendChild(titles);
+        var x = button("Close", function () { closeDrawer(); }, "text");
+        head.appendChild(x);
+        d.appendChild(head);
+        document.body.appendChild(scrim);
+        document.body.appendChild(d);
+        document.addEventListener("keydown", drawerKey);
+        x.focus();
+        return d;
+      }
+
+      function openLine(category, v) {
+        var l = null;
+        v.groups.forEach(function (g) { g.lines.forEach(function (x) { if (x.category === category) l = x; }); });
+        l = l || { category: category, group: budget.data.book.groups[category] || "", target: 0, actual: 0, compared: 0, recurring: [] };
+        var d = drawer(category, (l.group ? l.group + ". " : "") + periodName(v.period) + (v.sameWeeks ? " so far" : "") + ": " +
+                       money.format(l.actual) + (l.target ? " of " + money.format(l.target) : "") + "; " + compareName(v) + ": " +
+                       money.format(l.compared) + ".");
+        lineHistory(d, category, v);
+        var txns = el("div", null, "drawer-section");
+        var show = button("Show its transactions", function () {
+          show.remove();
+          txns.appendChild(el("div", "Loading…", "support"));
+          txns.id = "drawer-txns";
+          call("getTransactions", [v.period, [category], v.sameWeeks ? v.through : ""], function (list) {
+            txns.textContent = "";
+            txns.appendChild(transactionTable(list));
+          }, "drawer-txns");
+        }, "small");
+        txns.appendChild(show);
+        d.appendChild(txns);
+        var lines = linesFor(category);
+        var redraw = function () { drawBudgetPage(); };
+        if (!lines.length) {
+          section(d, "Budget line", "No budget line pays for " + category + " yet. Add one: it counts from the month it starts.");
+          d.appendChild(budgetForm(null, redraw, category));
+          return;
+        }
+        lines.forEach(function (bl) {
+          section(d, lines.length > 1 ? "Budget line: " + bl.line : "Budget line",
+                  bl.in_force === "ended" ? "Ended " + bl.effective + "." : "Since " + bl.effective + ": " + bl.in_words + "." +
+                  (bl.scheduled ? " Scheduled: " + bl.scheduled + "." : ""));
+          var staged_ = stagedText("budget_line|" + bl.line);
+          if (staged_) d.appendChild(el("p", "Waiting to be saved: " + staged_, "staged-note"));
+          d.appendChild(budgetForm(bl, redraw, category));
+        });
+      }
+
+      function openNewLine() {
+        var d = drawer("New budget line", "A new line counts from the month it starts.");
+        d.appendChild(budgetForm(null, function () { budget.open = null; drawBudgetPage(); }, ""));
+      }
+
+      function transactionTable(txns) {
+        if (!txns.length) return el("p", "No transactions.", "support");
+        var table = el("table", null, "txns");
+        txns.forEach(function (t) {
+          var r = el("tr");
+          cell(r, t.date);
+          var payee = cell(r, t.payee, "text");
+          if (t.split) {
+            var badge = el("span", "split", "badge");
+            badge.title = t.split.split("; ").join("\n");
+            payee.appendChild(document.createTextNode(" "));
+            payee.appendChild(badge);
+          }
+          if (t.items && t.items.length) payee.appendChild(itemList(t.items));
+          cell(r, cents.format(t.amount));
+          var open = button(t.id, function (e) { e.stopPropagation(); closeDrawer(); openTransaction(t.id); }, "link txn-link");
+          open.title = "Edit this transaction: its category, split, note and flags";
+          cell(r, "", "text").appendChild(open);
+          if (stagedText("line|" + t.id)) r.className = "staged";
+          table.appendChild(r);
+        });
+        return table;
+      }
+
+      // A line's twelve months up to the period's last: what it spent each month (red past its target) and
+      // the target as a dashed step line. The period's own months are drawn full, the others lighter.
+      function lineHistory(d, category, v) {
+        var NS = "http://www.w3.org/2000/svg";
+        var book = budget.data.book;
+        var lastMonth = periodDays(v.period)[1].slice(0, 7);
+        var months = [];
+        for (var i = 11; i >= 0; i--) months.push(shiftPeriod(lastMonth, -i));
+        var spent = {}, target = {};
+        book.days.forEach(function (x) { if (x[1] === category) spent[x[0].slice(0, 7)] = (spent[x[0].slice(0, 7)] || 0) + x[2]; });
+        book.targets.forEach(function (t) { if (t.category === category) target[t.month] = (target[t.month] || 0) + t.target; });
+        var hi = 0;
+        months.forEach(function (m) { hi = Math.max(hi, spent[m] || 0, target[m] || 0); });
+        if (!hi) { d.appendChild(el("p", "Nothing spent or budgeted in the twelve months to " + periodName(lastMonth) + ".", "support")); return; }
+        var step = Math.pow(10, Math.floor(Math.log10(hi)));
+        var nice = [1, 2, 2.5, 5, 10].map(function (k) { return k * step; }).filter(function (s) { return hi / s <= 4; })[0] || step * 10;
+        var top = Math.ceil(hi / nice) * nice;
+        var W = 440, H = 190, L = 48, B = 160, T = 16;
+        var y = function (n) { return T + (top - n) / top * (B - T); };
+        var svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+        svg.setAttribute("class", "history");
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label", category + ": spending each month against its target, " + periodName(months[0]) + " to " + periodName(lastMonth));
+        var add = function (name, attrs, text) {
+          var e = document.createElementNS(NS, name);
+          Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+          if (text !== undefined) e.textContent = text;
+          svg.appendChild(e);
+          return e;
+        };
+        for (var t = 0; t <= top + 0.001; t += nice) {
+          add("line", { x1: L, x2: W, y1: y(t), y2: y(t), "class": "grid" });
+          add("text", { x: L - 6, y: y(t) + 4, "text-anchor": "end", "class": "axis" }, money.format(t));
+        }
+        var bw = (W - L) / 12;
+        var inPeriod = function (m) { return m + "-01" >= v.from && m + "-01" <= v.through; };
+        months.forEach(function (m, n) {
+          var s = spent[m] || 0, x = L + n * bw;
+          var over = target[m] > 0 && s > target[m] + 0.5;
+          var bar = add("rect", { x: x + 4, width: bw - 8, y: y(Math.max(s, 0)), height: Math.max(y(0) - y(Math.max(s, 0)), s > 0 ? 1 : 0), rx: 3,
+                                  "class": "bar-mark" + (over ? " over" : "") + (inPeriod(m) ? "" : " faint") });
+          var tip = document.createElementNS(NS, "title");
+          tip.textContent = periodName(m) + ": spent " + money.format(s) +
+            (target[m] ? " of " + money.format(target[m]) + (over ? ", over by " + money.format(s - target[m]) : "") : ", no target");
+          bar.appendChild(tip);
+          add("text", { x: x + bw / 2, y: B + 16, "text-anchor": "middle", "class": "axis" }, MONTH_SHORT[Number(m.slice(5)) - 1].charAt(0));
+          if (m.slice(5) === "01" || n === 0) add("text", { x: x + bw / 2, y: B + 29, "text-anchor": "middle", "class": "axis" }, m.slice(0, 4));
+        });
+        var path = "";
+        months.forEach(function (m, n) {
+          if (!target[m]) return;
+          var x = L + n * bw;
+          path += (path && target[months[n - 1]] ? " L" : " M") + x + "," + y(target[m]) + " L" + (x + bw) + "," + y(target[m]);
+        });
+        if (path) add("path", { d: path, "class": "target-line" });
+        var lastTarget = target[lastMonth];
+        if (lastTarget) add("text", { x: W, y: y(lastTarget) - 6, "text-anchor": "end", "class": "axis strong" }, "target " + money.format(lastTarget));
+        svg.setAttribute("height", H);
+        d.appendChild(svg);
+      }
+
+      // --- Recurring: the charges you track, by line ------------------------------------------------------------
+      function drawRecurring(body) {
+        var tracked = budget.data.tracked, rows = editor.subscriptions;
+        var lead = el("p", "Tracked charges are the fixed part of the budget: a line can take its target from its charges, " +
+                           "plus an allowance for the rest of its spending.", "support");
+        var active = tracked.filter(function (t) { return t.status !== "stopped" && t.status !== "no charges"; });
+        var yearly = active.reduce(function (s, t) { return s + (Number(t.yearly) || 0); }, 0);
+        var month = budgetView(budget.data.book, periodOf(today(), "month"), periodOf(today(), "month"), false, today());
+        var box = el("div", null, "bv-summary");
+        [[money.format(yearly / 12), "a month recurring, on average"], [money.format(yearly), "a year"],
+         month.target ? [Math.round(100 * yearly / 12 / month.target) + "%", "of this month's budget"] : null].forEach(function (s) {
+          if (!s) return;
+          var d = el("div");
+          d.appendChild(el("b", s[0]));
+          d.appendChild(el("span", s[1]));
+          box.appendChild(d);
+        });
+        body.appendChild(box);
+        body.appendChild(lead);
+        tracked.filter(function (t) { return t.status === "price changed"; }).forEach(function (t) { body.appendChild(priceAlert(t)); });
+        var unanswered = rows.filter(function (r) { return r.marked === "" && r.status !== "stopped"; });
+        unanswered.forEach(function (r) { body.appendChild(trackAlert(r)); });
+        var byCategory = {};
+        tracked.filter(function (t) { return t.status !== "stopped"; }).forEach(function (t) {
+          (byCategory[t.category || "(no charges yet)"] = byCategory[t.category || "(no charges yet)"] || []).push(t);
+        });
+        var cards = el("div", null, "rec-cards");
+        Object.keys(byCategory).sort().forEach(function (category) {
+          var card = el("section", null, "panel rec-card");
+          var h = el("h3", (budget.data.book.groups[category] ? budget.data.book.groups[category] + ": " : "") + category);
+          var lines = linesFor(category).filter(function (l) { return l.in_force !== "ended"; });
+          if (lines.length) h.appendChild(el("span", lines.map(function (l) { return l.in_words; }).join("; "), "tag" + (lines.some(function (l) { return l.rule === "recurring"; }) ? "" : " plain")));
+          else h.appendChild(el("span", "no budget line", "tag plain"));
+          card.appendChild(h);
+          byCategory[category].forEach(function (t) { card.appendChild(chargeRow(t)); });
+          cards.appendChild(card);
+        });
+        if (!tracked.length) body.appendChild(el("p", "Nothing tracked yet. Charges that come back regularly are listed above to track.", "support"));
+        body.appendChild(cards);
+        var stopped = tracked.filter(function (t) { return t.status === "stopped"; })
+          .concat(rows.filter(function (r) { return r.marked === "" && r.status === "stopped"; }));
+        if (stopped.length) {
+          var card = el("section", null, "panel rec-card wide");
+          card.appendChild(el("h3", "Seem to have stopped"));
+          card.appendChild(el("p", "No charge for over one and a half cadences. Merge one into the charge that took its place to keep one history.", "support"));
+          stopped.forEach(function (t) { card.appendChild(chargeRow(t)); });
+          body.appendChild(card);
+        }
+        var no = rows.filter(function (r) { return r.marked === "no"; });
+        if (no.length) {
+          var more = el("details");
+          more.appendChild(el("summary", "Not recurring (" + no.length + ")"));
+          no.forEach(function (r) { more.appendChild(chargeRow(r)); });
+          body.appendChild(more);
+        }
+      }
+
+      // The editor's row for a merchant key (what is tracked, found or turned down), for its forms.
+      function editorCharge(key) {
+        return editor.subscriptions.filter(function (r) { return r.key === key; })[0] ||
+          { key: key, marked: "", status: "", cadence: "", charges: "", last: "", latest: "", yearly: "", category: "", example: "",
+            note: "", includes: "", merged: "" };
+      }
+
+      function chargeRow(t) {
+        var row = el("div", null, "rec-row");
+        row.tabIndex = 0;
+        var left = el("div");
+        left.appendChild(el("span", t.key));
+        if (t.status === "price changed") left.appendChild(el("span", "price changed", "tag warn"));
+        var staged_ = stagedText("subscription|" + t.key.toUpperCase()) || stagedText("recurring_merge|" + t.key.toUpperCase());
+        if (staged_) left.appendChild(el("span", staged_, "tag warn"));
+        var when = t.status === "stopped" ? "last charged " + t.last : t.next_expected ? "next " + t.next_expected : "";
+        left.appendChild(el("div", [t.cadence, t.status === "price changed" ? t.change : "", when,
+                                    t.includes ? "includes " + t.includes : ""].filter(Boolean).join(", "), "support"));
+        row.appendChild(left);
+        var perMonth = Number(t.yearly) / 12;
+        row.appendChild(el("div", t.yearly ? cents.format(perMonth) + " a month" : "", "num"));
+        var open = function () { openCharge(t.key); };
+        row.onclick = open;
+        row.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+        return row;
+      }
+
+      function openCharge(key) {
+        var r = editorCharge(key);
+        var t = trackByKey(key);
+        var d = drawer(key, r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
+        facts(d, [["Every", (t && t.cadence) || r.cadence], ["Latest", (t && t.latest) ? cents.format(Number(t.latest)) : r.latest ? cents.format(Number(r.latest)) : ""],
+                  ["Last charged", (t && t.last) || r.last], ["A year", ((t && t.yearly) || r.yearly) ? cents.format(Number((t && t.yearly) || r.yearly)) : ""],
+                  ["Category", (t && t.category) || r.category], ["Spelled", r.example], ["Includes", (t && t.includes) || r.includes], ["Note", r.note]]);
+        var done = function () { closeDrawer(); drawBudgetPage(); };
+        d.appendChild(subscriptionForm(r, done));
+        d.appendChild(mergeForm(r, editor.subscriptions, done));
+      }
+
+      function trackByKey(key) { return trackedByKey()[key] || null; }
+
+      // A tracked charge whose price changed: what it means for its line, and the change that follows it.
+      function priceAlert(t) {
+        var box = el("div", null, "alert changed");
+        var text = el("span");
+        text.appendChild(el("strong", t.key));
+        var lines = linesFor(t.category).filter(function (l) { return l.in_force === "yes"; });
+        var words = " went from " + cents.format(Number(t.previous)) + " to " + cents.format(Number(t.latest)) + " " + t.cadence +
+                    " on " + t.last + ". ";
+        var actions = el("span", null, "actions");
+        var perYear = { weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 }[t.cadence] || 0;
+        var delta = (Number(t.latest) - Number(t.previous)) * perYear / 12;
+        var line = lines[0];
+        if (!line) words += "No budget line pays for " + t.category + ".";
+        else if (line.rule === "recurring") words += line.line + " takes its target from its charges, so the target moves with it.";
+        else if (line.rule === "fixed" && perYear) {
+          var per = line.per || "monthly";
+          var now = Number(String(line.amount).replace(/,/g, "")) || 0;
+          var next = Math.round((now + delta / PER_MONTH[per]) * 100) / 100;
+          words += line.line + "'s target is " + cents.format(now) + " " + per + "; at the new price it would be " + cents.format(next) + ".";
+          var t_ = "budget_line|" + line.line;
+          if (stagedText(t_)) actions.appendChild(el("span", "Waiting to be saved: " + stagedText(t_), "support"));
+          else actions.appendChild(button("Update " + line.line + " to " + cents.format(next), function () {
+            stage({ kind: "budget_line", line: line.line, effective: today(), rule: "fixed", category: line.category, account: line.account,
+                    priority: line.priority, amount: next.toFixed(2), per: per, note: line.note, was: budgetWas(line) },
+                  "budget line " + line.line + ": fixed " + next.toFixed(2) + " " + per + " from " + today() + " (" + t.key + "'s new price)");
+            drawBudgetPage();
+          }, "filled"));
+        } else words += line.line + "'s target follows its spending on its own (" + line.in_words + ").";
+        text.appendChild(document.createTextNode(words));
+        box.appendChild(text);
+        box.appendChild(actions);
+        return box;
+      }
+
+      // A charge that comes back but isn't tracked: track it, merge it into one that is, or turn it down.
+      function trackAlert(r) {
+        var box = el("div", null, "alert");
+        var text = el("span");
+        text.appendChild(el("strong", r.key));
+        text.appendChild(document.createTextNode(" comes back " + r.cadence + " for about " + cents.format(Number(r.latest)) +
+                                                 " and isn't tracked." + (r.category ? " Its lines are in " + r.category + "." : "")));
+        box.appendChild(text);
+        var actions = el("span", null, "actions");
+        var t = "subscription|" + r.key.toUpperCase();
+        if (stagedText(t)) {
+          actions.appendChild(el("span", "Waiting to be saved: " + stagedText(t), "support"));
+          actions.appendChild(button("Undo", function () { unstage(t); drawBudgetPage(); }, "text"));
+        } else {
+          actions.appendChild(button("Track it", function () {
+            stage({ kind: "subscription", key: r.key, subscription: "yes" }, r.key + ": track as recurring");
+            drawBudgetPage();
+          }));
+          actions.appendChild(button("Merge into\u2026", function () { openCharge(r.key); }, "text"));
+          actions.appendChild(button("Not recurring", function () {
+            stage({ kind: "subscription", key: r.key, subscription: "no" }, r.key + ": don't track");
+            drawBudgetPage();
+          }, "text"));
+        }
+        box.appendChild(actions);
+        return box;
+      }
+
+      // --- the Jobs page -------------------------------------------------------------------------------------
+      // A pay chart per person from comp_events. Choosing a stretch of a line shows its details, what the
+      // paychecks say about it, and a correction; + adds a change. Runs of paychecks that disagree with the
+      // jobs come first, each with the change it suggests.
+      function loadJobs() {
+        if (editor) { drawJobsPage(); return; }
+        document.getElementById("jobs-body").textContent = "Loading…";
+        call("getEditor", [], function (d) { editor = d; drawJobsPage(); }, "jobs-body");
+      }
+
+      // After an edit staged from a page's dialog or drawer, draw that page again.
+      function redrawPage() {
+        if (view === "jobs") drawJobsPage();
+        else if (view === "budget") drawBudgetPage();
+        else redrawEditor();
+      }
+
+      function drawJobsPage() {
+        if (view !== "jobs" || !editor) return;
+        var body = document.getElementById("jobs-body");
+        body.textContent = "";
+        if (!editor.baseRun) {
+          body.appendChild(el("p", "No compute run with editor tables yet: run ingest and compute once with this release.", "support"));
+          return;
+        }
+        editor.payCheck.filter(function (r) { return r.status !== "agrees"; }).forEach(function (r) { body.appendChild(payAlert(r)); });
+        if (!editor.jobs.length) {
+          body.appendChild(el("p", "No jobs yet. Add each job and pay change, from the date it took effect.", "support"));
+          var add = el("div", null, "actions");
+          add.appendChild(button("Add a job", function () { jobDialog("", {}, "Add a job"); }, "filled"));
+          body.appendChild(add);
+          return;
+        }
+        payCharts(body, editor.jobs);
+        body.appendChild(el("div", "Choose a stretch of a line for its details and what the paychecks say about it, or + to add a change. " +
+                                   "The tax projection and the pay check read these.", "note"));
+      }
+
+      function personName(p) { return p ? p.charAt(0).toUpperCase() + p.slice(1) : ""; }
+
+      // A run of paychecks that disagrees with the jobs: what it says, and the change it suggests. Pay well under
+      // the job's salary reads as fewer hours: the salary is kept and the share of full time suggested.
+      function payAlert(r) {
+        var box = el("div", null, "alert changed");
+        var text = el("span");
+        text.appendChild(el("strong", personName(r.person) + "'s paychecks, " + r.from + " to " + r.to + ": "));
+        text.appendChild(document.createTextNode(r.finding + "."));
+        box.appendChild(text);
+        var actions = el("span", null, "actions");
+        var full = Number(r.comp_salary), paid = Number(r.stubs_annual);
+        var fewer = full > 0 && paid < 0.9 * full;
+        actions.appendChild(button("Record the change", function () {
+          jobDialog(personName(r.person), { effective: r.from, person: r.person, employer: r.comp_employer || r.employer,
+                                            salary: String(Math.round(fewer ? full : paid)),
+                                            fte: fewer ? String(Math.round(paid / full * 100) / 100) : "" },
+                    "Record the change the paychecks show");
+        }, "filled"));
+        box.appendChild(actions);
+        return box;
+      }
+
+      // One stretch of a pay line: the job row it comes from, what the paychecks say, and a correction.
+      function showJob(box, name, r, next, close) {
+        box.textContent = "";
+        box.hidden = false;
+        var head = el("div", null, "pay-head");
+        head.appendChild(el("h3", r.employer + ", " + r.at + " to " + (next ? next.at : "now")));
+        head.appendChild(button("Close", close, "text"));
+        box.appendChild(head);
+        var row = editor.jobs.filter(function (j) { return j.person === r.person && j.effective === r.at && j.employer === r.employer; })[0];
+        var stubs = row && row.stubs;
+        facts(box, [["Pay a year", money.format(r.salary) + (r.fte !== 1 ? " full time; " + Math.round(r.fte * 100) + "% time, " + money.format(r.pay) + " paid" : "")],
+                    ["Band", r.band], ["Rating", r.rating], ["Note", r.note],
+                    ["The paychecks", stubs === "agrees" ? "agree with it" : stubs || "none checked against it (the check reads last year's and this year's)"]]);
+        var t = "job|" + r.person + "|" + r.at + "|" + r.employer;
+        if (stagedText(t)) box.appendChild(el("p", "Waiting to be saved: " + stagedText(t), "staged-note"));
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Correct this", function () {
+          jobDialog(name, { effective: r.at, person: r.person, employer: r.employer, salary: String(r.salary),
+                            fte: r.fte !== 1 ? String(r.fte) : "", band: r.band || "", rating: r.rating || "", note: r.note || "" },
+                    "Correct " + r.employer + " from " + r.at, "Keep this correction");
+        }));
+        actions.appendChild(el("span", "A row with the same date, person and employer replaces this one.", "support"));
+        box.appendChild(actions);
       }
 
       // --- editing ---------------------------------------------------------------------------------------
@@ -748,7 +1347,7 @@
       // shown in the pending bar. Save sends them to saveChanges, which writes one change set for ingest.
       var editor = null, editTab = "review";
       var staged = {}, stagedOrder = [];
-      var RULES = ["fixed", "seasonal", "lookback", "trailing", "sinking_fund"];
+      var RULES = ["fixed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund"];
       var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
       var PRIORITIES = ["", "high", "medium", "low"];
 
@@ -1065,9 +1664,8 @@
           body.appendChild(el("div", "No compute run with editor tables yet: run ingest and compute once with this release.", "note"));
           return;
         }
-        ({ review: drawReview, budget: drawBudgetLines, rules: drawRules, categories: drawCategories, settings: drawSettings,
-           withholding: drawWithholding, jobs: drawJobs, subscriptions: drawSubscriptionMarks,
-           duplicates: drawDuplicates })[editTab](body);
+        ({ review: drawReview, rules: drawRules, categories: drawCategories, settings: drawSettings,
+           withholding: drawWithholding, duplicates: drawDuplicates })[editTab](body);
       }
 
       // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
@@ -1091,16 +1689,53 @@
         return (editor.scheduled || []).filter(function (x) { return x.line === line && x.effective.slice(0, 10) === date; })[0] || null;
       }
 
-      function budgetForm(l, done) {
+      // A budget line's change from a date, its end, or a scheduled amount. A "recurring" line's target is its
+      // category's tracked charges plus the amount, an allowance for the rest, shown added up as it is typed.
+      function budgetForm(l, done, preset) {
         var form = el("form", null, "edit");
         var isNew = !l;
-        l = l || { line: "", effective: "", category: "", account: "", priority: "", rule: "fixed", amount: "", per: "monthly", note: "", in_force: "new" };
-        var name = isNew ? field(form, "Line", textInput("", "", "groceries")) : null;
+        l = l || { line: preset || "", effective: "", category: preset || "", account: "", priority: "", rule: "fixed", amount: "",
+                   per: "monthly", note: "", in_force: "new" };
+        var name = isNew ? field(form, "Line", textInput(preset || "", "", "groceries")) : null;
         var effective = field(form, "From", dateInput(firstOfMonth()));
-        var rule = field(form, "Rule", choice(RULES, l.rule === "end" ? "fixed" : l.rule));
+        var rule = field(form, "Target from", choice(RULES, l.rule === "end" ? "fixed" : l.rule, RULE_NAMES));
         var amount = field(form, "Amount", textInput(l.amount, "amount"));
         var per = field(form, "Per", choice(PERS, l.per || "monthly"));
         var category = field(form, "Category", categoryChoice(l.category || l.spends_from));
+        var charges = el("div", null, "recurring-sum");
+        form.appendChild(charges);
+        var showCharges = function () {
+          var recurring = rule.value === "recurring";
+          amount.parentNode.firstChild.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
+          charges.textContent = "";
+          charges.hidden = !recurring;
+          if (!recurring) return;
+          var mine = (editor.subscriptions || []).filter(function (r) { return r.marked === "yes" && r.category === category.value && r.status !== "stopped"; });
+          var total = 0;
+          mine.forEach(function (r) {
+            var m = (Number(r.yearly) || 0) / 12;
+            total += m;
+            var row = el("div", null, "sum-row");
+            row.appendChild(el("span", r.key + (r.cadence ? " (" + r.cadence + ")" : "")));
+            row.appendChild(el("span", cents.format(m) + " a month"));
+            charges.appendChild(row);
+          });
+          if (!mine.length) charges.appendChild(el("div", "No tracked recurring charges in " + (category.value || "this category") +
+                                                       " yet: track them on the Recurring tab.", "support"));
+          var allowance = isAmount(amount.value.trim()) ? Number(amount.value.replace(/,/g, "")) * (PER_MONTH[per.value] || 1) : 0;
+          var a = el("div", null, "sum-row");
+          a.appendChild(el("span", "Allowance for the rest"));
+          a.appendChild(el("span", cents.format(allowance) + " a month"));
+          charges.appendChild(a);
+          var t = el("div", null, "sum-row total");
+          t.appendChild(el("strong", "Monthly target"));
+          t.appendChild(el("strong", cents.format(total + allowance)));
+          charges.appendChild(t);
+          charges.appendChild(el("div", "A charge's new price moves the target with it.", "support"));
+        };
+        [rule, per, category].forEach(function (c) { c.addEventListener("change", showCharges); });
+        amount.addEventListener("input", showCharges);
+        showCharges();
         var priority = field(form, "Priority", choice(PRIORITIES, l.priority));
         var account = field(form, "Paid from", textInput(l.account));
         var note = field(form, "Note", textInput(l.note, "wide"));
@@ -1309,19 +1944,24 @@
           add.title = "Add a pay change for " + name;
           head.appendChild(add);
           panel.appendChild(head);
-          payChart(panel, mine, colorOf);
+          var detail = el("div", null, "job-detail");
+          detail.hidden = true;
+          var pick = payChart(panel, mine, colorOf, function (r, next) {
+            showJob(detail, name, r, next, function () { detail.hidden = true; pick(null); });
+          });
+          panel.appendChild(detail);
         });
       }
 
       // A pay change in a dialog over the charts: the job form, staged like any edit when kept.
-      function jobDialog(name, start) {
+      function jobDialog(name, start, title, label) {
         var dialog = document.createElement("dialog");
         dialog.className = "job-dialog";
-        dialog.appendChild(el("h2", "Add a pay change for " + name));
+        dialog.appendChild(el("h2", title || "Add a pay change for " + name));
         dialog.appendChild(el("p", "A raise, a new job, or a change of hours, from the date it took effect. " +
                                    "For fewer hours keep the full-time salary and give the share of full time.", "support"));
         var close = function () { dialog.close(); dialog.remove(); };
-        var form = jobForm(start, function () { close(); redrawEditor(); }, "Add pay change");
+        var form = jobForm(start, function () { close(); redrawPage(); }, label || "Add pay change");
         var cancel = button("Cancel", close, "text");
         form.querySelector(".actions").appendChild(cancel);
         dialog.appendChild(form);
@@ -1332,7 +1972,9 @@
         if (first) first.focus();
       }
 
-      function payChart(panel, rows, colorOf) {
+      // onSelect(row, next) is called when a stretch of the line (or its marker) is chosen; payChart returns a
+      // function that marks the chosen stretch (null for none).
+      function payChart(panel, rows, colorOf, onSelect) {
         var NS = "http://www.w3.org/2000/svg";
         var svgEl = function (name, attrs, parent) {
           var e = document.createElementNS(NS, name);
@@ -1376,21 +2018,36 @@
           tx.textContent = String(yr);
         }
         // the step line: a level per row until the next, risers in neutral ink so color stays the employer's
+        var levels = [];
+        var choose = function (i) {
+          levels.forEach(function (l, n) { l.setAttribute("stroke-width", n === i ? 5 : 2); });
+        };
+        var select = function (i) { choose(i); if (onSelect) onSelect(rows[i], rows[i + 1] || null); };
         rows.forEach(function (r, i) {
           var end = i + 1 < rows.length ? rows[i + 1].t : t1;
-          svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), stroke: colorOf(r.employer),
-                          "stroke-width": 2, "stroke-linecap": "round" }, svg);
+          levels.push(svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), stroke: colorOf(r.employer),
+                                      "stroke-width": 2, "stroke-linecap": "round" }, svg));
           if (i + 1 < rows.length) svgEl("line", { x1: x(end), x2: x(end), y1: y(r.pay), y2: y(rows[i + 1].pay), "class": "riser" }, svg);
           // part time: a ghost of the full-time salary above what is paid, so the job's level stays in view
           if (r.fte !== 1) {
             svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.salary), y2: y(r.salary), stroke: colorOf(r.employer),
                             "stroke-width": 2, "stroke-dasharray": "4 4", opacity: 0.45 }, svg);
+            // named once, at the start of a part-time stretch, above its dashed line and only where there is room
+            // for it, so it never runs into the callout of the change that ends the stretch
             var startsGhost = i === 0 || rows[i - 1].fte === 1 || rows[i - 1].employer.toLowerCase() !== r.employer.toLowerCase();
-            if (startsGhost) {
-              var g = svgEl("text", { x: x(end) - 4, y: y(r.salary) + 15, "text-anchor": "end", "class": "axis" }, svg);
+            if (startsGhost && x(end) - x(r.t) > 70) {
+              var g = svgEl("text", { x: x(r.t) + 8, y: y(r.salary) - 6, "class": "axis" }, svg);
               g.textContent = "full time";
             }
           }
+        });
+        // each stretch of the line can be chosen, by pointer or keyboard, for its details below the chart
+        rows.forEach(function (r, i) {
+          var end = i + 1 < rows.length ? rows[i + 1].t : t1;
+          var seg = svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), "class": "seg-hit", tabindex: 0, role: "button",
+                                    "aria-label": r.employer + " from " + r.at + ": " + money.format(r.pay) + " a year" }, svg);
+          seg.addEventListener("click", function () { select(i); });
+          seg.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(i); } });
         });
         // callouts: the new employer, a change of hours, or the raise; raises closer together than a label are
         // told once, at the last, as the change across them. Raises and moves sit above their marker, a drop below;
@@ -1418,6 +2075,8 @@
             }
           }
           var cx = x(r.t), cy = y(r.pay);
+          // a change just before a move to another employer is told by the move's label, which it would run into
+          if (!moved && after && after.employer.toLowerCase() !== r.employer.toLowerCase() && x(after.t) - cx < 60) text = "";
           if (r.clipped) return;  // older than the chart: it only sets the level the chart opens at
           svgEl("circle", { cx: cx, cy: cy, r: 4, fill: colorOf(r.employer), stroke: "var(--surface-low)", "stroke-width": 2 }, svg);
           if (text) {
@@ -1437,7 +2096,8 @@
           var detail = [r.at + ", " + r.employer,
                         money.format(r.salary) + " a year" + (r.fte !== 1 ? " at " + Math.round(r.fte * 100) + "% time, " + money.format(r.pay) + " paid" : ""),
                         [change, r.band, r.rating ? "rating " + r.rating : ""].filter(Boolean).join(", "), r.note].filter(Boolean);
-          var hit = svgEl("circle", { cx: cx, cy: cy, r: 12, fill: "transparent" }, svg);
+          var hit = svgEl("circle", { cx: cx, cy: cy, r: 12, fill: "transparent", "class": "mark-hit" }, svg);
+          hit.addEventListener("click", function () { select(i); });
           hit.addEventListener("mouseenter", function () {
             tip.textContent = "";
             detail.forEach(function (line, n) { tip.appendChild(el("div", line, n ? "" : "strong")); });
@@ -1448,6 +2108,7 @@
           });
           hit.addEventListener("mouseleave", function () { tip.hidden = true; });
         });
+        return function (i) { choose(i === null ? -1 : i); };
       }
 
       function parameterForm(p, done) {
@@ -1876,31 +2537,6 @@
         }, "split-lines");
       }
 
-      function drawBudgetLines(body) {
-        var lines = editor.budgetLines.slice().sort(function (a, b) {
-          return (a.in_force === "ended") - (b.in_force === "ended") || a.line.localeCompare(b.line);
-        });
-        masterDetail(body, {
-          items: lines, noun: "budget lines", key: function (l) { return l.line; },
-          title: function (l) { return l.line; },
-          sub: function (l) {
-            return (l.category || l.spends_from) + ", " + (l.in_force === "ended" ? "ended" : l.in_words) +
-              (l.in_force === "yes" ? ", " + money.format(Number(l.this_month) || 0) + " this month" : "");
-          },
-          section: function (l) { return l.in_force === "ended" ? "Ended" : "In force"; },
-          staged: function (l) { return stagedText("budget_line|" + l.line); },
-          empty: "Choose a budget line to change it from a date, end it, or schedule a one-off amount. A change counts for the whole month it is dated in.",
-          add: [{ label: "New budget line", form: function (panel, done) { panel.appendChild(budgetForm(null, done)); } }],
-          detail: function (l, panel, done) {
-            facts(panel, [["Category", l.category || l.spends_from], ["Rule", l.in_words], ["Since", l.effective],
-                          ["This month", money.format(Number(l.this_month) || 0)],
-                          ["Last 12 months", money.format(Number(l.last_12_months) || 0)], ["Priority", l.priority],
-                          ["Paid from", l.account], ["Scheduled", l.scheduled], ["Note", l.note]]);
-            panel.appendChild(budgetForm(l, done));
-          },
-        });
-      }
-
       function drawRules(body) {
         masterDetail(body, {
           items: editor.payeeRules, noun: "payee rules", key: function (r) { return r.pattern; },
@@ -1998,136 +2634,7 @@
       // Jobs: the pay history in comp_events, with the runs of paychecks that disagree with it on top. A run that
       // disagrees offers the row the paychecks suggest: the date its first period began, its pay on a yearly
       // footing, the employer of the row in force.
-      function drawJobs(body) {
-        payCharts(body, editor.jobs);
-        var items = editor.payCheck.map(function (r) { return { kind: "pay", row: r }; })
-          .concat(editor.jobs.map(function (r) { return { kind: "job", row: r }; }));
-        var money = function (v) { return v === "" || v === undefined ? "" : Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 }); };
-        masterDetail(body, {
-          items: items, noun: "jobs and pay changes",
-          key: function (i) { return i.kind + "|" + i.row.person + "|" + (i.kind === "pay" ? i.row.employer + "|" + i.row.from : i.row.effective + "|" + i.row.employer); },
-          title: function (i) {
-            return i.kind === "pay" ? i.row.person + ", " + i.row.from + " to " + i.row.to : i.row.effective + ", " + i.row.employer;
-          },
-          sub: function (i) {
-            if (i.kind === "pay") return i.row.employer + ": paid " + money(i.row.stubs_annual) + " a year" +
-              (i.row.comp_annual ? ", comp_events says " + money(i.row.comp_annual) : ", no job in force");
-            var pay = i.row.salary ? money(i.row.salary) + (i.row.fte && Number(i.row.fte) !== 1 ? " at " + i.row.fte + " FTE" : "") : "";
-            return [pay, i.row.stubs === "agrees" ? "paychecks agree" : i.row.stubs ? "paychecks disagree" : ""].filter(Boolean).join(", ");
-          },
-          section: function (i) { return i.kind === "pay" ? "Paychecks that disagree" : "Jobs: " + i.row.person; },
-          staged: function (i) { return i.kind === "job" ? stagedText("job|" + i.row.person + "|" + i.row.effective + "|" + i.row.employer) : ""; },
-          empty: "Every raise, new job and change of hours, which the tax projection and the pay check read. " +
-                 "Choose a run of paychecks to record the change it shows, or a job to correct it.",
-          add: [{ label: "New pay change", form: function (panel, done) { panel.appendChild(jobForm(null, done, "Add pay change")); } }],
-          detail: function (i, panel, done) {
-            if (i.kind === "pay") {
-              var r = i.row;
-              facts(panel, [["Employer on the stubs", r.employer], ["Paychecks", r.paychecks + " (" + (r.kind === "salary" ? "the same pay each" : "hours vary: their median") + ")"],
-                            ["Paid, a year", money(r.stubs_annual)],
-                            ["Job in force", r.comp_effective ? r.comp_effective + ", " + r.comp_employer : "none"],
-                            ["Its pay, a year", money(r.comp_annual)], ["The check says", r.finding]]);
-              section(panel, "Record the change", "Filled in from the paychecks. For a change of hours, give the full-time salary and the share of full time.");
-              // well under the job's salary reads as fewer hours: keep the salary and suggest the share of full time
-              var full = Number(r.comp_salary), paid = Number(r.stubs_annual);
-              var fewer = full > 0 && paid < 0.9 * full;
-              panel.appendChild(jobForm({ effective: r.from, person: r.person, employer: r.comp_employer || r.employer,
-                                          salary: String(Math.round(fewer ? full : paid)),
-                                          fte: fewer ? String(Math.round(paid / full * 100) / 100) : "" }, done, "Add pay change"));
-            } else {
-              var j = i.row;
-              facts(panel, [["Person", j.person], ["Salary, a year", money(j.salary)], ["Share of full time", j.fte],
-                            ["Band", j.band], ["Rating", j.rating], ["Note", j.note], ["Paychecks", j.stubs]]);
-              section(panel, "Correct it", "A row with the same date, person and employer replaces this one.");
-              panel.appendChild(jobForm(j, done));
-            }
-          },
-        });
-      }
-
-      // The Recurring page: what you marked, its cadence, latest charge and yearly cost, a price change first.
-      function drawSubscriptions(data) {
-        var body = document.getElementById("subscriptions-body");
-        body.textContent = "";
-        var head = el("div", null, "page-head");
-        head.appendChild(el("h2", "Recurring charges"));
-        var mark = button("Choose what to track", function () { setView("edit"); setEditTab("subscriptions"); });
-        head.appendChild(mark);
-        body.appendChild(head);
-        if (!data.subscriptions.length) {
-          body.appendChild(el("p", "Nothing tracked yet. Choose what you pay on a schedule (a mortgage, a lease, insurance, a streaming service) in Edit, where charges that come back regularly are listed for you.", "support"));
-          return;
-        }
-        body.appendChild(el("p", cents.format(data.total) + " a year for the ones still charged.", "support"));
-        var table = el("table", null, "subscriptions");
-        var hr = el("tr");
-        ["Charge", "Every", "Latest", "Last charged", "Next", "A year"].forEach(function (h, i) {
-          hr.appendChild(el("th", h, i >= 2 && i !== 3 && i !== 4 ? "num" : ""));
-        });
-        table.appendChild(el("thead")).appendChild(hr);
-        var tbody = el("tbody");
-        data.subscriptions.forEach(function (r) {
-          var row = el("tr", null, r.status === "stopped" ? "muted" : "");
-          var name = el("td");
-          name.appendChild(el("strong", r.key));
-          var about = [r.example !== r.key ? r.example : "", r.category, r.note].filter(Boolean).join(", ");
-          if (about) name.appendChild(el("div", about, "support"));
-          if (r.includes) name.appendChild(el("div", "Includes " + r.includes, "support"));
-          if (r.status === "price changed") name.appendChild(el("div", "Price changed: " + r.change, "off"));
-          if (r.status === "stopped") name.appendChild(el("div", "No charge since " + r.last, "support"));
-          row.appendChild(name);
-          cell(row, r.cadence);
-          cell(row, r.latest ? cents.format(Number(r.latest)) : "", "num");
-          cell(row, r.last);
-          cell(row, r.status === "stopped" ? "" : r.next_expected);
-          cell(row, r.yearly ? cents.format(Number(r.yearly)) : "", "num");
-          tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        body.appendChild(table);
-      }
-
-      // Edit, Recurring: track a merchant as a recurring charge or not. Charges that come back regularly and
-      // are not answered either way are listed to choose from, the ones that seem ongoing first; a merchant
-      // can also be named by hand. Two entries that are one charge (a new name on the statement, a loan that
-      // was sold) can be merged into one.
-      var RECURRING_SECTION = { yes: "Tracked", "": "Charges that come back: track them?",
-                                stopped: "Seem to have stopped: track them?", no: "Not tracked" };
-      function recurringSection(r) { return r.marked === "" && r.status === "stopped" ? "stopped" : r.marked || ""; }
-      function drawSubscriptionMarks(body) {
-        var order = { yes: 0, "": 1, stopped: 2, no: 3 };
-        var items = editor.subscriptions.slice().sort(function (a, b) {
-          return order[recurringSection(a)] - order[recurringSection(b)];
-        });
-        masterDetail(body, {
-          items: items, noun: "merchants", key: function (r) { return r.key; },
-          title: function (r) { return r.key; },
-          sub: function (r) {
-            return [r.cadence, r.latest ? cents.format(Number(r.latest)) : "",
-                    r.status === "stopped" ? "last charged " + r.last : (r.yearly ? cents.format(Number(r.yearly)) + " a year" : ""),
-                    r.includes ? "includes " + r.includes : ""]
-              .filter(Boolean).join(", ");
-          },
-          section: function (r) { return RECURRING_SECTION[recurringSection(r)]; },
-          staged: function (r) {
-            return [stagedText("subscription|" + r.key.toUpperCase()), stagedText("recurring_merge|" + r.key.toUpperCase())]
-              .filter(Boolean).join("; ");
-          },
-          empty: "Track what you pay on a schedule, from a mortgage to a streaming service. What you track is on the Recurring page, with a yearly total and any change in price.",
-          none: "No charges come back regularly yet.",
-          add: [{ label: "Track a merchant", form: function (panel, done) { panel.appendChild(subscriptionForm(null, done)); } }],
-          detail: function (r, panel, done) {
-            facts(panel, [["Every", r.cadence], ["Charges", r.charges], ["Last charged", r.last],
-                          ["Latest", r.latest ? cents.format(Number(r.latest)) : ""], ["A year", r.yearly ? cents.format(Number(r.yearly)) : ""],
-                          ["Category", r.category], ["Spelled", r.example], ["Includes", r.includes], ["Note", r.note]]);
-            if (r.status === "stopped") panel.appendChild(el("p", "No charge since " + r.last + ", so this seems to have ended. Track it to keep its history, or merge it into the charge that took its place.", "support"));
-            panel.appendChild(subscriptionForm(r, done));
-            panel.appendChild(mergeForm(r, items, done));
-          },
-        });
-      }
-
-      // Merge one entry into another, so their charges are one history; or separate a key merged into this one.
+      // Merge one charge into another, so their charges are one history; or separate a key merged into this one.
       function mergeForm(r, items, done) {
         var box = el("div");
         section(box, "Same charge as another entry?",
@@ -2771,7 +3278,7 @@
       var CARD_ICON = { review_open_lines: "edit", downloads_due: "download", inbox_unread: "inbox", possible_duplicates: "copy",
                         transfers_unmatched: "edit", waiting_changes: "sync" };
       var ACTION_LABEL = { review: "Answer in Review", duplicates: "Settle duplicates", withholding: "Explain stubs",
-                           waiting: "See saved changes", jobs: "Open Jobs", "view:subscriptions": "Open Recurring" };
+                           waiting: "See saved changes", "view:jobs": "Open Jobs", "view:recurring": "Open Recurring" };
       var CARD_NOTE = { downloads_due: "Download each one into the inbox, then run ingest." };
 
       function icon(name) {
@@ -2940,45 +3447,27 @@
       }
 
       function load() {
-        document.getElementById("controls").hidden = view === "status" || view === "edit" || view === "taxes" || view === "subscriptions";
+        document.getElementById("controls").hidden = view !== "flows";
         if (view === "status") {
           document.getElementById("status-title").textContent = "Loading…";
           call("getStatus", [], function (status) { drawStatus(status); loadWaitingCard(); loadAppliedAnywayCard(); }, "status-title");
           return;
         }
-        if (view === "edit") {
-          loadEditor();
-          return;
-        }
-        if (view === "taxes") {
-          loadTaxes();
-          return;
-        }
-        if (view === "subscriptions") {
-          call("getSubscriptions", [], drawSubscriptions, "subscriptions-body");
-          return;
-        }
-        if (!periods[view]) {
-          var where = view === "flows" ? "chart" : "budget-summary";
-          call(view === "flows" ? "getPeriods" : "getBudgetPeriods", [], function (list) {
-            periods[view] = list;
-            if (!list.length) {
-              document.getElementById(where).textContent = view === "flows"
-                ? "No flows yet: run compute." : "No budget yet: add budget_rules and run compute.";
-              return;
-            }
+        if (view === "edit") { loadEditor(); return; }
+        if (view === "taxes") { loadTaxes(); return; }
+        if (view === "budget") { loadBudget(); return; }
+        if (view === "jobs") { loadJobs(); return; }
+        if (!periods.flows) {
+          call("getPeriods", [], function (list) {
+            periods.flows = list;
+            if (!list.length) { document.getElementById("chart").textContent = "No flows yet: run compute."; return; }
             load();
-          }, where);
+          }, "chart");
           return;
         }
-        fillPeriods(periods[view]);
-        if (view === "flows") {
-          document.getElementById("chart").textContent = "Loading…";
-          call("getFlows", [chosen.flows, level], drawFlows, "chart");
-        } else {
-          document.getElementById("budget-summary").textContent = "Loading…";
-          call("getBudget", [chosen.budget, level], drawBudget, "budget-summary");
-        }
+        fillPeriods(periods.flows);
+        document.getElementById("chart").textContent = "Loading…";
+        call("getFlows", [chosen.flows, level], drawFlows, "chart");
       }
 
       function press(ids, on) {
@@ -2986,14 +3475,16 @@
       }
 
       function setView(next) {
+        if (next === "subscriptions" || next === "recurring") { next = "budget"; budget.tab = "recurring"; }  // older links
+        if (next !== "budget") closeDrawer(true);
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-subscriptions", "view-edit"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-jobs", "view-edit"], "view-" + view);
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
         document.getElementById("edit").hidden = view !== "edit";
         document.getElementById("taxes").hidden = view !== "taxes";
-        document.getElementById("subscriptions").hidden = view !== "subscriptions";
+        document.getElementById("jobs").hidden = view !== "jobs";
         document.querySelector("main").classList.toggle("wide", view === "flows");
         load();
       }
@@ -3015,7 +3506,10 @@
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
         document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
         document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
-        document.getElementById("view-subscriptions").addEventListener("click", function () { setView("subscriptions"); });
+        document.getElementById("view-jobs").addEventListener("click", function () { setView("jobs"); });
+        document.querySelectorAll("#budget-tabs button").forEach(function (b) {
+          b.addEventListener("click", function () { setBudgetTab(b.dataset.tab); });
+        });
         document.querySelectorAll("#edit-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
         });
@@ -3049,13 +3543,18 @@
         if (google.script.url && google.script.url.getLocation) google.script.url.getLocation(openFrom); else load();
       });
 
+      // A link can open a page: ?view=taxes, ?view=budget&tab=recurring, ?view=edit&tab=review (the weekly email's
+      // links do). Older links to tabs that became pages (Edit's budget lines, jobs, recurring) open the page.
       function openFrom(location) {
         var p = (location && location.parameter) || {};
+        var moved = { budget: "budget", jobs: "jobs", subscriptions: "recurring", recurring: "recurring" };
+        if (p.view === "edit" && moved[p.tab]) { setView(moved[p.tab]); return; }
+        if (p.view === "budget" && p.tab === "recurring") budget.tab = "recurring";
         if (p.tab && document.querySelector('#edit-tabs button[data-tab="' + p.tab + '"]')) {
           editTab = p.tab;
           document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });
         }
-        if (["flows", "budget", "taxes", "subscriptions", "edit"].indexOf(p.view) >= 0) setView(p.view); else load();
+        if (["flows", "budget", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();
       }
     </script>
   </body>

@@ -40,6 +40,8 @@ def in_words(row):
     if rule in HISTORY_WORDS:
         words = (f"what {HISTORY_WORDS[rule]} spent, plus {budget.LOOKBACK_SIGMA:g} standard deviations")
         return words + (f"; {each} until there is history" if each else "")
+    if rule == "recurring":
+        return "its recurring charges" + (f", plus {each}" if each else "")
     if rule == "end":
         return f"ended {row['effective']}"
     return rule

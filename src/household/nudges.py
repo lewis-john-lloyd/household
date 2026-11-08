@@ -249,7 +249,7 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
         for r in changed.to_dict("records"):  # in the email for the weeks after the charge
             charged = _day(r["last"])
             add("subscriptions", r["key"], f"{r['cadence']} charge now {r['change']}", charged,
-                charged + timedelta(days=recurring.FRESH_DAYS), link=_view(params, "subscriptions"))
+                charged + timedelta(days=recurring.FRESH_DAYS), link=_view(params, "budget", "recurring"))
     order = list(GROUPS.values())
     return pd.DataFrame(rows, columns=COLUMNS).sort_values(
         "group", key=lambda g: g.map(order.index), kind="stable").reset_index(drop=True)

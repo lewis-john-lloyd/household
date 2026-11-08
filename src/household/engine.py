@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, legacy, mortgage, paycheck,
+from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, mortgage, paycheck,
                nudges, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
@@ -296,6 +296,13 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"monthly_actuals: {len(actuals)} rows from {len(effective)} transactions")
     daily = compute.daily_actuals(categorize.actual_rows(categorized), budget._not_spending(books["categories"]))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "daily_actuals"), daily.assign(run_id=run_id))
+    activity = _read(ledger, "investment_activity")
+    invested = investments.flows(activity)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "investment_flows"), invested.assign(run_id=run_id))
+    if len(activity):
+        _say(log, f"investments: {len(activity)} activity rows in {activity['account_id'].nunique()} accounts")
+        for r in invested[invested["kind"].isin(["contribution", "conversion_in", "conversion_out", "withdrawal"])].head(12).to_dict("records"):
+            _say(log, f"  {r['year']} {r['account_id']}: {r['kind']} {r['amount']:,.2f}")
 
     today = computed_at[:10]
     rules = _read(ledger, "budget_rules")

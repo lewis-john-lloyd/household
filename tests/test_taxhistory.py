@@ -43,3 +43,12 @@ def test_a_year_without_its_tax_law_is_not_recomputed_and_pa_counts_its_other_cr
     pa = pennsylvania.pa_return({"pa_compensation": 100_000, "pa_withheld": 3_000, "pa_other_credits": 60}, 2025)
     assert (pa["pa40_23"], pa["pa40_24"], pa["pa40_29"]) == (60, 3_060, 0)
     assert pa["pa40_26"] == 10
+
+
+def test_refundable_credits_lower_the_income_tax_paid_and_count_as_kept():
+    rows = [r for r in ROWS if r[0] == "2019"] + [("2019", "filed", "refundable_credits", "", 3_000)]
+    fed = taxhistory.history(facts(rows))
+    fed = fed[fed["jurisdiction"] == "federal"].set_index(["split", "part"])["value"]
+    assert (fed[("went", "Federal income tax")], fed[("went", taxhistory.CREDITS)]) == (13_000, 7_000)
+    assert fed[("went", taxhistory.KEPT)] == 147_020 - 13_000 - 4_545 - 7_000
+    assert abs(fed.loc["went"].sum() - 147_020) < 0.01

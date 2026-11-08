@@ -10,7 +10,9 @@ For each year and return (federal, pa, wi) the table has three splits of one tot
   went   where it went: each tax after credits, the credits (part of what was kept), and what was kept
 
 Federal "went" includes the state income taxes, so it is the whole household's income tax; a state's
-"went" is that state's alone. A capital loss is a negative part of "came" (the most a return deducts).
+"went" is that state's alone. Credits are the nonrefundable ones (line 20's) and any refundable ones a year
+records as `refundable_credits` (2021's child and dependent care credits, say, paid partly in advance): a
+refundable credit lowers the income tax paid, so it is taken off the federal income tax and counted as kept. A capital loss is a negative part of "came" (the most a return deducts).
 """
 
 import pandas as pd
@@ -76,11 +78,13 @@ def history(facts):
                                      ("Deducted", filed.get("12e", 0.0)), ("Adjustments", g("adjustments"))], income)
             other_taxes = filed.get("23", 0.0)
             after = filed["24"] - other_taxes
-            credits = filed.get("20", max(filed.get("16", after) - after, 0.0))
+            refundable = filed.get("refundable_credits", 0.0)
+            credits = filed.get("20", max(filed.get("16", after) - after, 0.0)) + refundable
+            federal = after - refundable
             state = sum(t for t, _ in states.values())
-            kept = income - after - other_taxes - state
+            kept = income - federal - other_taxes - state
             add("federal", "went", [(KEPT, kept - credits), (CREDITS, credits), ("State income tax", state),
-                                    ("Other federal taxes", other_taxes), ("Federal income tax", after)], income)
+                                    ("Other federal taxes", other_taxes), ("Federal income tax", federal)], income)
         if "pa" in states:
             total = filed.get("pa40_9", 0.0)
             came = [("Compensation", max(g("pa_compensation"), 0)),

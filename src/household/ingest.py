@@ -99,12 +99,15 @@ def _named(word, file_name):
 def resolve_account(hint, file_name, accounts):
     """The accounts row a bank download belongs to.
 
-    First the last four of the account number in the file (hint) against the
+    First the last four of the account number in the file (hint), or in its name
+    after "account" (Fidelity's History_for_Account_<number>.csv), against the
     last4 column; failing that, an account_id or last4 that appears in the file
     name as a word of its own ("expenses_usaa.csv", "card_1234.qfx"). Exactly one
     account must match, or the file stays in the inbox with the reason.
     """
     rows = accounts.to_dict("records")
+    number = re.search(r"(?i)account[ _-]?(\d{6,})", file_name)  # Fidelity: History_for_Account_<number>.csv
+    hint = hint or (number.group(1)[-4:] if number else "")
     by_hint = [a for a in rows if hint and _last4(a.get("last4", "")) == _last4(hint)]
     by_name = [a for a in rows if _named(str(a["account_id"]), file_name)
                or _named(_last4(a.get("last4", "")), file_name)]
@@ -127,6 +130,13 @@ def resolve_account(hint, file_name, accounts):
     where = f"account ..{hint}" if hint else "this file"
     raise ParseError(f"no account for {where}: put {hint} in that account's last4 column"
                      if hint else f"no account for {where}: rename it to include its account_id")
+
+
+def finish_investment_rows(result, file_name, accounts):
+    """Fill in an investment history's account and activity ids (in place on result), from its file name."""
+    from .parsers import fidelity
+    account = resolve_account(result.account_hint, file_name, accounts)
+    return fidelity.finish(result, str(account["account_id"]))
 
 
 def finish_bank_rows(result, file_name, accounts, recorded_at):

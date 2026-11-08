@@ -73,6 +73,11 @@ LEDGER = (
                            "proceeds", "basis", "gain", "term", "doc_id"),
           {"term": ("short_term", "long_term")}),
     Table("holdings", ("as_of", "account_id", "symbol", "shares", "value", "doc_id")),
+    # an investment account's activity (parsers/fidelity.py): shares and their value, and money in or out
+    Table("investment_activity", ("activity_id", "account_id", "date", "kind", "action", "symbol", "description",
+                                  "shares", "price", "value", "amount", "cash_balance", "doc_id"),
+          {"kind": ("contribution", "buy", "sell", "exchange", "reinvest", "dividend", "interest", "conversion_in",
+                    "conversion_out", "transfer_in", "transfer_out", "withdrawal", "fee", "adjustment", "other")}),
     Table("securities", ("symbol", "asset_class", "expense_ratio", "wash_group")),
     Table("loans", ("loan_id", "lender", "originated", "principal", "rate", "term_months", "escrow")),
     Table("loan_events", ("date", "loan_id", "kind", "amount", "doc_id"),
@@ -141,6 +146,8 @@ REPORTS = (
                                "run_id")),
     # spending per category per day, every era, for the budget's comparisons of part of a period
     Table("daily_actuals", ("date", "category", "spend", "run_id")),
+    # each investment account's money in and out each year, by kind (investments.flows)
+    Table("investment_flows", ("year", "account_id", "kind", "amount", "rows", "run_id")),
     Table("sinking_funds", ("month", "line", "category", "set_aside", "spent", "balance", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),

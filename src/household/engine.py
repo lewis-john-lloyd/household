@@ -565,10 +565,16 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     loans = _read(ledger, "loans")
     sched = pd.DataFrame(columns=mortgage.COLUMNS)
     if not loans.empty:
-        sched, notes = mortgage.schedule(loans, _read(ledger, "loan_events"), categorized, today[:7])
+        # to the end of each loan's term: the months ahead are the schedule as it stands, for the Home page
+        sched, notes = mortgage.schedule(loans, _read(ledger, "loan_events"), categorized, "9999-12")
+        sched.loc[sched["month"] > today[:7], "paid_from_ledger"] = ""
         sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
-        for line in notes + mortgage.summary(sched):
+        for line in notes + mortgage.summary(sched[sched["month"] <= today[:7]]):
             _say(log, line)
+        ahead = sched[sched["month"] > today[:7]]
+        for loan_id, g in ahead.groupby("loan_id"):
+            _say(log, f"mortgage: {loan_id} paid off {g['month'].iloc[-1]} as scheduled, "
+                      f"{g['interest'].sum():,.0f} interest still to pay")
     worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log)
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))

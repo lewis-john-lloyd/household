@@ -64,7 +64,7 @@ def test_a_fund_the_account_once_held_may_be_bought_and_a_class_no_account_can_h
     tree = [("SDT", "", 50), ("BI", "", 25), ("BT", "", 25)]
     vals = rows(("plan", "401k", "401k_pretax", "ACMEX", "SDT", 80), ("plan", "401k", "401k_pretax", "WILLX", "BT", 20))
     _, proposed, notes = al.rebalance(vals, tree)
-    assert round(proposed["BT"], 2) == 50 and "BI" not in proposed or proposed.get("BI", 0) == 0
+    assert round(proposed["BT"], 2) == 33.33 and proposed.get("BI", 0) == 0  # BI's quarter shared 2 to 1
     assert any("no tradable account holds a fund for International bonds" in n for n in notes)
     lineup = pd.concat([vals, rows(("other", "401k", "401k_pretax", "INTBX", "BI", 0))])
     _, proposed, _ = al.rebalance(lineup, tree, {"plan": {"INTBX"}})

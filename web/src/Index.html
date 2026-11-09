@@ -465,6 +465,57 @@
         .scenario .axis, .scale div { display: none; }
         .logs { grid-template-columns: 1fr; }
       }
+
+      /* Investments and Home */
+      .w-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; margin: 16px 0 12px; }
+      .w-head h2 { margin: 0; }
+      .w-figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); gap: 12px; margin-bottom: 16px; }
+      .w-figure { background: var(--surface-container); border-radius: 12px; padding: 12px 16px; }
+      .w-figure .num { display: block; font-size: 26px; line-height: 34px; font-variant-numeric: tabular-nums; }
+      .w-figure .num.neg { color: var(--error); }
+      .w-figure .what { font-size: 13px; color: var(--on-surface-variant); }
+      .w-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; margin-bottom: 16px; }
+      .w-grid > .panel, .w-wide { min-width: 0; }
+      .w-wide { margin-bottom: 16px; }
+      .panel h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+      .w-bars { display: grid; grid-template-columns: max-content 1fr max-content max-content; gap: 6px 12px; align-items: center; margin-top: 12px; }
+      .w-bars .name { color: var(--on-surface); }
+      .w-bars .track { height: 12px; background: var(--track); border-radius: 0 4px 4px 0; position: relative; }
+      .w-bars .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
+      .w-bars .num, .w-table td.num, .w-table th.num { font-variant-numeric: tabular-nums; text-align: right; }
+      .w-bars .share { color: var(--on-surface-variant); font-size: 13px; text-align: right; }
+      .w-table { width: 100%; }
+      .w-table th, .w-table td { text-align: left; padding: 8px 12px 8px 0; }
+      .w-table th.num, .w-table td.num { text-align: right; }
+      .w-table tr.sub td { color: var(--on-surface-variant); }
+      .w-table tr.group td { font-weight: 500; border-bottom-color: var(--outline); }
+      .w-table tr.projected td { color: var(--on-surface-variant); }
+      .w-table tr.total td { font-weight: 500; border-bottom: 0; }
+      .w-table .buy { color: var(--success); }
+      .w-table .sell { color: var(--error); }
+      .w-table td .support { margin: 2px 0 0; font-size: 12px; white-space: normal; }
+      .w-table td .tag { font-size: 12px; color: var(--on-surface-variant); margin-left: 6px; }
+      .w-scroll { overflow-x: auto; }
+      .w-meter { position: relative; height: 10px; width: 120px; background: var(--track); border-radius: 0 3px 3px 0; display: inline-block; vertical-align: middle; }
+      .w-meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 3px 3px 0; }
+      .w-meter b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--on-surface); }
+      .w-chart { display: block; width: 100%; height: auto; overflow: visible; }
+      .w-chart .axis { font-size: 12px; fill: var(--muted); }
+      .w-chart .grid { stroke: var(--outline-variant); stroke-width: 1; opacity: 0.6; }
+      .w-chart .zero { stroke: var(--outline); stroke-width: 1; }
+      .w-chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+      .w-chart .lbl { font-size: 12px; font-weight: 500; fill: var(--on-surface); }
+      .w-chart .cross { stroke: var(--outline); stroke-width: 1; }
+      .w-chart .now { stroke: var(--on-surface-variant); stroke-width: 1; stroke-dasharray: 3 3; }
+      .w-tip { position: absolute; pointer-events: none; background: var(--surface-low); color: var(--on-surface); border: 1px solid var(--outline-variant);
+        border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: var(--shadow); white-space: nowrap; z-index: 5; }
+      .w-tip .row { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+      .w-tip .key { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 6px; }
+      .w-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--on-surface-variant); margin-top: 4px; }
+      .w-legend .key { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+      .w-notes { margin: 8px 0 0; padding-left: 18px; color: var(--on-surface-variant); font-size: 13px; }
+      .w-chart-box { position: relative; }
+      .w-tip .strong { font-weight: 600; margin-bottom: 2px; }
     </style>
   </head>
   <body>
@@ -474,6 +525,8 @@
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
         <button id="view-budget" aria-pressed="false">Budget</button>
+        <button id="view-investments" aria-pressed="false">Investments</button>
+        <button id="view-home" aria-pressed="false">Home</button>
         <button id="view-taxes" aria-pressed="false">Taxes</button>
         <button id="view-jobs" aria-pressed="false">Jobs</button>
         <button id="view-edit" aria-pressed="false">Edit</button>
@@ -521,6 +574,14 @@
         <button data-tab="recurring" aria-pressed="false">Recurring</button>
       </div>
       <div id="budget-body">Loading…</div>
+    </section>
+
+    <section id="investments" hidden>
+      <div id="investments-body">Loading…</div>
+    </section>
+
+    <section id="home" hidden>
+      <div id="home-body">Loading…</div>
     </section>
 
     <section id="taxes" hidden>
@@ -2737,6 +2798,428 @@
       var taxes = null, taxYear = "";
       var PLAN_NAME = { federal: "Federal", wisconsin: "Wisconsin" };
 
+      // --- Investments and Home -----------------------------------------------------------------------------------
+      var investments = null, home = null;
+      var pct = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      var BUCKET_SERIES = { "401k_pretax": 1, "401k_roth": 2, ira_pretax: 3, ira_roth: 4, hsa: 5, taxable: 6, ibonds: 7, "529": 8 };
+      var PART_NAMES = { "401k_pretax": "401(k) pre-tax", "401k_roth": "401(k) Roth", ira_pretax: "IRA pre-tax", ira_roth: "IRA Roth",
+                         hsa: "HSA", taxable: "Taxable", ibonds: "I-Bonds", "529": "529", other: "Other",
+                         home_equity: "Home equity", other_debt: "Other debt" };
+      var KIND_NAMES = { capital: "Capital", repair: "Repair", energy_credit: "Energy credit" };
+
+      function loadInvestments() {
+        if (investments) { drawInvestments(); return; }
+        document.getElementById("investments-body").textContent = "Loading…";
+        call("getInvestments", [], function (d) { investments = d; drawInvestments(); }, "investments-body");
+      }
+
+      function loadHome() {
+        if (home) { drawHome(); return; }
+        document.getElementById("home-body").textContent = "Loading…";
+        call("getHome", [], function (d) { home = d; drawHome(); }, "home-body");
+      }
+
+      function change(n) { return (n > 0.5 ? "+" : n < -0.5 ? "−" : "") + money.format(Math.abs(n)); }
+      function longDate(d) { return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10)) + ", " + d.slice(0, 4); }
+      function ownerName(o) { return o === "kids" ? "Kids" : o.charAt(0).toUpperCase() + o.slice(1); }
+
+      function panel(parent, title, lead) {
+        var p = el("section", null, "panel");
+        p.appendChild(el("h3", title));
+        if (lead) p.appendChild(el("p", lead, "support"));
+        parent.appendChild(p);
+        return p;
+      }
+
+      function figures(parent, items) {
+        var box = el("div", null, "w-figures");
+        items.forEach(function (f) {
+          if (!f) return;
+          var c = el("div", null, "w-figure");
+          c.appendChild(el("span", money.format(f[0]).replace("-", "−"), "num" + (f[0] < -0.5 ? " neg" : "")));
+          c.appendChild(el("span", f[1], "what"));
+          box.appendChild(c);
+        });
+        parent.appendChild(box);
+      }
+
+      function wTable(parent, headers, numeric) {
+        var wrap = el("div", null, "w-scroll");
+        var t = el("table", null, "w-table");
+        var tr = document.createElement("tr");
+        headers.forEach(function (h, i) { tr.appendChild(el("th", h, numeric.indexOf(i) >= 0 ? "num" : "")); });
+        t.appendChild(tr);
+        wrap.appendChild(t);
+        parent.appendChild(wrap);
+        return {
+          row: function (cells, cls) {
+            var r = document.createElement("tr");
+            if (cls) r.className = cls;
+            cells.forEach(function (c, i) {
+              var td = cell(r, c instanceof Node ? "" : c, numeric.indexOf(i) >= 0 ? "num" : "");
+              if (c instanceof Node) td.appendChild(c);
+            });
+            t.appendChild(r);
+            return r;
+          }
+        };
+      }
+
+      function niceTicks(lo, hi, count) {
+        var span = hi - lo || Math.abs(hi) || 1;
+        var step = Math.pow(10, Math.floor(Math.log10(span / count)));
+        step = [1, 2, 2.5, 5, 10].map(function (k) { return k * step; }).filter(function (s) { return span / s <= count; })[0] || step * 10;
+        var ticks = [];
+        for (var t = Math.floor(lo / step) * step; t <= hi + step * 0.001; t += step) ticks.push(Math.round(t * 100) / 100);
+        if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
+        return ticks;
+      }
+
+      function compactMoney(n) {
+        var a = Math.abs(n), s = n < 0 ? "−" : "";
+        if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+        if (a >= 1e3) return s + "$" + Math.round(a / 1e3) + "k";
+        return s + "$" + Math.round(a);
+      }
+
+      // A line chart over dates: series [{name, color, points: [[date, value]]}], one y axis, a crosshair and a
+      // tooltip with every series at the date nearest the pointer, each line labeled at its end.
+      function lineChart(parent, series, opts) {
+        var NS = "http://www.w3.org/2000/svg";
+        var dates = [];
+        series.forEach(function (s) { s.points.forEach(function (p) { if (dates.indexOf(p[0]) < 0) dates.push(p[0]); }); });
+        dates.sort();
+        if (dates.length < 2) { parent.appendChild(el("p", "Not enough dates to draw yet.", "support")); return; }
+        var t = function (d) { return Date.parse(d.length === 7 ? d + "-15" : d); };
+        var lo = 0, hi = 0;
+        series.forEach(function (s) { s.points.forEach(function (p) { lo = Math.min(lo, p[1]); hi = Math.max(hi, p[1]); }); });
+        var ticks = niceTicks(lo, hi, 5);
+        lo = ticks[0]; hi = ticks[ticks.length - 1];
+        var W = Math.max(520, Math.round(parent.clientWidth || 760)), H = 280, L = 56, R = 110, T = 12, B = 250;
+        var t0 = t(dates[0]), t1 = t(dates[dates.length - 1]);
+        var x = function (d) { return L + (t(d) - t0) / (t1 - t0) * (W - L - R); };
+        var y = function (v) { return T + (hi - v) / (hi - lo) * (B - T); };
+        var box = el("div", null, "w-chart-box");
+        var svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+        svg.setAttribute("class", "w-chart");
+        svg.setAttribute("role", "img");
+        svg.setAttribute("aria-label", opts.label);
+        var add = function (name, attrs, text, into) {
+          var e = document.createElementNS(NS, name);
+          Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+          if (text !== undefined) e.textContent = text;
+          (into || svg).appendChild(e);
+          return e;
+        };
+        ticks.forEach(function (v) {
+          add("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), "class": v === 0 ? "zero" : "grid" });
+          add("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", "class": "axis" }, compactMoney(v));
+        });
+        var y0 = Number(dates[0].slice(0, 4)), y1 = Number(dates[dates.length - 1].slice(0, 4));
+        var every = Math.max(1, Math.ceil((y1 - y0 + 1) / 10));
+        for (var yr = y0 + 1; yr <= y1; yr++) {
+          if ((yr - y0) % every) continue;
+          var xx = x(yr + "-01-01");
+          add("text", { x: xx, y: B + 18, "text-anchor": "middle", "class": "axis" }, String(yr));
+        }
+        if (opts.now && opts.now > dates[0] && opts.now < dates[dates.length - 1]) {
+          add("line", { x1: x(opts.now), x2: x(opts.now), y1: T, y2: B, "class": "now" });
+          add("text", { x: x(opts.now) + 4, y: B - 6, "class": "axis" }, "today");
+        }
+        var ends = [];
+        series.forEach(function (s) {
+          var d = s.points.map(function (p, i) { return (i ? "L" : "M") + x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1); }).join(" ");
+          add("path", { d: d, "class": "line", stroke: s.color });
+          var last = s.points[s.points.length - 1];
+          if (last) ends.push({ y: y(last[1]), x: x(last[0]), text: s.name, color: s.color });
+        });
+        ends.sort(function (a, b) { return a.y - b.y; });
+        for (var i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+        ends.forEach(function (e) { add("text", { x: e.x + 6, y: e.y + 4, "class": "lbl" }, e.text); });
+        var cross = add("line", { x1: 0, x2: 0, y1: T, y2: B, "class": "cross", visibility: "hidden" });
+        var dots = series.map(function (s) { return add("circle", { r: 4, fill: s.color, stroke: "var(--surface-low)", "stroke-width": 2, visibility: "hidden" }); });
+        var hit = add("rect", { x: L, y: T, width: W - L - R, height: B - T, fill: "transparent" });
+        var tip = el("div", null, "w-tip");
+        tip.hidden = true;
+        var byDate = series.map(function (s) { var m = {}; s.points.forEach(function (p) { m[p[0]] = p[1]; }); return m; });
+        var show = function (ev) {
+          var r = svg.getBoundingClientRect();
+          var px = (ev.clientX - r.left) / r.width * W;
+          var best = dates[0];
+          dates.forEach(function (d) { if (Math.abs(x(d) - px) < Math.abs(x(best) - px)) best = d; });
+          cross.setAttribute("x1", x(best)); cross.setAttribute("x2", x(best)); cross.setAttribute("visibility", "visible");
+          tip.innerHTML = "";
+          tip.appendChild(el("div", opts.dateName ? opts.dateName(best) : longDate(best), "strong"));
+          series.forEach(function (s, n) {
+            var v = byDate[n][best];
+            if (v === undefined) { dots[n].setAttribute("visibility", "hidden"); return; }
+            dots[n].setAttribute("cx", x(best)); dots[n].setAttribute("cy", y(v)); dots[n].setAttribute("visibility", "visible");
+            var row = el("div", null, "row");
+            var name = el("span");
+            var key = el("i", null, "key");
+            key.style.background = s.color;
+            name.appendChild(key);
+            name.appendChild(document.createTextNode(s.name));
+            row.appendChild(name);
+            row.appendChild(el("span", money.format(v).replace("-", "−")));
+            tip.appendChild(row);
+          });
+          tip.hidden = false;
+          var left = (x(best) / W) * r.width;
+          tip.style.left = Math.min(Math.max(left + 12, 0), r.width - tip.offsetWidth) + "px";
+          tip.style.top = "8px";
+        };
+        hit.addEventListener("mousemove", show);
+        hit.addEventListener("mouseleave", function () {
+          tip.hidden = true; cross.setAttribute("visibility", "hidden");
+          dots.forEach(function (d) { d.setAttribute("visibility", "hidden"); });
+        });
+        box.appendChild(svg);
+        box.appendChild(tip);
+        parent.appendChild(box);
+        if (series.length > 1) {
+          var legend = el("div", null, "w-legend");
+          series.forEach(function (s) {
+            var item = el("span");
+            var key = el("i", null, "key");
+            key.style.background = s.color;
+            item.appendChild(key);
+            item.appendChild(document.createTextNode(s.name));
+            legend.appendChild(item);
+          });
+          parent.appendChild(legend);
+        }
+      }
+
+      function drawInvestments() {
+        var d = investments, body = document.getElementById("investments-body");
+        body.innerHTML = "";
+        if (!d.asOf) { body.appendChild(el("p", "No investment values yet: run compute after the holdings are in.", "support")); return; }
+        var head = el("div", null, "w-head");
+        head.appendChild(el("h2", "Investments"));
+        head.appendChild(el("span", "as of " + longDate(d.asOf), "support"));
+        body.appendChild(head);
+        var parts = {};
+        d.owners.forEach(function (o) { Object.keys(o.parts).forEach(function (k) { parts[k] = (parts[k] || 0) + o.parts[k]; }); });
+        var worth = d.owners.reduce(function (s, o) { return s + o.total; }, 0);
+        figures(body, [[worth, "net worth"], [d.total, "in investment accounts"],
+                       parts.home_equity ? [parts.home_equity, "home equity"] : null,
+                       parts.other_debt ? [parts.other_debt, "other debt"] : null]);
+
+        var grid = el("div", null, "w-grid");
+        body.appendChild(grid);
+        var byTax = panel(grid, "By tax treatment", "Every investment account today, 529s included.");
+        var bars = el("div", null, "w-bars");
+        var widest = Math.max.apply(null, d.buckets.map(function (b) { return b.value; }).concat([1]));
+        d.buckets.forEach(function (b) {
+          bars.appendChild(el("span", b.label, "name"));
+          var track = el("span", null, "track");
+          var fill = el("i");
+          fill.style.width = Math.max(0, b.value / widest * 100) + "%";
+          fill.style.background = BUCKET_SERIES[b.key] ? "var(--series-" + BUCKET_SERIES[b.key] + ")" : "var(--outline)";
+          track.appendChild(fill);
+          track.title = b.label + ": " + money.format(b.value) + ", " + pct.format(b.value / d.total);
+          bars.appendChild(track);
+          bars.appendChild(el("span", money.format(b.value), "num"));
+          bars.appendChild(el("span", pct.format(b.value / d.total), "share"));
+        });
+        byTax.appendChild(bars);
+
+        var adults = d.owners.filter(function (o) { return o.owner !== "kids"; }).map(function (o) { return ownerName(o.owner); });
+        var byOwner = panel(grid, "By owner", "Joint accounts and the home split evenly between " + (adults.join(" and ") || "the adults") +
+                                              "; the kids' column is their own accounts.");
+        var cols = [["Investments", function (o) { return Object.keys(o.parts).filter(function (k) { return k !== "home_equity" && k !== "other_debt"; })
+                                                                .reduce(function (s, k) { return s + o.parts[k]; }, 0); }],
+                    ["Home equity", function (o) { return o.parts.home_equity || 0; }],
+                    ["Debt", function (o) { return o.parts.other_debt || 0; }],
+                    ["Net worth", function (o) { return o.total; }]];
+        if (!parts.other_debt) cols.splice(2, 1);
+        var ot = wTable(byOwner, ["Owner"].concat(cols.map(function (c) { return c[0]; })), cols.map(function (_, i) { return i + 1; }));
+        d.owners.forEach(function (o) {
+          ot.row([ownerName(o.owner)].concat(cols.map(function (c) { return money.format(c[1](o)).replace("-", "−"); })));
+        });
+        var buckets = panel(byOwner, "By tax treatment and owner");
+        var keys = d.buckets.map(function (b) { return b.key; });
+        var bt = wTable(buckets, ["Account type"].concat(d.owners.map(function (o) { return ownerName(o.owner); })), d.owners.map(function (_, i) { return i + 1; }));
+        keys.forEach(function (k) {
+          bt.row([PART_NAMES[k] || k].concat(d.owners.map(function (o) { return o.parts[k] ? money.format(o.parts[k]) : "–"; })));
+        });
+        buckets.style.border = "0"; buckets.style.padding = "12px 0 0";
+
+        var hist = el("section", null, "panel w-wide");
+        hist.appendChild(el("h3", "Net worth over time"));
+        hist.appendChild(el("p", "Month-ends from the first reading, and today. Home equity counts each home at its purchase price " +
+                                 "(the home_value_basis setting) less what is owed on it.", "support"));
+        body.appendChild(hist);
+        lineChart(hist, [
+          { name: "Net worth", color: "var(--series-1)", points: d.history.map(function (p) { return [p.date, p.total]; }) },
+          { name: "Investments", color: "var(--series-3)", points: d.history.map(function (p) { return [p.date, p.invested]; }) },
+          { name: "Home equity", color: "var(--series-4)", points: d.history.filter(function (p) { return p.homes; }).map(function (p) { return [p.date, p.homes]; }) }
+        ].filter(function (s) { return s.points.length; }), { label: "Net worth, investments and home equity at each month-end" });
+
+        var grid2 = el("div");
+        body.appendChild(grid2);
+        var al = panel(grid2, "Allocation", "Against the targets in allocation_targets. 529s are left out; I-Bonds count as US bonds.");
+        var after = d.allocation.some(function (r) { return r.proposedShare !== null; });
+        var at = wTable(al, ["Asset class", "Target", "Now", "", after ? "After" : "", "Off by"], [1, 2, 4, 5]);
+        d.allocation.forEach(function (r) {
+          var name = el("span", r.label);
+          name.style.paddingLeft = (r.depth * 16) + "px";
+          var meter = el("span", null, "w-meter");
+          var fill = el("i");
+          var scale = Math.max(r.targetShare, r.currentShare, 0.0001) * 1.25;
+          fill.style.width = Math.min(100, r.currentShare / scale * 100) + "%";
+          var mark = el("b");
+          mark.style.left = Math.min(100, r.targetShare / scale * 100) + "%";
+          meter.appendChild(fill); meter.appendChild(mark);
+          meter.title = r.label + ": now " + pct.format(r.currentShare) + ", target " + pct.format(r.targetShare);
+          at.row([name, pct.format(r.targetShare), pct.format(r.currentShare), meter,
+                  after && r.proposedShare !== null ? pct.format(r.proposedShare) : "", change(r.deltaValue)],
+                 r.leaf ? (r.depth ? "sub" : "") : "group");
+        });
+
+        al.classList.add("w-wide");
+        var rb = panel(grid2, "Rebalance proposal", "Trades inside tax-advantaged accounts only, among funds each account holds " +
+                                                    "or has held in the last two years. Taxable accounts and I-Bonds stay as they are.");
+        rb.classList.add("w-wide");
+        if (!d.trades.length) rb.appendChild(el("p", "Nothing to trade.", "support"));
+        else {
+          var tt = wTable(rb, ["Fund", "Class", "Now", "Proposed", "Trade"], [2, 3, 4]);
+          var last = "";
+          d.trades.forEach(function (t) {
+            var group = t.account + "\u0000" + t.bucket;
+            if (group !== last) { tt.row([t.account + "  (" + (PART_NAMES[t.bucket] || t.bucket) + ")", "", "", "", ""], "group"); last = group; }
+            var r = tt.row([t.symbol, t.assetClass, money.format(t.current), money.format(t.proposed), change(t.trade)]);
+            r.lastChild.className = "num " + (t.trade > 0 ? "buy" : "sell");
+          });
+        }
+        if (d.notes.length) {
+          var ul = el("ul", null, "w-notes");
+          d.notes.forEach(function (n) { ul.appendChild(el("li", n.replace(/^(rebalance|valuation): /, ""))); });
+          rb.appendChild(ul);
+        }
+
+        var acc = el("section", null, "panel w-wide");
+        acc.appendChild(el("h3", "Accounts"));
+        acc.appendChild(el("p", "“Carried” means part of the account had no price since its last reading, so it shows the value read then.", "support"));
+        body.appendChild(acc);
+        var ac = wTable(acc, ["Account", "Owner", "Type", "Value"], [3]);
+        d.accounts.forEach(function (a) {
+          var name = el("span", a.account);
+          if (a.carried) name.appendChild(el("span", "carried", "tag"));
+          ac.row([name, ownerName(a.owner || "joint"), PART_NAMES[a.bucket] || a.bucket, money.format(a.value)]);
+        });
+        ac.row(["Total", "", "", money.format(d.total)], "total");
+        var funds = el("details");
+        funds.appendChild(el("summary", d.funds.length + " funds and positions"));
+        var ft = wTable(funds, ["Fund", "Class", "Accounts", "Value"], [3]);
+        d.funds.forEach(function (f) { ft.row([f.symbol, f.assetClass || "unclassified", f.accounts.join(", "), money.format(f.value)]); });
+        acc.appendChild(funds);
+      }
+
+      function drawHome() {
+        var d = home, body = document.getElementById("home-body");
+        body.innerHTML = "";
+        if (!d.homes.length) {
+          body.appendChild(el("p", "No homes yet. Add one with a properties file in the inbox (its header is the properties table's columns).", "support"));
+          return;
+        }
+        var isOwned = function (h) { return h.lines.some(function (l) { return l.key === "status" && l.value === "owned"; }); };
+        var owned = d.homes.filter(isOwned), gone = d.homes.filter(function (h) { return !isOwned(h); });
+        owned.forEach(function (h) {
+          var line = {};
+          h.lines.forEach(function (l) { line[l.key] = l; });
+          drawOneHome(body, d, h, line, h.lines.filter(function (l) { return l.key.indexOf("loan:") === 0; }));
+        });
+        if (!owned.length) body.appendChild(el("p", "No home owned today.", "support"));
+        if (gone.length) body.appendChild(el("p", "Earlier homes (" + gone.map(function (h) { return h.id; }).join(", ") +
+                                                  ") count in net worth history while they were owned.", "support"));
+      }
+
+      function drawOneHome(body, d, h, line, loans) {
+        var head = el("div", null, "w-head");
+        head.appendChild(el("h2", h.id));
+        if (line.purchase_price && line.purchase_price.asOf) head.appendChild(el("span", "bought " + longDate(line.purchase_price.asOf), "support"));
+        body.appendChild(head);
+        var owed = loans.reduce(function (s, l) { return s + Number(l.value || 0); }, 0);
+        var val = function (k) { return line[k] ? Number(line[k].value) : null; };
+        figures(body, [val("equity") !== null ? [val("equity"), "equity at the value counted"] : null,
+                       [owed, "owed"], val("value_used") !== null ? [val("value_used"), "value counted (" + (line.value_used.note || "") + ")"] : null,
+                       val("estimate_median") !== null ? [val("estimate_median"), "median estimate"] : null,
+                       val("basis") !== null ? [val("basis"), "adjusted basis"] : null]);
+        var grid = el("div", null, "w-grid");
+        body.appendChild(grid);
+        var vb = panel(grid, "Value and basis");
+        var vt = wTable(vb, ["", "Amount"], [1]);
+        h.lines.forEach(function (l) {
+          if (typeof l.value !== "number") return;
+          var label = el("div", l.label);
+          var more = [l.note, l.key.indexOf("estimate:") === 0 && l.asOf ? longDate(l.asOf) : ""].filter(Boolean).join(", ");
+          if (more) label.appendChild(el("div", more, "support"));
+          vt.row([label, money.format(l.value).replace("-", "−")],
+                 ["basis", "equity", "sale_net"].indexOf(l.key) >= 0 ? "group" : "");
+        });
+
+        var es = panel(grid, "Estimates", "Online estimates and the county's assessment, newest first. A scheduled check can add them " +
+                                          "each month; any can be added with a property_values file in the inbox.");
+        var mine = d.estimates.filter(function (e) { return e.property === h.id && e.source !== "legacy"; });
+        if (!mine.length) es.appendChild(el("p", "None yet.", "support"));
+        else {
+          var et = wTable(es, ["Source", "Value", "As of"], [1]);
+          mine.forEach(function (e) { et.row([e.source.replace(/_/g, " "), money.format(e.value), longDate(e.asOf)]); });
+        }
+
+        var ids = loans.map(function (l) { return l.key.slice(5); });
+        var sched = d.schedule.filter(function (p) { return ids.indexOf(p.loan) >= 0; });
+        if (sched.length) {
+          var am = el("section", null, "panel w-wide");
+          am.appendChild(el("h3", "Amortization"));
+          var ahead = sched.filter(function (p) { return p.month > d.month; });
+          var paid = sched.filter(function (p) { return p.month <= d.month; });
+          var thisYear = paid.filter(function (p) { return p.month.slice(0, 4) === d.month.slice(0, 4); });
+          var sum = function (rows, k) { return rows.reduce(function (s, p) { return s + p[k]; }, 0); };
+          am.appendChild(el("p", (ahead.length ? "Paid off " + MONTH_SHORT[Number(ahead[ahead.length - 1].month.slice(5)) - 1] + " " +
+                                   ahead[ahead.length - 1].month.slice(0, 4) + " on the current schedule, with " +
+                                   money.format(sum(ahead, "interest")) + " of interest still to pay. " : "") +
+                                 "Interest paid so far: " + money.format(sum(paid, "interest")) + ", " +
+                                 money.format(sum(thisYear, "interest")) + " of it this year. Extra principal and recasts change " +
+                                 "the schedule once they are in loan_events.", "support"));
+          lineChart(am, ids.map(function (id, i) {
+            return { name: "Balance" + (ids.length > 1 ? " " + id : ""), color: "var(--series-" + (i + 1) + ")",
+                     points: sched.filter(function (p) { return p.loan === id; }).map(function (p) { return [p.month, p.balance]; }) };
+          }), { label: "Loan balance each month to payoff", now: d.month, dateName: function (m) {
+            return MONTH_SHORT[Number(m.slice(5)) - 1] + " " + m.slice(0, 4); } });
+          var years = el("details");
+          years.appendChild(el("summary", "By year"));
+          var yt = wTable(years, ["Year", "Payments", "Interest", "Principal", "Extra", "Escrow", "Balance at year end"], [1, 2, 3, 4, 5, 6]);
+          d.years.filter(function (y) { return ids.indexOf(y.loan) >= 0; }).forEach(function (y) {
+            yt.row([y.year + (y.projected ? " (ahead)" : ""), String(y.payments), money.format(y.interest), money.format(y.principal),
+                    y.extra ? money.format(y.extra) : "–", money.format(y.escrow), money.format(y.endBalance)], y.projected ? "projected" : "");
+          });
+          am.appendChild(years);
+          body.appendChild(am);
+        }
+
+        var im = el("section", null, "panel w-wide");
+        im.appendChild(el("h3", "Improvements"));
+        im.appendChild(el("p", "Capital improvements add their cost to basis; energy-credit work adds its cost less the credit; " +
+                               "repairs add nothing. Add work with an improvements file in the inbox: date, property_id, description, " +
+                               "kind (capital, repair or energy_credit), cost, credit, receipt, note, doc_id.", "support"));
+        var work = d.improvements.filter(function (w) { return w.property === h.id; });
+        if (!work.length) im.appendChild(el("p", "None recorded yet.", "support"));
+        else {
+          var it = wTable(im, ["Date", "Work", "Kind", "Cost", "Credit", "Adds to basis"], [3, 4, 5]);
+          work.forEach(function (w) {
+            it.row([longDate(w.date), w.description, KIND_NAMES[w.kind] || w.kind, money.format(w.cost),
+                    w.credit ? money.format(w.credit) : "–", money.format(w.basisAdded)]);
+          });
+          it.row(["Total", "", "", money.format(work.reduce(function (s, w) { return s + w.cost; }, 0)), "",
+                  money.format(work.reduce(function (s, w) { return s + w.basisAdded; }, 0))], "total");
+        }
+        body.appendChild(im);
+      }
+
       function loadTaxes() {
         if (taxes) { drawTaxes(); return; }
         document.getElementById("taxes-body").textContent = "Loading…";
@@ -3455,6 +3938,8 @@
         }
         if (view === "edit") { loadEditor(); return; }
         if (view === "taxes") { loadTaxes(); return; }
+        if (view === "investments") { loadInvestments(); return; }
+        if (view === "home") { loadHome(); return; }
         if (view === "budget") { loadBudget(); return; }
         if (view === "jobs") { loadJobs(); return; }
         if (!periods.flows) {
@@ -3478,12 +3963,14 @@
         if (next === "subscriptions" || next === "recurring") { next = "budget"; budget.tab = "recurring"; }  // older links
         if (next !== "budget") closeDrawer(true);
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-taxes", "view-jobs", "view-edit"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-investments", "view-home", "view-taxes", "view-jobs", "view-edit"], "view-" + view);
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
         document.getElementById("edit").hidden = view !== "edit";
         document.getElementById("taxes").hidden = view !== "taxes";
+        document.getElementById("investments").hidden = view !== "investments";
+        document.getElementById("home").hidden = view !== "home";
         document.getElementById("jobs").hidden = view !== "jobs";
         document.querySelector("main").classList.toggle("wide", view === "flows");
         load();
@@ -3506,6 +3993,8 @@
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
         document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
         document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
+        document.getElementById("view-investments").addEventListener("click", function () { setView("investments"); });
+        document.getElementById("view-home").addEventListener("click", function () { setView("home"); });
         document.getElementById("view-jobs").addEventListener("click", function () { setView("jobs"); });
         document.querySelectorAll("#budget-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setBudgetTab(b.dataset.tab); });
@@ -3526,7 +4015,7 @@
         document.getElementById("pending-discard").addEventListener("click", discardStaged);
         if (window.matchMedia) {  // the chart takes its colors when drawn: redraw it when light and dark swap
           var scheme = window.matchMedia("(prefers-color-scheme: dark)");
-          var redraw = function () { if (view === "flows") load(); };
+          var redraw = function () { if (view === "flows" || view === "investments" || view === "home") load(); };
           var resized = null;  // a wider or narrower window redraws the flow chart to fit, once it settles
           window.addEventListener("resize", function () {
             clearTimeout(resized);
@@ -3554,7 +4043,7 @@
           editTab = p.tab;
           document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });
         }
-        if (["flows", "budget", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();
+        if (["flows", "budget", "investments", "home", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();
       }
     </script>
   </body>

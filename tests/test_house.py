@@ -46,7 +46,7 @@ def test_the_summary_has_basis_estimates_loans_equity_and_what_a_sale_would_net(
     out, notes = house.summary(PROPS.iloc[:1], VALUES, IMPROVED, LOANS, SCHEDULE, BALANCES, PARAMS, "2001-09-15")
     got = dict(zip(out["key"], out["value"]))
     owed = float(SCHEDULE["balance"].iloc[-1])
-    assert got["basis"] == 300 + 6 + 8 + 7 and got["repairs"] == 2
+    assert got["basis"] == 300 + 6 + 8 + 7 and got["repairs"] == 2 and got["status"] == "owned"
     assert got["estimate_median"] == 310 and got["loan:acme_loan"] == owed
     assert got["value_used"] == 300 and got["equity"] == pytest.approx(300 - owed)  # the purchase price by default
     assert got["sale_net"] == pytest.approx(310 * 0.94 - owed) and got["sale_gain"] == pytest.approx(310 * 0.94 - 321)

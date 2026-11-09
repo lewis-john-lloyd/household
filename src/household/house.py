@@ -158,10 +158,12 @@ def summary(properties, values, improved, loans, schedule, balances, params, tod
         basis = price + costs + capital + energy
         sold = str(prop.get("sold", ""))[:10]
         on = sold if sold and sold < today else today
+        add("status", "Status", "owned" if owned(prop, values, today) else "past", on)
         add("purchase_price", "Purchase price", price, str(prop.get("purchased", ""))[:10])
         add("basis_costs", "Closing costs in basis", costs)
-        add("capital_improvements", "Capital improvements", capital, note=f"{int((mine['kind'] == 'capital').sum())} "
-            "items" if len(mine) else "")
+        count = int((mine["kind"] == "capital").sum()) if len(mine) else 0
+        add("capital_improvements", "Capital improvements", capital,
+            note=f"{count} item{'s' if count != 1 else ''}" if count else "")
         add("energy_improvements", "Energy improvements, less credits", energy)
         add("repairs", "Repairs (not in basis)", repairs)
         add("basis", "Adjusted basis", basis)

@@ -161,11 +161,12 @@ def report(nodes, current, proposed=None):
     return pd.DataFrame(rows, columns=TREE_COLUMNS)
 
 
-def _targets(leaves, total, fixed):
-    """{class: target dollars}: leaf shares of the total, where a class whose fixed holdings already exceed its
-    target keeps them and the rest share what remains in proportion to their weights."""
+def _targets(leaves, total, fixed, unreachable=()):
+    """{class: target dollars}: leaf shares of the total, where a class no trade can change (held only where
+    nothing trades and already over its target, or with no fund a tradable account could buy) keeps what it has
+    and the rest share what remains in proportion to their weights."""
     leaves = {**{c: 0.0 for c in fixed}, **leaves}  # a class held with no node in the tree has a target of nothing
-    pinned, targets = set(), {}
+    pinned, targets = set(unreachable), {}
     while True:
         free = {c: s for c, s in leaves.items() if c not in pinned}
         left = total - sum(fixed.get(c, 0.0) for c in pinned)
@@ -217,12 +218,14 @@ def rebalance(vals, nodes, ever_held=None):
             variables.append((a["account_id"], a["bucket"], s, float(held.get(s, 0.0))))
             funds.setdefault(s, klass[s])
     classes = sorted(set(leaves) | set(fixed) | {c for m in funds.values() for c in m})
-    targets = _targets(leaves, total, fixed)
     reachable = {c for _, _, s, _ in variables for c, f in funds[s].items() if f > 0}
-    for c in sorted(leaves):
-        if leaves[c] > 0 and c not in reachable and fixed.get(c, 0.0) + 0.005 < targets.get(c, 0.0):
+    unreachable = [c for c in sorted(leaves) if c not in reachable]
+    for c in unreachable:
+        if leaves[c] * total > fixed.get(c, 0.0) + 0.5:
             notes.append(f"rebalance: no tradable account holds a fund for {LABELS.get(c, c)}, so it stays "
-                         f"{targets[c] - fixed.get(c, 0.0):,.0f} under target without a new ticker")
+                         f"{leaves[c] * total - fixed.get(c, 0.0):,.0f} under target without a new ticker; "
+                         "the other targets share its part")
+    targets = _targets(leaves, total, fixed, unreachable)
     pinned = [c for c in sorted(set(leaves) | set(fixed)) if fixed.get(c, 0.0) > leaves.get(c, 0.0) * total + 0.005]
     for c in pinned:
         notes.append(f"rebalance: {LABELS.get(c, c)} held where nothing trades ({fixed[c]:,.0f}) is over its "

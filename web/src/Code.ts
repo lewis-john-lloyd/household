@@ -387,3 +387,19 @@ function getTaxes(): TaxPage {
   }
   return taxPage(tabs);
 }
+
+function getInvestments(): WealthPage {
+  const tabs: Record<string, unknown[][]> = {};
+  for (const name of ["investment_values", "net_worth", "allocation", "rebalance", "run_log", "run_notes"]) {
+    tabs[name] = readTabIfAny_(name);
+  }
+  return wealthPage(tabs);
+}
+
+function getHome(): HomePage {
+  const tabs: Record<string, unknown[][]> = {};
+  for (const name of ["property_summary", "home_values", "home_improvements", "mortgage", "run_log", "run_notes"]) {
+    tabs[name] = readTabIfAny_(name);
+  }
+  return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));
+}

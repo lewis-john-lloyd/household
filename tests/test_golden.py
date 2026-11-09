@@ -60,6 +60,21 @@ def digest(df):
     return hashlib.sha256(text.encode()).hexdigest()[:16].translate(str.maketrans(string.digits, "ghijklmnop"))
 
 
+def canonical(value):
+    """A value as text that doesn't depend on the order a dict or set was filled in."""
+    if isinstance(value, dict):
+        return (
+            "{"
+            + ", ".join(f"{canonical(k)}: {canonical(v)}" for k, v in sorted(value.items(), key=lambda kv: repr(kv[0])))
+            + "}"
+        )
+    if isinstance(value, (set, frozenset)):
+        return "{" + ", ".join(sorted(canonical(v) for v in value)) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(canonical(v) for v in value) + "]"
+    return repr(value)
+
+
 def check(name, tables):
     got = {k: digest(v) for k, v in sorted(tables.items())}
     pinned = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
@@ -226,3 +241,93 @@ def test_a_year_of_pay_stubs_through_the_projection_is_unchanged(session):  # no
     for name in ("projection", "tax_lines", "withholding_plan", "elections", "withholding_backtest"):
         assert len(tables[f"reports.{name}"]), f"{name} is empty: the stubs no longer reach it"
     check("stubs_and_projection", tables)
+
+
+def test_the_retirement_inputs_read_from_the_ledger_are_unchanged():
+    """retirement.build on made-up ledger frames that reach each of its branches: an HSA, an IRA on its way to a
+    Roth, vests, a loan, every saving setting, a spending setting that can't be read and returns that aren't."""
+    import dataclasses
+
+    from test_retirement import ledger_frames
+
+    accounts, values, activity, lots, actuals, categories, statements, estimates, earnings = ledger_frames()
+    accounts = pd.concat(
+        [
+            accounts,
+            pd.DataFrame(
+                [
+                    {"account_id": "a_hsa", "type": "hsa", "tax_treatment": "hsa", "owner": "alex"},
+                    {"account_id": "s_ira", "type": "ira", "tax_treatment": "pre_tax", "owner": "sam"},
+                    {"account_id": "other", "type": "other", "tax_treatment": "taxable", "owner": "someone"},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    values = pd.concat(
+        [
+            values,
+            pd.DataFrame(
+                [
+                    {"date": "2026-11-01", "account_id": "a_hsa", "owner": "alex", "bucket": "hsa", "value": 30},
+                    {"date": "2026-11-01", "account_id": "s_ira", "owner": "sam", "bucket": "ira_pretax", "value": 10},
+                    {"date": "2026-11-01", "account_id": "other", "owner": "someone", "bucket": "other", "value": 5},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    activity = pd.concat(
+        [
+            activity,
+            pd.DataFrame(
+                [
+                    {"account_id": "a_hsa", "date": "2026-04-01", "kind": "contribution", "amount": 8, "source": ""},
+                    {"account_id": "s_ira", "date": "2026-01-05", "kind": "contribution", "amount": 7, "source": ""},
+                    {"account_id": "s_ira", "date": "2026-01-09", "kind": "conversion_out", "amount": -7, "source": ""},
+                    {"account_id": "nowhere", "date": "2026-01-09", "kind": "contribution", "amount": 1, "source": ""},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    vests = pd.DataFrame([{"vest_date": "2026-05-25", "net_shares": 2, "fmv": 40}])
+    schedule = pd.DataFrame(
+        [
+            {"loan_id": "acme_loan", "month": f"{y}-{m:02d}", "interest": 3, "principal": 6, "extra_principal": 1}
+            for y in (2026, 2027)
+            for m in range(1, 13)
+        ]
+    )
+    p = params(
+        **{
+            "birth_date:sam": "1982-02-01",
+            "retirement_spending:food": "5 from 2040",
+            "retirement_spending:hobby": "soon",
+            "retirement_taxable_savings": "40",
+            "retirement_pre_tax_contributions:alex": "30",
+            "retirement_roth_contributions:sam": "6",
+            "retirement_cagrs": "five",
+            "retirement_leave_out": "taxes, savings",
+        }
+    )
+    h, notes, assume = R.build(
+        p, ("alex", "sam"), statements, estimates, earnings, accounts, values, activity, lots, actuals, categories,
+        schedule, vests, 0.6, "2026-11-01",
+    )  # fmt: skip
+    fields = {k: v for k, v in dataclasses.asdict(h).items() if k not in ("people",)}
+    people = [dataclasses.asdict(x) for x in h.people]
+    check(
+        "retirement_build",
+        {
+            "household": pd.DataFrame([{"field": k, "value": canonical(v)} for k, v in sorted(fields.items())]),
+            "people": pd.DataFrame([{"person": x["name"], "value": canonical(x)} for x in people]),
+            "notes": pd.DataFrame({"note": notes}),
+            "assumptions": assume,
+        },
+    )
+    none, why, _ = R.build(
+        p, (), statements, estimates, earnings, accounts, values, activity, lots, actuals, categories, None, None,
+        0.6, "2026-11-01",
+    )  # fmt: skip
+    assert none is None and "no adults" in why[0]

@@ -574,12 +574,12 @@
       <nav class="tabs" aria-label="Views">
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-flows" aria-pressed="false">Where the money went</button>
+        <button id="view-edit" aria-pressed="false">Transactions</button>
         <button id="view-budget" aria-pressed="false">Budget</button>
         <button id="view-investments" aria-pressed="false">Investments</button>
         <button id="view-home" aria-pressed="false">Home</button>
         <button id="view-taxes" aria-pressed="false">Taxes</button>
         <button id="view-jobs" aria-pressed="false">Jobs</button>
-        <button id="view-edit" aria-pressed="false">Edit</button>
       </nav>
     </header>
     <main>
@@ -595,6 +595,8 @@
       <div id="status-tabs" class="subtabs" role="group" aria-label="Status">
         <button data-tab="overview" aria-pressed="true">Overview</button>
         <button data-tab="log" aria-pressed="false">Engine log</button>
+        <button data-tab="edit:settings" aria-pressed="false">Settings</button>
+        <button data-tab="edit:waiting" aria-pressed="false">Saved changes</button>
       </div>
       <div id="status-overview">
       <div class="status-head">
@@ -639,6 +641,7 @@
       <div id="budget-tabs" class="subtabs" role="group" aria-label="Budget">
         <button data-tab="lines" aria-pressed="true">Lines</button>
         <button data-tab="recurring" aria-pressed="false">Recurring</button>
+        <button data-tab="edit:categories" aria-pressed="false">Categories</button>
       </div>
       <div id="budget-body">Loading…</div>
     </section>
@@ -660,14 +663,10 @@
     </section>
 
     <section id="edit" hidden>
-      <div id="edit-tabs" role="group" aria-label="What to edit">
-        <button data-tab="review" aria-pressed="true">Review</button>
-        <button data-tab="rules" aria-pressed="false">Payee rules</button>
-        <button data-tab="categories" aria-pressed="false">Categories</button>
-        <button data-tab="settings" aria-pressed="false">Settings</button>
-        <button data-tab="withholding" aria-pressed="false">Withholding</button>
-        <button data-tab="duplicates" aria-pressed="false">Duplicates</button>
-        <button data-tab="waiting" aria-pressed="false">Saved</button>
+      <div id="edit-tabs" role="group" aria-label="Transactions">
+        <button data-tab="edit:review" aria-pressed="true">Review</button>
+        <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
+        <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
       </div>
       <div id="edit-body">Loading…</div>
       <div class="note">Changes stay in this page until you Save. Save writes them as one file for ingest, which applies
@@ -1845,9 +1844,53 @@
 
       function isAmount(text) { return /^-?\d+(\.\d{1,2})?$/.test(text.replace(/,/g, "")); }
 
-      function setEditTab(tab) {
+      // Each editor part lives on the page it is about: review, payee rules and duplicates (and a transaction's
+      // own page) on Transactions, categories on Budget, withholding on Taxes, settings and saved changes on
+      // Status. Each page's submenu lists its own parts and its editor parts together; an "edit:" part opens the
+      // editor under that page's name.
+      var EDIT_HOME = { review: "edit", rules: "edit", duplicates: "edit", transaction: "edit", categories: "budget",
+                        withholding: "taxes", settings: "status", waiting: "status" };
+      var PAGE_PARTS = {
+        edit: [["edit:review", "Review"], ["edit:rules", "Payee rules"], ["edit:duplicates", "Duplicates"]],
+        status: [["overview", "Overview"], ["log", "Engine log"], ["edit:settings", "Settings"], ["edit:waiting", "Saved changes"]],
+        budget: [["lines", "Lines"], ["recurring", "Recurring"], ["edit:categories", "Categories"]],
+        taxes: [["year", "This year"], ["history", "History"], ["edit:withholding", "Withholding"]],
+      };
+
+      // Open an editor part where it belongs (an older name for one is still understood).
+      function openEdit(tab) {
+        if (!EDIT_HOME[tab]) tab = "review";
         editTab = tab;
-        document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); });
+        if (view !== "edit") setView("edit"); else { drawEditTabs(); redrawEditor(); }
+      }
+
+      // Go to a page's own part from its submenu.
+      function openPart(page, part) {
+        if (part.indexOf("edit:") === 0) { openEdit(part.slice(5)); return; }
+        if (page === "status") { setView("status"); setStatusTab(part); return; }
+        if (page === "budget") { budget.tab = part; budget.open = null; setView("budget"); return; }
+        if (page === "taxes") { taxView = part; setView("taxes"); return; }
+        setView(page);
+      }
+
+      // The editor's submenu: the parts of the page the open editor part belongs to.
+      function drawEditTabs() {
+        var home = EDIT_HOME[editTab] || "edit";
+        var bar = document.getElementById("edit-tabs");
+        bar.textContent = "";
+        bar.className = "subtabs";
+        bar.setAttribute("aria-label", { edit: "Transactions", status: "Status", budget: "Budget", taxes: "Taxes" }[home]);
+        PAGE_PARTS[home].forEach(function (p) {
+          var b = button(p[1], function () { openPart(home, p[0]); });
+          b.setAttribute("aria-pressed", String(p[0] === "edit:" + editTab));
+          b.dataset.tab = p[0];
+          bar.appendChild(b);
+        });
+      }
+
+      function setEditTab(tab) {
+        editTab = EDIT_HOME[tab] ? tab : "review";
+        drawEditTabs();
         redrawEditor();
       }
 
@@ -1871,7 +1914,6 @@
            withholding: drawWithholding, duplicates: drawDuplicates })[editTab](body);
       }
 
-      // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
       // The name a recurring charge shows by: one waiting to be saved, else the one you gave it, else its key.
       function chargeName(r) {
         var s = staged["recurring_name|" + String(r.key).toUpperCase()];
@@ -1923,6 +1965,7 @@
         return box;
       }
 
+      // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
       function stagedText(t) {
         return stagedOrder.filter(function (k) { return k === t || k.indexOf(t + "|") === 0; })
           .map(function (k) { return staged[k].text; }).join("; ");
@@ -2393,7 +2436,7 @@
       }
 
       // --- the list and the editor ---------------------------------------------------------------------
-      // Every Edit tab is a list on the left, one row per item (its name, a line about it, and what is staged
+      // Every editor part is a list on the left, one row per item (its name, a line about it, and what is staged
       // for it), and the chosen item's editor on the right. On a phone the editor replaces the list, with Back.
       var selected = {};  // the item chosen in each tab, by key
       var txnPage = null;  // the transaction the transaction page shows, and the view it was opened from
@@ -2498,8 +2541,7 @@
       // --- one transaction -------------------------------------------------------------------------------
       function openTransaction(id) {
         txnPage = { id: id, from: view };
-        setView("edit");
-        setEditTab("transaction");
+        openEdit("transaction");
       }
 
       function loadTransaction(id, panel, done) {
@@ -3857,7 +3899,7 @@
       function drawTaxes() {
         var body = document.getElementById("taxes-body");
         body.textContent = "";
-        subtabs(body, "Taxes", [["year", "This year"], ["history", "History"]], taxView, function (v) { taxView = v; drawTaxes(); });
+        subtabs(body, "Taxes", PAGE_PARTS.taxes, taxView, function (v) { if (v.indexOf("edit:") === 0) openEdit(v.slice(5)); else { taxView = v; drawTaxes(); } });
         if (taxView === "history") { drawTaxHistoryView(body); return; }
         if (!taxes.years.length) {
           body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
@@ -3987,7 +4029,7 @@
           card.appendChild(section);
         });
         card.appendChild(el("p", "From the year so far plus the projection" + (vest ? ", with future vests withheld at " + vest : "") +
-          ". The amount and the vest rate are household settings (target_refund, planned_supplemental_rate) in Edit.", "support small-print"));
+          ". The amount and the vest rate are household settings (target_refund, planned_supplemental_rate) in Status, Settings.", "support small-print"));
         return card;
       }
 
@@ -4260,8 +4302,7 @@
           var actions = el("div", null, "actions");
           actions.appendChild(button(ACTION_LABEL[a.action] || "Open", function () {
             if (a.action.indexOf("view:") === 0) { setView(a.action.slice(5)); return; }
-            setView("edit");
-            setEditTab(a.action);
+            openEdit(a.action);
           }, "filled"));
           body.appendChild(actions);
         }
@@ -4469,7 +4510,9 @@
         if (next === "subscriptions" || next === "recurring") { next = "budget"; budget.tab = "recurring"; }  // older links
         if (next !== "budget") closeDrawer(true);
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-investments", "view-home", "view-taxes", "view-jobs", "view-edit"], "view-" + view);
+        press(["view-status", "view-flows", "view-budget", "view-investments", "view-home", "view-taxes", "view-jobs", "view-edit"],
+              "view-" + (view === "edit" ? EDIT_HOME[editTab] || "edit" : view));
+        if (view === "edit") drawEditTabs();
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
         document.getElementById("budget").hidden = view !== "budget";
@@ -4497,19 +4540,18 @@
         document.getElementById("view-status").addEventListener("click", function () { setView("status"); });
         document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
-        document.getElementById("view-edit").addEventListener("click", function () { setView("edit"); });
+        document.getElementById("view-edit").addEventListener("click", function () {
+          openEdit(EDIT_HOME[editTab] === "edit" && editTab !== "transaction" ? editTab : "review");
+        });
         document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
         document.getElementById("view-investments").addEventListener("click", function () { setView("investments"); });
         document.getElementById("view-home").addEventListener("click", function () { setView("home"); });
         document.getElementById("view-jobs").addEventListener("click", function () { setView("jobs"); });
         document.querySelectorAll("#budget-tabs button").forEach(function (b) {
-          b.addEventListener("click", function () { setBudgetTab(b.dataset.tab); });
-        });
-        document.querySelectorAll("#edit-tabs button").forEach(function (b) {
-          b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
+          b.addEventListener("click", function () { openPart("budget", b.dataset.tab); });
         });
         document.querySelectorAll("#status-tabs button").forEach(function (b) {
-          b.addEventListener("click", function () { setStatusTab(b.dataset.tab); });
+          b.addEventListener("click", function () { openPart("status", b.dataset.tab); });
         });
         document.querySelectorAll("#flows-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setFlowsTab(b.dataset.tab); });
@@ -4552,10 +4594,13 @@
         if (p.view === "edit" && moved[p.tab]) { setView(moved[p.tab]); return; }
         if (p.view === "budget" && p.tab === "recurring") budget.tab = "recurring";
         if (!p.view && p.tab === "log") setStatusTab("log");
-        if (p.tab && document.querySelector('#edit-tabs button[data-tab="' + p.tab + '"]')) {
+        // an editor part opens where it lives now: ?view=edit&tab=settings opens Status's Settings
+        if (p.tab && EDIT_HOME[p.tab] && p.tab !== "transaction" && (!p.view || p.view === "edit" || p.view === EDIT_HOME[p.tab])) {
           editTab = p.tab;
-          document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });
+          setView("edit");
+          return;
         }
+        if (p.view === "edit") { editTab = "review"; setView("edit"); return; }
         if (["flows", "budget", "investments", "home", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();
       }
     </script>

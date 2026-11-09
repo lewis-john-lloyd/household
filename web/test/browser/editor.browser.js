@@ -71,7 +71,12 @@ async function open(setup) {
 }
 
 async function changeSetting(page, key, value) {
-  await page.click("#edit-tabs button[data-tab=settings]");
+  // settings live on the Status page now, as one of its parts
+  if (!(await page.isVisible("#edit-tabs button[data-tab='edit:settings']"))) {
+    await page.click("#view-status");
+    await page.click("#status-tabs button[data-tab='edit:settings']");
+  }
+  await page.click("#edit-tabs button[data-tab='edit:settings']");
   await page.click(`.md-row:has-text('${key}')`);
   await page.fill(".md-detail label:has-text('Value') input", value);
   await page.click(".md-detail button:has-text('Keep this change')");
@@ -126,8 +131,7 @@ test("a load that fails says so instead of showing nothing", async () => {
                           "window.__fail.getWaiting = 'Could not open Reports';");
   await page.waitForFunction(() => /Could not load/.test(document.getElementById("status-title").textContent));
   assert.match(await page.textContent("#status-title"), /Could not load: .*run_log/);
-  await page.click("#view-edit");
-  await page.click("#edit-tabs button[data-tab=waiting]");
+  await page.click("#status-tabs button[data-tab='edit:waiting']");
   await page.waitForFunction(() => /Could not load/.test(document.getElementById("edit-body").textContent));
   await page.close();
 });
@@ -394,7 +398,8 @@ test("a link opens the page it names, and a known setting not set yet is added a
     "window.__answers.getEditor.parameters.push({ key: 'payroll_url', value: '', source: 'not set', " +
     "about: 'Where W-4, WT-4 and supplemental withholding are changed' });");
   await page.waitForSelector("#edit:not([hidden]) .md-list");
-  assert.equal(await page.getAttribute("#edit-tabs button[data-tab=settings]", "aria-pressed"), "true");
+  assert.equal(await page.getAttribute("#edit-tabs button[data-tab='edit:settings']", "aria-pressed"), "true");
+  assert.equal(await page.getAttribute("#view-status", "aria-pressed"), "true");  // settings live on Status
   assert.match(await page.textContent(".md-row:has-text('payroll_url')"), /not set: Where W-4/);
   await changeSetting(page, "payroll_url", "https://payroll.example");
   await page.click("#pending-save");
@@ -514,6 +519,25 @@ test("jobs: choosing a stretch of a pay line shows it, and a correction is stage
   await page.fill("dialog.job-dialog label:has-text('Band') input", "L4");
   await page.click("dialog.job-dialog button:has-text('Keep this correction')");
   assert.deepEqual(await staged(page), ["job: alex at Quill & Ink at 90000 from 2020-01-15"]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("each editor part lives on the page it is about, in that page's submenu", async () => {
+  const page = await open("window.__location = { parameter: { view: 'edit', tab: 'withholding' } };");
+  await page.waitForSelector("#edit:not([hidden])");
+  assert.equal(await page.getAttribute("#view-taxes", "aria-pressed"), "true");
+  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), ["This year", "History", "Withholding"]);
+  await page.click("#view-budget");
+  await page.click("#budget-tabs button[data-tab='edit:categories']");
+  await page.waitForSelector("#edit:not([hidden])");
+  assert.equal(await page.getAttribute("#view-budget", "aria-pressed"), "true");
+  assert.equal(await page.getAttribute("#edit-tabs button[data-tab='edit:categories']", "aria-pressed"), "true");
+  await page.click("#edit-tabs button[data-tab=lines]");  // back to the budget's own part
+  await page.waitForSelector("#budget:not([hidden])");
+  await page.click("#view-edit");
+  assert.equal(await page.textContent("#view-edit"), "Transactions");
+  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), ["Review", "Payee rules", "Duplicates"]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

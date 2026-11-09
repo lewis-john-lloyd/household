@@ -33,8 +33,9 @@ PERIOD = re.compile(r"Statement Period:\s*(\d\d/\d\d/\d{4})\s+to\s+(\d\d/\d\d/\d
 
 
 def sniff(text):
+    # a page printed from the browser may carry its title ("Fidelity NetBenefits - Statement Details") first
     head = text.lstrip()[:3000]
-    return (head.startswith("Statement Details") and "Retirement Savings Statement" in head
+    return ("Statement Details" in head[:200] and "Retirement Savings Statement" in head
             and "Market Value of Your Account" in text)
 
 

@@ -62,3 +62,7 @@ def test_a_statement_that_doesnt_add_up_is_refused():
     with pytest.raises(ParseError, match="no fund rows"):
         nb.parse(statement(table=TABLE.replace("S&P 500 ", "").replace("US Bond ", "").replace("Target Ret ", "")
                            .replace("2.000", "x").replace("3.000", "x").replace("0.000", "x")))
+
+
+def test_a_statement_printed_with_the_browser_title_first_is_still_one():
+    assert identify("Fidelity NetBenefits - Statement Details\n\n" + statement()) is nb

@@ -69,6 +69,9 @@ LEDGER = (
           {"kind": ("income", "pre_tax", "tax", "post_tax", "employer", "memo")}),
     Table("equity_vests", ("vest_date", "grant_id", "award_date", "net_shares", "fmv",
                            "deposit_date", "doc_id")),
+    # each grant's vesting schedule as Schwab's Awards page gives it (parsers/schwab_awards.py); a grant's rows
+    # from its latest document are the schedule in force
+    Table("vest_schedule", ("grant_id", "award_date", "symbol", "award_type", "vest_date", "shares", "doc_id")),
     Table("equity_sales", ("sale_date", "grant_id", "vest_date", "shares", "sale_price",
                            "proceeds", "basis", "gain", "term", "doc_id"),
           {"term": ("short_term", "long_term")}),

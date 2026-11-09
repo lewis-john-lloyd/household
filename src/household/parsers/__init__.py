@@ -6,10 +6,10 @@ anything); then tax law sources, which quote the phrases other recognizers look 
 """
 
 from . import (adp_statement, amazon, boa_csv, changes, email_receipts, fidelity, google_takeout, documents, healthequity, earnings_statement, ofx, ofx_invest, pay_statement, paypal_qif, return_facts,
-               schwab_equity, seed, target, tax_law, usaa_csv)
+               schwab_awards, schwab_equity, seed, target, tax_law, usaa_csv)
 from .common import ParseError, Result
 
-PARSERS = (changes, tax_law, seed, return_facts, schwab_equity, ofx_invest, ofx, fidelity, healthequity, usaa_csv, boa_csv, paypal_qif, amazon, google_takeout, target,
+PARSERS = (changes, tax_law, seed, return_facts, schwab_awards, schwab_equity, ofx_invest, ofx, fidelity, healthequity, usaa_csv, boa_csv, paypal_qif, amazon, google_takeout, target,
            email_receipts,
            pay_statement, earnings_statement, adp_statement, documents)
 

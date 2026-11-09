@@ -9,8 +9,10 @@ is projected from what the stubs show is recurring:
   - withholding on each by the Pub 15-T method plus the W-4 adjustment the latest
     stub shows (see withholding.py), unless a scenario replaces it;
   - recurring supplemental pay (monthly RSU vests: supplemental days in the last
-    90 days worth over 1,000) at its recent average, scaled by the scenario's
-    stock price change, withheld at the latest supplemental rate;
+    90 days worth over 1,000): each vest left in the grants' vesting schedule
+    (vest_schedule) at the latest share price, or without a schedule one a month at
+    its recent average, scaled by the scenario's stock price change, withheld at
+    the latest supplemental rate;
   - Wisconsin withholding on each regular paycheck under the WT-4 settings the
     Wisconsin backtest decoded from the latest one, and on each vest at its flat
     percentage (wisconsin.py).
@@ -193,7 +195,32 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
                           > pd.Timestamp(last["pay_date"]) - pd.Timedelta(days=90)]
     by_day = recent.groupby("pay_date")["base"].sum()
     vest_days = by_day[by_day > 1_000]
-    if len(vest_days) >= 2:
+    scheduled = overrides.get("vests") or {}
+    if len(vest_days) >= 1 and scheduled.get("schedule") and scheduled.get("price"):
+        # the grants' vesting schedule: each vest after the latest paid, this year, before the job ends
+        latest_vest = date.fromisoformat(vest_days.index.max()[:10])
+        price = float(scheduled["price"]) * overrides.get("stock_price", 1.0)
+        by_date = {}
+        for day, shares in scheduled["schedule"]:
+            d = date.fromisoformat(str(day)[:10])
+            if d > latest_vest and d.year == year and (ends is None or d < ends):
+                by_date[d] = by_date.get(d, 0.0) + float(shares)
+        rate = overrides.get("supplemental_rate",
+                             float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
+        for d, shares in sorted(by_date.items()):
+            amount = shares * price
+            out["wages"] += amount
+            out["federal_withheld"] += amount * rate
+            if wi_settings is not None:
+                wi = amount * wisconsin.flat_rate(amount, 26)
+                out["wi_withheld"] += wi
+                out["state_withheld"] += wi
+            _add_medicare(out, amount, year)
+        out["vests_left"] = len(by_date)
+        out["vest_rate"] = rate
+        out["notes"].append(f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
+                            f"{price:,.2f}, withheld at {rate:.0%}")
+    elif len(vest_days) >= 2:
         latest_vest = date.fromisoformat(vest_days.index.max()[:10])
         # a vest on the same day of each month after the latest, before the job ends
         months_left = sum(1 for m in range(latest_vest.month + 1, 13)
@@ -288,8 +315,31 @@ def positions(paystubs, year, overrides=None, comp_events=None):
     return out
 
 
-def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None):
-    """federal_return inputs for the year: stubs plus projection, equity sales, estimates."""
+def scheduled_vests(schedule, vested=None, prices=None):
+    """The projection's vests: each grant's schedule in force (parsers/schwab_awards.in_force) and a share
+    price, the latest of a vest's fair market value (equity_vests) and a close for the grants' symbol
+    (prices); None with no schedule or no price."""
+    from .parsers import schwab_awards
+    s = schwab_awards.in_force(schedule)
+    if s.empty:
+        return None
+    seen = []
+    if vested is not None and len(vested):
+        v = vested.assign(fmv=_num(vested["fmv"]))
+        v = v[v["fmv"] > 0]
+        seen += list(zip(v["vest_date"].astype(str), v["fmv"]))
+    if prices is not None and len(prices):
+        p = prices[prices["symbol"].isin(set(s["symbol"]))].assign(close=lambda d: pd.to_numeric(d["close"], errors="coerce"))
+        seen += list(zip(p["date"].astype(str), p["close"].dropna()))
+    if not seen:
+        return None
+    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))), "price": float(max(seen)[1])}
+
+
+def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, vests=None):
+    """federal_return inputs for the year: stubs plus projection, equity sales, estimates. vests: the grants'
+    schedule and the share price ({"schedule": [(vest_date, shares)], "price": p}), for the vests left."""
+    overrides = {**(overrides or {}), **({"vests": vests} if vests else {})}
     pos = positions(paystubs, year, overrides, comp_events)
     sales = sales[sales["sale_date"].astype(str).str[:4] == str(year)] if not sales.empty else sales
     gain = _num(sales["gain"]) if not sales.empty else pd.Series(dtype=float)
@@ -313,7 +363,7 @@ def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None):
     return i, pos
 
 
-def project(year, paystubs, sales, facts, comp_events=None):
+def project(year, paystubs, sales, facts, comp_events=None, vests=None):
     """Projected lines per scenario, plus the safe-harbor target from last year's return.
 
     Returns (summary, notes, detail): one summary row per scenario, the notes, and every line of both
@@ -330,7 +380,7 @@ def project(year, paystubs, sales, facts, comp_events=None):
               if "24" in prior_lines else None)
     notes = []
     for name, overrides in SCENARIOS.items():
-        i, pos = inputs_for(year, paystubs, sales, facts, overrides, comp_events)
+        i, pos = inputs_for(year, paystubs, sales, facts, overrides, comp_events, vests)
         r = tax.federal_return(i, year)
         w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
         if name == "as is":
@@ -497,13 +547,14 @@ def _harbor(year, facts):
     return tax.safe_harbor(lines["24"], lines.get("11a", 0)) if "24" in lines else None
 
 
-def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35, comp_events=None):
+def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35, comp_events=None,
+                     vests=None):
     """For each return, the extra per paycheck that lands the year on a refund of target, on no balance, and
     on owing target, from the year so far plus the projection with future vests withheld at
     supplemental_rate. projected and lands_at: refund positive, owed negative. The change goes on the
     paychecks of the person and employer with the most left (W-4 Step 4(c); WT-4's additional amount). A
     federal balance owed says whether it escapes the underpayment penalty (tax.penalty_free)."""
-    i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate}, comp_events)
+    i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate}, comp_events, vests)
     r = tax.federal_return(i, year)
     w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
     left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]

@@ -1,13 +1,20 @@
 {
   "compilerOptions": {
     "target": "ES2019",
-    "lib": ["ES2019"],
+    "lib": [
+      "ES2019"
+    ],
     "module": "none",
-    "types": ["google-apps-script"],
+    "types": [
+      "google-apps-script"
+    ],
     "strict": true,
     "noEmitOnError": true,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "exactOptionalPropertyTypes": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

@@ -1,13 +1,27 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "lib": ["ES2020"],
+    "lib": [
+      "ES2020"
+    ],
     "module": "commonjs",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noEmitOnError": true,
     "rootDir": ".",
-    "outDir": "build"
+    "outDir": "build",
+    "exactOptionalPropertyTypes": true
   },
-  "include": ["src/shape.ts", "src/budgetview.ts", "src/edits.ts", "src/taxes.ts", "src/wealth.ts", "src/retirement.ts", "src/form8949.ts", "test/**/*.ts"]
+  "include": [
+    "src/shape.ts",
+    "src/budgetview.ts",
+    "src/edits.ts",
+    "src/taxes.ts",
+    "src/wealth.ts",
+    "src/retirement.ts",
+    "src/form8949.ts",
+    "test/**/*.ts"
+  ]
 }

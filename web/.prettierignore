@@ -1,0 +1,5 @@
+# the page is HTML with its script inline, kept as written; the TypeScript and the tests are formatted
+src/Index.html
+dist
+build
+node_modules

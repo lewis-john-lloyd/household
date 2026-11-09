@@ -8,11 +8,14 @@
     "test": "tsc -p tsconfig.test.json && node --test \"build/test/**/*.test.js\"",
     "push": "npm run build && clasp push",
     "test:browser": "node --test test/browser/editor.browser.js",
-    "test:server": "node --test test/server/code.test.js"
+    "test:server": "node --test test/server/code.test.js",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.{ts,js}\" \"scripts/*.mjs\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.{ts,js}\" \"scripts/*.mjs\""
   },
   "devDependencies": {
     "@types/google-apps-script": "2.0.14",
     "@types/node": "22.20.5",
+    "prettier": "3.9.10",
     "typescript": "5.9.3"
   }
 }

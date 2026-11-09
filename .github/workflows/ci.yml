@@ -11,11 +11,14 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]  # what Colab has run, and its current one
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       - run: python tools/leak_guard.py
       - run: python tools/import_guard.py
@@ -51,6 +54,7 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
+      - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

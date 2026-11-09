@@ -63,7 +63,7 @@ function readTabsIfAny_(names: string[]): Record<string, unknown[][]> {
     throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
   }
   const api = Sheets.Spreadsheets.Values;
-  let ranges: { values?: unknown[][] }[] | undefined;
+  let ranges: { values?: unknown[][] | undefined }[] | undefined;
   try {
     ranges = patiently_(() => api.batchGet(reportsId_(), {
       ranges: present.map((n) => `'${n.replace(/'/g, "''")}'`), valueRenderOption: "UNFORMATTED_VALUE" })).valueRanges;
@@ -81,7 +81,7 @@ function tabTitles_(): string[] {
   if (tabTitles === null) {
     if (!Sheets || !Sheets.Spreadsheets) throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
     const api = Sheets.Spreadsheets;
-    let sheets: { properties?: { title?: string } }[] | undefined;
+    let sheets: { properties?: { title?: string | undefined } | undefined }[] | undefined;
     try {
       sheets = patiently_(() => api.get(reportsId_(), { fields: "sheets.properties.title" })).sheets;
     } catch (e) {

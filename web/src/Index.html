@@ -4121,8 +4121,7 @@
       // Form 8949: each year's sales as the form lays them out, Part I short-term and Part II long-term, with
       // the totals that carry to Schedule D beside the return as filed.
       var f8949 = null, f8949Year = "";
-      var cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
-      var PART_NAMES = { short_term: ["Part I, short-term", "Schedule D line 7"], long_term: ["Part II, long-term", "Schedule D line 15"] };
+      var FORM_PARTS = { short_term: ["Part I, short-term", "Schedule D line 7"], long_term: ["Part II, long-term", "Schedule D line 15"] };
 
       function centsText(n) { return cents.format(n).replace("-", "−"); }
 
@@ -4161,7 +4160,7 @@
                        gains.long_term !== undefined ? [gains.long_term, "long-term gain (Part II)"] : null,
                        y.disallowed ? [y.disallowed, "wash-sale losses disallowed"] : null]);
         y.parts.forEach(function (p) {
-          var names = PART_NAMES[p.term];
+          var names = FORM_PARTS[p.term];
           var panel = el("section", null, "panel w-wide f8949-part");
           panel.dataset.term = p.term;
           panel.appendChild(el("h3", names[0]));

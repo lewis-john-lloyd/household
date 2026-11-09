@@ -1220,3 +1220,18 @@ test("investments: over time draws any lines chosen, each keeping its color, up 
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("investments: accounts name each account's kind in words", async () => {
+  const page = await open(`window.__answers.getInvestments = ${JSON.stringify({
+    ...INVESTMENTS,
+    accounts: [{ account: "a_plan", owner: "alex", wrapper: "workplace_plan", bucket: "401k_pretax", value: 90, carried: false }],
+  })};
+                           window.__location = { parameter: { view: 'investments', tab: 'accounts' } };`);
+  await page.waitForSelector("#investments-body table.w-table");
+  const kinds = await page.$$eval("#investments-body table.w-table tr:has(td) td:nth-child(3)", (c) =>
+    c.map((x) => x.textContent),
+  );
+  assert.equal(kinds[0], "401(k) pre-tax"); // the Form 8949 parts once took this table's names
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

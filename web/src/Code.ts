@@ -27,8 +27,10 @@ function readValues_(name: string): unknown[][] {
   }
   const api = Sheets.Spreadsheets.Values;
   try {
-    return (patiently_(() => api.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" }))
-      .values as unknown[][] | undefined) || [];
+    return (
+      (patiently_(() => api.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" })).values as
+        unknown[][] | undefined) || []
+    );
   } catch (e) {
     throw new Error(`Could not read the ${name} tab of Reports (check REPORTS_ID and that you can open Reports): ` + e);
   }
@@ -57,7 +59,9 @@ function patiently_<T>(call: () => T): T {
 function readTabsIfAny_(names: string[]): Record<string, unknown[][]> {
   const tabs: Record<string, unknown[][]> = {};
   const present = names.filter((n) => tabTitles_().indexOf(n) >= 0);
-  names.forEach((n) => { tabs[n] = []; });
+  names.forEach((n) => {
+    tabs[n] = [];
+  });
   if (!present.length) return tabs;
   if (!Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
     throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
@@ -65,21 +69,30 @@ function readTabsIfAny_(names: string[]): Record<string, unknown[][]> {
   const api = Sheets.Spreadsheets.Values;
   let ranges: { values?: unknown[][] | undefined }[] | undefined;
   try {
-    ranges = patiently_(() => api.batchGet(reportsId_(), {
-      ranges: present.map((n) => `'${n.replace(/'/g, "''")}'`), valueRenderOption: "UNFORMATTED_VALUE" })).valueRanges;
+    ranges = patiently_(() =>
+      api.batchGet(reportsId_(), {
+        ranges: present.map((n) => `'${n.replace(/'/g, "''")}'`),
+        valueRenderOption: "UNFORMATTED_VALUE",
+      }),
+    ).valueRanges;
   } catch (e) {
-    throw new Error(`Could not read the ${present.join(", ")} tabs of Reports (check REPORTS_ID and that you can open Reports): ` + e);
+    throw new Error(
+      `Could not read the ${present.join(", ")} tabs of Reports (check REPORTS_ID and that you can open Reports): ` + e,
+    );
   }
-  present.forEach((n, i) => { tabs[n] = ((ranges && ranges[i] && ranges[i].values) as unknown[][] | undefined) || []; });
+  present.forEach((n, i) => {
+    tabs[n] = ((ranges && ranges[i] && ranges[i].values) as unknown[][] | undefined) || [];
+  });
   return tabs;
 }
 
-let tabTitles: string[] | null = null;  // Reports' tab names, read once per call from the page
+let tabTitles: string[] | null = null; // Reports' tab names, read once per call from the page
 
 /** The names of Reports' tabs, so a tab not made yet can be told from a tab that could not be read. */
 function tabTitles_(): string[] {
   if (tabTitles === null) {
-    if (!Sheets || !Sheets.Spreadsheets) throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
+    if (!Sheets || !Sheets.Spreadsheets)
+      throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
     const api = Sheets.Spreadsheets;
     let sheets: { properties?: { title?: string | undefined } | undefined }[] | undefined;
     try {
@@ -109,7 +122,10 @@ function getPeriods(): string[] {
 }
 
 /** Sankey rows for one period ("2026" or "2026-10") at one level ("category" or "group"), with each node's total. */
-function getFlows(period: string, level: string): { rows: SankeyRow[]; dropped: SankeyRow[]; totals: NodeTotal[]; summary: FlowSummary } {
+function getFlows(
+  period: string,
+  level: string,
+): { rows: SankeyRow[]; dropped: SankeyRow[]; totals: NodeTotal[]; summary: FlowSummary } {
   const { rows, dropped } = toSankeyRows(readFlows_(), period, level);
   const totals = nodeTotals(rows);
   return { rows, dropped, totals, summary: flowSummary(totals) };
@@ -157,8 +173,8 @@ function getStatus(): Status {
 
 const EDITS_FOLDER_NAME = "web_edits";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
-const SAVED_KEEP = 40;  // saved change sets remembered for the waiting list: 40 records of 8 KB stay well inside 500 KB
-const SAVED_PREFIX = "SAVED_";  // one user property per saved change set, its record (savedRecord, under 9 KB)
+const SAVED_KEEP = 40; // saved change sets remembered for the waiting list: 40 records of 8 KB stay well inside 500 KB
+const SAVED_PREFIX = "SAVED_"; // one user property per saved change set, its record (savedRecord, under 9 KB)
 
 function drive_(): GoogleAppsScript.Drive {
   if (!Drive || !Drive.Files) throw new Error("The Drive advanced service is not enabled: push appsscript.json again.");
@@ -207,15 +223,30 @@ function keepSaved_(id: string, record: string): void {
   const props = PropertiesService.getUserProperties();
   props.setProperty(SAVED_PREFIX + id, record);
   props.deleteProperty("SAVED_CHANGES");
-  const old = Object.values(saved_()).sort((a, b) => b.savedAt.localeCompare(a.savedAt)).slice(SAVED_KEEP);
+  const old = Object.values(saved_())
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+    .slice(SAVED_KEEP);
   for (const s of old) props.deleteProperty(SAVED_PREFIX + s.id);
 }
 
 /** Everything the editors show: the settings in force, the review queue, duplicates and unexplained stubs. */
 function getEditor(): EditorData {
-  const names = ["run_log", "editor_budget_lines", "editor_scheduled", "editor_payee_rules", "editor_categories", "editor_aliases",
-                 "editor_parameters", "editor_review", "possible_duplicates", "withholding_backtest",
-                 "wi_withholding_backtest", "editor_jobs", "pay_check", "editor_subscriptions"];
+  const names = [
+    "run_log",
+    "editor_budget_lines",
+    "editor_scheduled",
+    "editor_payee_rules",
+    "editor_categories",
+    "editor_aliases",
+    "editor_parameters",
+    "editor_review",
+    "possible_duplicates",
+    "withholding_backtest",
+    "wi_withholding_backtest",
+    "editor_jobs",
+    "pay_check",
+    "editor_subscriptions",
+  ];
   const data = editorData(readTabsIfAny_(names));
   console.log(`editor: run ${data.baseRun}, ${data.budgetLines.length} budget lines, ${data.review.length} review questions`);
   return data;
@@ -227,11 +258,11 @@ interface SaveResult {
   count: number;
   madeFolder: boolean;
   warning: string;
-  again: boolean;  // this request had already saved: this is that file, and nothing new was written
-  discarded: boolean;  // that file is in the trash since: ingest will never read it
+  again: boolean; // this request had already saved: this is that file, and nothing new was written
+  discarded: boolean; // that file is in the trash since: ingest will never read it
 }
 
-const REQUEST_PROPERTY = "household_request";  // on each change set file: the Save that wrote it
+const REQUEST_PROPERTY = "household_request"; // on each change set file: the Save that wrote it
 
 /**
  * The change set an earlier call with this request wrote, or null. Its saved record answers first, once
@@ -239,22 +270,31 @@ const REQUEST_PROPERTY = "household_request";  // on each change set file: the S
  * is found by the request on the file. A file in the trash comes back as discarded, never as saved.
  */
 function savedFor_(request: string): SaveResult | null {
-  const result = (id: string, name: string, count: number, discarded: boolean): SaveResult =>
-    ({ id, name, count, madeFolder: false, warning: "", again: true, discarded });
+  const result = (id: string, name: string, count: number, discarded: boolean): SaveResult => ({
+    id,
+    name,
+    count,
+    madeFolder: false,
+    warning: "",
+    again: true,
+    discarded,
+  });
   const known = Object.values(saved_()).filter((r) => r.request === request)[0];
   if (known) {
     let trashed: boolean | null = null;
     try {
       trashed = !!drive_().Files.get(known.id, { fields: "id,trashed" }).trashed;
     } catch (e) {
-      console.log(`the record for ${known.name} names a file Drive no longer has: ${e}`);  // deleted: search below
+      console.log(`the record for ${known.name} names a file Drive no longer has: ${e}`); // deleted: search below
     }
     if (trashed !== null) return result(known.id, known.name, known.edits.length + (known.more || 0), trashed);
   }
   const search = (trashed: boolean) => {
     const listed = drive_().Files.list({
       q: `appProperties has { key='${REQUEST_PROPERTY}' and value='${request}' } and trashed = ${trashed}`,
-      pageSize: 1, fields: "files(id,name,appProperties)" });
+      pageSize: 1,
+      fields: "files(id,name,appProperties)",
+    });
     return ((listed.files || []) as { id?: string; name?: string; appProperties?: Record<string, string> }[])[0];
   };
   const live = search(false);
@@ -282,7 +322,7 @@ function saveChanges(edits: Edit[], described: string[], request?: string): Save
     }
     const props = PropertiesService.getUserProperties();
     const base = latestComputeRun(readTabIfAny_("run_log"));
-    const now = laterThan(new Date().toISOString(), props.getProperty("LAST_SAVED_AT") || "");  // strictly in order
+    const now = laterThan(new Date().toISOString(), props.getProperty("LAST_SAVED_AT") || ""); // strictly in order
     const file = changeSet(edits, now, base, Utilities.getUuid().slice(0, 8));
     const folder = editsFolder_(true) as { id: string; made: boolean };
     const meta: Record<string, unknown> = { name: file.name, mimeType: "application/json", parents: [folder.id] };
@@ -315,7 +355,9 @@ function findSave(request: string): SaveResult | null {
   lock.waitLock(20000);
   try {
     const found = savedFor_(req);
-    console.log(`request ${req}: ${found ? (found.discarded ? "saved as " + found.name + ", since discarded" : "saved as " + found.name) : "not saved"}`);
+    console.log(
+      `request ${req}: ${found ? (found.discarded ? "saved as " + found.name + ", since discarded" : "saved as " + found.name) : "not saved"}`,
+    );
     return found;
   } finally {
     lock.releaseLock();
@@ -328,9 +370,14 @@ function getWaiting(): Waiting[] {
   if (!folder) return [];
   const files: { id: string; name: string; createdTime: string }[] = [];
   let pageToken: string | undefined;
-  do {  // every page: Drive hands back at most a page of files at a time
-    const listed = drive_().Files.list({ q: `'${folder.id}' in parents and trashed = false`, pageSize: 200, pageToken,
-                                         fields: "nextPageToken,files(id,name,createdTime)" });
+  do {
+    // every page: Drive hands back at most a page of files at a time
+    const listed = drive_().Files.list({
+      q: `'${folder.id}' in parents and trashed = false`,
+      pageSize: 200,
+      pageToken,
+      fields: "nextPageToken,files(id,name,createdTime)",
+    });
     for (const f of (listed.files || []) as { id?: string; name?: string; createdTime?: string }[]) {
       files.push({ id: String(f.id), name: String(f.name), createdTime: String(f.createdTime || "") });
     }
@@ -338,7 +385,8 @@ function getWaiting(): Waiting[] {
   } while (pageToken);
   const saved = saved_();
   const here = new Set(files.map((f) => f.id));
-  try {  // a record for a file ingest has filed (or one discarded) is no longer needed
+  try {
+    // a record for a file ingest has filed (or one discarded) is no longer needed
     const props = PropertiesService.getUserProperties();
     for (const id of Object.keys(saved)) if (!here.has(id)) props.deleteProperty(SAVED_PREFIX + id);
   } catch (e) {
@@ -347,9 +395,9 @@ function getWaiting(): Waiting[] {
   return waitingChangeSets(files, saved, readTabIfAny_("run_log"));
 }
 
-const DISCARDED_PREFIX = "DISCARDED_";  // one user property per discarded change set, its edits in words
+const DISCARDED_PREFIX = "DISCARDED_"; // one user property per discarded change set, its edits in words
 const DISCARDED_KEEP = 20;
-const DISCARDED_DAYS = 30;  // long enough for the next ingest to say whether it had read the file already
+const DISCARDED_DAYS = 30; // long enough for the next ingest to say whether it had read the file already
 
 /**
  * Move one of the views' own change sets to the trash (a refused one, or one saved by mistake). No ingest
@@ -367,16 +415,24 @@ function discardWaiting(id: string): { remembered: boolean; warning: string } {
   console.log(`discarded ${file.name}`);
   try {
     const props = PropertiesService.getUserProperties();
-    const record = JSON.parse(savedRecord(id, String(file.name), known ? known.savedAt : "", known ? known.edits : [])) as Discarded;
+    const record = JSON.parse(
+      savedRecord(id, String(file.name), known ? known.savedAt : "", known ? known.edits : []),
+    ) as Discarded;
     if (known && known.more) record.more = (record.more || 0) + known.more;
     record.discardedAt = new Date().toISOString();
     props.setProperty(DISCARDED_PREFIX + id, JSON.stringify(record));
-    const older = Object.values(discarded_()).sort((a, b) => b.discardedAt.localeCompare(a.discardedAt)).slice(DISCARDED_KEEP);
-    for (const d of older) props.deleteProperty(DISCARDED_PREFIX + d.id);  // the newest DISCARDED_KEEP stay
+    const older = Object.values(discarded_())
+      .sort((a, b) => b.discardedAt.localeCompare(a.discardedAt))
+      .slice(DISCARDED_KEEP);
+    for (const d of older) props.deleteProperty(DISCARDED_PREFIX + d.id); // the newest DISCARDED_KEEP stay
   } catch (e) {
     console.log(`discarded ${file.name}, but could not remember it: ${e}`);
-    return { remembered: false, warning: `The views could not remember this discard (${e}), so the status page can't ` +
-      `tell you if an ingest already running wrote it: after the next ingest, look for ${file.name} in its file list.` };
+    return {
+      remembered: false,
+      warning:
+        `The views could not remember this discard (${e}), so the status page can't ` +
+        `tell you if an ingest already running wrote it: after the next ingest, look for ${file.name} in its file list.`,
+    };
   }
   return { remembered: true, warning: "" };
 }
@@ -391,11 +447,18 @@ function discarded_(): Record<string, Discarded> {
     if (key.indexOf(DISCARDED_PREFIX) !== 0) continue;
     try {
       const record = JSON.parse(all[key]) as Discarded;
-      if (Date.parse(record.discardedAt) >= oldest) { out[record.id] = record; continue; }
+      if (Date.parse(record.discardedAt) >= oldest) {
+        out[record.id] = record;
+        continue;
+      }
     } catch (e) {
       // unreadable: dropped below
     }
-    try { props.deleteProperty(key); } catch (e) { /* tidied next time */ }
+    try {
+      props.deleteProperty(key);
+    } catch (e) {
+      /* tidied next time */
+    }
   }
   return out;
 }
@@ -422,8 +485,16 @@ function getReviewLines(key: string): ReviewLine[] {
 
 /** Everything the tax page shows (taxes.ts). */
 function getTaxes(): TaxPage {
-  const tabs = readTabsIfAny_(["tax_lines", "projection", "withholding_plan", "elections", "run_log", "run_notes", "tax_history",
-                      "filed_lines"]);
+  const tabs = readTabsIfAny_([
+    "tax_lines",
+    "projection",
+    "withholding_plan",
+    "elections",
+    "run_log",
+    "run_notes",
+    "tax_history",
+    "filed_lines",
+  ]);
   return taxPage(tabs);
 }
 
@@ -433,20 +504,45 @@ function getForm8949(): F8949Page {
 }
 
 function getInvestments(): WealthPage {
-  const tabs = readTabsIfAny_(["investment_values", "net_worth", "allocation", "rebalance", "open_lots", "form_8949", "run_log",
-                      "run_notes"]);
+  const tabs = readTabsIfAny_([
+    "investment_values",
+    "net_worth",
+    "allocation",
+    "rebalance",
+    "open_lots",
+    "form_8949",
+    "run_log",
+    "run_notes",
+  ]);
   return wealthPage(tabs);
 }
 
 function getHome(): HomePage {
-  const tabs = readTabsIfAny_(["property_summary", "home_values", "home_improvements", "home_taxes", "mortgage", "loan_details", "run_log",
-                      "run_notes"]);
+  const tabs = readTabsIfAny_([
+    "property_summary",
+    "home_values",
+    "home_improvements",
+    "home_taxes",
+    "mortgage",
+    "loan_details",
+    "run_log",
+    "run_notes",
+  ]);
   return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));
 }
 
 /** Everything the Retirement page shows (retirement.ts). */
 function getRetirement(): RetirementPage {
-  const tabs = readTabsIfAny_(["retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
-                      "retirement_earnings", "retirement_assumptions", "retirement_budget", "run_log", "run_notes"]);
+  const tabs = readTabsIfAny_([
+    "retirement_years",
+    "retirement_strategies",
+    "retirement_plan",
+    "retirement_social_security",
+    "retirement_earnings",
+    "retirement_assumptions",
+    "retirement_budget",
+    "run_log",
+    "run_notes",
+  ]);
   return retirementPage(tabs);
 }

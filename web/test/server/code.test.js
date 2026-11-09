@@ -9,18 +9,29 @@ const vm = require("node:vm");
 
 const DIST = path.join(__dirname, "..", "..", "dist");
 const CODE = ["shape.js", "edits.js", "taxes.js", "Code.js"].map((f) => fs.readFileSync(path.join(DIST, f), "utf8")).join("\n");
-const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
+const VALUE_LIMIT = 9 * 1024,
+  STORE_LIMIT = 500 * 1024;
 
-function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
-                  props: start = {},
-                  runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]],
-                  changesWritten = [["file_id", "file", "written_at"]], refusals = [] } = {}) {
+function server({
+  refuseProperties = false,
+  failCreate = false,
+  now = () => new Date("2026-01-31T12:00:00.123Z"),
+  props: start = {},
+  runLog = [
+    ["run_id", "computed_at", "stage", "detail"],
+    ["r1", "2026-01-31T00:00:00Z", "compute", "{}"],
+  ],
+  changesWritten = [["file_id", "file", "written_at"]],
+  refusals = [],
+} = {}) {
   const tabs = { run_log: runLog, changes_written: changesWritten };
   const props = { ...start };
   const files = [];
-  const reads = [], slept = [];
+  const reads = [],
+    slept = [];
   let uuid = 0;
-  const sheetsCall = (what) => {  // Sheets' answer to each request: a refusal from the list given, else the data
+  const sheetsCall = (what) => {
+    // Sheets' answer to each request: a refusal from the list given, else the data
     reads.push(what);
     const refusal = refusals.shift();
     if (refusal) throw new Error(refusal);
@@ -35,53 +46,99 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
       if (total > STORE_LIMIT) throw new Error("You have exceeded the property storage quota");
       props[k] = String(v);
     },
-    deleteProperty: (k) => { delete props[k]; },
+    deleteProperty: (k) => {
+      delete props[k];
+    },
   };
   const FakeDate = class extends Date {
-    constructor(...a) { if (a.length) super(...a); else super(now().getTime()); }
-    static now() { return now().getTime(); }
+    constructor(...a) {
+      if (a.length) super(...a);
+      else super(now().getTime());
+    }
+    static now() {
+      return now().getTime();
+    }
   };
   const context = {
-    console: { log: () => {} }, JSON, Math, Object, Array, String, Number, Error, RegExp, Set, Map, Buffer, unescape, encodeURIComponent,
+    console: { log: () => {} },
+    JSON,
+    Math,
+    Object,
+    Array,
+    String,
+    Number,
+    Error,
+    RegExp,
+    Set,
+    Map,
+    Buffer,
+    unescape,
+    encodeURIComponent,
     Date: FakeDate,
     PropertiesService: { getUserProperties: () => store, getScriptProperties: () => ({ getProperty: () => "reports-id" }) },
     LockService: { getUserLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
-    Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest`,
-                 sleep: (ms) => slept.push(ms) },
-    Sheets: { Spreadsheets: {
-      get: () => { sheetsCall("titles"); return { sheets: Object.keys(tabs).map((title) => ({ properties: { title } })) }; },
-      Values: {
-        get: (_, name) => { sheetsCall(name); return { values: tabs[name] }; },
-        batchGet: (_, { ranges }) => {
-          sheetsCall(ranges.join(","));
-          return { valueRanges: ranges.map((r) => ({ values: tabs[r.replace(/^'|'$/g, "")] })) };
+    Utilities: {
+      newBlob: (text) => ({ text }),
+      getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest`,
+      sleep: (ms) => slept.push(ms),
+    },
+    Sheets: {
+      Spreadsheets: {
+        get: () => {
+          sheetsCall("titles");
+          return { sheets: Object.keys(tabs).map((title) => ({ properties: { title } })) };
+        },
+        Values: {
+          get: (_, name) => {
+            sheetsCall(name);
+            return { values: tabs[name] };
+          },
+          batchGet: (_, { ranges }) => {
+            sheetsCall(ranges.join(","));
+            return { valueRanges: ranges.map((r) => ({ values: tabs[r.replace(/^'|'$/g, "")] })) };
+          },
         },
       },
-    } },
-    Drive: { Files: {
-      create: (meta, blob) => {
-        if (failCreate) throw new Error("Drive is not answering");
-        const id = meta.mimeType === "application/vnd.google-apps.folder" ? "folder" : `f${files.length + 1}`;
-        if (id !== "folder") files.push({ id, name: meta.name, text: blob.text, parents: meta.parents, appProperties: meta.appProperties || {} });
-        return { id };
+    },
+    Drive: {
+      Files: {
+        create: (meta, blob) => {
+          if (failCreate) throw new Error("Drive is not answering");
+          const id = meta.mimeType === "application/vnd.google-apps.folder" ? "folder" : `f${files.length + 1}`;
+          if (id !== "folder")
+            files.push({ id, name: meta.name, text: blob.text, parents: meta.parents, appProperties: meta.appProperties || {} });
+          return { id };
+        },
+        get: (id) => {
+          if (id === "folder") return { id, trashed: false };
+          const f = files.find((x) => x.id === id);
+          if (!f || f.deleted) throw new Error("File not found: " + id);
+          return { id, trashed: !!f.trashed, parents: f.parents, name: f.name };
+        },
+        list: ({ q }) => {
+          const asked = /appProperties has \{ key='(\w+)' and value='([^']*)' \}(?: and trashed = (true|false))?/.exec(q);
+          if (asked) {
+            // every file the views made, wherever ingest has moved it (Drive's default includes the trash)
+            return {
+              files: files
+                .filter(
+                  (f) =>
+                    !f.deleted &&
+                    f.appProperties[asked[1]] === asked[2] &&
+                    (asked[3] === undefined || String(!!f.trashed) === asked[3]),
+                )
+                .map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties })),
+            };
+          }
+          return { files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) };
+        },
+        update: (meta, id) => {
+          const f = files.find((x) => x.id === id);
+          if (f && meta.trashed) f.trashed = true;
+          return {};
+        },
       },
-      get: (id) => {
-        if (id === "folder") return { id, trashed: false };
-        const f = files.find((x) => x.id === id);
-        if (!f || f.deleted) throw new Error("File not found: " + id);
-        return { id, trashed: !!f.trashed, parents: f.parents, name: f.name };
-      },
-      list: ({ q }) => {
-        const asked = /appProperties has \{ key='(\w+)' and value='([^']*)' \}(?: and trashed = (true|false))?/.exec(q);
-        if (asked) {  // every file the views made, wherever ingest has moved it (Drive's default includes the trash)
-          return { files: files.filter((f) => !f.deleted && f.appProperties[asked[1]] === asked[2] &&
-                                              (asked[3] === undefined || String(!!f.trashed) === asked[3]))
-                             .map((f) => ({ id: f.id, name: f.name, appProperties: f.appProperties })) };
-        }
-        return { files: files.filter((f) => !f.filed).map((f) => ({ id: f.id, name: f.name, createdTime: "" })) };
-      },
-      update: (meta, id) => { const f = files.find((x) => x.id === id); if (f && meta.trashed) f.trashed = true; return {}; },
-    } },
+    },
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
@@ -108,25 +165,27 @@ test("when the record can't be kept the save still succeeds, once, with a warnin
   // so "not saved" is true there)
   const s = server({ refuseProperties: true, props: { EDITS_FOLDER_ID: "folder" } });
   const r = s.context.saveChanges([EDIT], ["setting transfer_account = savings"]);
-  assert.equal(s.files.length, 1);  // the change set is in Drive: a retry would write it twice
+  assert.equal(s.files.length, 1); // the change set is in Drive: a retry would write it twice
   assert.match(r.warning, /could not be kept .*the change set itself is saved/);
   assert.equal(r.name, s.files[0].name);
 });
 
 test("many saves stay inside the store: old records are dropped, and filed ones tidied", () => {
   let t = Date.parse("2026-01-31T12:00:00.000Z");
-  const s = server({ now: () => new Date(t += 1000) });
+  const s = server({ now: () => new Date((t += 1000)) });
   const described = Array.from({ length: 400 }, (_, n) => `a long description of edit ${n} `.repeat(3));
   for (let n = 0; n < 60; n++) s.context.saveChanges([EDIT], described);
   const kept = Object.keys(s.props).filter((k) => k.startsWith("SAVED_"));
   assert.equal(kept.length, 40);
-  s.files.slice(0, 55).forEach((f) => { f.filed = true; });  // ingest moved them out
+  s.files.slice(0, 55).forEach((f) => {
+    f.filed = true;
+  }); // ingest moved them out
   s.context.getWaiting();
   assert.equal(Object.keys(s.props).filter((k) => k.startsWith("SAVED_")).length, 5);
 });
 
 test("two saves in the same millisecond get distinct names in the order they were made", () => {
-  const s = server();  // the clock never moves
+  const s = server(); // the clock never moves
   const a = s.context.saveChanges([EDIT], []);
   const b = s.context.saveChanges([EDIT], []);
   assert.notEqual(a.name, b.name);
@@ -153,7 +212,7 @@ test("a request is found on its file when its record was never kept or was tidie
   const s = server({ refuseProperties: true, props: { EDITS_FOLDER_ID: "folder" } });
   const a = s.context.saveChanges([EDIT, { ...EDIT, key: "target_refund", value: "90", was: { value: "50" } }], [], REQUEST);
   assert.match(a.warning, /could not be kept/);
-  s.files[0].filed = true;  // ingest moved it out of the views' folder
+  s.files[0].filed = true; // ingest moved it out of the views' folder
   const found = s.context.findSave(REQUEST);
   assert.equal(found.id, a.id);
   assert.equal(found.count, 2);
@@ -175,9 +234,9 @@ test("a request whose file was discarded since reads as discarded, by its record
   const byRecord = s.context.findSave(REQUEST);
   assert.equal(byRecord.discarded, true);
   assert.equal(byRecord.id, a.id);
-  for (const k of Object.keys(s.props)) if (k.startsWith("SAVED_")) delete s.props[k];  // the record is gone
+  for (const k of Object.keys(s.props)) if (k.startsWith("SAVED_")) delete s.props[k]; // the record is gone
   assert.equal(s.context.findSave(REQUEST).discarded, true);
-  const again = s.context.saveChanges([EDIT], [], REQUEST);  // saving it again writes it anew
+  const again = s.context.saveChanges([EDIT], [], REQUEST); // saving it again writes it anew
   assert.equal(again.again, false);
   assert.equal(s.files.length, 2);
   assert.equal(s.context.findSave(REQUEST).discarded, false);
@@ -198,13 +257,16 @@ test("a discarded change set is remembered, and told as applied anyway once the 
   const a = s.context.saveChanges([EDIT], ["setting transfer_account = savings"], REQUEST);
   assert.equal(s.context.discardWaiting(a.id).remembered, true);
   assert.equal(s.files[0].trashed, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []);  // the ledger doesn't hold it
+  assert.deepEqual(JSON.parse(JSON.stringify(s.context.getAppliedAnyway())), []); // the ledger doesn't hold it
   // an ingest that had downloaded it before the discard wrote it all the same, whatever its run_log row says
-  s.changesWritten.push(["another-file", a.name, "2026-01-31T12:00:01+00:00"]);  // the same name is not the same file
+  s.changesWritten.push(["another-file", a.name, "2026-01-31T12:00:01+00:00"]); // the same name is not the same file
   assert.equal(s.context.getAppliedAnyway().length, 0);
   s.changesWritten.push([a.id, a.name, "2026-01-31T12:00:05+00:00"]);
   const told = s.context.getAppliedAnyway();
-  assert.deepEqual(told.map((d) => [d.id, d.writtenAt, d.edits]), [[a.id, "2026-01-31T12:00:05+00:00", ["setting transfer_account = savings"]]]);
+  assert.deepEqual(
+    told.map((d) => [d.id, d.writtenAt, d.edits]),
+    [[a.id, "2026-01-31T12:00:05+00:00", ["setting transfer_account = savings"]]],
+  );
   s.context.forgetDiscarded(a.id);
   assert.equal(s.context.getAppliedAnyway().length, 0);
 });
@@ -234,7 +296,7 @@ test("only the newest discards are remembered, and none past thirty days", () =>
 test("a page reads its tabs in one request, and a tab not made yet reads as empty", () => {
   const s = server();
   const status = s.context.getStatus();
-  assert.deepEqual(s.reads, ["titles", "'run_log'"]);  // run_notes, coverage and editor_review aren't in Reports yet
+  assert.deepEqual(s.reads, ["titles", "'run_log'"]); // run_notes, coverage and editor_review aren't in Reports yet
   assert.ok(status);
 });
 
@@ -249,5 +311,5 @@ test("a request Sheets refuses for quota waits and is tried again; past the wait
   assert.equal(t.slept.length, 3);
   const u = server({ refusals: ["The caller does not have permission"] });
   assert.throws(() => u.context.getStatus(), /Could not open Reports.*permission/);
-  assert.deepEqual(u.slept, []);  // only quota is waited out
+  assert.deepEqual(u.slept, []); // only quota is waited out
 });

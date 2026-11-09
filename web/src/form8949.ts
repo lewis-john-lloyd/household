@@ -5,30 +5,56 @@
  */
 
 interface F8949Row {
-  saleDate: string; acquired: string; holdingFrom: string; account: string; symbol: string; shares: number;
-  proceeds: number; basis: number; code: string; adjustment: number; gain: number; washCarried: number;
-  reportedBasis: number | null; note: string;
+  saleDate: string;
+  acquired: string;
+  holdingFrom: string;
+  account: string;
+  symbol: string;
+  shares: number;
+  proceeds: number;
+  basis: number;
+  code: string;
+  adjustment: number;
+  gain: number;
+  washCarried: number;
+  reportedBasis: number | null;
+  note: string;
 }
 
 interface F8949Part {
-  term: string;  // short_term (Part I) or long_term (Part II)
+  term: string; // short_term (Part I) or long_term (Part II)
   rows: F8949Row[];
-  proceeds: number; basis: number; adjustment: number; gain: number;
-  filed: number | null;  // the return's Schedule D line 7 or 15, as filed, when it is on file
+  proceeds: number;
+  basis: number;
+  adjustment: number;
+  gain: number;
+  filed: number | null; // the return's Schedule D line 7 or 15, as filed, when it is on file
 }
 
-interface F8949Year { year: string; parts: F8949Part[]; disallowed: number; filedOnFile: boolean }
+interface F8949Year {
+  year: string;
+  parts: F8949Part[];
+  disallowed: number;
+  filedOnFile: boolean;
+}
 
-interface F8949Page { years: F8949Year[] }
+interface F8949Page {
+  years: F8949Year[];
+}
 
 function f8949Rows(values: unknown[][]): Record<string, string>[] {
   if (!values || !values.length) return [];
   const header = values[0].map((h) => String(h).trim());
-  return values.slice(1).map((v) => {
-    const row: Record<string, string> = {};
-    header.forEach((h, i) => { if (h) row[h] = String(v[i] ?? "").trim(); });
-    return row;
-  }).filter((r) => Object.values(r).some((x) => x !== ""));
+  return values
+    .slice(1)
+    .map((v) => {
+      const row: Record<string, string> = {};
+      header.forEach((h, i) => {
+        if (h) row[h] = String(v[i] ?? "").trim();
+      });
+      return row;
+    })
+    .filter((r) => Object.values(r).some((x) => x !== ""));
 }
 
 function f8949Num(text: string | undefined): number {
@@ -44,12 +70,26 @@ function form8949Page(tabs: Record<string, unknown[][]>): F8949Page {
     const term = r.term === "long_term" ? "long_term" : "short_term";
     const parts = byYear.get(r.year) || new Map<string, F8949Row[]>();
     const rows = parts.get(term) || [];
-    const reported = r.reported_basis === "" || r.reported_basis === undefined || isNaN(Number(r.reported_basis))
-      ? null : Number(r.reported_basis);
-    rows.push({ saleDate: r.sale_date, acquired: r.acquired, holdingFrom: r.holding_from, account: r.account_id, symbol: r.symbol,
-                shares: f8949Num(r.shares), proceeds: f8949Num(r.proceeds), basis: f8949Num(r.basis), code: r.code,
-                adjustment: f8949Num(r.adjustment), gain: f8949Num(r.gain), washCarried: f8949Num(r.wash_carried),
-                reportedBasis: reported, note: r.note });
+    const reported =
+      r.reported_basis === "" || r.reported_basis === undefined || isNaN(Number(r.reported_basis))
+        ? null
+        : Number(r.reported_basis);
+    rows.push({
+      saleDate: r.sale_date,
+      acquired: r.acquired,
+      holdingFrom: r.holding_from,
+      account: r.account_id,
+      symbol: r.symbol,
+      shares: f8949Num(r.shares),
+      proceeds: f8949Num(r.proceeds),
+      basis: f8949Num(r.basis),
+      code: r.code,
+      adjustment: f8949Num(r.adjustment),
+      gain: f8949Num(r.gain),
+      washCarried: f8949Num(r.wash_carried),
+      reportedBasis: reported,
+      note: r.note,
+    });
     parts.set(term, rows);
     byYear.set(r.year, parts);
   }
@@ -64,14 +104,26 @@ function form8949Page(tabs: Record<string, unknown[][]>): F8949Page {
   const years: F8949Year[] = [];
   byYear.forEach((parts, year) => {
     const onFile = filed.get(year);
-    const out: F8949Part[] = ["short_term", "long_term"].filter((t) => parts.has(t)).map((term) => {
-      const rows = (parts.get(term) || []).sort((a, b) => a.saleDate.localeCompare(b.saleDate) || a.acquired.localeCompare(b.acquired)
-        || a.symbol.localeCompare(b.symbol));
-      const sum = (k: "proceeds" | "basis" | "adjustment" | "gain") => Math.round(rows.reduce((s, x) => s + x[k], 0) * 100) / 100;
-      const filedValue = onFile && F8949_FILED_KEYS[term] in onFile ? onFile[F8949_FILED_KEYS[term]] : null;
-      return { term, rows, proceeds: sum("proceeds"), basis: sum("basis"), adjustment: sum("adjustment"), gain: sum("gain"),
-               filed: filedValue };
-    });
+    const out: F8949Part[] = ["short_term", "long_term"]
+      .filter((t) => parts.has(t))
+      .map((term) => {
+        const rows = (parts.get(term) || []).sort(
+          (a, b) =>
+            a.saleDate.localeCompare(b.saleDate) || a.acquired.localeCompare(b.acquired) || a.symbol.localeCompare(b.symbol),
+        );
+        const sum = (k: "proceeds" | "basis" | "adjustment" | "gain") =>
+          Math.round(rows.reduce((s, x) => s + x[k], 0) * 100) / 100;
+        const filedValue = onFile && F8949_FILED_KEYS[term] in onFile ? onFile[F8949_FILED_KEYS[term]] : null;
+        return {
+          term,
+          rows,
+          proceeds: sum("proceeds"),
+          basis: sum("basis"),
+          adjustment: sum("adjustment"),
+          gain: sum("gain"),
+          filed: filedValue,
+        };
+      });
     years.push({ year, parts: out, disallowed: out.reduce((s, p) => s + p.adjustment, 0), filedOnFile: !!onFile });
   });
   years.sort((a, b) => b.year.localeCompare(a.year));

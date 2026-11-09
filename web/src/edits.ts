@@ -21,17 +21,17 @@ interface Edit {
 interface EditorData {
   baseRun: string;
   budgetLines: Row[];
-  scheduled: Row[];  // each scheduled amount in force, one per line and date
+  scheduled: Row[]; // each scheduled amount in force, one per line and date
   payeeRules: Row[];
   categories: Row[];
   aliases: Row[];
   parameters: Row[];
   review: Row[];
   duplicates: Row[];
-  withholding: Row[];  // stubs whose withholding is unexplained, federal and wi
-  jobs: Row[];  // comp_events, newest first per person, each with what the paychecks under it say
-  payCheck: Row[];  // runs of paychecks beside comp_events that disagree or have no row in force
-  subscriptions: Row[];  // yours, then recurring charges not marked, then the ones you said are not
+  withholding: Row[]; // stubs whose withholding is unexplained, federal and wi
+  jobs: Row[]; // comp_events, newest first per person, each with what the paychecks under it say
+  payCheck: Row[]; // runs of paychecks beside comp_events that disagree or have no row in force
+  subscriptions: Row[]; // yours, then recurring charges not marked, then the ones you said are not
 }
 
 const CHANGE_FORMAT = "household_changes";
@@ -44,15 +44,27 @@ const MAX_CHANGE_BYTES = 1024 * 1024;
 const EDIT_KINDS: Record<string, [string[], string[]]> = {
   payee: [["key", "category"], []],
   line: [["txn_id", "field", "value"], []],
-  budget_line: [["line", "effective", "rule"], ["category", "account", "priority", "amount", "per", "note", "was"]],
-  payee_rule: [["pattern", "category", "effective"], ["precedence", "ask", "was"]],
+  budget_line: [
+    ["line", "effective", "rule"],
+    ["category", "account", "priority", "amount", "per", "note", "was"],
+  ],
+  payee_rule: [
+    ["pattern", "category", "effective"],
+    ["precedence", "ask", "was"],
+  ],
   category: [["category"], ["group", "priority", "was"]],
-  alias: [["alias", "category"], ["note", "was"]],
+  alias: [
+    ["alias", "category"],
+    ["note", "was"],
+  ],
   parameter: [["key", "value"], ["was"]],
   explanation: [["jurisdiction", "stub_id", "note"], []],
   not_duplicate: [["txn_a", "txn_b"], []],
   item: [["item_id", "category"], []],
-  job: [["effective", "person", "employer"], ["salary", "band", "rating", "fte", "note"]],
+  job: [
+    ["effective", "person", "employer"],
+    ["salary", "band", "rating", "fte", "note"],
+  ],
   subscription: [["key", "subscription"], ["note"]],
   recurring_merge: [["key", "same_as"], []],
   recurring_name: [["key", "name"], []],
@@ -74,7 +86,9 @@ function records(values: unknown[][]): Row[] {
   const out: Row[] = [];
   for (const v of values.slice(1)) {
     const row: Row = {};
-    header.forEach((h, i) => { if (h) row[h] = String(v[i] ?? "").trim(); });
+    header.forEach((h, i) => {
+      if (h) row[h] = String(v[i] ?? "").trim();
+    });
     if (Object.values(row).some((x) => x !== "")) out.push(row);
   }
   return out;
@@ -82,7 +96,9 @@ function records(values: unknown[][]): Row[] {
 
 /** The latest compute's run id, from run_log: a change set names the run its edits were made on. */
 function latestComputeRun(runLog: unknown[][]): string {
-  const runs = records(runLog).filter((r) => r.stage === "compute").sort((a, b) => a.computed_at.localeCompare(b.computed_at));
+  const runs = records(runLog)
+    .filter((r) => r.stage === "compute")
+    .sort((a, b) => a.computed_at.localeCompare(b.computed_at));
   return runs.length ? runs[runs.length - 1].run_id : "";
 }
 
@@ -94,7 +110,11 @@ function unexplained(rows: Row[], jurisdiction: string): Row[] {
 /** What the editors show, from the Reports tabs compute writes for them. */
 function editorData(tabs: Record<string, unknown[][]>): EditorData {
   const tab = (name: string): Row[] => records(tabs[name] || []);
-  const drop = (rows: Row[]): Row[] => rows.map((r) => { const { run_id, ...rest } = r; return rest; });
+  const drop = (rows: Row[]): Row[] =>
+    rows.map((r) => {
+      const { run_id, ...rest } = r;
+      return rest;
+    });
   return {
     baseRun: latestComputeRun(tabs.run_log || []),
     budgetLines: drop(tab("editor_budget_lines")),
@@ -105,7 +125,9 @@ function editorData(tabs: Record<string, unknown[][]>): EditorData {
     parameters: drop(tab("editor_parameters")),
     review: drop(tab("editor_review")),
     duplicates: drop(tab("possible_duplicates")),
-    withholding: drop(unexplained(tab("withholding_backtest"), "federal").concat(unexplained(tab("wi_withholding_backtest"), "wi"))),
+    withholding: drop(
+      unexplained(tab("withholding_backtest"), "federal").concat(unexplained(tab("wi_withholding_backtest"), "wi")),
+    ),
     jobs: drop(tab("editor_jobs")),
     payCheck: drop(tab("pay_check")).filter((r) => r.status !== "agrees"),
     subscriptions: drop(tab("editor_subscriptions")),
@@ -141,21 +163,36 @@ function editProblems(edit: Edit): string[] {
 function editTarget(edit: Edit): string {
   const f = (name: string): string => String(edit[name] ?? "");
   switch (edit.kind) {
-    case "budget_line": return f("rule") === "scheduled" ? `budget_line|${f("line")}|scheduled|${f("effective")}` : `budget_line|${f("line")}`;
-    case "line": return `line|${f("txn_id")}|${f("field") === "split" ? "category" : f("field")}`;
-    case "payee": return `payee|${f("key").toUpperCase()}`;
-    case "payee_rule": return `payee_rule|${f("pattern")}`;
-    case "category": return `category|${f("category")}`;
-    case "alias": return `alias|${f("alias")}`;
-    case "parameter": return `parameter|${f("key")}`;
-    case "explanation": return `explanation|${f("jurisdiction")}|${f("stub_id")}`;
-    case "not_duplicate": return `not_duplicate|${[f("txn_a"), f("txn_b")].sort().join("|")}`;
-    case "item": return `item|${f("item_id")}`;
-    case "job": return `job|${f("person")}|${f("effective")}|${f("employer")}`;
-    case "subscription": return `subscription|${f("key").toUpperCase()}`;
-    case "recurring_merge": return `recurring_merge|${f("key").toUpperCase()}`;
-    case "recurring_name": return `recurring_name|${f("key").toUpperCase()}`;
-    default: return `${edit.kind}|${JSON.stringify(edit)}`;
+    case "budget_line":
+      return f("rule") === "scheduled" ? `budget_line|${f("line")}|scheduled|${f("effective")}` : `budget_line|${f("line")}`;
+    case "line":
+      return `line|${f("txn_id")}|${f("field") === "split" ? "category" : f("field")}`;
+    case "payee":
+      return `payee|${f("key").toUpperCase()}`;
+    case "payee_rule":
+      return `payee_rule|${f("pattern")}`;
+    case "category":
+      return `category|${f("category")}`;
+    case "alias":
+      return `alias|${f("alias")}`;
+    case "parameter":
+      return `parameter|${f("key")}`;
+    case "explanation":
+      return `explanation|${f("jurisdiction")}|${f("stub_id")}`;
+    case "not_duplicate":
+      return `not_duplicate|${[f("txn_a"), f("txn_b")].sort().join("|")}`;
+    case "item":
+      return `item|${f("item_id")}`;
+    case "job":
+      return `job|${f("person")}|${f("effective")}|${f("employer")}`;
+    case "subscription":
+      return `subscription|${f("key").toUpperCase()}`;
+    case "recurring_merge":
+      return `recurring_merge|${f("key").toUpperCase()}`;
+    case "recurring_name":
+      return `recurring_name|${f("key").toUpperCase()}`;
+    default:
+      return `${edit.kind}|${JSON.stringify(edit)}`;
   }
 }
 
@@ -184,8 +221,12 @@ function changeSet(edits: Edit[], createdAt: string, baseRun: string, suffix = "
     if (seen[target]) problems.push(`edit ${n + 1} (${e.kind}): edits the same thing as edit ${seen[target]}`);
     seen[target] = n + 1;
   });
-  const at = createdAt.slice(0, 23) + "Z";  // milliseconds: two saves in one second stay in order
-  const text = JSON.stringify({ format: CHANGE_FORMAT, version: CHANGE_VERSION, created_at: at, base_run: baseRun, edits }, null, 1);
+  const at = createdAt.slice(0, 23) + "Z"; // milliseconds: two saves in one second stay in order
+  const text = JSON.stringify(
+    { format: CHANGE_FORMAT, version: CHANGE_VERSION, created_at: at, base_run: baseRun, edits },
+    null,
+    1,
+  );
   if (text.length > MAX_CHANGE_BYTES) problems.push(`the change set is over ${MAX_CHANGE_BYTES} bytes`);
   if (problems.length) throw new Error("Not saved: " + problems.join("; "));
   return { name: changeSetName(createdAt, suffix), text };
@@ -195,20 +236,26 @@ interface Saved {
   id: string;
   name: string;
   savedAt: string;
-  request?: string;  // the browser's id for the Save that wrote it (see saveChanges)
-  edits: string[];  // each edit in words, as the browser described it at Save, as many as fit
-  more?: number;  // edits left out of edits to keep the record small
+  request?: string; // the browser's id for the Save that wrote it (see saveChanges)
+  edits: string[]; // each edit in words, as the browser described it at Save, as many as fit
+  more?: number; // edits left out of edits to keep the record small
 }
 
-const SAVED_RECORD_BYTES = 8000;  // under Apps Script's 9 KB a property
-const SAVED_TEXT_CHARS = 200;     // one edit's words, at most
+const SAVED_RECORD_BYTES = 8000; // under Apps Script's 9 KB a property
+const SAVED_TEXT_CHARS = 200; // one edit's words, at most
 
 /**
  * The saved change set's record for its own user property: its edits in words, each cut to
  * SAVED_TEXT_CHARS and as many as fit in maxBytes, with how many more there were.
  */
-function savedRecord(id: string, name: string, savedAt: string, described: string[], request = "",
-                     maxBytes = SAVED_RECORD_BYTES): string {
+function savedRecord(
+  id: string,
+  name: string,
+  savedAt: string,
+  described: string[],
+  request = "",
+  maxBytes = SAVED_RECORD_BYTES,
+): string {
   const texts = (described || []).map((d) => String(d).slice(0, SAVED_TEXT_CHARS));
   const record: Saved = { id, name, savedAt, request, edits: [], more: 0 };
   const bytes = (s: string): number => unescape(encodeURIComponent(s)).length;
@@ -233,40 +280,48 @@ function requestId(request: unknown): string {
 }
 
 interface Waiting extends Saved {
-  refused: string;  // why the last ingest refused it, or ""
-  unseen: boolean;  // ingest ran after it was saved and never listed it: ingest can't see the views' folder
+  refused: string; // why the last ingest refused it, or ""
+  unseen: boolean; // ingest ran after it was saved and never listed it: ingest can't see the views' folder
 }
 
 /**
  * Change sets still in the views' folder (ingest moves each one out once it is written), with what the
  * last ingest said about each: a refused one stays, with its reason, until it is discarded.
  */
-function waitingChangeSets(files: { id: string; name: string; createdTime?: string }[], saved: Record<string, Saved>,
-                           runLog: unknown[][]): Waiting[] {
-  const ingests = records(runLog).filter((r) => r.stage === "ingest").sort((a, b) => a.computed_at.localeCompare(b.computed_at));
+function waitingChangeSets(
+  files: { id: string; name: string; createdTime?: string }[],
+  saved: Record<string, Saved>,
+  runLog: unknown[][],
+): Waiting[] {
+  const ingests = records(runLog)
+    .filter((r) => r.stage === "ingest")
+    .sort((a, b) => a.computed_at.localeCompare(b.computed_at));
   const reasons: Record<string, string> = {};
   const listed = new Set<string>();
-  let lastIngest = 0;  // when the last ingest ran, if its row lists the files it read
+  let lastIngest = 0; // when the last ingest ran, if its row lists the files it read
   if (ingests.length) {
     try {
       const last = ingests[ingests.length - 1];
       const detail = JSON.parse(last.detail) as { files?: { file?: string; status?: string; reason?: string }[] };
       for (const f of detail.files || []) {
         if (f.file) listed.add(f.file);
-        if (f.file && f.status && f.status !== "ingested" && f.status !== "already_present") reasons[f.file] = f.reason || f.status;
+        if (f.file && f.status && f.status !== "ingested" && f.status !== "already_present")
+          reasons[f.file] = f.reason || f.status;
       }
       if (Array.isArray(detail.files)) lastIngest = Date.parse(last.computed_at) || 0;
     } catch (e) {
       // an older run_log row: no reasons to show
     }
   }
-  return files.map((f) => {
-    const known = saved[f.id];
-    const edits = known ? known.edits.concat(known.more ? [`and ${known.more} more`] : []) : [];
-    const savedAt = known ? known.savedAt : f.createdTime || "";
-    const unseen = !!lastIngest && !!savedAt && Date.parse(savedAt) < lastIngest && !listed.has(f.name);
-    return { id: f.id, name: f.name, savedAt, edits, refused: reasons[f.name] || "", unseen };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  return files
+    .map((f) => {
+      const known = saved[f.id];
+      const edits = known ? known.edits.concat(known.more ? [`and ${known.more} more`] : []) : [];
+      const savedAt = known ? known.savedAt : f.createdTime || "";
+      const unseen = !!lastIngest && !!savedAt && Date.parse(savedAt) < lastIngest && !listed.has(f.name);
+      return { id: f.id, name: f.name, savedAt, edits, refused: reasons[f.name] || "", unseen };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 interface Discarded extends Saved {
@@ -274,7 +329,7 @@ interface Discarded extends Saved {
 }
 
 interface AppliedAnyway extends Discarded {
-  writtenAt: string;  // when the ingest that wrote it received it
+  writtenAt: string; // when the ingest that wrote it received it
 }
 
 /**
@@ -284,9 +339,10 @@ interface AppliedAnyway extends Discarded {
  * one whose filing in Drive failed after its rows were written is there too.
  */
 function appliedAnyway(discarded: Record<string, Discarded>, changesWritten: unknown[][]): AppliedAnyway[] {
-  const written: Record<string, string> = {};  // by Drive file id: names need not be unique, ids are
+  const written: Record<string, string> = {}; // by Drive file id: names need not be unique, ids are
   for (const r of records(changesWritten)) if (r.file_id) written[r.file_id] = r.written_at;
-  return Object.values(discarded).filter((d) => d.id in written)
+  return Object.values(discarded)
+    .filter((d) => d.id in written)
     .map((d) => ({ ...d, writtenAt: written[d.id] }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

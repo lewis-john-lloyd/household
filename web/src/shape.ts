@@ -165,16 +165,16 @@ interface Item {
 }
 
 interface Txn {
-  id: string;  // the line's txn_id, for correcting it in the ledger
+  id: string; // the line's txn_id, for correcting it in the ledger
   date: string;
   account: string;
   payee: string;
   category: string;
   amount: number;
-  split: string;  // a split charge's parts ("household -30.00; food -20.00"); "" for a whole one
+  split: string; // a split charge's parts ("household -30.00; food -20.00"); "" for a whole one
   items: Item[];
-  key: string;  // the merchant it is answered under in review ("" in reports from before it)
-  note: string;  // the line's note in the ledger
+  key: string; // the merchant it is answered under in review ("" in reports from before it)
+  note: string; // the line's note in the ledger
 }
 
 const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
@@ -210,8 +210,9 @@ function parseItems(text: string): [string, string, number, string][] {
   try {
     const parsed = JSON.parse(text);
     return Array.isArray(parsed)
-      ? parsed.filter((i) => Array.isArray(i) && i.length >= 3)
-        .map((i) => [String(i[0]), String(i[1]), Number(i[2]) || 0, String(i[3] ?? "")] as [string, string, number, string])
+      ? parsed
+          .filter((i) => Array.isArray(i) && i.length >= 3)
+          .map((i) => [String(i[0]), String(i[1]), Number(i[2]) || 0, String(i[3] ?? "")] as [string, string, number, string])
       : [];
   } catch {
     return [];
@@ -226,7 +227,7 @@ function parseTransactions(values: unknown[][]): Txn[] {
   if (!values.length) return [];
   const at = columnsAt(values, TXN_COLUMNS, "categorized");
   const header = values[0].map((h) => String(h).trim());
-  const itemsAt = header.indexOf("items");  // reports written before it: none
+  const itemsAt = header.indexOf("items"); // reports written before it: none
   const optional = (v: unknown[], name: string): string => {
     const i = header.indexOf(name);
     return i < 0 ? "" : String(v[i] ?? "").trim();
@@ -237,8 +238,15 @@ function parseTransactions(values: unknown[][]): Txn[] {
     const bought = parseItems(itemsAt < 0 ? "" : String(v[itemsAt] ?? "").trim());
     const itemsIn = (c: string | null): Item[] =>
       bought.filter((i) => c === null || i[0] === c).map((i) => ({ name: i[1], amount: i[2] }));
-    const base = { id, date: date.slice(0, 10), account, payee: named || raw, split: splits, key: optional(v, "key"),
-                   note: optional(v, "note") };
+    const base = {
+      id,
+      date: date.slice(0, 10),
+      account,
+      payee: named || raw,
+      split: splits,
+      key: optional(v, "key"),
+      note: optional(v, "note"),
+    };
     if (splits) {
       for (const piece of splits.split("; ")) {
         const cut = piece.lastIndexOf(" ");
@@ -255,8 +263,12 @@ function parseTransactions(values: unknown[][]): Txn[] {
 /** The period's transactions in these categories, biggest spending first. */
 // The Budget page's book (budgetview.ts shapes it, in the page and in tests).
 /** The BudgetBook from the Reports tabs budget_vs_actual, daily_actuals, subscription_months and editor_categories. */
-function budgetBook(budgetValues: unknown[][], dailyValues: unknown[][], recurringValues: unknown[][],
-                    categoryValues: unknown[][]): BudgetBook {
+function budgetBook(
+  budgetValues: unknown[][],
+  dailyValues: unknown[][],
+  recurringValues: unknown[][],
+  categoryValues: unknown[][],
+): BudgetBook {
   const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [] };
   for (const r of parseBudget(budgetValues)) {
     if (r.group) book.groups[r.category] = r.group;
@@ -272,17 +284,27 @@ function budgetBook(budgetValues: unknown[][], dailyValues: unknown[][], recurri
   if (dailyValues.length) {
     const [date, category, spend] = columnsAt(dailyValues, ["date", "category", "spend"], "daily_actuals");
     for (const v of dailyValues.slice(1)) {
-      const d = String(v[date] ?? "").slice(0, 10), c = String(v[category] ?? "").trim(), n = Number(v[spend]) || 0;
+      const d = String(v[date] ?? "").slice(0, 10),
+        c = String(v[category] ?? "").trim(),
+        n = Number(v[spend]) || 0;
       if (/^\d{4}-\d{2}-\d{2}$/.test(d) && c && n) book.days.push([d, c, n]);
     }
   }
   if (recurringValues.length) {
-    const [month, key, category, expected, actual] =
-      columnsAt(recurringValues, ["month", "key", "category", "expected", "actual"], "subscription_months");
+    const [month, key, category, expected, actual] = columnsAt(
+      recurringValues,
+      ["month", "key", "category", "expected", "actual"],
+      "subscription_months",
+    );
     for (const v of recurringValues.slice(1)) {
       const want = String(v[expected] ?? "");
-      book.recurring.push({ month: String(v[month] ?? ""), key: String(v[key] ?? ""), category: String(v[category] ?? ""),
-                            expected: want === "" ? null : Number(want), actual: Number(v[actual]) || 0 });
+      book.recurring.push({
+        month: String(v[month] ?? ""),
+        key: String(v[key] ?? ""),
+        category: String(v[category] ?? ""),
+        expected: want === "" ? null : Number(want),
+        actual: Number(v[actual]) || 0,
+      });
     }
   }
   return book;
@@ -293,7 +315,8 @@ function transactionsFor(txns: Txn[], period: string, categories: string[], thro
   const wanted = new Set(categories);
   const [from, end] = periodDays(period);
   const last = through || end;
-  return txns.filter((t) => wanted.has(t.category) && t.date >= from && t.date <= last)
+  return txns
+    .filter((t) => wanted.has(t.category) && t.date >= from && t.date <= last)
     .sort((a, b) => a.amount - b.amount || b.date.localeCompare(a.date));
 }
 
@@ -307,7 +330,7 @@ interface StageRun {
   at: string;
   summary: Record<string, unknown>;
   lines: string[];
-  levels: string[];  // each line's level (INFO, WARN, ERROR), "INFO" where Reports kept none
+  levels: string[]; // each line's level (INFO, WARN, ERROR), "INFO" where Reports kept none
 }
 
 interface AttentionItem {
@@ -316,30 +339,30 @@ interface AttentionItem {
 }
 
 interface Attention {
-  key: string;  // the summary count it comes from ("inbox_unread" for inbox files)
-  label: string;  // what the count counts, in words ("lines need a category")
+  key: string; // the summary count it comes from ("inbox_unread" for inbox files)
+  label: string; // what the count counts, in words ("lines need a category")
   count: number;
-  note: string;  // one sentence more, from the reports ("" when there is nothing to add)
-  items: AttentionItem[];  // the things themselves, when the reports list them (each download due)
-  detail: string[];  // the log lines that say more, for a check with no items
-  flags: string[];  // the log lines about it, marked in the run's log
-  action: string;  // the Edit tab that answers it, or ""
+  note: string; // one sentence more, from the reports ("" when there is nothing to add)
+  items: AttentionItem[]; // the things themselves, when the reports list them (each download due)
+  detail: string[]; // the log lines that say more, for a check with no items
+  flags: string[]; // the log lines about it, marked in the run's log
+  action: string; // the Edit tab that answers it, or ""
 }
 
 interface Breakdown {
   label: string;
   count: number;
-  kind: string;  // "decided", "waiting" or "open"
+  kind: string; // "decided", "waiting" or "open"
 }
 
 interface Status {
   stages: StageRun[];
   attention: Attention[];
-  stale: boolean;  // compute has not run since the last ingest
-  projection: [string, number][];  // scenario, owe (positive) or refund (negative)
+  stale: boolean; // compute has not run since the last ingest
+  projection: [string, number][]; // scenario, owe (positive) or refund (negative)
   projectionYear: string;
-  wiProjection: number | null;  // Wisconsin, owed (positive) or refund (negative)
-  categories: { since: string; total: number; segments: Breakdown[] } | null;  // how lines were categorized
+  wiProjection: number | null; // Wisconsin, owed (positive) or refund (negative)
+  categories: { since: string; total: number; segments: Breakdown[] } | null; // how lines were categorized
 }
 
 const RUN_LOG_COLUMNS = ["run_id", "computed_at", "stage", "detail"];
@@ -364,11 +387,16 @@ const CHECKS: [string, string, string, string][] = [
   ["legacy_uncategorized", "legacy lines have no category", "legacy check", ""],
   ["transfers_unmatched", "transfers have no partner", "transfers:", "review"],
 ];
-const UNREAD = ["error", "unrecognized", "failed"];  // inbox file statuses that leave a file in the inbox
+const UNREAD = ["error", "unrecognized", "failed"]; // inbox file statuses that leave a file in the inbox
 // who decided a line (categorize.py's decided_by), in the breakdown's words; any other is an order history
 const DECIDED_BY: Record<string, string> = {
-  "your decision": "Your answers", "you": "Your answers", "you, split": "Your answers", "rule": "Payee rules",
-  "transfer pair": "Transfers", "model": "Model", "old books": "Old books",
+  "your decision": "Your answers",
+  you: "Your answers",
+  "you, split": "Your answers",
+  rule: "Payee rules",
+  "transfer pair": "Transfers",
+  model: "Model",
+  "old books": "Old books",
 };
 const DUE = ["due", "never downloaded"];
 
@@ -378,20 +406,22 @@ function plural(n: number, one: string, many: string): string {
 
 function sumOf(counts: unknown): number {
   return counts && typeof counts === "object"
-    ? Object.values(counts as Record<string, unknown>).reduce((a: number, v) => a + (Number(v) || 0), 0) : 0;
+    ? Object.values(counts as Record<string, unknown>).reduce((a: number, v) => a + (Number(v) || 0), 0)
+    : 0;
 }
 
 /** Lines since REVIEW_FROM by how they were decided, waiting for a download, and open, biggest first. */
 function categoryBreakdown(summary: Record<string, unknown>): Status["categories"] {
-  const c = summary.categories as { since?: string; decided?: Record<string, number>; waiting?: Record<string, number>;
-                                    open_lines?: number } | undefined;
+  const c = summary.categories as
+    { since?: string; decided?: Record<string, number>; waiting?: Record<string, number>; open_lines?: number } | undefined;
   if (!c) return null;
   const by = new Map<string, number>();
   for (const [who, n] of Object.entries(c.decided || {})) {
     const label = DECIDED_BY[who] ?? "Receipts and order histories";
     by.set(label, (by.get(label) || 0) + Number(n));
   }
-  const segments: Breakdown[] = Array.from(by.entries()).map(([label, count]) => ({ label, count, kind: "decided" }))
+  const segments: Breakdown[] = Array.from(by.entries())
+    .map(([label, count]) => ({ label, count, kind: "decided" }))
     .sort((a, b) => b.count - a.count);
   const waiting = sumOf(c.waiting);
   if (waiting) segments.push({ label: "Waiting for a download", count: waiting, kind: "waiting" });
@@ -404,14 +434,22 @@ function downloadsDue(coverage: unknown[][]): AttentionItem[] {
   if (!coverage.length) return [];
   const header = coverage[0].map((h) => String(h).trim());
   const col = (v: unknown[], name: string): string => String(v[header.indexOf(name)] ?? "").trim();
-  return coverage.slice(1).filter((v) => DUE.indexOf(col(v, "status")) >= 0).map((v) => {
-    const newest = col(v, "newest").slice(0, 10);
-    const age = Number(col(v, "age_days"));
-    const waiting = Number(col(v, "waiting_lines")) || 0;
-    const reach = newest ? `Has everything through ${newest}` + (age ? `, ${plural(age, "day", "days")} ago` : "") : "Never downloaded";
-    const source = col(v, "source");
-    return { title: source.charAt(0).toUpperCase() + source.slice(1), detail: reach + (waiting ? `; ${plural(waiting, "line waits", "lines wait")} for it` : "") };
-  });
+  return coverage
+    .slice(1)
+    .filter((v) => DUE.indexOf(col(v, "status")) >= 0)
+    .map((v) => {
+      const newest = col(v, "newest").slice(0, 10);
+      const age = Number(col(v, "age_days"));
+      const waiting = Number(col(v, "waiting_lines")) || 0;
+      const reach = newest
+        ? `Has everything through ${newest}` + (age ? `, ${plural(age, "day", "days")} ago` : "")
+        : "Never downloaded";
+      const source = col(v, "source");
+      return {
+        title: source.charAt(0).toUpperCase() + source.slice(1),
+        detail: reach + (waiting ? `; ${plural(waiting, "line waits", "lines wait")} for it` : ""),
+      };
+    });
 }
 
 /** The review queue's questions in words: how many, and how many are whole merchants. */
@@ -421,8 +459,10 @@ function reviewNote(review: unknown[][]): string {
   const rows = review.slice(1);
   if (!rows.length) return "";
   const merchants = kind < 0 ? 0 : rows.filter((v) => String(v[kind]) === "payee").length;
-  return `${plural(rows.length, "question", "questions")}: ${plural(merchants, "merchant", "merchants")} answered once for all their lines, `
-    + `${plural(rows.length - merchants, "single line", "single lines")}.`;
+  return (
+    `${plural(rows.length, "question", "questions")}: ${plural(merchants, "merchant", "merchants")} answered once for all their lines, ` +
+    `${plural(rows.length - merchants, "single line", "single lines")}.`
+  );
 }
 
 /**
@@ -435,20 +475,23 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
     const [id, at, stage, detail] = columnsAt(runLog, RUN_LOG_COLUMNS, "run_log");
     for (const v of runLog.slice(1)) {
       const name = String(v[stage] ?? "").trim();
-      if (name !== "ingest" && name !== "compute" && name !== "run") continue;  // an older run_log row ("versions")
+      if (name !== "ingest" && name !== "compute" && name !== "run") continue; // an older run_log row ("versions")
       let summary: Record<string, unknown> = {};
       try {
         summary = JSON.parse(String(v[detail] ?? "")) as Record<string, unknown>;
       } catch (e) {
-        summary = {};  // a summary from before the status page: no counts to show
+        summary = {}; // a summary from before the status page: no counts to show
       }
       runs.push({ stage: name, runId: String(v[id] ?? ""), at: String(v[at] ?? ""), summary, lines: [], levels: [] });
     }
   }
   if (notes.length) {
     const [id, stage, , n, message] = columnsAt(notes, RUN_NOTES_COLUMNS, "run_notes");
-    const level = notes[0].map((h) => String(h).trim()).indexOf("level");  // kept since 0.40
-    const sorted = notes.slice(1).slice().sort((a, b) => Number(a[n]) - Number(b[n]));
+    const level = notes[0].map((h) => String(h).trim()).indexOf("level"); // kept since 0.40
+    const sorted = notes
+      .slice(1)
+      .slice()
+      .sort((a, b) => Number(a[n]) - Number(b[n]));
     for (const v of sorted) {
       const run = runs.find((r) => r.stage === String(v[stage] ?? "").trim() && r.runId === String(v[id] ?? ""));
       if (run) {
@@ -463,21 +506,37 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
   const ingest = runs.find((r) => r.stage === "ingest");
   const compute = runs.find((r) => r.stage === "compute");
   const attention: Attention[] = [];
-  const failed = whole ? ((whole.summary.stages as { stage?: string; status?: string; result?: string }[] | undefined) || [])
-    .filter((s) => s.status === "failed") : [];
+  const failed = whole
+    ? ((whole.summary.stages as { stage?: string; status?: string; result?: string }[] | undefined) || []).filter(
+        (s) => s.status === "failed",
+      )
+    : [];
   if (failed.length) {
-    attention.push({ key: "stages_failed", label: failed.length === 1 ? "engine stage failed" : "engine stages failed",
-                     count: failed.length, note: "The Engine log says where.", detail: [], action: "",
-                     flags: whole ? whole.lines.filter((l, i) => whole.levels[i] === "ERROR") : [],
-                     items: failed.map((s) => ({ title: String(s.stage), detail: String(s.result || "") })) });
+    attention.push({
+      key: "stages_failed",
+      label: failed.length === 1 ? "engine stage failed" : "engine stages failed",
+      count: failed.length,
+      note: "The Engine log says where.",
+      detail: [],
+      action: "",
+      flags: whole ? whole.lines.filter((l, i) => whole.levels[i] === "ERROR") : [],
+      items: failed.map((s) => ({ title: String(s.stage), detail: String(s.result || "") })),
+    });
   }
   if (ingest) {
     const files = (ingest.summary.files as { file?: string; status?: string; reason?: string }[] | undefined) || [];
     const unread = files.filter((f) => UNREAD.indexOf(String(f.status)) >= 0);
     if (unread.length) {
-      attention.push({ key: "inbox_unread", label: "inbox files were not read", count: unread.length, note: "", detail: [],
-                       flags: ingest.lines.filter((l) => unread.some((f) => f.file && l.indexOf(String(f.file)) >= 0)),
-                       items: unread.map((f) => ({ title: String(f.file), detail: f.reason || String(f.status) })), action: "" });
+      attention.push({
+        key: "inbox_unread",
+        label: "inbox files were not read",
+        count: unread.length,
+        note: "",
+        detail: [],
+        flags: ingest.lines.filter((l) => unread.some((f) => f.file && l.indexOf(String(f.file)) >= 0)),
+        items: unread.map((f) => ({ title: String(f.file), detail: f.reason || String(f.status) })),
+        action: "",
+      });
     }
   }
   if (compute) {
@@ -489,20 +548,27 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
       if (key === "review_open_lines") {
         const waiting = sumOf((compute.summary.categories as { waiting?: unknown } | undefined)?.waiting);
         note = [reviewNote(review), waiting ? `${plural(waiting, "more line waits", "more lines wait")} for a download.` : ""]
-          .filter(Boolean).join(" ");
+          .filter(Boolean)
+          .join(" ");
       }
       const structured = items.length || key === "review_open_lines";
       const lines = compute.lines.filter((l) => l.startsWith(prefix));
       attention.push({ key, label, count, note, items, action, flags: lines, detail: structured ? [] : lines });
     }
   }
-  const projection = compute && compute.summary.projection && typeof compute.summary.projection === "object"
-    ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
-    : [];
-  return { stages: runs, attention, stale: !!(ingest && compute && ingest.at > compute.at), projection,
-           projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
-           wiProjection: compute && typeof compute.summary.wi_projection === "number" ? Number(compute.summary.wi_projection) : null,
-           categories: compute ? categoryBreakdown(compute.summary) : null };
+  const projection =
+    compute && compute.summary.projection && typeof compute.summary.projection === "object"
+      ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
+      : [];
+  return {
+    stages: runs,
+    attention,
+    stale: !!(ingest && compute && ingest.at > compute.at),
+    projection,
+    projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
+    wiProjection: compute && typeof compute.summary.wi_projection === "number" ? Number(compute.summary.wi_projection) : null,
+    categories: compute ? categoryBreakdown(compute.summary) : null,
+  };
 }
 
 /** One whole line from the categorized tab, for the transaction page: a split charge with all its parts. */
@@ -510,12 +576,12 @@ interface Line {
   id: string;
   date: string;
   account: string;
-  payee: string;  // the name an explanation gave it, else the bank's
+  payee: string; // the name an explanation gave it, else the bank's
   payeeRaw: string;
-  amount: number;  // the whole line, signed as the ledger has it (money out is negative)
+  amount: number; // the whole line, signed as the ledger has it (money out is negative)
   category: string;
-  parts: [string, number][];  // a split's parts, signed; [] for a whole line
-  items: { category: string; name: string; amount: number; id: string }[];  // id "" in reports before item ids
+  parts: [string, number][]; // a split's parts, signed; [] for a whole line
+  items: { category: string; name: string; amount: number; id: string }[]; // id "" in reports before item ids
   decidedBy: string;
   status: string;
   note: string;
@@ -531,15 +597,28 @@ function findLine(values: unknown[][], id: string): Line | null {
   const row = values.slice(1).find((v) => String(v[at("txn_id")] ?? "").trim() === id);
   if (!row) return null;
   const col = (name: string): string => (at(name) < 0 ? "" : String(row[at(name)] ?? "").trim());
-  const parts: [string, number][] = col("splits") ? col("splits").split("; ").map((piece) => {
-    const cut = piece.lastIndexOf(" ");
-    return [piece.slice(0, cut), Number(piece.slice(cut + 1)) || 0] as [string, number];
-  }) : [];
+  const parts: [string, number][] = col("splits")
+    ? col("splits")
+        .split("; ")
+        .map((piece) => {
+          const cut = piece.lastIndexOf(" ");
+          return [piece.slice(0, cut), Number(piece.slice(cut + 1)) || 0] as [string, number];
+        })
+    : [];
   return {
-    id, date: col("date").slice(0, 10), account: col("account_id"), payee: col("payee_text") || col("payee_raw"),
-    payeeRaw: col("payee_raw"), amount: Number(col("amount")) || 0, category: col("category"), parts,
+    id,
+    date: col("date").slice(0, 10),
+    account: col("account_id"),
+    payee: col("payee_text") || col("payee_raw"),
+    payeeRaw: col("payee_raw"),
+    amount: Number(col("amount")) || 0,
+    category: col("category"),
+    parts,
     items: parseItems(col("items")).map((i) => ({ category: i[0], name: i[1], amount: i[2], id: i[3] })),
-    decidedBy: col("decided_by"), status: col("status"), note: col("note"), key: col("key"),
+    decidedBy: col("decided_by"),
+    status: col("status"),
+    note: col("note"),
+    key: col("key"),
     oneOff: col("one_off").toUpperCase() === "TRUE",
   };
 }
@@ -549,7 +628,7 @@ interface ReviewLine {
   id: string;
   date: string;
   account: string;
-  payee: string;  // what an email or download named it, else the bank's
+  payee: string; // what an email or download named it, else the bank's
   amount: number;
 }
 
@@ -565,11 +644,21 @@ function reviewLines(values: unknown[][], key: string, skip: string[] = []): Rev
     if (at(name) < 0) throw new Error(`categorized tab is missing columns: ${name}`);
   }
   const col = (v: unknown[], name: string): string => (at(name) < 0 ? "" : String(v[at(name)] ?? "").trim());
-  return values.slice(1)
-    .filter((v) => col(v, "status") === "open" && skip.indexOf(col(v, "txn_id")) < 0 &&
-                   (col(v, "key") === key || col(v, "key").startsWith(key)))
-    .map((v) => ({ id: col(v, "txn_id"), date: col(v, "date").slice(0, 10), account: col(v, "account_id"),
-                   payee: col(v, "payee_text") || col(v, "payee_raw"), amount: Number(col(v, "amount")) || 0 }))
+  return values
+    .slice(1)
+    .filter(
+      (v) =>
+        col(v, "status") === "open" &&
+        skip.indexOf(col(v, "txn_id")) < 0 &&
+        (col(v, "key") === key || col(v, "key").startsWith(key)),
+    )
+    .map((v) => ({
+      id: col(v, "txn_id"),
+      date: col(v, "date").slice(0, 10),
+      account: col(v, "account_id"),
+      payee: col(v, "payee_text") || col(v, "payee_raw"),
+      amount: Number(col(v, "amount")) || 0,
+    }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }
 
@@ -583,11 +672,16 @@ interface SubscriptionsPage {
 function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
   if (!values.length) return { subscriptions: [], total: 0, computedAt: "" };
   const header = values[0].map((h) => String(h).trim());
-  const rows = values.slice(1).map((v) => {
-    const r: Record<string, string> = {};
-    header.forEach((h, i) => { if (h && h !== "run_id") r[h] = String(v[i] ?? "").trim(); });
-    return r;
-  }).filter((r) => r.key);
+  const rows = values
+    .slice(1)
+    .map((v) => {
+      const r: Record<string, string> = {};
+      header.forEach((h, i) => {
+        if (h && h !== "run_id") r[h] = String(v[i] ?? "").trim();
+      });
+      return r;
+    })
+    .filter((r) => r.key);
   const total = rows.filter((r) => r.status !== "stopped").reduce((t, r) => t + (Number(r.yearly) || 0), 0);
   return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
 }
@@ -616,8 +710,15 @@ interface FlowSummary {
   through: FlowItem[];
 }
 
-const TAX_NODES = ["federal tax", "state tax", "social security", "medicare", "taxes", "pre-tax deductions",
-                   "post-tax deductions"];
+const TAX_NODES = [
+  "federal tax",
+  "state tax",
+  "social security",
+  "medicare",
+  "taxes",
+  "pre-tax deductions",
+  "post-tax deductions",
+];
 const FROM_SAVINGS = "from savings";
 const LOSSES = "capital losses";
 
@@ -626,15 +727,22 @@ function isTaxOrDeduction(name: string): boolean {
 }
 
 function notEarned(name: string): boolean {
-  return name === FROM_SAVINGS || name.indexOf(FROM_SAVINGS + ": ") === 0 || name === "money back"
-    || / \(money back\)$/.test(name) || name === "from cash balances";
+  return (
+    name === FROM_SAVINGS ||
+    name.indexOf(FROM_SAVINGS + ": ") === 0 ||
+    name === "money back" ||
+    / \(money back\)$/.test(name) ||
+    name === "from cash balances"
+  );
 }
 
 function flowSummary(totals: NodeTotal[]): FlowSummary {
   const out: FlowSummary = { income: [], other: [], taxes: [], went: [], through: [] };
   for (const t of totals) {
-    if (t.name === LOSSES) out.income.push({ name: t.name, amount: -roundCents(t.into) });  // what sales lost
-    else if (t.name === FROM_SAVINGS + ": " + LOSSES) continue;  // the shares' value the loss took, not money in
+    if (t.name === LOSSES)
+      out.income.push({ name: t.name, amount: -roundCents(t.into) }); // what sales lost
+    else if (t.name === FROM_SAVINGS + ": " + LOSSES)
+      continue; // the shares' value the loss took, not money in
     else if (t.into > 0 && t.out > 0) out.through.push({ name: t.name, amount: roundCents(Math.max(t.into, t.out)) });
     else if (t.out > 0) (notEarned(t.name) ? out.other : out.income).push({ name: t.name, amount: roundCents(t.out) });
     else if (t.into > 0) (isTaxOrDeduction(t.name) ? out.taxes : out.went).push({ name: t.name, amount: roundCents(t.into) });

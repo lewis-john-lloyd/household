@@ -4,7 +4,9 @@
 
 const BUDGET_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
-function toCents(n: number): number { return Math.round(n * 100) / 100; }
+function toCents(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 // The Budget page: any month, quarter or calendar year beside any other of the same kind. The page loads
 // one BudgetBook (each month's targets per category, every day's spending per category, and the recurring
@@ -13,12 +15,17 @@ function toCents(n: number): number { return Math.round(n * 100) / 100; }
 
 interface BudgetBook {
   targets: { month: string; category: string; priority: string; target: number }[];
-  days: [string, string, number][];  // [date, category, spend]
-  groups: Record<string, string>;  // category -> group
+  days: [string, string, number][]; // [date, category, spend]
+  groups: Record<string, string>; // category -> group
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
 }
 
-interface RecurringInLine { key: string; expected: number | null; actual: number; compared: number }
+interface RecurringInLine {
+  key: string;
+  expected: number | null;
+  actual: number;
+  compared: number;
+}
 
 interface ViewLine {
   category: string;
@@ -30,29 +37,39 @@ interface ViewLine {
   recurring: RecurringInLine[];
 }
 
-interface ViewGroup { name: string; target: number; actual: number; compared: number; lines: ViewLine[] }
+interface ViewGroup {
+  name: string;
+  target: number;
+  actual: number;
+  compared: number;
+  lines: ViewLine[];
+}
 
 interface BudgetView {
   lens: string;
   period: string;
   compare: string;
-  from: string;  // the days summed: the period's, cut at today when it is not over and sameWeeks is on
+  from: string; // the days summed: the period's, cut at today when it is not over and sameWeeks is on
   through: string;
   compareFrom: string;
   compareThrough: string;
-  partial: boolean;  // the period is not over
-  sameWeeks: boolean;  // only its days so far, beside the same days of the other period
+  partial: boolean; // the period is not over
+  sameWeeks: boolean; // only its days so far, beside the same days of the other period
   target: number;
   actual: number;
   compared: number;
-  recurring: number;  // what the recurring charges in it spent
+  recurring: number; // what the recurring charges in it spent
   groups: ViewGroup[];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function isoDay(t: number): string { return new Date(t).toISOString().slice(0, 10); }
-function dayMs(date: string): number { return Date.parse(date + "T00:00:00Z"); }
+function isoDay(t: number): string {
+  return new Date(t).toISOString().slice(0, 10);
+}
+function dayMs(date: string): number {
+  return Date.parse(date + "T00:00:00Z");
+}
 
 /** The period of a lens ("month", "quarter" or "year") a date falls in. */
 function periodOf(date: string, lens: string): string {
@@ -68,9 +85,15 @@ function lensOf(period: string): string {
 /** A period's first and last day. */
 function periodDays(period: string): [string, string] {
   const year = Number(period.slice(0, 4));
-  let first = 0, months = 12;
-  if (lensOf(period) === "quarter") { first = (Number(period.slice(6)) - 1) * 3; months = 3; }
-  else if (lensOf(period) === "month") { first = Number(period.slice(5, 7)) - 1; months = 1; }
+  let first = 0,
+    months = 12;
+  if (lensOf(period) === "quarter") {
+    first = (Number(period.slice(6)) - 1) * 3;
+    months = 3;
+  } else if (lensOf(period) === "month") {
+    first = Number(period.slice(5, 7)) - 1;
+    months = 1;
+  }
   return [isoDay(Date.UTC(year, first, 1)), isoDay(Date.UTC(year, first + months, 1) - DAY_MS)];
 }
 
@@ -89,8 +112,20 @@ function periodName(period: string): string {
   const lens = lensOf(period);
   if (lens === "year") return period;
   if (lens === "quarter") return period.slice(5) + " " + period.slice(0, 4);
-  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-                 "November", "December"];
+  const names = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
   return names[Number(period.slice(5, 7)) - 1] + " " + period.slice(0, 4);
 }
 
@@ -111,7 +146,9 @@ function lensPeriods(book: BudgetBook, lens: string, today: string): string[] {
 /** The comparisons offered first: the period before, and the same period a year earlier (for a year, only the one). */
 function quickPicks(period: string): string[] {
   const lens = lensOf(period);
-  return lens === "year" ? [shiftPeriod(period, -1)] : [shiftPeriod(period, -1), shiftPeriod(period, lens === "quarter" ? -4 : -12)];
+  return lens === "year"
+    ? [shiftPeriod(period, -1)]
+    : [shiftPeriod(period, -1), shiftPeriod(period, lens === "quarter" ? -4 : -12)];
 }
 
 /**
@@ -151,11 +188,15 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
   }
   const inMonths = (month: string, a: string, b: string): boolean => month + "-01" <= b && periodDays(month)[1] >= a;
   for (const r of book.recurring) {
-    const now = inMonths(r.month, from, through), then = inMonths(r.month, compareFrom, compareThrough);
+    const now = inMonths(r.month, from, through),
+      then = inMonths(r.month, compareFrom, compareThrough);
     if (!now && !then) continue;
     const l = line(r.category);
     let e = l.recurring.find((x) => x.key === r.key);
-    if (!e) { e = { key: r.key, expected: null, actual: 0, compared: 0 }; l.recurring.push(e); }
+    if (!e) {
+      e = { key: r.key, expected: null, actual: 0, compared: 0 };
+      l.recurring.push(e);
+    }
     if (now) {
       if (r.expected !== null) e.expected = (e.expected ?? 0) + r.expected;
       e.actual += r.actual;
@@ -164,29 +205,62 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
   }
   const groups = new Map<string, ViewGroup>();
   for (const l of lines.values()) {
-    l.target = toCents(l.target); l.actual = toCents(l.actual); l.compared = toCents(l.compared);
+    l.target = toCents(l.target);
+    l.actual = toCents(l.actual);
+    l.compared = toCents(l.compared);
     l.recurring = l.recurring
-      .map((e) => ({ ...e, expected: e.expected === null ? null : toCents(e.expected), actual: toCents(e.actual),
-                     compared: toCents(e.compared) }))
+      .map((e) => ({
+        ...e,
+        expected: e.expected === null ? null : toCents(e.expected),
+        actual: toCents(e.actual),
+        compared: toCents(e.compared),
+      }))
       .filter((e) => e.actual || e.expected || e.compared)
       .sort((a, b) => b.actual - a.actual || a.key.localeCompare(b.key));
     if (!l.target && !l.actual && !l.compared && !l.recurring.length) continue;
     const name = l.group || "Other";
     let g = groups.get(name);
-    if (!g) { g = { name, target: 0, actual: 0, compared: 0, lines: [] }; groups.set(name, g); }
-    g.target += l.target; g.actual += l.actual; g.compared += l.compared;
+    if (!g) {
+      g = { name, target: 0, actual: 0, compared: 0, lines: [] };
+      groups.set(name, g);
+    }
+    g.target += l.target;
+    g.actual += l.actual;
+    g.compared += l.compared;
     g.lines.push(l);
   }
-  const sorted = Array.from(groups.values()).map((g) => ({
-    ...g, target: toCents(g.target), actual: toCents(g.actual), compared: toCents(g.compared),
-    lines: g.lines.sort((a, b) => b.target - a.target || b.actual - a.actual || a.category.localeCompare(b.category)),
-  })).sort((a, b) => (a.name === "Other" ? 1 : 0) - (b.name === "Other" ? 1 : 0) || b.target - a.target
-    || b.actual - a.actual || a.name.localeCompare(b.name));
+  const sorted = Array.from(groups.values())
+    .map((g) => ({
+      ...g,
+      target: toCents(g.target),
+      actual: toCents(g.actual),
+      compared: toCents(g.compared),
+      lines: g.lines.sort((a, b) => b.target - a.target || b.actual - a.actual || a.category.localeCompare(b.category)),
+    }))
+    .sort(
+      (a, b) =>
+        (a.name === "Other" ? 1 : 0) - (b.name === "Other" ? 1 : 0) ||
+        b.target - a.target ||
+        b.actual - a.actual ||
+        a.name.localeCompare(b.name),
+    );
   const sum = (f: (g: ViewGroup) => number): number => toCents(sorted.reduce((t, g) => t + f(g), 0));
   let recurring = 0;
   for (const g of sorted) for (const l of g.lines) for (const e of l.recurring) recurring += e.actual;
-  return { lens: lensOf(period), period, compare, from, through, compareFrom, compareThrough, partial, sameWeeks: cut,
-           target: sum((g) => g.target), actual: sum((g) => g.actual), compared: sum((g) => g.compared),
-           recurring: toCents(recurring), groups: sorted };
+  return {
+    lens: lensOf(period),
+    period,
+    compare,
+    from,
+    through,
+    compareFrom,
+    compareThrough,
+    partial,
+    sameWeeks: cut,
+    target: sum((g) => g.target),
+    actual: sum((g) => g.actual),
+    compared: sum((g) => g.compared),
+    recurring: toCents(recurring),
+    groups: sorted,
+  };
 }
-

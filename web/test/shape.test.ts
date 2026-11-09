@@ -6,7 +6,9 @@ import { join } from "node:path";
 // shape.ts is an Apps Script file: no imports or exports, its functions are globals. Evaluate the
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
-const shape = new Function(`${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`)() as {
+const shape = new Function(
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+)() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
   toSankeyRows: (rows: FlowRow[], period: string, level: string) => { rows: SankeyRow[]; dropped: SankeyRow[] };
@@ -46,8 +48,13 @@ const VALUES: unknown[][] = [
 test("parseRows reads the tab by header and skips incomplete rows", () => {
   const rows = shape.parseRows(VALUES);
   assert.equal(rows.length, 9);
-  assert.deepEqual(rows[0], { period: "2001-03", level: "category", source: "gross pay (alex)", target: "net pay",
-    amount: 2500 });
+  assert.deepEqual(rows[0], {
+    period: "2001-03",
+    level: "category",
+    source: "gross pay (alex)",
+    target: "net pay",
+    amount: 2500,
+  });
 });
 
 test("parseRows names missing columns", () => {
@@ -55,10 +62,18 @@ test("parseRows names missing columns", () => {
 });
 
 test("periods: newest year first, then its average, then its months newest first", () => {
-  const rows = ["2001-03", "2001", "2002-01", "2001 monthly average", "2002", "2001-11", "2002 monthly average"]
-    .map((period) => ({ period, level: "category", source: "a", target: "b", amount: 1 }));
-  assert.deepEqual(shape.periods(rows), ["2002", "2002 monthly average", "2002-01", "2001",
-    "2001 monthly average", "2001-11", "2001-03"]);
+  const rows = ["2001-03", "2001", "2002-01", "2001 monthly average", "2002", "2001-11", "2002 monthly average"].map(
+    (period) => ({ period, level: "category", source: "a", target: "b", amount: 1 }),
+  );
+  assert.deepEqual(shape.periods(rows), [
+    "2002",
+    "2002 monthly average",
+    "2002-01",
+    "2001",
+    "2001 monthly average",
+    "2001-11",
+    "2001-03",
+  ]);
 });
 
 test("one period and level: merged, rounded, positive, no self loops, biggest first", () => {
@@ -79,7 +94,10 @@ test("an edge that would close a cycle is dropped, the smaller one", () => {
     ["p", "group", "c", "a", 5],
   ]);
   const out = shape.toSankeyRows(rows, "p", "group");
-  assert.deepEqual(out.rows, [["a", "b", 100], ["b", "c", 90]]);
+  assert.deepEqual(out.rows, [
+    ["a", "b", 100],
+    ["b", "c", 90],
+  ]);
   assert.deepEqual(out.dropped, [["c", "a", 5]]);
 });
 
@@ -89,17 +107,23 @@ test("nothing for a period that is not there", () => {
 
 test("node totals: what each node took in and sent out, biggest first", () => {
   const totals = shape.nodeTotals([
-    ["net pay", "accounts", 2500], ["other income", "accounts", 100.005],
-    ["accounts", "food", 400], ["accounts", "pets", 99.99], ["accounts", "to cash balances", 2100.02],
+    ["net pay", "accounts", 2500],
+    ["other income", "accounts", 100.005],
+    ["accounts", "food", 400],
+    ["accounts", "pets", 99.99],
+    ["accounts", "to cash balances", 2100.02],
   ]);
-  assert.deepEqual(totals.map((t) => [t.name, t.into, t.out, t.total]), [
-    ["accounts", 2600.01, 2600.01, 2600.01],
-    ["net pay", 0, 2500, 2500],
-    ["to cash balances", 2100.02, 0, 2100.02],
-    ["food", 400, 0, 400],
-    ["other income", 0, 100.01, 100.01],
-    ["pets", 99.99, 0, 99.99],
-  ]);
+  assert.deepEqual(
+    totals.map((t) => [t.name, t.into, t.out, t.total]),
+    [
+      ["accounts", 2600.01, 2600.01, 2600.01],
+      ["net pay", 0, 2500, 2500],
+      ["to cash balances", 2100.02, 0, 2100.02],
+      ["food", 400, 0, 400],
+      ["other income", 0, 100.01, 100.01],
+      ["pets", 99.99, 0, 99.99],
+    ],
+  );
 });
 
 const BUDGET: unknown[][] = [
@@ -120,40 +144,78 @@ test("transactions: split charges become one row per part, filtered to the perio
     ["t3", "2001-03-01", "card", -99, "GROCER", "", "GROCER", "food", ""],
   ]);
   assert.equal(txns.length, 4);
-  assert.deepEqual(shape.transactionsFor(txns, "2001-02", ["food"]).map((t) => [t.date, t.payee, t.amount]), [
-    ["2001-02-03", "Shop", -20],
-    ["2001-02-10", "GROCER", -12.5],
-  ]);
+  assert.deepEqual(
+    shape.transactionsFor(txns, "2001-02", ["food"]).map((t) => [t.date, t.payee, t.amount]),
+    [
+      ["2001-02-03", "Shop", -20],
+      ["2001-02-10", "GROCER", -12.5],
+    ],
+  );
   assert.equal(shape.transactionsFor(txns, "2001", ["food"]).length, 3);
   assert.equal(shape.transactionsFor(txns, "2001-Q1", ["food"]).length, 3);
-  assert.deepEqual(shape.transactionsFor(txns, "2001-Q1", ["food"], "2001-02-05").map((t) => t.id), ["t1"]);  // the same weeks
-  assert.deepEqual(txns[0].items, []);  // a report without an items column
+  assert.deepEqual(
+    shape.transactionsFor(txns, "2001-Q1", ["food"], "2001-02-05").map((t) => t.id),
+    ["t1"],
+  ); // the same weeks
+  assert.deepEqual(txns[0].items, []); // a report without an items column
   assert.deepEqual([txns[0].id, txns[0].split, txns[2].split], ["t1", "household -30.00; food -20.00", ""]);
 });
 
 test("transactions: a charge an order history explains carries its items, each part its own", () => {
-  const items = JSON.stringify([["household", "Spatula", 30], ["food", "Coffee", 20]]);
+  const items = JSON.stringify([
+    ["household", "Spatula", 30],
+    ["food", "Coffee", 20],
+  ]);
   const txns = shape.parseTransactions([
     ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits", "items"],
     ["t1", "2001-02-03", "card", -50, "SHOP*1", "", "SHOP", "household", "household -30.00; food -20.00", items],
     ["t2", "2001-02-04", "card", -9, "SHOP*2", "", "SHOP", "household", "", "not json"],
     ["t3", "2001-02-05", "card", -30, "SHOP*3", "", "SHOP", "household", "", JSON.stringify([["household", "Spatula", 30]])],
   ]);
-  assert.deepEqual(txns.map((t) => [t.category, t.items.map((i) => i.name)]), [
-    ["household", ["Spatula"]], ["food", ["Coffee"]], ["household", []], ["household", ["Spatula"]],
-  ]);
+  assert.deepEqual(
+    txns.map((t) => [t.category, t.items.map((i) => i.name)]),
+    [
+      ["household", ["Spatula"]],
+      ["food", ["Coffee"]],
+      ["household", []],
+      ["household", ["Spatula"]],
+    ],
+  );
 });
 
 const RUN_LOG: unknown[][] = [
   ["run_id", "computed_at", "stage", "detail"],
-  ["r2", "2001-03-02T07:00:00+00:00", "compute",
-   JSON.stringify({ review_open_lines: 4, downloads_due: 1, balances_off: 0, transfers_unmatched: 2,
-                    projection: { "as is": -1500, "no extra withholding": 300 }, projection_year: 2001,
-                    categories: { since: "2001-01-01", decided: { "your decision": 30, you: 5, rule: 20, amazon: 8, co_op: 4 },
-                                  waiting: { "waiting for amazon": 3 }, open_lines: 4 } })],
-  ["r1", "2001-03-02T06:00:00+00:00", "ingest",
-   JSON.stringify({ counts: { ingested: 1, unrecognized: 1 },
-                    files: [{ file: "a.csv", status: "ingested" }, { file: "notes.txt", status: "unrecognized" }] })],
+  [
+    "r2",
+    "2001-03-02T07:00:00+00:00",
+    "compute",
+    JSON.stringify({
+      review_open_lines: 4,
+      downloads_due: 1,
+      balances_off: 0,
+      transfers_unmatched: 2,
+      projection: { "as is": -1500, "no extra withholding": 300 },
+      projection_year: 2001,
+      categories: {
+        since: "2001-01-01",
+        decided: { "your decision": 30, you: 5, rule: 20, amazon: 8, co_op: 4 },
+        waiting: { "waiting for amazon": 3 },
+        open_lines: 4,
+      },
+    }),
+  ],
+  [
+    "r1",
+    "2001-03-02T06:00:00+00:00",
+    "ingest",
+    JSON.stringify({
+      counts: { ingested: 1, unrecognized: 1 },
+      files: [
+        { file: "a.csv", status: "ingested" },
+        { file: "notes.txt", status: "unrecognized" },
+      ],
+    }),
+  ],
   ["r0", "2001-03-01T06:00:00+00:00", "versions", "pandas 2"],
 ];
 const RUN_NOTES: unknown[][] = [
@@ -180,20 +242,40 @@ const REVIEW: unknown[][] = [
 
 test("the status page shows each stage's latest run, its lines in order, and what needs the owner", () => {
   const status = shape.parseStatus(RUN_LOG, RUN_NOTES, COVERAGE, REVIEW);
-  assert.deepEqual(status.stages.map((s) => [s.stage, s.runId]), [["ingest", "r1"], ["compute", "r2"]]);
+  assert.deepEqual(
+    status.stages.map((s) => [s.stage, s.runId]),
+    [
+      ["ingest", "r1"],
+      ["compute", "r2"],
+    ],
+  );
   assert.equal(status.stages[1].lines.length, 4);
   assert.equal(status.stages[1].lines[1], "transfers: 9 pairs between your accounts, 2 transfer lines with no partner");
-  assert.deepEqual(status.attention.map((a) => [a.label, a.count, a.action]), [
-    ["inbox files were not read", 1, ""], ["lines need a category", 4, "review"], ["downloads due", 1, ""],
-    ["transfers have no partner", 2, "review"]]);
+  assert.deepEqual(
+    status.attention.map((a) => [a.label, a.count, a.action]),
+    [
+      ["inbox files were not read", 1, ""],
+      ["lines need a category", 4, "review"],
+      ["downloads due", 1, ""],
+      ["transfers have no partner", 2, "review"],
+    ],
+  );
   const [unread, review, downloads, transfers] = status.attention;
   assert.deepEqual(unread.items, [{ title: "notes.txt", detail: "unrecognized" }]);
-  assert.equal(review.note, "2 questions: 1 merchant answered once for all their lines, 1 single line. 3 more lines wait for a download.");
-  assert.deepEqual(review.detail, []);  // said in words, not as the log line
-  assert.deepEqual(downloads.items, [{ title: "Amazon", detail: "Has everything through 2001-01-31, 30 days ago; 3 lines wait for it" }]);
+  assert.equal(
+    review.note,
+    "2 questions: 1 merchant answered once for all their lines, 1 single line. 3 more lines wait for a download.",
+  );
+  assert.deepEqual(review.detail, []); // said in words, not as the log line
+  assert.deepEqual(downloads.items, [
+    { title: "Amazon", detail: "Has everything through 2001-01-31, 30 days ago; 3 lines wait for it" },
+  ]);
   assert.deepEqual(transfers.detail, ["transfers: 9 pairs between your accounts, 2 transfer lines with no partner"]);
   assert.equal(status.stale, false);
-  assert.deepEqual(status.projection, [["as is", -1500], ["no extra withholding", 300]]);
+  assert.deepEqual(status.projection, [
+    ["as is", -1500],
+    ["no extra withholding", 300],
+  ]);
   assert.equal(status.projectionYear, "2001");
 });
 
@@ -202,9 +284,16 @@ test("the categorization breakdown groups who decided, then what waits", () => {
   assert.ok(categories);
   assert.equal(categories.since, "2001-01-01");
   assert.equal(categories.total, 74);
-  assert.deepEqual(categories.segments.map((s) => [s.label, s.count, s.kind]), [
-    ["Your answers", 35, "decided"], ["Payee rules", 20, "decided"], ["Receipts and order histories", 12, "decided"],
-    ["Waiting for a download", 3, "waiting"], ["Waiting for you", 4, "open"]]);
+  assert.deepEqual(
+    categories.segments.map((s) => [s.label, s.count, s.kind]),
+    [
+      ["Your answers", 35, "decided"],
+      ["Payee rules", 20, "decided"],
+      ["Receipts and order histories", 12, "decided"],
+      ["Waiting for a download", 3, "waiting"],
+      ["Waiting for you", 4, "open"],
+    ],
+  );
 });
 
 test("the status page flags a compute older than the last ingest, and copes with no runs yet", () => {
@@ -216,18 +305,63 @@ test("the status page flags a compute older than the last ingest, and copes with
 
 test("findLine gives one whole line, a split with all its parts and the items it bought", () => {
   const values: unknown[][] = [
-    ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "category", "splits", "items", "decided_by",
-     "status", "note", "one_off", "run_id"],
-    ["t1", "2001-03-04", "card", -50, "ACME GROCER #2", "", "ACME GROCER", "food", "food -30.00; household -20.00",
-     JSON.stringify([["food", "Oats", 30, "i1"], ["household", "Candle", 20]]), "you, split", "decided", "for the party", "TRUE", "r1"],
+    [
+      "txn_id",
+      "date",
+      "account_id",
+      "amount",
+      "payee_raw",
+      "payee_text",
+      "key",
+      "category",
+      "splits",
+      "items",
+      "decided_by",
+      "status",
+      "note",
+      "one_off",
+      "run_id",
+    ],
+    [
+      "t1",
+      "2001-03-04",
+      "card",
+      -50,
+      "ACME GROCER #2",
+      "",
+      "ACME GROCER",
+      "food",
+      "food -30.00; household -20.00",
+      JSON.stringify([
+        ["food", "Oats", 30, "i1"],
+        ["household", "Candle", 20],
+      ]),
+      "you, split",
+      "decided",
+      "for the party",
+      "TRUE",
+      "r1",
+    ],
     ["t2", "2001-03-05", "card", -12, "QUILL & INK", "", "QUILL & INK", "hobby", "", "", "rule", "decided", "", "", "r1"],
   ];
   const line = shape.findLine(values, "t1");
   assert.ok(line);
-  assert.deepEqual([line.amount, line.payee, line.parts, line.note, line.oneOff, line.key],
-                   [-50, "ACME GROCER #2", [["food", -30], ["household", -20]], "for the party", true, "ACME GROCER"]);
+  assert.deepEqual(
+    [line.amount, line.payee, line.parts, line.note, line.oneOff, line.key],
+    [
+      -50,
+      "ACME GROCER #2",
+      [
+        ["food", -30],
+        ["household", -20],
+      ],
+      "for the party",
+      true,
+      "ACME GROCER",
+    ],
+  );
   assert.deepEqual(line.items[0], { category: "food", name: "Oats", amount: 30, id: "i1" });
-  assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20, id: "" });  // an older report
+  assert.deepEqual(line.items[1], { category: "household", name: "Candle", amount: 20, id: "" }); // an older report
   assert.deepEqual(shape.findLine(values, "t2")?.parts, []);
   assert.equal(shape.findLine(values, "t9"), null);
 });
@@ -235,99 +369,214 @@ test("findLine gives one whole line, a split with all its parts and the items it
 test("the flow summary sorts nodes into where money came from, taxes, where it went, and stops on the way", () => {
   const node = (name: string, into: number, out: number): NodeTotal => ({ name, into, out, total: Math.max(into, out) });
   const s = shape.flowSummary([
-    node("gross pay (alex)", 0, 5000), node("from savings: brokerage", 0, 900), node("net pay", 3500, 3500),
-    node("accounts", 4400, 4400), node("federal tax", 800, 0), node("pre-tax: 401k", 700, 0), node("food", 600, 0),
-    node("to cash balances", 1200, 0), node("kids", 2600, 0)]);
-  assert.deepEqual(s.income.map((i) => i.name), ["gross pay (alex)"]);
-  assert.deepEqual(s.other.map((i) => i.name), ["from savings: brokerage"]);
-  assert.deepEqual(s.taxes.map((i) => [i.name, i.amount]), [["federal tax", 800], ["pre-tax: 401k", 700]]);
-  assert.deepEqual(s.went.map((i) => i.name), ["kids", "to cash balances", "food"]);
-  assert.deepEqual(s.through.map((i) => [i.name, i.amount]), [["accounts", 4400], ["net pay", 3500]]);
+    node("gross pay (alex)", 0, 5000),
+    node("from savings: brokerage", 0, 900),
+    node("net pay", 3500, 3500),
+    node("accounts", 4400, 4400),
+    node("federal tax", 800, 0),
+    node("pre-tax: 401k", 700, 0),
+    node("food", 600, 0),
+    node("to cash balances", 1200, 0),
+    node("kids", 2600, 0),
+  ]);
+  assert.deepEqual(
+    s.income.map((i) => i.name),
+    ["gross pay (alex)"],
+  );
+  assert.deepEqual(
+    s.other.map((i) => i.name),
+    ["from savings: brokerage"],
+  );
+  assert.deepEqual(
+    s.taxes.map((i) => [i.name, i.amount]),
+    [
+      ["federal tax", 800],
+      ["pre-tax: 401k", 700],
+    ],
+  );
+  assert.deepEqual(
+    s.went.map((i) => i.name),
+    ["kids", "to cash balances", "food"],
+  );
+  assert.deepEqual(
+    s.through.map((i) => [i.name, i.amount]),
+    [
+      ["accounts", 4400],
+      ["net pay", 3500],
+    ],
+  );
 });
 
 test("shares sold count only their gain or loss as income; the proceeds and money back are other money in", () => {
   const node = (name: string, into: number, out: number): NodeTotal => ({ name, into, out, total: Math.max(into, out) });
   const s = shape.flowSummary([
-    node("gross pay (alex)", 0, 5000), node("from savings: stock_sales", 0, 900), node("capital gains", 0, 25),
-    node("capital gains (to savings)", 25, 0), node("food (money back)", 0, 30), node("from cash balances", 0, 70),
-    node("accounts", 6000, 6000), node("food", 6000, 0)]);
-  assert.deepEqual(s.income.map((i) => [i.name, i.amount]), [["gross pay (alex)", 5000], ["capital gains", 25]]);
-  assert.deepEqual(s.other.map((i) => i.name), ["from savings: stock_sales", "from cash balances", "food (money back)"]);
+    node("gross pay (alex)", 0, 5000),
+    node("from savings: stock_sales", 0, 900),
+    node("capital gains", 0, 25),
+    node("capital gains (to savings)", 25, 0),
+    node("food (money back)", 0, 30),
+    node("from cash balances", 0, 70),
+    node("accounts", 6000, 6000),
+    node("food", 6000, 0),
+  ]);
+  assert.deepEqual(
+    s.income.map((i) => [i.name, i.amount]),
+    [
+      ["gross pay (alex)", 5000],
+      ["capital gains", 25],
+    ],
+  );
+  assert.deepEqual(
+    s.other.map((i) => i.name),
+    ["from savings: stock_sales", "from cash balances", "food (money back)"],
+  );
   assert.ok(s.went.some((i) => i.name === "capital gains (to savings)"));
-  const lost = shape.flowSummary([node("gross pay (alex)", 0, 5000), node("from savings: capital losses", 0, 15),
-                                  node("capital losses", 15, 0)]);
-  assert.deepEqual(lost.income.map((i) => [i.name, i.amount]), [["gross pay (alex)", 5000], ["capital losses", -15]]);
+  const lost = shape.flowSummary([
+    node("gross pay (alex)", 0, 5000),
+    node("from savings: capital losses", 0, 15),
+    node("capital losses", 15, 0),
+  ]);
+  assert.deepEqual(
+    lost.income.map((i) => [i.name, i.amount]),
+    [
+      ["gross pay (alex)", 5000],
+      ["capital losses", -15],
+    ],
+  );
   assert.deepEqual(lost.other, []);
   assert.deepEqual(lost.went, []);
 });
 
-
 test("a merchant question's open lines, newest first, for answering one by one", () => {
-  const values = [["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "status"],
+  const values = [
+    ["txn_id", "date", "account_id", "amount", "payee_raw", "payee_text", "key", "status"],
     ["t1", "2026-09-01", "checking", "-20", "WILLOW ST 1", "WILLOW ST 1", "WILLOW ST", "open"],
     ["t2", "2026-10-01", "card", "-35", "WILLOW ST CAFE", "WILLOW ST CAFE", "WILLOW ST CAFE", "open"],
     ["t3", "2026-10-02", "card", "-10", "WILLOW ST", "WILLOW ST", "WILLOW ST", "decided"],
     ["t4", "2026-10-03", "card", "-12", "ACME GROCER", "ACME GROCER", "ACME GROCER", "open"],
-    ["t5", "2026-10-04", "card", "-15", "WILLOW ST", "WILLOW ST", "WILLOW ST", "open"]];
-  assert.deepEqual(shape.reviewLines(values, "WILLOW ST", ["t5"]).map((l) => [l.id, l.amount]), [["t2", -35], ["t1", -20]]);
+    ["t5", "2026-10-04", "card", "-15", "WILLOW ST", "WILLOW ST", "WILLOW ST", "open"],
+  ];
+  assert.deepEqual(
+    shape.reviewLines(values, "WILLOW ST", ["t5"]).map((l) => [l.id, l.amount]),
+    [
+      ["t2", -35],
+      ["t1", -20],
+    ],
+  );
 });
 
 test("the subscriptions page totals what is still charged", () => {
-  const page = shape.subscriptionsPage([["key", "status", "yearly", "run_id"], ["PAGE TURNER BOOKS", "price changed", "155.88", "r1"],
-                                        ["QUILL & INK", "active", "60", "r1"], ["WILLOW ST", "stopped", "240", "r1"]]);
+  const page = shape.subscriptionsPage([
+    ["key", "status", "yearly", "run_id"],
+    ["PAGE TURNER BOOKS", "price changed", "155.88", "r1"],
+    ["QUILL & INK", "active", "60", "r1"],
+    ["WILLOW ST", "stopped", "240", "r1"],
+  ]);
   assert.equal(page.total, 215.88);
-  assert.deepEqual(page.subscriptions.map((r) => r.key), ["PAGE TURNER BOOKS", "QUILL & INK", "WILLOW ST"]);
+  assert.deepEqual(
+    page.subscriptions.map((r) => r.key),
+    ["PAGE TURNER BOOKS", "QUILL & INK", "WILLOW ST"],
+  );
   assert.equal("run_id" in page.subscriptions[0], false);
 });
 
 test("periods: a month, a quarter or a calendar year, shifted and named", () => {
-  assert.deepEqual(["month", "quarter", "year"].map((l) => shape.periodOf("2026-11-07", l)), ["2026-11", "2026-Q4", "2026"]);
+  assert.deepEqual(
+    ["month", "quarter", "year"].map((l) => shape.periodOf("2026-11-07", l)),
+    ["2026-11", "2026-Q4", "2026"],
+  );
   assert.deepEqual(shape.periodDays("2024-02"), ["2024-02-01", "2024-02-29"]);
   assert.deepEqual(shape.periodDays("2026-Q4"), ["2026-10-01", "2026-12-31"]);
   assert.deepEqual(shape.periodDays("2025"), ["2025-01-01", "2025-12-31"]);
-  assert.deepEqual([shape.shiftPeriod("2026-01", -1), shape.shiftPeriod("2026-Q1", -1), shape.shiftPeriod("2026-11", -12),
-                    shape.shiftPeriod("2026", -3)], ["2025-12", "2025-Q4", "2025-11", "2023"]);
-  assert.deepEqual([shape.periodName("2026-10"), shape.periodName("2026-Q4"), shape.periodName("2026")], ["October 2026", "Q4 2026", "2026"]);
+  assert.deepEqual(
+    [
+      shape.shiftPeriod("2026-01", -1),
+      shape.shiftPeriod("2026-Q1", -1),
+      shape.shiftPeriod("2026-11", -12),
+      shape.shiftPeriod("2026", -3),
+    ],
+    ["2025-12", "2025-Q4", "2025-11", "2023"],
+  );
+  assert.deepEqual(
+    [shape.periodName("2026-10"), shape.periodName("2026-Q4"), shape.periodName("2026")],
+    ["October 2026", "Q4 2026", "2026"],
+  );
   assert.deepEqual(shape.quickPicks("2026-Q4"), ["2026-Q3", "2025-Q4"]);
   assert.deepEqual(shape.quickPicks("2026"), ["2025"]);
 });
 
 // food: 60 a month budgeted in October and November 2026; spending in November 2026 so far, and November 2025
 const BOOK_VALUES = {
-  budget: [["month", "category", "group", "priority", "target", "actual"],
-           ["2026-10", "food", "living", "high", 60, 55], ["2026-11", "food", "living", "high", 60, 12],
-           ["2026-11", "media", "fun", "", 20, 13]],
-  daily: [["date", "category", "spend", "run_id"],
-          ["2026-10-12", "food", 55, "r1"], ["2026-11-03", "food", 10, "r1"], ["2026-11-06", "food", 2, "r1"],
-          ["2026-11-05", "media", 13, "r1"], ["2025-11-02", "food", 8, "r1"], ["2025-11-15", "food", 40, "r1"],
-          ["2024-10-20", "food", 30, "r1"], ["2024-11-01", "gifts", 25, "r1"]],
-  recurring: [["month", "key", "category", "group", "expected", "actual", "run_id"],
-              ["2026-11", "PAGE TURNER BOOKS", "media", "fun", "10", "13", "r1"],
-              ["2025-11", "PAGE TURNER BOOKS", "media", "fun", "10", "10", "r1"]],
-  categories: [["category", "group", "priority", "run_id"], ["food", "living", "high", "r1"], ["media", "fun", "", "r1"]],
+  budget: [
+    ["month", "category", "group", "priority", "target", "actual"],
+    ["2026-10", "food", "living", "high", 60, 55],
+    ["2026-11", "food", "living", "high", 60, 12],
+    ["2026-11", "media", "fun", "", 20, 13],
+  ],
+  daily: [
+    ["date", "category", "spend", "run_id"],
+    ["2026-10-12", "food", 55, "r1"],
+    ["2026-11-03", "food", 10, "r1"],
+    ["2026-11-06", "food", 2, "r1"],
+    ["2026-11-05", "media", 13, "r1"],
+    ["2025-11-02", "food", 8, "r1"],
+    ["2025-11-15", "food", 40, "r1"],
+    ["2024-10-20", "food", 30, "r1"],
+    ["2024-11-01", "gifts", 25, "r1"],
+  ],
+  recurring: [
+    ["month", "key", "category", "group", "expected", "actual", "run_id"],
+    ["2026-11", "PAGE TURNER BOOKS", "media", "fun", "10", "13", "r1"],
+    ["2025-11", "PAGE TURNER BOOKS", "media", "fun", "10", "10", "r1"],
+  ],
+  categories: [
+    ["category", "group", "priority", "run_id"],
+    ["food", "living", "high", "r1"],
+    ["media", "fun", "", "r1"],
+  ],
 };
-const book = (): BudgetBook => shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, BOOK_VALUES.categories);
+const book = (): BudgetBook =>
+  shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, BOOK_VALUES.categories);
 
 test("a month not over, beside the same days of another: the whole month's target, the other cut to as many days", () => {
   const v = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07");
-  assert.deepEqual([v.partial, v.sameWeeks, v.from, v.through, v.compareFrom, v.compareThrough],
-                   [true, true, "2026-11-01", "2026-11-07", "2025-11-01", "2025-11-07"]);
-  assert.deepEqual(v.groups.map((g) => [g.name, g.target, g.actual, g.compared]), [["living", 60, 12, 8], ["fun", 20, 13, 0]]);
+  assert.deepEqual(
+    [v.partial, v.sameWeeks, v.from, v.through, v.compareFrom, v.compareThrough],
+    [true, true, "2026-11-01", "2026-11-07", "2025-11-01", "2025-11-07"],
+  );
+  assert.deepEqual(
+    v.groups.map((g) => [g.name, g.target, g.actual, g.compared]),
+    [
+      ["living", 60, 12, 8],
+      ["fun", 20, 13, 0],
+    ],
+  );
   const media = v.groups[1].lines[0];
   assert.deepEqual(media.recurring, [{ key: "PAGE TURNER BOOKS", expected: 10, actual: 13, compared: 10 }]);
   assert.deepEqual([v.target, v.actual, v.compared, v.recurring], [80, 25, 8, 13]);
   const whole = shape.budgetView(book(), "2026-11", "2025-11", false, "2026-11-07");
-  assert.deepEqual([whole.sameWeeks, whole.through, whole.compareThrough, whole.target, whole.compared],
-                   [false, "2026-11-30", "2025-11-30", 80, 48]);
+  assert.deepEqual(
+    [whole.sameWeeks, whole.through, whole.compareThrough, whole.target, whole.compared],
+    [false, "2026-11-30", "2025-11-30", 80, 48],
+  );
 });
 
 test("a quarter beside any other: every month's target, and a category only spent in the other still shows", () => {
   const v = shape.budgetView(book(), "2026-Q4", "2024-Q4", true, "2026-11-07");
   assert.deepEqual([v.through, v.compareThrough], ["2026-11-07", "2024-11-07"]);
-  assert.deepEqual(v.groups.map((g) => [g.name, g.target, g.actual, g.compared, g.lines.map((l) => l.category)]),
-                   [["living", 120, 67, 30, ["food"]], ["fun", 20, 13, 0, ["media"]], ["Other", 0, 0, 25, ["gifts"]]]);
-  const past = shape.budgetView(book(), "2025", "2024", true, "2026-11-07");  // a year that is over is whole
-  assert.deepEqual([past.partial, past.sameWeeks, past.through, past.actual, past.compared], [false, false, "2025-12-31", 48, 55]);
+  assert.deepEqual(
+    v.groups.map((g) => [g.name, g.target, g.actual, g.compared, g.lines.map((l) => l.category)]),
+    [
+      ["living", 120, 67, 30, ["food"]],
+      ["fun", 20, 13, 0, ["media"]],
+      ["Other", 0, 0, 25, ["gifts"]],
+    ],
+  );
+  const past = shape.budgetView(book(), "2025", "2024", true, "2026-11-07"); // a year that is over is whole
+  assert.deepEqual(
+    [past.partial, past.sameWeeks, past.through, past.actual, past.compared],
+    [false, false, "2025-12-31", 48, 55],
+  );
 });
 
 test("a lens's periods run from the first spending to today's, newest first", () => {
@@ -339,9 +588,18 @@ test("a lens's periods run from the first spending to today's, newest first", ()
 test("the run as a whole comes first with each line's level, and a failed stage needs you", () => {
   const log: unknown[][] = [
     ["run_id", "computed_at", "stage", "detail"],
-    ["r9", "2001-03-02T07:10:00Z", "run", JSON.stringify({ failed: ["legacy equity"], stages: [
-      { stage: "legacy equity", status: "failed", seconds: 1, result: "ValueError: no grants tab" },
-      { stage: "compute", status: "done", seconds: 9, result: "0 lines open in review" }] })],
+    [
+      "r9",
+      "2001-03-02T07:10:00Z",
+      "run",
+      JSON.stringify({
+        failed: ["legacy equity"],
+        stages: [
+          { stage: "legacy equity", status: "failed", seconds: 1, result: "ValueError: no grants tab" },
+          { stage: "compute", status: "done", seconds: 9, result: "0 lines open in review" },
+        ],
+      }),
+    ],
     ["r2", "2001-03-02T07:05:00Z", "compute", "{}"],
   ];
   const notes: unknown[][] = [
@@ -351,7 +609,10 @@ test("the run as a whole comes first with each line's level, and a failed stage 
     ["r2", "compute", "", 0, "lots: a vest is missing", "WARN"],
   ];
   const status = shape.parseStatus(log, notes);
-  assert.deepEqual(status.stages.map((s) => s.stage), ["run", "compute"]);
+  assert.deepEqual(
+    status.stages.map((s) => s.stage),
+    ["run", "compute"],
+  );
   assert.deepEqual(status.stages[1].levels, ["WARN"]);
   const failed = status.attention.find((a) => a.key === "stages_failed");
   assert.deepEqual(failed?.items, [{ title: "legacy equity", detail: "ValueError: no grants tab" }]);

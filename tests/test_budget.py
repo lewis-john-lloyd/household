@@ -130,10 +130,20 @@ def test_a_line_name_with_stray_spaces_or_symbols_is_still_one_line():
 def test_a_billed_line_lands_whole_in_the_months_its_bill_comes():
     out = budget.targets(rules(["water", "2026-02-01", "household", "bills", "high", "billed", "90", "quarterly", ""]),
                          None, "2026-08")
-    got = dict(zip(out["month"], out["target"]))
+    got = dict(zip(out["month"], out["target"]))  # no bills paid yet: the line's start is the first bill's month
     assert got == {"2026-02": 90.0, "2026-03": 0.0, "2026-04": 0.0, "2026-05": 90.0, "2026-06": 0.0, "2026-07": 0.0,
                    "2026-08": 90.0}
-    assert out.loc[out["month"] == "2026-03", "basis"].iloc[0] == "billed: 90.00 quarterly, not due this month"
     weekly = budget.targets(rules(["water", "2026-02-01", "household", "bills", "high", "billed", "10", "weekly", ""]),
                             None, "2026-02")
     assert round(weekly["target"].iloc[0], 2) == round(10 * 52 / 12, 2)  # no month of its own: spread
+
+
+def test_a_billed_line_finds_its_months_from_the_bills_paid():
+    paid = actuals([["2026-01", "household", 88], ["2026-04", "household", 91]])
+    out = budget.targets(rules(["water", "2026-02-01", "household", "bills", "high", "billed", "90", "quarterly", ""]),
+                         paid, "2026-08")
+    got = dict(zip(out["month"], out["target"]))
+    assert got == {"2026-02": 0.0, "2026-03": 0.0, "2026-04": 90.0, "2026-05": 0.0, "2026-06": 0.0, "2026-07": 90.0,
+                   "2026-08": 0.0}
+    assert out.loc[out["month"] == "2026-05", "basis"].iloc[0] == (
+        "billed: 90.00 quarterly, not due this month (the last bill 2026-04)")

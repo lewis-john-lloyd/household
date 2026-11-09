@@ -1848,7 +1848,6 @@
         var showCharges = function () {
           var recurring = rule.value === "recurring";
           amount.parentNode.firstChild.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
-          effective.parentNode.firstChild.textContent = rule.value === "billed" ? "A month the bill comes" : "From";
           charges.textContent = "";
           charges.hidden = !recurring;
           if (!recurring) return;

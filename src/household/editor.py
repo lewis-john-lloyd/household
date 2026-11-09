@@ -36,7 +36,7 @@ def in_words(row):
     if rule == "fixed":
         return each or "fixed, but no amount"
     if rule == "billed":
-        return f"a bill of {_money(amount)} {PER_WORDS.get(per, per)}, due from {str(row['effective'])[:7]}" if amount \
+        return f"a bill of {_money(amount)} {PER_WORDS.get(per, per)}, in the months it comes" if amount \
             else "billed, but no amount"
     if rule == "sinking_fund":
         return f"set aside {each}, spent from a running balance" if each else "sinking fund, but no amount"

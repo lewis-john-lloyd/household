@@ -616,7 +616,10 @@ test("investments: over time draws any lines chosen, each keeping its color, up 
   const pressed = () => page.$$eval("#investments-body .line-pick[aria-pressed='true']", (b) => b.map((x) => x.textContent));
   assert.deepEqual(await pressed(), ["Net worth", "Investments"]);  // no home equity line to start with
   const color = (name) => page.$eval(`#investments-body .line-pick:has-text('${name}') .swatch`, (s) => s.style.background);
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.evaluate(() => window.scrollTo(0, 300));
   await page.click("#investments-body .line-pick:has-text('acct_3')");
+  assert.equal(await page.evaluate(() => window.scrollY), 300);  // choosing a line keeps the page where it was
   assert.equal(await color("acct_3"), "var(--series-3)");
   await page.click("#investments-body .line-pick:has-text('Net worth')");
   assert.equal(await color("acct_3"), "var(--series-3)");  // taking one off doesn't repaint the rest

@@ -538,6 +538,12 @@
       .w-table tr.picked td { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
       .w-table tr.short td { color: var(--error); }
       .r-toolbar { margin: 0 0 12px; }
+      .over-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+      .over-cols > .panel, .over-main > .panel { margin: 0; }
+      .over-picks { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+      .over-picks .line-picks { flex-direction: column; align-items: stretch; }
+      .over-picks .line-pick { justify-content: flex-start; text-align: left; }
+      @media (max-width: 900px) { .over-cols { grid-template-columns: 1fr; } .over-picks { position: static; max-height: none; } }
       .over-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
       .over-group { font-size: 14px; font-weight: 500; margin: 16px 0 8px; color: var(--on-surface-variant); }
       .line-picks { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -3411,6 +3417,21 @@
       }
 
       function drawOverTime(body, d) {
+        var box = el("div", null, "over-time");
+        body.appendChild(box);
+        fillOverTime(box, d);
+      }
+
+      function refreshOverTime() {  // redraw the part in place: the page doesn't jump
+        var box = document.querySelector("#investments-body .over-time");
+        if (!box) { drawInvestments(); return; }
+        var y = window.scrollY;
+        box.innerHTML = "";
+        fillOverTime(box, investments);
+        window.scrollTo(0, y);
+      }
+
+      function fillOverTime(body, d) {
         var byKey = {};
         d.lines.forEach(function (l) { byKey[l.key] = l; });
         if (!overTime) {
@@ -3433,19 +3454,23 @@
         seg.setAttribute("role", "group");
         seg.setAttribute("aria-label", "How far back");
         OVER_RANGES.forEach(function (r) {
-          var b = button(r[1], function () { overRange = r[0]; drawInvestments(); });
+          var b = button(r[1], function () { overRange = r[0]; refreshOverTime(); });
           b.setAttribute("aria-pressed", String(overRange === r[0]));
           seg.appendChild(b);
         });
         bar.appendChild(seg);
-        if (chosen.length) bar.appendChild(button("Clear", function () { overTime = {}; drawInvestments(); }));
+        if (chosen.length) bar.appendChild(button("Clear", function () { overTime = {}; refreshOverTime(); }));
         body.appendChild(bar);
+        var cols = el("div", null, "over-cols");
+        body.appendChild(cols);
+        var main = el("div", null, "over-main");
+        cols.appendChild(main);
 
-        var chart = el("section", null, "panel w-wide");
+        var chart = el("section", null, "panel");
         chart.appendChild(el("h3", chosen.length ? "Value over time" : "Choose lines below"));
         chart.appendChild(el("p", "Month-ends from the first reading, and today. Home equity counts each home at its purchase price " +
                                   "(the home_value_basis setting) less what is owed on it; an account's line is all its parts together.", "support"));
-        body.appendChild(chart);
+        main.appendChild(chart);
         var series = chosen.map(function (k) {
           return { name: overLabel(byKey[k]), color: "var(--series-" + overTime[k] + ")", points: inRange(byKey[k]) };
         }).filter(function (s) { return s.points.length; });
@@ -3467,8 +3492,8 @@
           chart.appendChild(el("p", "Nothing in this range.", "support"));
         }
 
-        var pick = panel(body, "Lines", "Up to " + OVER_MAX + " at once.");
-        pick.classList.add("w-wide");
+        var pick = panel(cols, "Lines", "Up to " + OVER_MAX + " at once.");
+        pick.classList.add("over-picks");
         OVER_GROUPS.forEach(function (g) {
           var mine = d.lines.filter(function (l) { return l.group === g[0]; });
           if (!mine.length) return;
@@ -3495,7 +3520,7 @@
                 for (var slot = 1; used.indexOf(slot) >= 0; slot++) { /* the lowest free color */ }
                 overTime[l.key] = slot;
               }
-              drawInvestments();
+              refreshOverTime();
             });
             row.appendChild(b);
           });

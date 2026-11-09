@@ -193,11 +193,20 @@
       .scale { display: grid; grid-template-columns: minmax(9em, 1.2fr) 2fr minmax(7.5em, auto); gap: 12px; color: var(--on-surface-variant);
         font-size: 12px; margin-top: 8px; }
       .scale div { display: flex; justify-content: space-between; }
-      .logs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 12px; }
-      .logs .panel { padding: 0; overflow: hidden; }
-      .logs .head { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--outline-variant); }
-      .logs .head .support { font-size: 13px; }
-      .logs ol { list-style: none; margin: 0; padding: 8px 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; }
+      .logs { display: grid; gap: 12px; }
+      .logs details.panel { padding: 0; overflow: hidden; margin: 0; }
+      .logs summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 20px; list-style: none; }
+      .logs summary::-webkit-details-marker { display: none; }
+      .logs summary::before { content: "\25B8"; color: var(--on-surface-variant); width: 1em; }
+      .logs details[open] > summary::before { content: "\25BE"; }
+      .logs summary h2 { margin: 0; font-size: 18px; }
+      .logs summary .support { font-size: 13px; font-weight: 400; }
+      .logs details.panel[open] > summary { border-bottom: 1px solid var(--outline-variant); }
+      .logs details.topic { margin: 0; border-bottom: 1px solid var(--outline-variant); }
+      .logs details.topic:last-child { border-bottom: 0; }
+      .logs details.topic > summary { padding: 8px 20px; font-weight: 500; }
+      .logs details.topic > summary .count { color: var(--on-surface-variant); font-weight: 400; font-size: 13px; }
+      .logs ol { list-style: none; margin: 0; padding: 0 0 8px; font: 12px/18px "Roboto Mono", ui-monospace, monospace; }
       .logs li { padding: 1px 20px 1px 40px; text-indent: -20px; white-space: pre-wrap; overflow-wrap: anywhere; }
       .logs li.indent { color: var(--on-surface-variant); }
       .logs li.flag { background: var(--error-container); color: var(--on-error-container); }
@@ -562,6 +571,11 @@
     </div>
 
     <section id="status">
+      <div id="status-tabs" class="subtabs" role="group" aria-label="Status">
+        <button data-tab="overview" aria-pressed="true">Overview</button>
+        <button data-tab="log" aria-pressed="false">Engine log</button>
+      </div>
+      <div id="status-overview">
       <div class="status-head">
         <h2 id="status-title">Loading…</h2>
         <div id="status-runs" class="chips"></div>
@@ -579,7 +593,12 @@
           <div id="status-projection"></div>
         </section>
       </div>
-      <div id="status-logs" class="logs"></div>
+      </div>
+      <div id="status-log" hidden>
+        <p class="support">What the engine printed in its latest ingest and compute. Choose a run or a topic to open it;
+          a topic with a line that needs you opens by itself.</p>
+        <div id="status-logs" class="logs"></div>
+      </div>
     </section>
 
     <section id="flows" hidden>
@@ -2885,7 +2904,7 @@
       var PLAN_NAME = { federal: "Federal", wisconsin: "Wisconsin" };
 
       // --- Investments and Home -----------------------------------------------------------------------------------
-      var investments = null, home = null;
+      var investments = null, home = null, investView = "overview", homeView = "overview";
       var pct = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
       var BUCKET_SERIES = { "401k_pretax": 1, "401k_roth": 2, ira_pretax: 3, ira_roth: 4, hsa: 5, taxable: 6, ibonds: 7, "529": 8 };
       var PART_NAMES = { "401k_pretax": "401(k) pre-tax", "401k_roth": "401(k) Roth", ira_pretax: "IRA pre-tax", ira_roth: "IRA Roth",
@@ -2908,6 +2927,20 @@
       function change(n) { return (n > 0.5 ? "+" : n < -0.5 ? "−" : "") + money.format(Math.abs(n)); }
       function longDate(d) { return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10)) + ", " + d.slice(0, 4); }
       function ownerName(o) { return o === "kids" ? "Kids" : o.charAt(0).toUpperCase() + o.slice(1); }
+
+      // A page's submenu: one button per part, the part shown pressed; choosing one redraws the page on that part.
+      function subtabs(parent, label, parts, current, pick) {
+        var box = el("div", null, "subtabs");
+        box.setAttribute("role", "group");
+        box.setAttribute("aria-label", label);
+        parts.forEach(function (t) {
+          var b = button(t[1], function () { pick(t[0]); });
+          b.setAttribute("aria-pressed", String(current === t[0]));
+          box.appendChild(b);
+        });
+        parent.appendChild(box);
+        return box;
+      }
 
       function panel(parent, title, lead) {
         var p = el("section", null, "panel");
@@ -3082,10 +3115,15 @@
         var d = investments, body = document.getElementById("investments-body");
         body.innerHTML = "";
         if (!d.asOf) { body.appendChild(el("p", "No investment values yet: run compute after the holdings are in.", "support")); return; }
+        subtabs(body, "Investments", [["overview", "Overview"], ["allocation", "Allocation"], ["accounts", "Accounts"], ["lots", "Lots"]],
+                investView, function (v) { investView = v; drawInvestments(); });
         var head = el("div", null, "w-head");
-        head.appendChild(el("h2", "Investments"));
+        head.appendChild(el("h2", { overview: "Investments", allocation: "Allocation", accounts: "Accounts", lots: "Lots and sales" }[investView]));
         head.appendChild(el("span", "as of " + longDate(d.asOf), "support"));
         body.appendChild(head);
+        if (investView === "allocation") { drawAllocation(body, d); return; }
+        if (investView === "accounts") { drawAccounts(body, d); return; }
+        if (investView === "lots") { drawLots(body, d); return; }
         var parts = {};
         d.owners.forEach(function (o) { Object.keys(o.parts).forEach(function (k) { parts[k] = (parts[k] || 0) + o.parts[k]; }); });
         var worth = d.owners.reduce(function (s, o) { return s + o.total; }, 0);
@@ -3143,7 +3181,9 @@
           { name: "Investments", color: "var(--series-3)", points: d.history.map(function (p) { return [p.date, p.invested]; }) },
           { name: "Home equity", color: "var(--series-4)", points: d.history.filter(function (p) { return p.homes; }).map(function (p) { return [p.date, p.homes]; }) }
         ].filter(function (s) { return s.points.length; }), { label: "Net worth, investments and home equity at each month-end" });
+      }
 
+      function drawAllocation(body, d) {
         var grid2 = el("div");
         body.appendChild(grid2);
         var al = panel(grid2, "Allocation", "Against the targets in allocation_targets. 529s are left out; I-Bonds count as US bonds.");
@@ -3191,7 +3231,9 @@
           d.notes.forEach(function (n) { ul.appendChild(el("li", n.replace(/^(rebalance|valuation): /, ""))); });
           rb.appendChild(ul);
         }
+      }
 
+      function drawAccounts(body, d) {
         var acc = el("section", null, "panel w-wide");
         acc.appendChild(el("h3", "Accounts"));
         acc.appendChild(el("p", "“Carried” means part of the account had no price since its last reading, so it shows the value read then.", "support"));
@@ -3210,6 +3252,72 @@
         acc.appendChild(funds);
       }
 
+      var TERM_NAMES = { short_term: "Short term", long_term: "Long term" };
+
+      // Tax lots: what each lot in a taxable account holds, and every lot part sold, as Form 8949 has it
+      function drawLots(body, d) {
+        if (!d.openLots.length && !d.lotSales.length) {
+          body.appendChild(el("p", "No lots yet: compute works them out from vests, the plan's sales and each account's activity.", "support"));
+          return;
+        }
+        var sum = function (rows, k) { return rows.reduce(function (s, r) { return s + (r[k] || 0); }, 0); };
+        var priced = d.openLots.filter(function (l) { return l.value !== null; });
+        var carried = sum(d.openLots, "washAdded");
+        figures(body, [[sum(priced, "value"), "in open lots"], [sum(priced, "gain"), "gain if sold today"],
+                       carried ? [carried, "wash-sale losses carried in their basis"] : null]);
+
+        var op = el("section", null, "panel w-wide");
+        op.appendChild(el("h3", "Open lots"));
+        op.appendChild(el("p", "Each lot still held in a taxable account, oldest first. Its basis includes any wash-sale loss it " +
+                               "carries, and its holding period then starts earlier than it was acquired. Selling at a loss " +
+                               "within 30 days of another purchase or vest of the same stock is a wash.", "support"));
+        body.appendChild(op);
+        if (!d.openLots.length) op.appendChild(el("p", "None.", "support"));
+        else {
+          var ot = wTable(op, ["Acquired", "Held from", "Shares", "Basis", "Value", "Gain", "If sold today"], [2, 3, 4, 5]);
+          var last = "";
+          d.openLots.forEach(function (l) {
+            var group = l.account + " " + l.symbol;
+            if (group !== last) { ot.row([group, "", "", "", "", "", ""], "group"); last = group; }
+            var when = el("span", longDate(l.acquired));
+            if (l.washAdded) when.appendChild(el("span", "wash", "tag"));
+            ot.row([when, l.holdingFrom !== l.acquired ? longDate(l.holdingFrom) : "", l.shares.toFixed(3), money.format(l.basis),
+                    l.value === null ? "–" : money.format(l.value), l.gain === null ? "–" : change(l.gain), TERM_NAMES[l.term] || l.term]);
+          });
+        }
+
+        var sold = el("section", null, "panel w-wide");
+        sold.appendChild(el("h3", "Sales by year"));
+        sold.appendChild(el("p", "Gains as Form 8949 reports them, wash sales worked out across every account. A wash (code W) " +
+                                 "disallows the loss for the shares replaced and moves it into their basis.", "support"));
+        body.appendChild(sold);
+        if (!d.lotYears.length) sold.appendChild(el("p", "No sales yet.", "support"));
+        else {
+          var yt = wTable(sold, ["Year", "Lot parts sold", "Short-term gain", "Long-term gain", "Wash sales disallowed"], [1, 2, 3, 4]);
+          d.lotYears.forEach(function (y) {
+            yt.row([y.year, String(y.sales), change(y.shortTerm), change(y.longTerm), y.disallowed ? money.format(y.disallowed) : "–"]);
+          });
+          d.lotYears.forEach(function (y, i) {
+            var box = el("details");
+            box.open = i === 0;
+            box.appendChild(el("summary", y.year + ": each lot part sold"));
+            var st = wTable(box, ["Sold", "Acquired", "Held from", "Shares", "Proceeds", "Basis", "Code", "Adjustment", "Gain", "Term"],
+                            [3, 4, 5, 7, 8]);
+            d.lotSales.filter(function (x) { return x.year === y.year; }).forEach(function (x) {
+              st.row([longDate(x.saleDate), longDate(x.acquired), x.holdingFrom !== x.acquired ? longDate(x.holdingFrom) : "",
+                      x.shares.toFixed(3), money.format(x.proceeds), money.format(x.basis), x.code,
+                      x.adjustment ? money.format(x.adjustment) : "", change(x.gain), TERM_NAMES[x.term] || x.term]);
+            });
+            sold.appendChild(box);
+          });
+        }
+        if (d.lotNotes.length) {
+          var ul = el("ul", null, "w-notes");
+          d.lotNotes.forEach(function (n) { ul.appendChild(el("li", n.replace(/^lots:? /, ""))); });
+          sold.appendChild(ul);
+        }
+      }
+
       function drawHome() {
         var d = home, body = document.getElementById("home-body");
         body.innerHTML = "";
@@ -3217,6 +3325,8 @@
           body.appendChild(el("p", "No homes yet. Add one with a properties file in the inbox (its header is the properties table's columns).", "support"));
           return;
         }
+        subtabs(body, "Home", [["overview", "Overview"], ["taxes", "Property tax"], ["mortgage", "Mortgage"], ["improvements", "Improvements"]],
+                homeView, function (v) { homeView = v; drawHome(); });
         var isOwned = function (h) { return h.lines.some(function (l) { return l.key === "status" && l.value === "owned"; }); };
         var owned = d.homes.filter(isOwned), gone = d.homes.filter(function (h) { return !isOwned(h); });
         owned.forEach(function (h) {
@@ -3225,7 +3335,7 @@
           drawOneHome(body, d, h, line, h.lines.filter(function (l) { return l.key.indexOf("loan:") === 0; }));
         });
         if (!owned.length) body.appendChild(el("p", "No home owned today.", "support"));
-        if (gone.length) body.appendChild(el("p", "Earlier homes (" + gone.map(function (h) { return h.id; }).join(", ") +
+        if (gone.length && homeView === "overview") body.appendChild(el("p", "Earlier homes (" + gone.map(function (h) { return h.id; }).join(", ") +
                                                   ") count in net worth history while they were owned.", "support"));
       }
 
@@ -3234,6 +3344,9 @@
         head.appendChild(el("h2", h.id));
         if (line.purchase_price && line.purchase_price.asOf) head.appendChild(el("span", "bought " + longDate(line.purchase_price.asOf), "support"));
         body.appendChild(head);
+        if (homeView === "taxes") { drawHomeTaxes(body, d, h); return; }
+        if (homeView === "mortgage") { drawMortgage(body, d, loans); return; }
+        if (homeView === "improvements") { drawImprovements(body, d, h); return; }
         var owed = loans.reduce(function (s, l) { return s + Number(l.value || 0); }, 0);
         var val = function (k) { return line[k] ? Number(line[k].value) : null; };
         figures(body, [val("equity") !== null ? [val("equity"), "equity at the value counted"] : null,
@@ -3261,8 +3374,11 @@
           var et = wTable(es, ["Source", "Value", "As of"], [1]);
           mine.forEach(function (e) { et.row([e.source.replace(/_/g, " "), money.format(e.value), longDate(e.asOf)]); });
         }
+      }
 
+      function drawHomeTaxes(body, d, h) {
         var taxes = d.taxes.filter(function (t) { return t.property === h.id; });
+        if (!taxes.length) body.appendChild(el("p", "No tax bills yet: the county check adds each one from AccessDane.", "support"));
         if (taxes.length) {
           var tx = el("section", null, "panel w-wide");
           tx.appendChild(el("h3", "Property tax"));
@@ -3279,7 +3395,9 @@
           });
           body.appendChild(tx);
         }
+      }
 
+      function drawMortgage(body, d, loans) {
         var ids = loans.map(function (l) { return l.key.slice(5); });
         var sched = d.schedule.filter(function (p) { return ids.indexOf(p.loan) >= 0; });
         if (sched.length) {
@@ -3310,7 +3428,10 @@
           am.appendChild(years);
           body.appendChild(am);
         }
+        if (!sched.length) body.appendChild(el("p", "No loan on this home.", "support"));
+      }
 
+      function drawImprovements(body, d, h) {
         var im = el("section", null, "panel w-wide");
         im.appendChild(el("h3", "Improvements"));
         im.appendChild(el("p", "Capital improvements add their cost to basis; energy-credit work adds its cost less the credit; " +
@@ -3543,15 +3664,7 @@
       function drawTaxes() {
         var body = document.getElementById("taxes-body");
         body.textContent = "";
-        var tabs = el("div", null, "subtabs");
-        tabs.setAttribute("role", "group");
-        tabs.setAttribute("aria-label", "Taxes");
-        [["year", "This year"], ["history", "History"]].forEach(function (t) {
-          var b = button(t[1], function () { taxView = t[0]; drawTaxes(); });
-          b.setAttribute("aria-pressed", String(taxView === t[0]));
-          tabs.appendChild(b);
-        });
-        body.appendChild(tabs);
+        subtabs(body, "Taxes", [["year", "This year"], ["history", "History"]], taxView, function (v) { taxView = v; drawTaxes(); });
         if (taxView === "history") { drawTaxHistoryView(body); return; }
         if (!taxes.years.length) {
           body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
@@ -4005,18 +4118,54 @@
         drawBreakdown(status.categories);
         drawProjection(status.projection, status.projectionYear, status.wiProjection);
         status.stages.forEach(function (s) {
-          var panel = el("section", null, "panel");
-          var head = el("div", null, "head");
+          var panel = el("details", null, "panel");
+          var head = el("summary");
           head.appendChild(el("h2", STAGE_NAME[s.stage]));
+          var flags = s.lines.filter(function (l) { return flagged[l]; }).length;
           head.appendChild(el("span", when(s.at) + ", run " + s.runId + ", " + s.lines.length + " lines", "support"));
+          if (flags) head.appendChild(el("span", flags === 1 ? "1 line needs you" : flags + " lines need you", "tag warn"));
           panel.appendChild(head);
-          var list = el("ol");
-          s.lines.forEach(function (l) {
-            list.appendChild(el("li", l, flagged[l] ? "flag" : /^\s/.test(l) ? "indent" : ""));
+          logTopics(s.lines).forEach(function (t) {
+            var topic = el("details", null, "topic");
+            var th = el("summary", t.name);
+            th.appendChild(el("span", " " + t.lines.length, "count"));
+            topic.appendChild(th);
+            var list = el("ol");
+            t.lines.forEach(function (l) {
+              list.appendChild(el("li", l, flagged[l] ? "flag" : /^\s/.test(l) ? "indent" : ""));
+            });
+            topic.appendChild(list);
+            topic.open = t.lines.some(function (l) { return flagged[l]; });
+            panel.appendChild(topic);
           });
-          panel.appendChild(list);
           logs.appendChild(panel);
         });
+      }
+
+      // A run's lines by topic, in the order each topic first appears: a line's topic is the words before its first
+      // colon (a year or a run id left off), and an indented line belongs to the line above it.
+      function logTopics(lines) {
+        var topics = [], by = {}, last = "run";
+        lines.forEach(function (l) {
+          var name = last;
+          if (!/^\s/.test(l)) {
+            var m = /^([A-Za-z][A-Za-z _'-]{0,40}?)(?: \d{4}\b[^:]*| [0-9A-Z]{8,}[^:]*)?:/.exec(l);
+            name = m ? m[1].trim() : "run";
+          }
+          if (!by[name]) { by[name] = { name: name, lines: [] }; topics.push(by[name]); }
+          by[name].lines.push(l);
+          last = name;
+        });
+        return topics;
+      }
+
+      var statusTab = "overview";
+
+      function setStatusTab(tab) {
+        statusTab = tab;
+        document.querySelectorAll("#status-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); });
+        document.getElementById("status-overview").hidden = tab !== "overview";
+        document.getElementById("status-log").hidden = tab !== "log";
       }
 
       var SEGMENT_COLOR = { waiting: "var(--waiting)", open: "var(--error)" };
@@ -4152,6 +4301,9 @@
         document.querySelectorAll("#edit-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setEditTab(b.dataset.tab); });
         });
+        document.querySelectorAll("#status-tabs button").forEach(function (b) {
+          b.addEventListener("click", function () { setStatusTab(b.dataset.tab); });
+        });
         document.getElementById("pending-show").addEventListener("click", function () {
           var list = document.getElementById("pending-list");
           list.hidden = !list.hidden;
@@ -4189,6 +4341,7 @@
         var moved = { budget: "budget", jobs: "jobs", subscriptions: "recurring", recurring: "recurring" };
         if (p.view === "edit" && moved[p.tab]) { setView(moved[p.tab]); return; }
         if (p.view === "budget" && p.tab === "recurring") budget.tab = "recurring";
+        if (!p.view && p.tab === "log") setStatusTab("log");
         if (p.tab && document.querySelector('#edit-tabs button[data-tab="' + p.tab + '"]')) {
           editTab = p.tab;
           document.querySelectorAll("#edit-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === p.tab)); });

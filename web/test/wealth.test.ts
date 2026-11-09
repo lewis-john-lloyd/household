@@ -54,3 +54,24 @@ test("the home page groups each home's lines and sums the amortization by year, 
   assert.deepEqual(page.years.map((y) => [y.year, y.payments, y.interest, y.endBalance, y.projected]),
                    [["2001", 2, 4, 98, false], ["2002", 1, 2, 97, true]]);
 });
+
+test("the lots part lists open lots oldest first, sales newest first, and each year's gains and wash sales", () => {
+  const open: unknown[][] = [
+    ["lot_id", "piece", "account_id", "symbol", "acquired", "holding_from", "shares", "cost_per_share", "basis", "wash_added",
+     "kind", "grant_id", "price", "value", "gain", "term_if_sold", "run_id"],
+    ["vest:G1:2001-03-25", 1, "brk", "ACME", "2001-03-25", "2001-03-25", 2, 40, 80, 0, "vest", "G1", 45, 90, 10, "short_term", "r"],
+    ["vest:G1:2001-02-25", 2, "brk", "ACME", "2001-02-25", "2001-01-20", 1, 50, 50, 10, "vest", "G1", "", "", "", "short_term", "r"],
+  ];
+  const form: unknown[][] = [
+    ["year", "sale_date", "account_id", "symbol", "shares", "acquired", "holding_from", "term", "proceeds", "basis", "wash_carried",
+     "code", "adjustment", "gain", "lot_id", "piece", "replaced_by", "reported_basis", "note", "run_id"],
+    ["2001", "2001-02-01", "brk", "ACME", 1, "2001-01-10", "2001-01-10", "short_term", 30, 40, 0, "W", 10, 0, "x", 1, "", "", "", "r"],
+    ["2001", "2001-03-01", "brk", "ACME", 1, "2001-01-10", "2001-01-10", "short_term", 50, 40, 0, "", 0, 10, "x", 2, "", "", "", "r"],
+    ["2000", "2000-12-01", "brk", "ACME", 1, "1999-01-10", "1999-01-10", "long_term", 50, 20, 0, "", 0, 30, "y", 1, "", "", "", "r"],
+  ];
+  const page = wealth.wealthPage({ investment_values: VALUES, net_worth: NET, open_lots: open, form_8949: form });
+  assert.deepEqual(page.openLots.map((l) => [l.acquired, l.value, l.washAdded]), [["2001-02-25", null, 10], ["2001-03-25", 90, 0]]);
+  assert.deepEqual(page.lotSales.map((x) => x.saleDate), ["2001-03-01", "2001-02-01", "2000-12-01"]);
+  assert.deepEqual(page.lotYears.map((y) => [y.year, y.shortTerm, y.longTerm, y.disallowed, y.sales]),
+                   [["2001", 10, 0, 10, 2], ["2000", 0, 30, 0, 1]]);
+});

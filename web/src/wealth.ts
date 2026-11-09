@@ -1,7 +1,7 @@
 /**
  * The Investments and Home pages' data from Reports: what each investment account is worth by tax bucket and
  * owner (investment_values, net_worth), the allocation against its targets and the proposed rebalance
- * (allocation, rebalance), net worth over time, and each home's numbers, estimates, improvements and
+ * (allocation, rebalance), net worth over time, tax lots and their sales (open_lots, form_8949), and each home's numbers, estimates, improvements and
  * amortization (property_summary, home_values, home_improvements, mortgage). Pure functions, tested under Node.
  */
 
@@ -25,6 +25,18 @@ interface AllocationRow {
 
 interface Trade { account: string; bucket: string; symbol: string; assetClass: string; current: number; proposed: number; trade: number }
 
+interface OpenLot {
+  lot: string; account: string; symbol: string; acquired: string; holdingFrom: string; shares: number; basis: number;
+  washAdded: number; value: number | null; gain: number | null; term: string;
+}
+
+interface LotSale {
+  year: string; saleDate: string; account: string; symbol: string; shares: number; acquired: string; holdingFrom: string;
+  term: string; proceeds: number; basis: number; code: string; adjustment: number; gain: number; note: string;
+}
+
+interface LotYear { year: string; shortTerm: number; longTerm: number; disallowed: number; sales: number }
+
 interface WealthPage {
   asOf: string;
   total: number;  // every investment account today, 529s included
@@ -36,6 +48,10 @@ interface WealthPage {
   allocation: AllocationRow[];
   trades: Trade[];
   notes: string[];
+  openLots: OpenLot[];  // what each lot in a taxable account holds today (open_lots), oldest first
+  lotSales: LotSale[];  // each lot part sold, as Form 8949 has it (form_8949), newest first
+  lotYears: LotYear[];  // each year's gains and wash sales, newest first
+  lotNotes: string[];  // the latest compute's lines about lots
 }
 
 interface HomeLine { key: string; label: string; value: number | string; asOf: string; note: string }
@@ -131,6 +147,23 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
   const trades = wealthRows(tabs.rebalance || []).map((r) => ({
     account: r.account_id, bucket: r.bucket, symbol: r.symbol, assetClass: r.asset_class, current: num(r.current),
     proposed: num(r.proposed), trade: num(r.trade) }));
+  const openLots = wealthRows(tabs.open_lots || []).map((r) => ({
+    lot: r.lot_id, account: r.account_id, symbol: r.symbol, acquired: r.acquired, holdingFrom: r.holding_from,
+    shares: num(r.shares), basis: num(r.basis), washAdded: num(r.wash_added), value: numOrNull(r.value), gain: numOrNull(r.gain),
+    term: r.term_if_sold })).sort((a, b) => a.acquired.localeCompare(b.acquired) || a.holdingFrom.localeCompare(b.holdingFrom));
+  const lotSales = wealthRows(tabs.form_8949 || []).map((r) => ({
+    year: r.year, saleDate: r.sale_date, account: r.account_id, symbol: r.symbol, shares: num(r.shares), acquired: r.acquired,
+    holdingFrom: r.holding_from, term: r.term, proceeds: num(r.proceeds), basis: num(r.basis), code: r.code,
+    adjustment: num(r.adjustment), gain: num(r.gain), note: r.note }))
+    .sort((a, b) => b.saleDate.localeCompare(a.saleDate) || a.acquired.localeCompare(b.acquired));
+  const years = new Map<string, LotYear>();
+  for (const x of lotSales) {
+    const y = years.get(x.year) || { year: x.year, shortTerm: 0, longTerm: 0, disallowed: 0, sales: 0 };
+    if (x.term === "long_term") y.longTerm += x.gain; else y.shortTerm += x.gain;
+    y.disallowed += x.adjustment;
+    y.sales += 1;
+    years.set(x.year, y);
+  }
   const ownerOrder = (o: string) => (o === "kids" ? 1 : 0);
   return {
     asOf, total: now.reduce((s, r) => s + num(r.value), 0), buckets,
@@ -139,6 +172,8 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
     owners: Array.from(owners.values()).sort((a, b) => ownerOrder(a.owner) - ownerOrder(b.owner) || a.owner.localeCompare(b.owner)),
     history: Array.from(points.values()).sort((a, b) => a.date.localeCompare(b.date)),
     allocation, trades, notes: latestNotes(tabs, /^(valuation|rebalance):/),
+    openLots, lotSales, lotYears: Array.from(years.values()).sort((a, b) => b.year.localeCompare(a.year)),
+    lotNotes: latestNotes(tabs, /^lots\b/),
   };
 }
 

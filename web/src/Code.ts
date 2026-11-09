@@ -391,7 +391,8 @@ function getTaxes(): TaxPage {
 
 function getInvestments(): WealthPage {
   const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["investment_values", "net_worth", "allocation", "rebalance", "run_log", "run_notes"]) {
+  for (const name of ["investment_values", "net_worth", "allocation", "rebalance", "open_lots", "form_8949", "run_log",
+                      "run_notes"]) {
     tabs[name] = readTabIfAny_(name);
   }
   return wealthPage(tabs);

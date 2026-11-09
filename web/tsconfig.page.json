@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "lib": [
+      "ES2019",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "none",
+    "types": [],
+    "strict": true,
+    "noEmitOnError": true,
+    "rootDir": "src",
+    "outDir": "build/page",
+    "exactOptionalPropertyTypes": true,
+    "alwaysStrict": false
+  },
+  "include": [
+    "src/budgetview.ts",
+    "src/page/**/*.ts"
+  ]
+}

@@ -3,8 +3,8 @@
   "private": true,
   "description": "The household views: an Apps Script web app over the Reports spreadsheet.",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.page.json && node scripts/copy.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.page.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test \"build/test/**/*.test.js\"",
     "push": "npm run build && clasp push",
     "test:browser": "node --test test/browser/editor.browser.js",

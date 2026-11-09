@@ -1,0 +1,966 @@
+// @ts-nocheck
+// Taxes: this year, history, the forms, the plan and scenarios.
+
+function loadTaxes() {
+  if (taxes) {
+    drawTaxes();
+    return;
+  }
+  document.getElementById("taxes-body").textContent = "Loading…";
+  call(
+    "getTaxes",
+    [],
+    function (data) {
+      taxes = data;
+      drawTaxes();
+    },
+    "taxes-body",
+  );
+}
+
+// Taxes over the years: one column per filed year, its income split where it came from, how it was taxed,
+// or where it went, in dollars or as shares of the whole; hover a column for its parts and their change on the
+// year before, click it to open that year below when the page has it.
+var historyView = { split: "went", measure: "Dollars", jurisdiction: "federal" };
+var HISTORY_SPLITS = { went: "Where it went", came: "Where it came from", taxed: "How it was taxed" };
+var HISTORY_RETURNS = { federal: "Federal", state: "State" };
+var STATE_CODES = { pa: "PA", wi: "WI" };
+var STATE_NAMES_BY_CODE = { pa: "Pennsylvania", wi: "Wisconsin" };
+var PART_COLOR = {
+  "Kept after income tax": 1,
+  "Federal income tax": 7,
+  "Other federal taxes": 5,
+  "State income tax": 2,
+  "Pennsylvania income tax": 2,
+  "Wisconsin income tax": 2,
+  Compensation: 1,
+  "Wisconsin income": 1,
+  "Interest & dividends": 4,
+  "Capital gains": 3,
+  "Other income": 6,
+  "Taxable income": 1,
+  Deducted: 6,
+  Adjustments: 4,
+  Wages: 1,
+};
+var CREDIT_PART = "Credits (part of what was kept)";
+
+function drawTaxHistory(body) {
+  var all = taxes.history;
+  var state = function (r) {
+    return r.jurisdiction !== "federal";
+  };
+  var returns = ["federal", "state"].filter(function (j) {
+    return all.some(function (r) {
+      return j === "state" ? state(r) : r.jurisdiction === "federal";
+    });
+  });
+  if (returns.indexOf(historyView.jurisdiction) < 0) historyView.jurisdiction = returns[0];
+  var mine = all.filter(function (r) {
+    return historyView.jurisdiction === "state" ? state(r) : r.jurisdiction === "federal";
+  });
+  var splits = Object.keys(HISTORY_SPLITS).filter(function (k) {
+    return mine.some(function (r) {
+      return r.split === k;
+    });
+  });
+  if (splits.indexOf(historyView.split) < 0) historyView.split = splits[0];
+  var rows = mine.filter(function (r) {
+    return r.split === historyView.split;
+  });
+  var people = Array.from(
+    new Set(
+      all
+        .filter(function (r) {
+          return /^Wages, /.test(r.part);
+        })
+        .map(function (r) {
+          return r.part;
+        }),
+    ),
+  );
+  var colorOf = function (part) {
+    var n = PART_COLOR[part] || (people.indexOf(part) >= 0 ? people.indexOf(part) + 1 : 8);
+    return "var(--series-" + n + ")";
+  };
+  var section = el("section", null, "panel tax-history");
+  var head = el("div", null, "tax-head");
+  head.appendChild(el("h2", "Taxes over the years"));
+  section.appendChild(head);
+  var controls = el("div", null, "history-controls");
+  var redraw = function () {
+    drawTaxes();
+  };
+  controls.appendChild(
+    pill(
+      splits.map(function (k) {
+        return HISTORY_SPLITS[k];
+      }),
+      HISTORY_SPLITS[historyView.split],
+      function (label) {
+        historyView.split = Object.keys(HISTORY_SPLITS).filter(function (k) {
+          return HISTORY_SPLITS[k] === label;
+        })[0];
+        redraw();
+      },
+      "Split by",
+    ),
+  );
+  controls.appendChild(
+    pill(
+      ["Dollars", "Share of income"],
+      historyView.measure,
+      function (m) {
+        historyView.measure = m;
+        redraw();
+      },
+      "Measure",
+    ),
+  );
+  if (returns.length > 1)
+    controls.appendChild(
+      pill(
+        returns.map(function (j) {
+          return HISTORY_RETURNS[j];
+        }),
+        HISTORY_RETURNS[historyView.jurisdiction],
+        function (label) {
+          historyView.jurisdiction = returns.filter(function (j) {
+            return HISTORY_RETURNS[j] === label;
+          })[0];
+          redraw();
+        },
+        "Return",
+      ),
+    );
+  section.appendChild(controls);
+  body.appendChild(section);
+  if (!rows.length) {
+    section.appendChild(el("p", "Nothing to show for this return yet.", "support"));
+    return;
+  }
+
+  // a column per return a year has: one federal, or each state's side by side within its year
+  var key = function (r) {
+    return r.year + "|" + r.jurisdiction;
+  };
+  var columns = [];
+  rows.forEach(function (r) {
+    if (
+      !columns.some(function (c) {
+        return c.key === key(r);
+      })
+    )
+      columns.push({ key: key(r), year: r.year, jurisdiction: r.jurisdiction });
+  });
+  columns.sort(function (a, b) {
+    return a.year.localeCompare(b.year) || a.jurisdiction.localeCompare(b.jurisdiction);
+  });
+  var years = Array.from(
+    new Set(
+      columns.map(function (c) {
+        return c.year;
+      }),
+    ),
+  );
+  var parts = []; // in the split's order, bottom of the column first
+  rows
+    .slice()
+    .sort(function (a, b) {
+      return a.order - b.order;
+    })
+    .forEach(function (r) {
+      if (parts.indexOf(r.part) < 0) parts.push(r.part);
+    });
+  var legend = el("div", null, "legend");
+  parts
+    .slice()
+    .reverse()
+    .forEach(function (part) {
+      var item = el("span", part);
+      item.style.setProperty(
+        "--swatch",
+        part === CREDIT_PART ? "repeating-linear-gradient(135deg, var(--series-8) 0 2px, transparent 2px 5px)" : colorOf(part),
+      );
+      legend.appendChild(item);
+    });
+  section.appendChild(legend);
+  var share = historyView.measure !== "Dollars";
+  var at = {};
+  rows.forEach(function (r) {
+    (at[key(r)] || (at[key(r)] = {}))[r.part] = r;
+  });
+  var totalOf = function (k) {
+    var any = rows.filter(function (r) {
+      return key(r) === k;
+    })[0];
+    return any ? any.total : 0;
+  };
+  var scaled = function (k, v) {
+    return share ? (totalOf(k) ? (100 * v) / totalOf(k) : 0) : v;
+  };
+  var hi = 0,
+    lo = 0;
+  columns.forEach(function (c) {
+    var up = 0,
+      down = 0;
+    parts.forEach(function (p) {
+      var r = at[c.key][p];
+      if (!r) return;
+      var v = scaled(c.key, r.value);
+      if (v > 0) up += v;
+      else down += v;
+    });
+    hi = Math.max(hi, up);
+    lo = Math.min(lo, down);
+  });
+  var step = share ? 20 : Math.pow(10, Math.floor(Math.log10(Math.max(hi - lo, 1) / 4)));
+  if (!share)
+    [1, 2, 2.5, 5, 10].some(function (k) {
+      if ((hi - lo) / (step * k) <= 5) {
+        step *= k;
+        return true;
+      }
+      return false;
+    });
+  var top = share ? Math.max(100, Math.ceil(hi / step) * step) : Math.ceil((hi * 1.08) / step) * step;
+  var bottom = lo < 0 ? lo * 1.2 : 0; // room for a loss below the line, without a whole empty step
+  var NS = "http://www.w3.org/2000/svg";
+  var svgEl = function (name, attrs, parent) {
+    var e = document.createElementNS(NS, name);
+    Object.keys(attrs).forEach(function (k) {
+      e.setAttribute(k, attrs[k]);
+    });
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  var several = historyView.jurisdiction === "state";
+  var width = Math.max(section.clientWidth - 40, 360),
+    height = 360 + (several ? 16 : 0);
+  var m = { top: 22, right: 12, bottom: 26 + (several ? 16 : 0), left: 60 };
+  var y = function (v) {
+    return m.top + ((top - v) / Math.max(top - bottom, 1)) * (height - m.top - m.bottom);
+  };
+  var svg = svgEl("svg", {
+    viewBox: "0 0 " + width + " " + height,
+    class: "history-chart",
+    role: "img",
+    "aria-label": HISTORY_SPLITS[historyView.split] + " by year; the return for each year is below",
+  });
+  var defs = svgEl("defs", {}, svg);
+  var pat = svgEl(
+    "pattern",
+    { id: "credit-hatch", width: 5, height: 5, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" },
+    defs,
+  );
+  svgEl("rect", { width: 5, height: 5, fill: "var(--surface-low)" }, pat);
+  svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 5, stroke: "var(--series-8)", "stroke-width": 2 }, pat);
+  section.appendChild(svg);
+  var short = function (v) {
+    var a = Math.abs(v),
+      sign = v < 0 ? "-" : "";
+    return (
+      sign + (a >= 1e6 ? "$" + (a / 1e6).toFixed(1) + "M" : a >= 1000 ? "$" + Math.round(a / 1000) + "k" : "$" + Math.round(a))
+    );
+  };
+  var ticks = [];
+  for (var v = 0; v <= top + 0.001; v += step) ticks.push(v);
+  for (v = -step; v >= bottom - 0.001; v -= step) ticks.push(v);
+  ticks.forEach(function (v) {
+    svgEl("line", { x1: m.left, x2: width - m.right, y1: y(v), y2: y(v), class: v === 0 ? "zero" : "grid" }, svg);
+    var t = svgEl("text", { x: m.left - 8, y: y(v) + 4, "text-anchor": "end", class: "axis" }, svg);
+    t.textContent = share ? Math.round(v) + "%" : short(v);
+  });
+  var gap = (width - m.left - m.right) / years.length;
+  var most = Math.max.apply(
+    null,
+    years.map(function (yr) {
+      return columns.filter(function (c) {
+        return c.year === yr;
+      }).length;
+    }),
+  );
+  var bw = Math.min(72, (gap * 0.6) / most - (most > 1 ? 4 : 0));
+  var tip = el("div", null, "tip");
+  tip.hidden = true;
+  section.appendChild(tip);
+  var opens = function (yr) {
+    return !!yearReturns(yr);
+  };
+  var isProjected = function (yr) {
+    return rows.some(function (r) {
+      return r.year === yr && r.projected;
+    });
+  };
+  years.forEach(function (yr, i) {
+    var mineCols = columns.filter(function (c) {
+      return c.year === yr;
+    });
+    var span = mineCols.length * bw + (mineCols.length - 1) * 8;
+    var mid = m.left + gap * (i + 0.5);
+    var yl = svgEl(
+      "text",
+      { x: mid, y: height - 6, "text-anchor": "middle", class: "axis" + (yr === historyYear ? " strong" : "") },
+      svg,
+    );
+    yl.textContent = yr + (isProjected(yr) ? " (projected)" : "");
+    mineCols.forEach(function (c, n) {
+      var x = mid - span / 2 + n * (bw + 8),
+        cx = x + bw / 2,
+        up = 0,
+        down = 0;
+      var col = svgEl(
+        "g",
+        { class: "history-column" + (isProjected(yr) ? " projected" : "") + (yr === historyYear ? " chosen" : "") },
+        svg,
+      );
+      parts.forEach(function (p) {
+        var r = at[c.key][p];
+        if (!r) return;
+        var v = scaled(c.key, r.value);
+        var y0 = v >= 0 ? y(up + v) : y(down),
+          h = Math.abs(y(v >= 0 ? up : down) - y(v >= 0 ? up + v : down + v));
+        svgEl(
+          "rect",
+          {
+            x: x,
+            width: bw,
+            y: y0 + (v >= 0 ? 0 : 1),
+            height: Math.max(h - 2, 1),
+            fill: p === CREDIT_PART ? "url(#credit-hatch)" : colorOf(p),
+            rx: 2,
+          },
+          col,
+        );
+        if (h > 18 && p !== CREDIT_PART && bw >= 34) {
+          var label = svgEl("text", { x: cx, y: y0 + h / 2 + 4, "text-anchor": "middle", class: "inside" }, col);
+          label.textContent = share ? Math.round(v) + "%" : short(r.value);
+        }
+        if (v >= 0) up += v;
+        else down += v;
+      });
+      var t = svgEl("text", { x: cx, y: y(up) - 6, "text-anchor": "middle", class: "lbl" }, col);
+      if (share && historyView.split === "went") {
+        var taxed = parts
+          .filter(function (p) {
+            return p !== "Kept after income tax" && p !== CREDIT_PART;
+          })
+          .reduce(function (sum, p) {
+            return sum + (at[c.key][p] ? at[c.key][p].value : 0);
+          }, 0);
+        t.textContent = Math.round((100 * taxed) / (totalOf(c.key) || 1)) + "% tax";
+      } else if (!share) t.textContent = short(totalOf(c.key));
+      if (several) {
+        var st = svgEl("text", { x: cx, y: height - 24, "text-anchor": "middle", class: "axis state" }, col);
+        st.textContent = STATE_CODES[c.jurisdiction] || c.jurisdiction.toUpperCase();
+      }
+      var hit = svgEl("rect", { x: x - 4, width: bw + 8, y: m.top, height: height - m.top - m.bottom, fill: "transparent" }, col);
+      hit.addEventListener("mouseenter", function () {
+        tip.textContent = "";
+        var name = several ? STATE_NAMES_BY_CODE[c.jurisdiction] || c.jurisdiction : "Federal";
+        tip.appendChild(el("div", yr + ", " + name + ": " + money.format(totalOf(c.key)), "strong"));
+        var before = years[years.indexOf(yr) - 1],
+          prevKey = before + "|" + c.jurisdiction;
+        parts
+          .slice()
+          .reverse()
+          .forEach(function (p) {
+            var r = at[c.key][p];
+            if (!r) return;
+            var prev = at[prevKey] && at[prevKey][p] ? at[prevKey][p].value : null;
+            var change =
+              prev === null
+                ? ""
+                : " (" + (r.value - prev >= 0 ? "+" : "-") + money.format(Math.abs(r.value - prev)) + " on " + before + ")";
+            tip.appendChild(
+              el(
+                "div",
+                p + ": " + money.format(r.value) + (share ? ", " + Math.round(scaled(c.key, r.value)) + "%" : "") + change,
+              ),
+            );
+          });
+        if (isProjected(yr)) tip.appendChild(el("div", "Projected: the year so far and the rest of it as expected", "support"));
+        if (opens(yr)) tip.appendChild(el("div", "Click for its return below", "support"));
+        tip.hidden = false;
+        var scale = svg.getBoundingClientRect().width / width;
+        var left = (x + bw + 12) * scale;
+        tip.style.left = (left + 300 > section.clientWidth ? Math.max(0, (x - 12) * scale - 290) : left) + "px";
+        tip.style.top = svg.getBoundingClientRect().top - section.getBoundingClientRect().top + 20 + "px";
+      });
+      hit.addEventListener("mouseleave", function () {
+        tip.hidden = true;
+      });
+      if (opens(yr)) {
+        hit.style.cursor = "pointer";
+        hit.addEventListener("click", function () {
+          historyYear = historyYear === yr ? "" : yr; // a second click on the open year closes it
+          drawTaxes();
+          var detail = document.getElementById("tax-year-detail");
+          if (detail) detail.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
+    });
+  });
+  section.appendChild(
+    el(
+      "p",
+      several
+        ? "Each year's state returns side by side, each its own income on that return. A year you lived in two states has a part-year return for each."
+        : historyView.split === "went"
+          ? "Each year's total income, split by where it went: federal and state income taxes after credits, and what was kept. The hatched part of what was kept is the tax that credits cancelled."
+          : historyView.split === "came"
+            ? "Each year's income on the return, by where it came from; a capital loss shows below the line, at the most the return could deduct."
+            : "Each year's income, split into what was taxed and what was deducted before it.",
+      "support",
+    ),
+  );
+}
+
+function signed(n) {
+  return (n > 0 ? "Owe " : n < 0 ? "Refund " : "") + money.format(Math.abs(n));
+}
+
+function pill(options, value, onpick, label) {
+  var group = el("span", null, "segmented");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", label);
+  options.forEach(function (o) {
+    var b = button(o.charAt(0).toUpperCase() + o.slice(1), function () {
+      onpick(o);
+    });
+    b.setAttribute("aria-pressed", String(o === value));
+    group.appendChild(b);
+  });
+  return group;
+}
+
+// Taxes in two views: this year's projected returns beside the withholding and what the projection assumes,
+// or the history (filed years and this year's projection) with any year's return below when it is chosen.
+var taxView = "year",
+  historyYear = "";
+
+function drawTaxes() {
+  var body = document.getElementById("taxes-body");
+  body.textContent = "";
+  subtabs(body, "Taxes", PAGE_PARTS.taxes, taxView, function (v) {
+    if (v.indexOf("edit:") === 0) openEdit(v.slice(5));
+    else {
+      taxView = v;
+      drawTaxes();
+    }
+  });
+  if (taxView === "history") {
+    drawTaxHistoryView(body);
+    return;
+  }
+  if (taxView === "8949") {
+    drawForm8949(body);
+    return;
+  }
+  if (!taxes.years.length) {
+    body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
+    return;
+  }
+  var year = taxes.years[0];
+  var head = el("div", null, "tax-head");
+  head.appendChild(el("h2", "Taxes for " + year.year));
+  body.appendChild(head);
+  body.appendChild(
+    el(
+      "p",
+      year.filed
+        ? "As filed: each line computed from the W-2s and other figures on the return, beside the line you filed."
+        : "Projected from this year's pay stubs, vests and sales, and your estimates.",
+      "support",
+    ),
+  );
+  body.appendChild(bottomLines(year.forms));
+  var side = el("div", null, "tax-side");
+  var returns = el("div", null, "stacked");
+  Object.keys(year.forms).forEach(function (form) {
+    var panel = el("section", null, "panel");
+    panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
+    panel.appendChild(formTable(year.forms[form], year.filed, year.filed ? "Computed" : "From stubs"));
+    returns.appendChild(panel);
+  });
+  side.appendChild(returns);
+  var aside = el("div", null, "stacked");
+  if (taxes.plan.length) aside.appendChild(planCard(taxes.plan));
+  if (taxes.notes.length) {
+    var notes = el("section", null, "panel");
+    notes.appendChild(el("h2", "What the projection assumes"));
+    var list = el("ul", null, "notes");
+    taxes.notes.forEach(function (n) {
+      list.appendChild(el("li", n));
+    });
+    notes.appendChild(list);
+    aside.appendChild(notes);
+  }
+  if (taxes.totals.length > 1) aside.appendChild(scenariosPanel(taxes.totals));
+  if (taxes.accounts.length) aside.appendChild(accountsPanel(taxes.accounts));
+  side.appendChild(aside);
+  body.appendChild(side);
+}
+
+// the cards with each return's bottom line: owed or refunded
+function bottomLines(forms) {
+  var summary = el("div", null, "cards tax-summary");
+  Object.keys(forms).forEach(function (form) {
+    var lines = forms[form] || [];
+    var last = lines[lines.length - 1];
+    if (!last || !/^(Refund|Amount owed)$/.test(last.label)) return;
+    var v = last.label === "Refund" ? -last.value : last.value;
+    var card = el("article", null, "card total " + (v > 0 ? "owe" : "refund"));
+    card.appendChild(el("div", STATE_NAMES[form] || form, "support"));
+    card.appendChild(el("div", signed(v), "big"));
+    summary.appendChild(card);
+  });
+  return summary;
+}
+
+// the years a breakdown can open for: computed from their inputs (taxes.years) or as filed (taxes.filed)
+function yearReturns(yr) {
+  var computed = taxes.years.filter(function (y) {
+    return y.year === yr;
+  })[0];
+  if (computed) return { forms: computed.forms, filed: computed.filed, computed: true };
+  var filed = taxes.filed && taxes.filed[yr];
+  return filed ? { forms: filed, filed: false, computed: false } : null;
+}
+
+// Form 8949: each year's sales as the form lays them out, Part I short-term and Part II long-term, with
+// the totals that carry to Schedule D beside the return as filed.
+var f8949 = null,
+  f8949Year = "";
+var FORM_PARTS = {
+  short_term: ["Part I, short-term", "Schedule D line 7"],
+  long_term: ["Part II, long-term", "Schedule D line 15"],
+};
+
+function centsText(n) {
+  return cents.format(n).replace("-", "−");
+}
+
+function drawForm8949(body) {
+  if (!f8949) {
+    var wait = el("p", "Loading…", "support");
+    wait.id = "f8949-loading";
+    body.appendChild(wait);
+    call(
+      "getForm8949",
+      [],
+      function (d) {
+        f8949 = d;
+        if (taxView === "8949") drawTaxes();
+      },
+      "f8949-loading",
+    );
+    return;
+  }
+  if (!f8949.years.length) {
+    body.appendChild(
+      el("p", "No sales yet: compute works out Form 8949 from the plan's sales and each account's activity.", "support"),
+    );
+    return;
+  }
+  if (
+    !f8949.years.some(function (y) {
+      return y.year === f8949Year;
+    })
+  )
+    f8949Year = f8949.years[0].year;
+  var y = f8949.years.filter(function (x) {
+    return x.year === f8949Year;
+  })[0];
+  var pick = el("span", null, "segmented");
+  pick.setAttribute("role", "group");
+  pick.setAttribute("aria-label", "Year");
+  f8949.years.forEach(function (x) {
+    var b = button(x.year, function () {
+      f8949Year = x.year;
+      drawTaxes();
+    });
+    b.setAttribute("aria-pressed", String(x.year === f8949Year));
+    pick.appendChild(b);
+  });
+  var head = el("div", null, "tax-head");
+  head.appendChild(el("h2", "Form 8949 for " + y.year));
+  head.appendChild(pick);
+  body.appendChild(head);
+  body.appendChild(
+    el(
+      "p",
+      "Each sale as it goes on the form, wash sales worked out across every account. The box for each part " +
+        "(A to F) comes from the 1099-B: A or D when the broker reported the basis to the IRS, B or E when it " +
+        "didn't. A wash sale (code W) adds the disallowed loss back in column (g).",
+      "support",
+    ),
+  );
+  var gains = {};
+  y.parts.forEach(function (p) {
+    gains[p.term] = p.gain;
+  });
+  figures(body, [
+    gains.short_term !== undefined ? [gains.short_term, "short-term gain (Part I)"] : null,
+    gains.long_term !== undefined ? [gains.long_term, "long-term gain (Part II)"] : null,
+    y.disallowed ? [y.disallowed, "wash-sale losses disallowed"] : null,
+  ]);
+  y.parts.forEach(function (p) {
+    var names = FORM_PARTS[p.term];
+    var panel = el("section", null, "panel w-wide f8949-part");
+    panel.dataset.term = p.term;
+    panel.appendChild(el("h3", names[0]));
+    body.appendChild(panel);
+    var t = wTable(
+      panel,
+      [
+        "(a) Description",
+        "(b) Acquired",
+        "(c) Sold",
+        "(d) Proceeds",
+        "(e) Basis",
+        "(f) Code",
+        "(g) Adjustment",
+        "(h) Gain or loss",
+      ],
+      [3, 4, 6, 7],
+    );
+    p.rows.forEach(function (r) {
+      var what = el("span", +r.shares.toFixed(3) + " sh " + r.symbol);
+      what.appendChild(el("span", r.account, "tag plain"));
+      var acquired = el("span", r.acquired);
+      if (r.holdingFrom && r.holdingFrom !== r.acquired) acquired.appendChild(el("span", "held from " + r.holdingFrom, "tag"));
+      var basis = el("span", centsText(r.basis));
+      if (r.reportedBasis !== null && Math.abs(r.reportedBasis - (r.basis - r.washCarried)) > 0.02) {
+        var tag = el("span", "1099-B: " + centsText(r.reportedBasis), "tag warn");
+        tag.title =
+          "The plan reported a different basis for these shares: check the 1099-B, and use code B if the basis it shows is wrong";
+        basis.appendChild(tag);
+      }
+      t.row(
+        [
+          what,
+          acquired,
+          r.saleDate,
+          centsText(r.proceeds),
+          basis,
+          r.code,
+          r.adjustment ? centsText(r.adjustment) : "",
+          centsText(r.gain),
+        ],
+        "",
+        [null, r.acquired, r.saleDate, r.proceeds, r.basis, r.code, r.adjustment, r.gain],
+      );
+    });
+    t.row(
+      [
+        "Totals",
+        "",
+        "",
+        centsText(p.proceeds),
+        centsText(p.basis),
+        "",
+        p.adjustment ? centsText(p.adjustment) : "",
+        centsText(p.gain),
+      ],
+      "total",
+    );
+    var line =
+      names[1] +
+      (p.filed === null
+        ? y.filedOnFile
+          ? ": nothing filed"
+          : ": not filed yet"
+        : " as filed: " +
+          centsText(p.filed) +
+          (Math.abs(p.filed - p.gain) > 0.5
+            ? ", " +
+              centsText(Math.abs(p.filed - p.gain)) +
+              (p.filed > p.gain ? " more" : " less") +
+              " than these sales " +
+              "(the line also takes capital gain distributions, carryovers and any sale not in the ledger)"
+            : ", the same as these sales"));
+    panel.appendChild(el("p", line, "support f8949-filed"));
+  });
+}
+
+function drawTaxHistoryView(body) {
+  if (taxes.history && taxes.history.length) drawTaxHistory(body);
+  else body.appendChild(el("p", "No filed returns yet: return_facts fills this in.", "support"));
+  if (!historyYear || !yearReturns(historyYear)) return;
+  var r = yearReturns(historyYear);
+  var projected = taxes.history.some(function (h) {
+    return h.year === historyYear && h.projected;
+  });
+  var head = el("div", null, "tax-head");
+  head.id = "tax-year-detail";
+  head.appendChild(el("h2", historyYear + (projected ? ", projected" : " return")));
+  head.appendChild(
+    button(
+      "Close",
+      function () {
+        historyYear = "";
+        drawTaxes();
+      },
+      "text",
+    ),
+  );
+  body.appendChild(head);
+  body.appendChild(
+    el(
+      "p",
+      projected
+        ? "Projected from this year's pay stubs, vests and sales, and your estimates."
+        : r.computed && r.filed
+          ? "Each line computed from the W-2s and other figures on the return, beside the line you filed."
+          : r.computed
+            ? "The whole year from its pay stubs."
+            : "The lines as filed.",
+      "support",
+    ),
+  );
+  body.appendChild(bottomLines(r.forms));
+  var two = el("div", null, "two");
+  var states = el("div", null, "stacked");
+  Object.keys(r.forms).forEach(function (form) {
+    var panel = el("section", null, "panel");
+    panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
+    panel.appendChild(formTable(r.forms[form], r.computed && r.filed, r.computed && r.filed ? "Computed" : "Amount"));
+    (form === "Form 1040" ? two : states).appendChild(panel);
+  });
+  if (states.childNodes.length) two.appendChild(states);
+  body.appendChild(two);
+}
+
+// For each return, the extra withholding per paycheck that lands the year on a refund, on no balance, and
+// on owing, from the year so far plus the projection.
+function planCard(plan) {
+  var card = el("article", null, "card plan");
+  card.appendChild(el("h2", "Withholding for the rest of the year"));
+  var byReturn = {};
+  plan.forEach(function (p) {
+    (byReturn[p["return"]] = byReturn[p["return"]] || []).push(p);
+  });
+  var vest = "";
+  Object.keys(byReturn).forEach(function (name) {
+    var rows = byReturn[name],
+      first = rows[0];
+    var section = el("div", null, "plan-row");
+    section.appendChild(el("div", PLAN_NAME[name] || name, "plan-title"));
+    if (first.suggested_extra === "") {
+      section.appendChild(el("p", first.note, "support"));
+      card.appendChild(section);
+      return;
+    }
+    if (first.vest_rate) vest = Math.round(Number(first.vest_rate) * 100) + "%";
+    var now = Number(first.projected);
+    section.appendChild(
+      el(
+        "p",
+        "As things stand: " +
+          (now >= 0 ? "refund " : "owe ") +
+          money.format(Math.abs(now)) +
+          ". " +
+          (name === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") +
+          " for " +
+          first.person +
+          " (" +
+          first.employer +
+          ") is " +
+          cents.format(Number(first.current_extra)) +
+          " a paycheck, with " +
+          first.paychecks_left +
+          " paychecks left.",
+        "support",
+      ),
+    );
+    var table = el("table", null, "plan-table");
+    var head = el("tr");
+    ["To land on", "Extra a paycheck", ""].forEach(function (h) {
+      head.appendChild(el("th", h));
+    });
+    table.appendChild(el("thead")).appendChild(head);
+    var body = el("tbody");
+    rows.forEach(function (p) {
+      var goal = Number(p.target),
+        lands = Number(p.lands_at);
+      var row = el("tr", null, Number(p.suggested_extra) === Number(p.current_extra) ? "current" : "");
+      cell(
+        row,
+        goal > 0 ? "a refund of " + money.format(goal) : goal < 0 ? "owing " + money.format(-goal) : "no balance",
+        "text",
+      );
+      cell(row, cents.format(Number(p.suggested_extra)));
+      var notes = [];
+      if (Math.abs(lands - goal) > 1)
+        notes.push("gets to " + (lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands)) + " at most");
+      if (p.penalty_free === "FALSE" || p.penalty_free === "false") notes.push("an underpayment penalty is possible");
+      else if (lands < -1 && name === "federal") notes.push("no underpayment penalty");
+      cell(row, notes.join("; "), "text plan-note" + (/penalty is possible/.test(notes.join()) ? " off" : ""));
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    section.appendChild(table);
+    if (/no Wisconsin settings/.test(first.note)) section.appendChild(el("p", first.note + ".", "support"));
+    card.appendChild(section);
+  });
+  card.appendChild(
+    el(
+      "p",
+      "From the year so far plus the projection" +
+        (vest ? ", with future vests withheld at " + vest : "") +
+        ". The amount and the vest rate are household settings (target_refund, planned_supplemental_rate) in Status, Settings.",
+      "support small-print",
+    ),
+  );
+  return card;
+}
+
+// the summary card's name for each form's bottom line
+var STATE_NAMES = {
+  "Form 1040": "Federal",
+  "Wisconsin Form 1": "Wisconsin",
+  "Wisconsin Form 1NPR": "Wisconsin",
+  "Pennsylvania PA-40": "Pennsylvania",
+};
+var RATIO_KEYS = ["wi1npr_32"]; // a share, not dollars
+
+function formTable(lines, withFiled, computedHead) {
+  var wrap = el("div", null, "scroll");
+  var table = el("table", null, "form-lines");
+  var head = el("tr");
+  ["Line", "", withFiled ? computedHead : "Amount"].concat(withFiled ? ["Filed", "Off by"] : []).forEach(function (h) {
+    head.appendChild(el("th", h));
+  });
+  table.appendChild(el("thead")).appendChild(head);
+  var tbody = el("tbody");
+  lines.forEach(function (l) {
+    var row = el(
+      "tr",
+      null,
+      /^of which|^state and|^mortgage|^gifts/.test(l.label)
+        ? "sub"
+        : /^(Total tax|Adjusted gross income|Taxable income|Refund|Amount owed|Net tax|Total payments)$/.test(l.label)
+          ? "key-line"
+          : "",
+    );
+    cell(row, l.line, "line-no");
+    cell(row, l.label, "text");
+    var ratio = RATIO_KEYS.indexOf(l.key) >= 0;
+    var show = function (v) {
+      return ratio ? (v * 100).toFixed(2) + "%" : cents.format(v);
+    };
+    cell(row, show(l.value));
+    if (withFiled) {
+      // a line with nothing filed comes back without a filed value (null or missing)
+      var has = typeof l.filed === "number" && isFinite(l.filed);
+      var isOff = has && Math.abs(l.value - l.filed) > (ratio ? 0.00005 : 1);
+      cell(row, has ? show(l.filed) : "");
+      cell(row, isOff ? show(l.value - l.filed) : "", isOff ? "off" : "");
+    }
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+// 401(k), the mega backdoor, HSA and the rest: so far, by December 31, and against the limit.
+function accountsPanel(accounts) {
+  var panel = el("section", null, "panel");
+  panel.appendChild(el("h2", "Retirement and health accounts"));
+  panel.appendChild(el("p", "So far this year from the pay stubs, and by December 31 at the same contributions.", "support"));
+  var people = {};
+  accounts.forEach(function (a) {
+    (people[a.person] = people[a.person] || []).push(a);
+  });
+  Object.keys(people)
+    .sort(function (a, b) {
+      return (a === "household") - (b === "household") || a.localeCompare(b);
+    })
+    .forEach(function (person) {
+      panel.appendChild(el("h3", person === "household" ? "Household" : person, "account-person"));
+      people[person].forEach(function (a) {
+        var row = el("div", null, "account");
+        var top = el("div", null, "account-top");
+        top.appendChild(el("span", a.plan + (a.employer ? ", " + a.employer : ""), "account-name"));
+        top.appendChild(
+          el(
+            "span",
+            a.status,
+            "account-status " + (a.status.indexOf("over limit") === 0 ? "off" : a.status.indexOf("at limit") === 0 ? "done" : ""),
+          ),
+        );
+        row.appendChild(top);
+        if (a.limit !== "") {
+          var limit = Number(a.limit) || 1,
+            ytd = Number(a.ytd) || 0,
+            projected = Number(a.projected) || 0;
+          var meter = el("div", null, "meter");
+          var by = el("span", null, "by-year-end");
+          by.style.width = Math.min(100, (100 * projected) / limit) + "%";
+          var so = el("span", null, "so-far");
+          so.style.width = Math.min(100, (100 * ytd) / limit) + "%";
+          meter.appendChild(by);
+          meter.appendChild(so);
+          meter.setAttribute("role", "img");
+          meter.setAttribute(
+            "aria-label",
+            money.format(ytd) + " so far, " + money.format(projected) + " by year end, of " + money.format(limit),
+          );
+          row.appendChild(meter);
+          row.appendChild(
+            el(
+              "div",
+              money.format(ytd) +
+                " so far, " +
+                money.format(projected) +
+                " by December 31, of " +
+                money.format(limit) +
+                (Number(a.gap) > 0 ? "; " + money.format(Number(a.gap)) + " of room left" : ""),
+              "support",
+            ),
+          );
+        }
+        panel.appendChild(row);
+      });
+    });
+  return panel;
+}
+
+function scenariosPanel(totals) {
+  var panel = el("section", null, "panel");
+  panel.appendChild(el("h2", "Scenarios for this year"));
+  panel.appendChild(el("p", "Federal as a bar from zero (refund left, owed right), Wisconsin beside it.", "support"));
+  var box = el("div");
+  box.id = "tax-scenarios-chart";
+  panel.appendChild(box);
+  drawScenarioBars(box, totals);
+  return panel;
+}
+
+function drawScenarioBars(box, totals) {
+  var biggest =
+    Math.max.apply(
+      null,
+      totals.map(function (r) {
+        return Math.abs(r.federal);
+      }),
+    ) || 1;
+  var list = el("div", null, "scenarios");
+  list.style.marginTop = "12px";
+  totals.forEach(function (r) {
+    var owe = r.federal > 0;
+    var row = el("div", null, "scenario");
+    row.appendChild(el("span", r.scenario.charAt(0).toUpperCase() + r.scenario.slice(1)));
+    var axis = el("div", null, "axis");
+    var bar = el("span", null, owe ? "owe" : "refund");
+    bar.style.width = (50 * Math.abs(r.federal)) / biggest + "%";
+    axis.appendChild(bar);
+    row.appendChild(axis);
+    row.appendChild(el("span", signed(r.federal), "amount " + (owe ? "owe" : "refund")));
+    row.appendChild(el("span", "WI " + signed(r.wisconsin), "amount wi " + (r.wisconsin > 0 ? "owe" : "refund")));
+    list.appendChild(row);
+  });
+  box.appendChild(list);
+}

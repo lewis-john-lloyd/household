@@ -82,8 +82,8 @@ sandbox.
 
 **Decided.** Ruff checks Python for errors and likely bugs (pyflakes and bugbear) and formats it at 120
 columns; Prettier formats the web app's TypeScript and tests at 130. CI and the push guard check both.
-Formatting-only commits are listed in `.git-blame-ignore-revs`. The page's HTML, with its inline script, is
-left as written.
+Formatting-only commits are listed in `.git-blame-ignore-revs`. The page's HTML is left as written; its script
+lives in `web/src/page` as TypeScript, formatted like the rest.
 
 **Why.** Reviews look at logic, not layout, and a formatter settles every layout question the same way.
 

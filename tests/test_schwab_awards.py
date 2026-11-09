@@ -128,3 +128,13 @@ def test_the_vests_left_this_year_come_from_the_schedule_in_place_of_the_monthly
     assert planned["notes"][-1] == "3 more scheduled vests, 19 shares at about 30.00, withheld at 22%"
     lower = projection.positions(stubs, 2026, {"vests": vests, "stock_price": 0.8})[("alex", "Acme")]
     assert round(planned["wages"] - lower["wages"], 2) == 19 * 6
+
+
+def test_the_average_takes_twelve_calendar_months_and_skips_a_date_with_no_close():
+    sched = schwab_awards.parse(PAGE).tables["vest_schedule"].assign(doc_id="d1")
+    prices = pd.DataFrame([{"symbol": "ACME", "date": "2025-11-30", "close": "90"},  # the same month a year before
+                           {"symbol": "ACME", "date": "2025-12-31", "close": ""},  # no close that day
+                           {"symbol": "ACME", "date": "2026-01-31", "close": "20"},
+                           {"symbol": "ACME", "date": "2026-11-07", "close": "40"}])
+    got = projection.scheduled_vests(sched, None, prices)
+    assert (got["price"], got["months"], got["latest"]) == (30, 2, 40)

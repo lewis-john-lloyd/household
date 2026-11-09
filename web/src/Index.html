@@ -2009,7 +2009,7 @@
           detail.hidden = true;
           var pick = payChart(panel, mine, colorOf, function (r, next) {
             showJob(detail, name, r, next, function () { detail.hidden = true; pick(null); });
-          });
+          }, function () { detail.hidden = true; });
           panel.appendChild(detail);
         });
       }
@@ -2035,7 +2035,7 @@
 
       // onSelect(row, next) is called when a stretch of the line (or its marker) is chosen; payChart returns a
       // function that marks the chosen stretch (null for none).
-      function payChart(panel, rows, colorOf, onSelect) {
+      function payChart(panel, rows, colorOf, onSelect, onClear) {
         var NS = "http://www.w3.org/2000/svg";
         var svgEl = function (name, attrs, parent) {
           var e = document.createElementNS(NS, name);
@@ -2079,11 +2079,17 @@
           tx.textContent = String(yr);
         }
         // the step line: a level per row until the next, risers in neutral ink so color stays the employer's
-        var levels = [];
+        var levels = [], current = -1;
         var choose = function (i) {
+          current = i;
           levels.forEach(function (l, n) { l.setAttribute("stroke-width", n === i ? 5 : 2); });
         };
-        var select = function (i) { choose(i); if (onSelect) onSelect(rows[i], rows[i + 1] || null); };
+        // choosing the stretch already open closes its details again
+        var select = function (i) {
+          if (i === current) { choose(-1); if (onClear) onClear(); return; }
+          choose(i);
+          if (onSelect) onSelect(rows[i], rows[i + 1] || null);
+        };
         rows.forEach(function (r, i) {
           var end = i + 1 < rows.length ? rows[i + 1].t : t1;
           levels.push(svgEl("line", { x1: x(r.t), x2: x(end), y1: y(r.pay), y2: y(r.pay), stroke: colorOf(r.employer),

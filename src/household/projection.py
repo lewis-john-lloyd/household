@@ -333,15 +333,17 @@ def scheduled_vests(schedule, vested=None, prices=None):
         seen += list(zip(v["vest_date"].astype(str), v["fmv"]))
     if prices is not None and len(prices):
         p = prices[prices["symbol"].isin(set(s["symbol"]))].assign(close=lambda d: pd.to_numeric(d["close"], errors="coerce"))
-        seen += list(zip(p["date"].astype(str), p["close"].dropna()))
+        p = p.dropna(subset=["close"])  # a date GOOGLEFINANCE had no close for is no price
+        seen += list(zip(p["date"].astype(str), p["close"]))
     if not seen:
         return None
     latest_day, latest = max(seen)
-    # the 12-month moving average: the last price of each month in the year to the latest, averaged
-    start = (date.fromisoformat(str(latest_day)[:10]) - timedelta(days=365)).isoformat()
+    # the 12-month moving average: the last price of each of the twelve months to the latest one's, averaged
+    last = date.fromisoformat(str(latest_day)[:10])
+    start = f"{last.year - 1:04d}-{last.month:02d}"  # the month a year before, left out: twelve months in all
     by_month = {}
     for day, price in sorted(seen):
-        if str(day) > start:
+        if str(day)[:7] > start:
             by_month[str(day)[:7]] = float(price)
     return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))),
             "price": round(sum(by_month.values()) / len(by_month), 2), "months": len(by_month),

@@ -112,14 +112,15 @@ def ingest_legacy_net_worth(session, folder_id, workbook_id, columns, tab="Net W
     ledger already holds (same date and home or loan) is not added again, and with nothing new it writes nothing.
 
     columns maps a column header of the tab to ("value", property_id) or ("loan", loan_id). The homes must be in
-    `properties` first, so their loans and dates are known.
+    `properties` first, so their loans and dates are known; until they are, it says so and adds nothing.
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
     homes = set(_read(ledger, "properties")["property_id"].astype(str).str.strip())
     unknown = sorted({t for k, t in columns.values() if k == "value" and t not in homes})
-    if unknown:
-        raise ValueError(f"no such homes in properties: {', '.join(unknown)} (add them first)")
+    if unknown:  # a properties seed in the inbox adds them; until it has, there is nothing to attach these to
+        _say(log, f"legacy net worth: skipped, no such homes in properties yet: {', '.join(unknown)}")
+        return {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": [], "skipped": unknown}
     workbook = session.sheets.open_by_key(workbook_id)
     got = workbook.values_batch_get([f"'{tab}'"], params={"valueRenderOption": sheets.UNFORMATTED})
     rows = (got.get("valueRanges") or [{}])[0].get("values", [])

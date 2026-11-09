@@ -5,6 +5,7 @@ import pytest
 
 from household import house, legacy_investments as li, mortgage, networth
 from household.parsers import identify, seed
+from test_engine import session  # noqa: F401  (the fixture)
 
 PROPS = pd.DataFrame([
     {"property_id": "willow", "address": "1 Willow St", "parcel": "", "owner": "joint", "purchased": "2001-05-01",
@@ -106,3 +107,19 @@ def test_homes_values_and_improvements_arrive_as_seed_files():
         seed.parse(bad)
     work = "date,property_id,description,kind,cost,credit,receipt,note,doc_id\n2001-07-01,willow,new pump,capital,8,,,,\n"
     assert seed.parse(work).tables["improvements"]["kind"].tolist() == ["capital"]
+
+
+def test_the_legacy_net_worth_import_adds_values_and_loans_once_and_waits_for_its_homes(session, monkeypatch):  # noqa: F811
+    from household import engine, schema, sheets
+    from test_sheets import FakeSpreadsheet, FakeWorksheet
+    wb = FakeSpreadsheet("investments")
+    wb.tabs = {"Net Worth": FakeWorksheet("Net Worth", [["Date", "Old - M", "Old - V"], [36903, -70, 90], [36980, -60, 95]])}
+    session.sheets.legacy = wb
+    ledger, _, _ = engine.bootstrap(session, session.root)
+    columns = {"Old - V": ("value", "old"), "Old - M": ("loan", "old_loan")}
+    waited = engine.ingest_legacy_net_worth(session, session.root, "workbook", columns, log=None)
+    assert waited["skipped"] == ["old"]
+    sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "properties"), PROPS.iloc[1:])])
+    first = engine.ingest_legacy_net_worth(session, session.root, "workbook", columns, log=None)
+    again = engine.ingest_legacy_net_worth(session, session.root, "workbook", columns, log=None)
+    assert (first["property_values"], first["loan_balances"], again["property_values"]) == (2, 2, 0)

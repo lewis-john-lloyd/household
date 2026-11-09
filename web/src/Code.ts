@@ -427,6 +427,11 @@ function getTaxes(): TaxPage {
   return taxPage(tabs);
 }
 
+/** The Taxes page's Form 8949 part (form8949.ts). */
+function getForm8949(): F8949Page {
+  return form8949Page(readTabsIfAny_(["form_8949", "filed_lines"]));
+}
+
 function getInvestments(): WealthPage {
   const tabs = readTabsIfAny_(["investment_values", "net_worth", "allocation", "rebalance", "open_lots", "form_8949", "run_log",
                       "run_notes"]);

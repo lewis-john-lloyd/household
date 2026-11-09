@@ -534,7 +534,7 @@ test("each editor part lives on the page it is about, in that page's submenu", a
   const page = await open("window.__location = { parameter: { view: 'edit', tab: 'withholding' } };");
   await page.waitForSelector("#edit:not([hidden])");
   assert.equal(await page.getAttribute("#view-taxes", "aria-pressed"), "true");
-  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), ["This year", "History", "Withholding"]);
+  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), ["This year", "History", "Form 8949", "Withholding"]);
   await page.click("#view-budget");
   await page.click("#budget-tabs button[data-tab='edit:categories']");
   await page.waitForSelector("#edit:not([hidden])");
@@ -644,6 +644,36 @@ test("retirement budget: each line from the last 12 months, changed, left out or
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
   assert.deepEqual(sent.map((e) => [e.key, e.value, e.was]), [["retirement_spending:hobby", "0", null],
     ["retirement_spending:kids", "0 from 2031; 4 from 2040", { value: "0 from 2031" }], ["retirement_spending:travel_fund", "6", null]]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+const FORM_8949 = { years: [
+  { year: "2002", filedOnFile: false, disallowed: 0, parts: [{ term: "long_term", proceeds: 50, basis: 60, adjustment: 0, gain: -10, filed: null,
+    rows: [{ saleDate: "2002-05-01", acquired: "2001-07-01", holdingFrom: "2001-05-01", account: "alex_brokerage", symbol: "ACMEX", shares: 1,
+             proceeds: 50, basis: 60, code: "", adjustment: 0, gain: -10, washCarried: 10, reportedBasis: null, note: "" }] }] },
+  { year: "2001", filedOnFile: true, disallowed: 10, parts: [
+    { term: "short_term", proceeds: 40, basis: 50, adjustment: 10, gain: 0, filed: 5,
+      rows: [{ saleDate: "2001-06-01", acquired: "2001-02-01", holdingFrom: "2001-02-01", account: "alex_brokerage", symbol: "ACMEX", shares: 2,
+               proceeds: 40, basis: 50, code: "W", adjustment: 10, gain: 0, washCarried: 0, reportedBasis: 45, note: "" }] }] }] };
+
+test("taxes, Form 8949: each year's sales by part, a wash sale's code and adjustment, and the filed line beside the totals", async () => {
+  const page = await open(`window.__answers.getForm8949 = ${JSON.stringify(FORM_8949)};
+                           window.__answers.getTaxes = { history: [], filed: {}, years: [], totals: [], plan: [], accounts: [], notes: [] };
+                           window.__location = { parameter: { view: 'taxes', tab: '8949' } };`);
+  await page.waitForSelector("#taxes-body h2");
+  assert.equal(await page.textContent("#taxes-body h2"), "Form 8949 for 2002");
+  assert.match(await page.textContent(".f8949-part[data-term=long_term]"), /held from 2001-05-01/);
+  assert.match(await page.textContent(".f8949-filed"), /not filed yet/);
+  await page.click("#taxes-body .segmented button:has-text('2001')");
+  const part = ".f8949-part[data-term=short_term]";
+  assert.equal(await page.textContent(`${part} h3`), "Part I, short-term");
+  const row = await page.$$eval(`${part} tr`, (rows) => rows[1].textContent);
+  assert.match(row, /W/);
+  assert.match(row, /1099-B/);  // the plan reported another basis for these shares
+  assert.match(await page.textContent(`${part} .f8949-filed`), /line 7 as filed.*more than these sales/);
+  assert.deepEqual(await page.$$eval("#taxes-body .subtabs button", (b) => b.map((x) => x.textContent)),
+                   ["This year", "History", "Form 8949", "Withholding"]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

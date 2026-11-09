@@ -1889,7 +1889,7 @@
                 ["edit:duplicates", "Duplicates"]],
         status: [["overview", "Overview"], ["log", "Engine log"], ["edit:settings", "Settings"], ["edit:waiting", "Saved changes"]],
         budget: [["lines", "Lines"], ["recurring", "Recurring"], ["edit:categories", "Categories"]],
-        taxes: [["year", "This year"], ["history", "History"], ["edit:withholding", "Withholding"]],
+        taxes: [["year", "This year"], ["history", "History"], ["8949", "Form 8949"], ["edit:withholding", "Withholding"]],
       };
 
       // Open an editor part where it belongs (an older name for one is still understood).
@@ -4057,6 +4057,7 @@
         body.textContent = "";
         subtabs(body, "Taxes", PAGE_PARTS.taxes, taxView, function (v) { if (v.indexOf("edit:") === 0) openEdit(v.slice(5)); else { taxView = v; drawTaxes(); } });
         if (taxView === "history") { drawTaxHistoryView(body); return; }
+        if (taxView === "8949") { drawForm8949(body); return; }
         if (!taxes.years.length) {
           body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
           return;
@@ -4115,6 +4116,81 @@
         if (computed) return { forms: computed.forms, filed: computed.filed, computed: true };
         var filed = taxes.filed && taxes.filed[yr];
         return filed ? { forms: filed, filed: false, computed: false } : null;
+      }
+
+      // Form 8949: each year's sales as the form lays them out, Part I short-term and Part II long-term, with
+      // the totals that carry to Schedule D beside the return as filed.
+      var f8949 = null, f8949Year = "";
+      var cents = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+      var PART_NAMES = { short_term: ["Part I, short-term", "Schedule D line 7"], long_term: ["Part II, long-term", "Schedule D line 15"] };
+
+      function centsText(n) { return cents.format(n).replace("-", "−"); }
+
+      function drawForm8949(body) {
+        if (!f8949) {
+          var wait = el("p", "Loading…", "support");
+          wait.id = "f8949-loading";
+          body.appendChild(wait);
+          call("getForm8949", [], function (d) { f8949 = d; if (taxView === "8949") drawTaxes(); }, "f8949-loading");
+          return;
+        }
+        if (!f8949.years.length) {
+          body.appendChild(el("p", "No sales yet: compute works out Form 8949 from the plan's sales and each account's activity.", "support"));
+          return;
+        }
+        if (!f8949.years.some(function (y) { return y.year === f8949Year; })) f8949Year = f8949.years[0].year;
+        var y = f8949.years.filter(function (x) { return x.year === f8949Year; })[0];
+        var pick = el("span", null, "segmented");
+        pick.setAttribute("role", "group");
+        pick.setAttribute("aria-label", "Year");
+        f8949.years.forEach(function (x) {
+          var b = button(x.year, function () { f8949Year = x.year; drawTaxes(); });
+          b.setAttribute("aria-pressed", String(x.year === f8949Year));
+          pick.appendChild(b);
+        });
+        var head = el("div", null, "tax-head");
+        head.appendChild(el("h2", "Form 8949 for " + y.year));
+        head.appendChild(pick);
+        body.appendChild(head);
+        body.appendChild(el("p", "Each sale as it goes on the form, wash sales worked out across every account. The box for each part " +
+                                 "(A to F) comes from the 1099-B: A or D when the broker reported the basis to the IRS, B or E when it " +
+                                 "didn't. A wash sale (code W) adds the disallowed loss back in column (g).", "support"));
+        var gains = {};
+        y.parts.forEach(function (p) { gains[p.term] = p.gain; });
+        figures(body, [gains.short_term !== undefined ? [gains.short_term, "short-term gain (Part I)"] : null,
+                       gains.long_term !== undefined ? [gains.long_term, "long-term gain (Part II)"] : null,
+                       y.disallowed ? [y.disallowed, "wash-sale losses disallowed"] : null]);
+        y.parts.forEach(function (p) {
+          var names = PART_NAMES[p.term];
+          var panel = el("section", null, "panel w-wide f8949-part");
+          panel.dataset.term = p.term;
+          panel.appendChild(el("h3", names[0]));
+          body.appendChild(panel);
+          var t = wTable(panel, ["(a) Description", "(b) Acquired", "(c) Sold", "(d) Proceeds", "(e) Basis", "(f) Code",
+                                 "(g) Adjustment", "(h) Gain or loss"], [3, 4, 6, 7]);
+          p.rows.forEach(function (r) {
+            var what = el("span", (+r.shares.toFixed(3)) + " sh " + r.symbol);
+            what.appendChild(el("span", r.account, "tag plain"));
+            var acquired = el("span", r.acquired);
+            if (r.holdingFrom && r.holdingFrom !== r.acquired) acquired.appendChild(el("span", "held from " + r.holdingFrom, "tag"));
+            var basis = el("span", centsText(r.basis));
+            if (r.reportedBasis !== null && Math.abs(r.reportedBasis - (r.basis - r.washCarried)) > 0.02) {
+              var tag = el("span", "1099-B: " + centsText(r.reportedBasis), "tag warn");
+              tag.title = "The plan reported a different basis for these shares: check the 1099-B, and use code B if the basis it shows is wrong";
+              basis.appendChild(tag);
+            }
+            t.row([what, acquired, r.saleDate, centsText(r.proceeds), basis, r.code, r.adjustment ? centsText(r.adjustment) : "",
+                   centsText(r.gain)], "", [null, r.acquired, r.saleDate, r.proceeds, r.basis, r.code, r.adjustment, r.gain]);
+          });
+          t.row(["Totals", "", "", centsText(p.proceeds), centsText(p.basis), "", p.adjustment ? centsText(p.adjustment) : "",
+                 centsText(p.gain)], "total");
+          var line = names[1] + (p.filed === null ? (y.filedOnFile ? ": nothing filed" : ": not filed yet")
+            : " as filed: " + centsText(p.filed) + (Math.abs(p.filed - p.gain) > 0.5
+              ? ", " + centsText(Math.abs(p.filed - p.gain)) + (p.filed > p.gain ? " more" : " less") + " than these sales " +
+                "(the line also takes capital gain distributions, carryovers and any sale not in the ledger)"
+              : ", the same as these sales"));
+          panel.appendChild(el("p", line, "support f8949-filed"));
+        });
       }
 
       function drawTaxHistoryView(body) {
@@ -5135,6 +5211,7 @@
           return;
         }
         if (p.view === "edit") { editTab = "review"; setView("edit"); return; }
+        if (p.view === "taxes" && p.tab && PAGE_PARTS.taxes.some(function (t) { return t[0] === p.tab; })) taxView = p.tab;
         if (p.view === "retirement" && p.tab && RETIRE_PARTS.some(function (t) { return t[0] === p.tab; })) retireView = p.tab;
         if (p.view === "investments" && p.tab && INVEST_PARTS.some(function (t) { return t[0] === p.tab; })) investView = p.tab;
         if (["flows", "budget", "investments", "retirement", "home", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();

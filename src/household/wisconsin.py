@@ -37,8 +37,10 @@ from .tax import whole
 TABLE_LIMIT = 100_000
 LOW_ROWS = ((0, 20), (20, 40), (40, 100))  # then the table's rows are 100 wide
 WI_LINES = ("WI State Income Tax", "WI")
-STATES = frozenset("""AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT
-NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WY""".split())
+STATES = frozenset(
+    """AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT
+NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WY""".split()
+)
 CENT = withholding.CENT
 RATIO_LINES = ("wi1npr_32",)  # compared to four decimal places
 
@@ -80,8 +82,11 @@ def standard_deduction(income, year, row=500):
     """Married filing jointly, as the Standard Deduction Table gives it: computed at the
     middle of its 500-wide income rows, the last row ending where the deduction reaches zero."""
     p = taxdata.params(year)
-    full, start, rate = (p["wi_standard_deduction_mfj"], p["wi_standard_deduction_phase_start_mfj"],
-                         p["wi_standard_deduction_phase_rate_mfj"])
+    full, start, rate = (
+        p["wi_standard_deduction_mfj"],
+        p["wi_standard_deduction_phase_start_mfj"],
+        p["wi_standard_deduction_phase_rate_mfj"],
+    )
     zero = int(start + full / rate)
     if income >= zero:
         return 0
@@ -130,8 +135,11 @@ def wisconsin_return(i, year):
     gross = tax(taxable, year)
     prorated = whole(gross * ratio)
 
-    itemized = (g("wi_itemized_interest", i.get("mortgage_interest", 0))
-                + g("wi_itemized_charity", i.get("charity", 0)) + g("wi_itemized_medical"))
+    itemized = (
+        g("wi_itemized_interest", i.get("mortgage_interest", 0))
+        + g("wi_itemized_charity", i.get("charity", 0))
+        + g("wi_itemized_medical")
+    )
     itemized_credit = whole(whole(p["wi_itemized_credit_rate"] * max(itemized - std, 0)) * ratio)
     school = whole(school_property_credit(g("wi_property_tax", i.get("real_estate_tax", 0)), year) * ratio)
     after_credits = max(prorated - itemized_credit - school, 0)
@@ -139,29 +147,51 @@ def wisconsin_return(i, year):
     net = max(after_credits - married, 0)
     withheld = g("wi_withheld")
 
-    lines = {"wi_income": whole(income), "wi_ratio": ratio, "wi_standard_deduction": std,
-             "wi_exemptions": exemptions, "wi_taxable": whole(taxable), "wi_tax": gross,
-             "wi_itemized_credit": itemized_credit, "wi_school_property_credit": school,
-             "wi_married_couple_credit": married, "wi_net_tax": net, "wi_withheld": whole(withheld),
-             "wi_owe_or_refund": whole(net - withheld)}
+    lines = {
+        "wi_income": whole(income),
+        "wi_ratio": ratio,
+        "wi_standard_deduction": std,
+        "wi_exemptions": exemptions,
+        "wi_taxable": whole(taxable),
+        "wi_tax": gross,
+        "wi_itemized_credit": itemized_credit,
+        "wi_school_property_credit": school,
+        "wi_married_couple_credit": married,
+        "wi_net_tax": net,
+        "wi_withheld": whole(withheld),
+        "wi_owe_or_refund": whole(net - withheld),
+    }
     if part_year:
-        lines.update({"wi1npr_32": ratio, "wi1npr_34c": std, "wi1npr_36c": exemptions,
-                      "wi1npr_37": whole(taxable), "wi1npr_38": gross, "wi1npr_39": prorated,
-                      "wi1npr_40": itemized_credit, "wi1npr_43c": school, "wi1npr_45": after_credits,
-                      "wi1npr_48": married, "wi1npr_52": net, "wi1npr_58": whole(withheld),
-                      "wi1npr_70": max(whole(withheld) - net, 0), "wi1npr_73": max(net - whole(withheld), 0)})
+        lines.update(
+            {
+                "wi1npr_32": ratio,
+                "wi1npr_34c": std,
+                "wi1npr_36c": exemptions,
+                "wi1npr_37": whole(taxable),
+                "wi1npr_38": gross,
+                "wi1npr_39": prorated,
+                "wi1npr_40": itemized_credit,
+                "wi1npr_43c": school,
+                "wi1npr_45": after_credits,
+                "wi1npr_48": married,
+                "wi1npr_52": net,
+                "wi1npr_58": whole(withheld),
+                "wi1npr_70": max(whole(withheld) - net, 0),
+                "wi1npr_73": max(net - whole(withheld), 0),
+            }
+        )
     return lines
 
 
 # --- withholding -----------------------------------------------------------------------------
+
 
 def regular_withholding(base, periods, year, married=True, exemptions=0, additional=0.0):
     """Pub W-166 alternate method for one paycheck."""
     p = taxdata.params(year)
     gross = base * periods
     kind = "married" if married else "single"
-    full, start, rate = (p[f"wi_wh_{kind}_deduction"], p[f"wi_wh_{kind}_phase_start"],
-                         p[f"wi_wh_{kind}_phase_rate"])
+    full, start, rate = (p[f"wi_wh_{kind}_deduction"], p[f"wi_wh_{kind}_phase_start"], p[f"wi_wh_{kind}_phase_rate"])
     deduction = max(full - rate * max(gross - start, 0), 0)
     net = max(gross - deduction - p["wi_wh_exemption"] * exemptions, 0)
     return round(_schedule(net, taxdata.wi_withholding_brackets()) / periods + additional, 2)
@@ -223,8 +253,9 @@ def _decode(base, periods, year, withheld, prefer=(), credit=0.0):
 
 def describe(base, periods, year, married, exemptions, additional):
     """WT-4 settings in words; marital status only when it changes this paycheck."""
-    status = regular_withholding(base, periods, year, not married, exemptions) != \
-        regular_withholding(base, periods, year, married, exemptions)
+    status = regular_withholding(base, periods, year, not married, exemptions) != regular_withholding(
+        base, periods, year, married, exemptions
+    )
     parts = ([("married" if married else "single")] if status else []) + [f"{exemptions} exemptions"]
     if additional:
         parts.append(f"{additional:,} additional")
@@ -239,8 +270,19 @@ def backtest(paystubs, explained=None):
     match the flat percentage of its band. explained maps stub_id to a person's
     explanation for a stub the rules don't account for (withholding.explained_by_people).
     """
-    cols = ["pay_date", "person", "employer", "stub_id", "kind", "base", "withheld", "expected",
-            "residual", "explanation", "settings"]
+    cols = [
+        "pay_date",
+        "person",
+        "employer",
+        "stub_id",
+        "kind",
+        "base",
+        "withheld",
+        "expected",
+        "residual",
+        "explanation",
+        "settings",
+    ]
     if paystubs.empty:
         return pd.DataFrame(columns=cols)
     withheld = stub_withholding(paystubs)
@@ -253,8 +295,14 @@ def backtest(paystubs, explained=None):
     for s in stubs:
         year, w = int(s["pay_date"][:4]), round(float(withheld.get(str(s["stub_id"]), 0.0)), 2)
         periods = withholding.periods_per_year(s["period_start"], s["period_end"])
-        row = {**{k: s[k] for k in cols[:4]}, "base": s["base"], "withheld": w, "settings": None,
-               "periods": periods, "year": year}
+        row = {
+            **{k: s[k] for k in cols[:4]},
+            "base": s["base"],
+            "withheld": w,
+            "settings": None,
+            "periods": periods,
+            "year": year,
+        }
         if year not in taxdata.PARAMS:
             row.update(kind="unchecked", explanation=f"no {year} Wisconsin withholding tables")
         elif s["base"] == 0 and w == 0:
@@ -263,8 +311,12 @@ def backtest(paystubs, explained=None):
             rate = flat_rate(s["base"], periods)
             if abs(round(rate * s["base"], 2) - w) < CENT:
                 band = f"band for {s['base'] * periods:,.0f} annualized"
-                row.update(kind="supplemental", expected=round(rate * s["base"], 2), residual=0.0,
-                           explanation=f"flat {rate * 100:g}% ({band})")
+                row.update(
+                    kind="supplemental",
+                    expected=round(rate * s["base"], 2),
+                    residual=0.0,
+                    explanation=f"flat {rate * 100:g}% ({band})",
+                )
             else:
                 row["kind"] = "regular"
                 pending.append(row)
@@ -277,15 +329,23 @@ def backtest(paystubs, explained=None):
             prefer.setdefault(row["person"], []).append(d[0][:2])
     for row in pending:
         states, credit = other.get(str(row["stub_id"]), ((), 0.0))
-        d = _decode(row["base"], row["periods"], row["year"], row["withheld"],
-                    prefer=list(dict.fromkeys(prefer.get(row["person"], []))), credit=credit)
+        d = _decode(
+            row["base"],
+            row["periods"],
+            row["year"],
+            row["withheld"],
+            prefer=list(dict.fromkeys(prefer.get(row["person"], []))),
+            credit=credit,
+        )
         if d is None:  # compare with the person's usual settings, else married with none
             married, exemptions = (prefer.get(row["person"]) or [(True, 0)])[-1]
             expected = regular_withholding(row["base"], row["periods"], row["year"], married, exemptions)
-            row.update(expected=expected, residual=round(row["withheld"] - expected, 2),
-                       explanation=f"unexplained {row['withheld'] - expected:+.2f} against "
-                                   + describe(row["base"], row["periods"], row["year"], married,
-                                              exemptions, 0))
+            row.update(
+                expected=expected,
+                residual=round(row["withheld"] - expected, 2),
+                explanation=f"unexplained {row['withheld'] - expected:+.2f} against "
+                + describe(row["base"], row["periods"], row["year"], married, exemptions, 0),
+            )
             continue
         settings, credited = d
         expected = regular_withholding(row["base"], row["periods"], row["year"], *settings)
@@ -293,8 +353,9 @@ def backtest(paystubs, explained=None):
         if credited:
             expected = round(max(expected - credit, 0.0), 2)
             explanation += f", less {'/'.join(states)} income tax withheld ({credit:,.2f})"
-        row.update(expected=expected, residual=round(row["withheld"] - expected, 2), settings=settings,
-                   explanation=explanation)
+        row.update(
+            expected=expected, residual=round(row["withheld"] - expected, 2), settings=settings, explanation=explanation
+        )
     df = pd.DataFrame(out, columns=cols + ["periods", "year"])[cols]
     withholding._apply_explained(df, explained)
     return df

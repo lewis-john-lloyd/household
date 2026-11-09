@@ -55,9 +55,14 @@ def personal_categories(path):
         return set()
     header = [str(h).strip() for h in table[0]]
     at, group_at = header.index("category"), header.index("group")
-    return {str(r[at]).strip() for r in table[1:]
-            if len(r) > group_at and str(r[group_at]).strip() in PERSONAL_GROUPS
-            and str(r[at]).strip() and str(r[at]).strip() not in SHARED}
+    return {
+        str(r[at]).strip()
+        for r in table[1:]
+        if len(r) > group_at
+        and str(r[group_at]).strip() in PERSONAL_GROUPS
+        and str(r[at]).strip()
+        and str(r[at]).strip() not in SHARED
+    }
 
 
 def main(argv):

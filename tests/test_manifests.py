@@ -26,8 +26,15 @@ SERVICES = {
 TRIGGERS = re.compile(r"\bScriptApp\.(newTrigger|getProjectTriggers|deleteTrigger)\b")
 # built-in services that would demand a broad scope (all of Drive, all of Sheets, sending mail, the network)
 BROAD_CALLS = re.compile(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.")
-BROAD_SCOPES = {"drive", "drive.readonly", "spreadsheets", "gmail.modify", "gmail.compose", "gmail.send",
-                "script.external_request"}
+BROAD_SCOPES = {
+    "drive",
+    "drive.readonly",
+    "spreadsheets",
+    "gmail.modify",
+    "gmail.compose",
+    "gmail.send",
+    "script.external_request",
+}
 
 
 def code(paths):
@@ -41,9 +48,11 @@ def test_the_manifest_enables_what_the_code_calls_and_nothing_more(project):
     manifest_path, sources = PROJECTS[project]
     manifest = json.loads(manifest_path.read_text())
     text = code(sources)
-    scopes = {s[len(SCOPE):] for s in manifest.get("oauthScopes", [])}
-    enabled = {s["userSymbol"]: (s["serviceId"], s["version"])
-               for s in manifest.get("dependencies", {}).get("enabledAdvancedServices", [])}
+    scopes = {s[len(SCOPE) :] for s in manifest.get("oauthScopes", [])}
+    enabled = {
+        s["userSymbol"]: (s["serviceId"], s["version"])
+        for s in manifest.get("dependencies", {}).get("enabledAdvancedServices", [])
+    }
     used = {name for name in SERVICES if re.search(rf"\b{name}\.\w+", text)}
     for name in used:
         service, version, allowed = SERVICES[name]
@@ -71,7 +80,7 @@ def test_the_views_and_the_exporter_each_need_what_they_have():
 def test_the_exporter_holds_gmail_read_its_own_files_and_its_trigger_and_nothing_else():
     # its searches come from a file it made (compute writes them there), so it needs no spreadsheet; it has
     # no network and no sending mail, so whatever it reads can go nowhere but its own Drive files
-    scopes = {s[len(SCOPE):] for s in json.loads(PROJECTS["exporter"][0].read_text())["oauthScopes"]}
+    scopes = {s[len(SCOPE) :] for s in json.loads(PROJECTS["exporter"][0].read_text())["oauthScopes"]}
     assert scopes == {"gmail.readonly", "drive.file", "script.scriptapp"}
 
 
@@ -79,20 +88,27 @@ def test_the_county_check_reaches_only_accessdane_and_its_own_files():
     # the one script with network: limited by the manifest to the county's parcel pages, it reads nothing of
     # yours but its parcels file (public parcel numbers), so there is nothing private it could send
     manifest = json.loads((ROOT / "assessor" / "appsscript.json").read_text())
-    scopes = {s[len(SCOPE):] for s in manifest["oauthScopes"]}
+    scopes = {s[len(SCOPE) :] for s in manifest["oauthScopes"]}
     assert scopes == {"drive.file", "script.external_request", "script.scriptapp"}
     assert manifest["urlFetchWhitelist"] == ["https://accessdane.danecounty.gov/"]
     text = code([ROOT / "assessor" / "Code.js"])
     assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", text)} == {"Drive"}
-    assert set(re.findall(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.", text)) == {"UrlFetchApp"}
+    assert set(re.findall(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.", text)) == {
+        "UrlFetchApp"
+    }
     assert re.findall(r"UrlFetchApp\.fetch\(([^,]+),", text) == ["pageUrl(home.parcel)"]
 
 
 @pytest.mark.parametrize("project", ["exporter", "nudge", "assessor"])
 def test_clasp_pushes_only_the_script_and_its_manifest(project):
     # without this, clasp push sends test/*.js too, and Apps Script runs the Node tests (require is not defined)
-    ignore = [line for line in (ROOT / project / ".claspignore").read_text().splitlines()
-              if line.strip() and not line.startswith("#")]
+    ignore = [
+        line
+        for line in (ROOT / project / ".claspignore").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
     assert ignore == ["**/**", "!Code.js", "!appsscript.json"]
     assert sorted(p.name for p in (ROOT / project).iterdir() if p.is_file() and not p.name.startswith(".")) == [
-        "Code.js", "appsscript.json"]
+        "Code.js",
+        "appsscript.json",
+    ]

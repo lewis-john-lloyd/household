@@ -20,8 +20,10 @@ KIND = "tax_law"
 # Matching runs on the text with all whitespace removed: some of these PDFs extract
 # letter-spaced ("Ad min is tra tiv e"), and the markers survive either way.
 PUBLICATION = re.compile(r"Publication(\d+(?:-[A-Z]+)?)\((20\d\d)\)CatalogNumber")
-INSTRUCTIONS = re.compile(r"Instructionsfor(Form|Schedule)([0-9A-Z-]+?)(?:\(Form1040\))?\((20\d\d)\)"
-                          r"CatalogNumber")
+INSTRUCTIONS = re.compile(
+    r"Instructionsfor(Form|Schedule)([0-9A-Z-]+?)(?:\(Form1040\))?\((20\d\d)\)"
+    r"CatalogNumber"
+)
 REV_PROC = re.compile(r"Rev\.Proc\.(20\d\d)-(\d+)")
 NOTICE = re.compile(r"Notice(20\d\d)-(\d+)")
 PUBLIC_LAW = re.compile(r"PUBLICLAW(\d+)[\u2013-](\d+)\u2014")
@@ -50,18 +52,23 @@ def _identify(text):
     m = INSTRUCTIONS.search(tight)
     if m:
         what, number, year = m.groups()
-        return (f"instructions-for-{what.lower()}-{number.lower()}-{year}",
-                f"Instructions for {what} {number} ({year})", year)
+        return (
+            f"instructions-for-{what.lower()}-{number.lower()}-{year}",
+            f"Instructions for {what} {number} ({year})",
+            year,
+        )
     m = WI_INSTRUCTIONS.search(tight[:TITLE_WINDOW])
     if m:
         form, year = m.groups()
-        return (f"wi-form-{form.lower()}-instructions-{year}",
-                f"Wisconsin Form {form} Instructions ({year})", year)
+        return (f"wi-form-{form.lower()}-instructions-{year}", f"Wisconsin Form {form} Instructions ({year})", year)
     m = WI_W166.search(tight[:TITLE_WINDOW])
     if m:
         month, yy = int(m.group(1)), m.group(2)
-        return (f"wi-publication-w-166-20{yy}-{month:02d}",
-                f"Wisconsin Publication W-166 ({m.group(1)}/{yy})", f"20{yy}")
+        return (
+            f"wi-publication-w-166-20{yy}-{month:02d}",
+            f"Wisconsin Publication W-166 ({m.group(1)}/{yy})",
+            f"20{yy}",
+        )
     m = WI_FORM.search(tight)
     if m and not FILLED.search(text):
         year, form = m.groups()
@@ -102,7 +109,11 @@ def sniff(text):
 
 def parse(text):
     label, title, year = _identify(text)
-    return Result(kind=KIND, parser=NAME, label=label,
-                  covers_from=f"{year}-01-01" if year else "",
-                  covers_to=f"{year}-12-31" if year else "",
-                  notes=[title])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=label,
+        covers_from=f"{year}-01-01" if year else "",
+        covers_to=f"{year}-12-31" if year else "",
+        notes=[title],
+    )

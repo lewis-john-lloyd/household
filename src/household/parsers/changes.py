@@ -61,9 +61,9 @@ FORMAT = "household_changes"
 VERSION = 1
 MAX_BYTES = 1024 * 1024
 MAX_EDITS = 1000
-MAX_TEXT = 500      # any one value
-MAX_PATTERN = 200   # a payee pattern or a parameter used as one
-MAX_ERRORS = 25     # reasons listed when a change set is refused
+MAX_TEXT = 500  # any one value
+MAX_PATTERN = 200  # a payee pattern or a parameter used as one
+MAX_ERRORS = 25  # reasons listed when a change set is refused
 SOURCE = "web"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")  # a category, the shape a split can name
@@ -76,8 +76,7 @@ BOOL = ("TRUE", "FALSE")
 KINDS = {
     "payee": ({"key", "category"}, set()),
     "line": ({"txn_id", "field", "value"}, set()),
-    "budget_line": ({"line", "effective", "rule"},
-                    {"category", "account", "priority", "amount", "per", "note", "was"}),
+    "budget_line": ({"line", "effective", "rule"}, {"category", "account", "priority", "amount", "per", "note", "was"}),
     "payee_rule": ({"pattern", "category", "effective"}, {"precedence", "ask", "was"}),
     "category": ({"category"}, {"group", "priority", "was"}),
     "alias": ({"alias", "category"}, {"note", "was"}),
@@ -104,7 +103,12 @@ WAS_FIELDS = {
 
 BUDGET = schema.table(schema.LEDGER, "budget_rules")
 RULES = schema.table(schema.LEDGER, "payee_rules")
-AMOUNT_RULES = ("fixed", "billed", "sinking_fund", "scheduled")  # rules that need an amount (the others fall back to one)
+AMOUNT_RULES = (
+    "fixed",
+    "billed",
+    "sinking_fund",
+    "scheduled",
+)  # rules that need an amount (the others fall back to one)
 
 
 def sniff(text):
@@ -152,8 +156,14 @@ def _label(n, edit):
     kind = edit.get("kind", "?") if isinstance(edit, dict) else "?"
     name = ""
     if isinstance(edit, dict):
-        name = next((str(edit[f]) for f in ("line", "pattern", "alias", "key", "txn_id", "stub_id", "txn_a",
-                                            "item_id", "category") if isinstance(edit.get(f), str)), "")
+        name = next(
+            (
+                str(edit[f])
+                for f in ("line", "pattern", "alias", "key", "txn_id", "stub_id", "txn_a", "item_id", "category")
+                if isinstance(edit.get(f), str)
+            ),
+            "",
+        )
     return f"edit {n} ({kind}{' ' + name if name else ''})"
 
 
@@ -171,8 +181,7 @@ def _shape(edit):
     for f in sorted(fields & (required | optional)):
         value = edit[f]
         if f == "was":
-            if value is not None and not (isinstance(value, dict)
-                                          and all(isinstance(v, str) for v in value.values())):
+            if value is not None and not (isinstance(value, dict) and all(isinstance(v, str) for v in value.values())):
                 problems.append("was must be null or an object of strings")
             continue
         if not isinstance(value, str):
@@ -296,8 +305,11 @@ def _target(e):
     the views (web/src/edits.ts), which keeps one staged edit per target."""
     kind = e["kind"]
     if kind == "budget_line":  # a scheduled amount belongs to its line and date; any other rule, to the line
-        return ("budget_line", e["line"], "scheduled", e["effective"]) if e["rule"] == "scheduled" \
+        return (
+            ("budget_line", e["line"], "scheduled", e["effective"])
+            if e["rule"] == "scheduled"
             else ("budget_line", e["line"])
+        )
     if kind == "not_duplicate":  # a pair is the same pair either way round
         return ("not_duplicate",) + tuple(sorted((e["txn_a"], e["txn_b"])))
     if kind == "line":
@@ -307,8 +319,14 @@ def _target(e):
         return (kind, _merge_key(e["key"]))
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
-    key = {"payee_rule": "pattern", "category": "category", "alias": "alias", "parameter": "key",
-           "explanation": "stub_id", "item": "item_id"}[kind]
+    key = {
+        "payee_rule": "pattern",
+        "category": "category",
+        "alias": "alias",
+        "parameter": "key",
+        "explanation": "stub_id",
+        "item": "item_id",
+    }[kind]
     extra = (e["jurisdiction"],) if kind == "explanation" else ()
     return (kind, e[key]) + extra
 
@@ -355,15 +373,27 @@ def parse(text):
     keys = {name: list(schema.table(schema.LEDGER, name).columns) for name in tables}  # an exact repeat adds nothing
     stamp = at[:23].replace(":", "")  # "2026-01-31T120000.123": the dot keeps the digits apart
     notes.insert(0, f"change set from {at}, {len(edits)} edits, based on run {doc.get('base_run') or '(none)'}")
-    return Result(kind="changes", parser=NAME, label=f"changes_{stamp}", covers_from=at[:10], covers_to=at[:10],
-                  tables=tables, keys=keys, notes=notes, check=lambda read: check(edits, read))
+    return Result(
+        kind="changes",
+        parser=NAME,
+        label=f"changes_{stamp}",
+        covers_from=at[:10],
+        covers_to=at[:10],
+        tables=tables,
+        keys=keys,
+        notes=notes,
+        check=lambda read: check(edits, read),
+    )
 
 
 def _refuse(problems):
     if problems:
         more = len(problems) - MAX_ERRORS
-        raise ParseError(f"{NAME}: refused, nothing written: " + "; ".join(problems[:MAX_ERRORS])
-                         + (f"; and {more} more" if more > 0 else ""))
+        raise ParseError(
+            f"{NAME}: refused, nothing written: "
+            + "; ".join(problems[:MAX_ERRORS])
+            + (f"; and {more} more" if more > 0 else "")
+        )
 
 
 def _describe(e):
@@ -384,8 +414,10 @@ def _describe(e):
         if e["rule"] == "scheduled":
             was = e.get("was")
             replacing = f", replacing {was.get('amount')}" if isinstance(was, dict) else ""
-            return (f"budget line {e['line']}: {e.get('amount')} scheduled for {e['effective']} "
-                    f"({e.get('category')}){replacing}")
+            return (
+                f"budget line {e['line']}: {e.get('amount')} scheduled for {e['effective']} "
+                f"({e.get('category')}){replacing}"
+            )
         amount = f" {e.get('amount')} {e.get('per') or 'monthly'}" if e.get("amount") else ""
         return f"budget line {e['line']}: {e['rule']}{amount} for {e.get('category')} from {e['effective']}"
     if kind == "payee_rule":
@@ -420,57 +452,125 @@ def _rows(edits, at):
     for e in edits:
         kind = e["kind"]
         if kind == "payee":
-            add("proposal_decisions", {"proposal_key": f"payee:{categorize.payee_key(e['key']) or e['key'].upper()}",
-                                       "kind": categorize.DECISION_KIND, "decided_at": at, "decision": "approve",
-                                       "note": e["category"]})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"payee:{categorize.payee_key(e['key']) or e['key'].upper()}",
+                    "kind": categorize.DECISION_KIND,
+                    "decided_at": at,
+                    "decision": "approve",
+                    "note": e["category"],
+                },
+            )
         elif kind == "subscription":
-            add("proposal_decisions", {"proposal_key": f"subscription:{categorize.payee_key(e['key']) or e['key'].upper()}",
-                                       "kind": "subscription", "decided_at": at,
-                                       "decision": "approve" if e["subscription"] == "yes" else "reject",
-                                       "note": e.get("note", "")})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"subscription:{categorize.payee_key(e['key']) or e['key'].upper()}",
+                    "kind": "subscription",
+                    "decided_at": at,
+                    "decision": "approve" if e["subscription"] == "yes" else "reject",
+                    "note": e.get("note", ""),
+                },
+            )
         elif kind == "recurring_merge":
             into = _merge_key(e["same_as"]) if e["same_as"].strip() else ""
-            add("proposal_decisions", {"proposal_key": f"subscription_merge:{_merge_key(e['key'])}",
-                                       "kind": "subscription_merge", "decided_at": at,
-                                       "decision": "approve" if into else "reject", "note": into})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"subscription_merge:{_merge_key(e['key'])}",
+                    "kind": "subscription_merge",
+                    "decided_at": at,
+                    "decision": "approve" if into else "reject",
+                    "note": into,
+                },
+            )
         elif kind == "recurring_name":
             name = e["name"].strip()
-            add("proposal_decisions", {"proposal_key": f"subscription_name:{_merge_key(e['key'])}",
-                                       "kind": "subscription_name", "decided_at": at,
-                                       "decision": "approve" if name else "reject", "note": name})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"subscription_name:{_merge_key(e['key'])}",
+                    "kind": "subscription_name",
+                    "decided_at": at,
+                    "decision": "approve" if name else "reject",
+                    "note": name,
+                },
+            )
         elif kind == "line":
-            add("txn_corrections", {"txn_id": e["txn_id"], "field": e["field"], "value": e["value"],
-                                    "recorded_at": at, "reason": SOURCE, "source": "hand"})
+            add(
+                "txn_corrections",
+                {
+                    "txn_id": e["txn_id"],
+                    "field": e["field"],
+                    "value": e["value"],
+                    "recorded_at": at,
+                    "reason": SOURCE,
+                    "source": "hand",
+                },
+            )
         elif kind == "budget_line":
             add("budget_rules", {c: e.get(c, "") for c in BUDGET.columns})
         elif kind == "payee_rule":
             add("payee_rules", {c: e.get(c, "") for c in RULES.columns})
         elif kind == "category":
-            add("categories", {"category": e["category"], "group": e.get("group", ""), "priority": e.get("priority", "")})
+            add(
+                "categories",
+                {"category": e["category"], "group": e.get("group", ""), "priority": e.get("priority", "")},
+            )
         elif kind == "alias":
             add("category_aliases", {"alias": e["alias"], "category": e["category"], "note": e.get("note", "")})
         elif kind == "parameter":
-            add("parameters", {"year": "", "jurisdiction": "household", "key": e["key"], "value": e["value"],
-                               "source": SOURCE})
+            add(
+                "parameters",
+                {"year": "", "jurisdiction": "household", "key": e["key"], "value": e["value"], "source": SOURCE},
+            )
         elif kind == "item":
-            add("item_categories", {"item_id": e["item_id"], "category": e["category"], "recorded_at": at, "source": SOURCE})
+            add(
+                "item_categories",
+                {"item_id": e["item_id"], "category": e["category"], "recorded_at": at, "source": SOURCE},
+            )
         elif kind == "job":
-            add("comp_events", {c: e.get(c, "").replace(",", "") if c == "salary" else e.get(c, "")
-                                for c in schema.table(schema.LEDGER, "comp_events").columns})
+            add(
+                "comp_events",
+                {
+                    c: e.get(c, "").replace(",", "") if c == "salary" else e.get(c, "")
+                    for c in schema.table(schema.LEDGER, "comp_events").columns
+                },
+            )
         elif kind == "explanation":
-            add("proposal_decisions", {"proposal_key": f"{e['jurisdiction']}:{e['stub_id']}", "kind": "withholding",
-                                       "decided_at": at, "decision": "approve", "note": e["note"]})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"{e['jurisdiction']}:{e['stub_id']}",
+                    "kind": "withholding",
+                    "decided_at": at,
+                    "decision": "approve",
+                    "note": e["note"],
+                },
+            )
         else:
             a, b = sorted((e["txn_a"], e["txn_b"]))  # the order possible_duplicates names a pair in
-            add("proposal_decisions", {"proposal_key": f"{a}|{b}", "kind": "duplicate", "decided_at": at,
-                                       "decision": "reject", "note": SOURCE})
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"{a}|{b}",
+                    "kind": "duplicate",
+                    "decided_at": at,
+                    "decision": "reject",
+                    "note": SOURCE,
+                },
+            )
         notes.append(_describe(e))
-    tables = {name: pd.DataFrame(r, columns=list(schema.table(schema.LEDGER, name).columns)).astype(str)
-              for name, r in rows.items()}
+    tables = {
+        name: pd.DataFrame(r, columns=list(schema.table(schema.LEDGER, name).columns)).astype(str)
+        for name, r in rows.items()
+    }
     return tables, notes
 
 
 # --- against the ledger -------------------------------------------------------------------------
+
 
 def _norm(value):
     """A value as text to compare: the Sheet's 600 and the editor's "600.00" are the same amount."""

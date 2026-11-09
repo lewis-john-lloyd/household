@@ -25,8 +25,21 @@ import pandas as pd
 
 IBOND_CLASS = "BT"
 UNCLASSIFIED = "unclassified"
-TREE_COLUMNS = ["node", "parent", "depth", "order", "label", "leaf", "target_share", "target_value", "current_value",
-                "current_share", "delta_value", "proposed_value", "proposed_share"]
+TREE_COLUMNS = [
+    "node",
+    "parent",
+    "depth",
+    "order",
+    "label",
+    "leaf",
+    "target_share",
+    "target_value",
+    "current_value",
+    "current_share",
+    "delta_value",
+    "proposed_value",
+    "proposed_share",
+]
 TRADE_COLUMNS = ["account_id", "bucket", "symbol", "asset_class", "current", "proposed", "trade"]
 FIXED_WRAPPERS = ("taxable", "ibonds")
 LEFT_OUT = ("529",)
@@ -37,24 +50,52 @@ MIN_TRADE = 50.0  # trades smaller than this are left out of the proposal
 # anyway and so costs the least growth; the stocks expected to grow most belong in Roth and HSA money, which is
 # never taxed again. REITs pay income taxed as ordinary, so any sheltered account suits them. A taxable account
 # is never traded (its sales are taxable), so it has no row here.
-LOCATION = {"BT": {"pretax": 0, "hsa": 1, "roth": 2}, "BI": {"pretax": 0, "hsa": 1, "roth": 2},
-            "BA": {"pretax": 0, "hsa": 1, "roth": 2}, "REIT": {"pretax": 0, "hsa": 0, "roth": 0},
-            "SDT": {"pretax": 1, "hsa": 0, "roth": 0}, "SIT": {"pretax": 1, "hsa": 0, "roth": 0},
-            "SDS": {"pretax": 2, "hsa": 0, "roth": 0}, "SIE": {"pretax": 2, "hsa": 0, "roth": 0}}
+LOCATION = {
+    "BT": {"pretax": 0, "hsa": 1, "roth": 2},
+    "BI": {"pretax": 0, "hsa": 1, "roth": 2},
+    "BA": {"pretax": 0, "hsa": 1, "roth": 2},
+    "REIT": {"pretax": 0, "hsa": 0, "roth": 0},
+    "SDT": {"pretax": 1, "hsa": 0, "roth": 0},
+    "SIT": {"pretax": 1, "hsa": 0, "roth": 0},
+    "SDS": {"pretax": 2, "hsa": 0, "roth": 0},
+    "SIE": {"pretax": 2, "hsa": 0, "roth": 0},
+}
 # a placement level costs this many times a dollar traded: moving a bond out of a Roth account and a stock into
 # it (four trades) is worth it, a reshuffle to gain a little is not; reaching the targets always comes first
 LOCATION_WEIGHT = 3.0
 
 # a node's label in the views; a leaf class with no label here shows its code
-LABELS = {"stocks": "Stocks", "us_stocks": "US", "intl_stocks": "International", "bonds": "Bonds",
-          "SDT": "US total market", "SDS": "US small value", "REIT": "REIT", "SIT": "International total",
-          "SIE": "Emerging markets", "BT": "US bonds", "BI": "International bonds", "BA": "Cash",
-          UNCLASSIFIED: "Unclassified"}
+LABELS = {
+    "stocks": "Stocks",
+    "us_stocks": "US",
+    "intl_stocks": "International",
+    "bonds": "Bonds",
+    "SDT": "US total market",
+    "SDS": "US small value",
+    "REIT": "REIT",
+    "SIT": "International total",
+    "SIE": "Emerging markets",
+    "BT": "US bonds",
+    "BI": "International bonds",
+    "BA": "Cash",
+    UNCLASSIFIED: "Unclassified",
+}
 
 # The targets the old investments workbook used, as allocation_targets rows (effective, node, parent, weight)
-SEED = [("stocks", "", 82), ("us_stocks", "stocks", 75), ("SDT", "us_stocks", 85), ("SDS", "us_stocks", 5),
-        ("REIT", "us_stocks", 10), ("intl_stocks", "stocks", 25), ("SIT", "intl_stocks", 75),
-        ("SIE", "intl_stocks", 25), ("bonds", "", 18), ("BT", "bonds", 80), ("BI", "bonds", 20), ("BA", "", 0)]
+SEED = [
+    ("stocks", "", 82),
+    ("us_stocks", "stocks", 75),
+    ("SDT", "us_stocks", 85),
+    ("SDS", "us_stocks", 5),
+    ("REIT", "us_stocks", 10),
+    ("intl_stocks", "stocks", 25),
+    ("SIT", "intl_stocks", 75),
+    ("SIE", "intl_stocks", 25),
+    ("bonds", "", 18),
+    ("BT", "bonds", 80),
+    ("BI", "bonds", 20),
+    ("BA", "", 0),
+]
 
 PART = re.compile(r"([A-Za-z_]+)\s*[: ]\s*([0-9.]+)")
 
@@ -108,8 +149,11 @@ def tree(targets, today):
     if t.empty:
         return [(n, p, float(w)) for n, p, w in SEED]
     t = t[t["effective"] == t["effective"].max()]
-    return [(str(n).strip(), str(p).strip(), float(pd.to_numeric(w, errors="coerce") or 0.0))
-            for n, p, w in zip(t["node"], t["parent"], t["weight"]) if str(n).strip()]
+    return [
+        (str(n).strip(), str(p).strip(), float(pd.to_numeric(w, errors="coerce") or 0.0))
+        for n, p, w in zip(t["node"], t["parent"], t["weight"])
+        if str(n).strip()
+    ]
 
 
 def leaf_shares(nodes):
@@ -127,6 +171,7 @@ def leaf_shares(nodes):
             s = share * (w / total if total > 0 else 0.0)
             shares[n] = s
             walk(n, s)
+
     walk("", 1.0)
     leaves = {n: s for n, s in shares.items() if n not in kids}
     return shares, leaves
@@ -154,23 +199,46 @@ def report(nodes, current, proposed=None):
             cur = sum(current.get(c, 0.0) for c in mine)
             prop = sum(proposed.get(c, 0.0) for c in mine)
             order[0] += 1
-            rows.append({"node": n, "parent": parent, "depth": depth, "order": order[0], "label": LABELS.get(n, n),
-                         "leaf": n not in kids, "target_share": round(shares[n], 6),
-                         "target_value": round(shares[n] * total, 2), "current_value": round(cur, 2),
-                         "current_share": round(cur / total, 6) if total else 0.0,
-                         "delta_value": round(cur - shares[n] * total, 2),
-                         "proposed_value": round(prop, 2) if proposed else "",
-                         "proposed_share": round(prop / total, 6) if proposed and total else ""})
+            rows.append(
+                {
+                    "node": n,
+                    "parent": parent,
+                    "depth": depth,
+                    "order": order[0],
+                    "label": LABELS.get(n, n),
+                    "leaf": n not in kids,
+                    "target_share": round(shares[n], 6),
+                    "target_value": round(shares[n] * total, 2),
+                    "current_value": round(cur, 2),
+                    "current_share": round(cur / total, 6) if total else 0.0,
+                    "delta_value": round(cur - shares[n] * total, 2),
+                    "proposed_value": round(prop, 2) if proposed else "",
+                    "proposed_share": round(prop / total, 6) if proposed and total else "",
+                }
+            )
             walk(n, depth + 1)
+
     walk("", 0)
     for c in sorted(set(current) - set(leaves)):
         order[0] += 1
         cur = current[c]
-        rows.append({"node": c, "parent": "", "depth": 0, "order": order[0], "label": LABELS.get(c, c), "leaf": True,
-                     "target_share": 0.0, "target_value": 0.0, "current_value": round(cur, 2),
-                     "current_share": round(cur / total, 6) if total else 0.0, "delta_value": round(cur, 2),
-                     "proposed_value": round(proposed.get(c, 0.0), 2) if proposed else "",
-                     "proposed_share": round(proposed.get(c, 0.0) / total, 6) if proposed and total else ""})
+        rows.append(
+            {
+                "node": c,
+                "parent": "",
+                "depth": 0,
+                "order": order[0],
+                "label": LABELS.get(c, c),
+                "leaf": True,
+                "target_share": 0.0,
+                "target_value": 0.0,
+                "current_value": round(cur, 2),
+                "current_share": round(cur / total, 6) if total else 0.0,
+                "delta_value": round(cur, 2),
+                "proposed_value": round(proposed.get(c, 0.0), 2) if proposed else "",
+                "proposed_share": round(proposed.get(c, 0.0) / total, 6) if proposed and total else "",
+            }
+        )
     return pd.DataFrame(rows, columns=TREE_COLUMNS)
 
 
@@ -247,6 +315,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         if r["wrapper"] in FIXED_WRAPPERS or not str(r["symbol"]).strip():
             return False
         return UNCLASSIFIED not in mixes[(r["account_id"], r["bucket"], r["symbol"])]
+
     rows["tradable"] = [tradable(r) for r in rows.to_dict("records")]
     fixed_rows = rows[~rows["tradable"]]
     fixed = by_class(fixed_rows)
@@ -266,11 +335,15 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         mine = tradable_rows[tradable_rows["account_id"] == a["account_id"]]
         held = mine.groupby("symbol")["value"].sum().to_dict()
         by_bucket = mine.groupby("bucket")["value"].sum()
-        kinds[a["account_id"]] = {location_kind(b): float(v) / float(by_bucket.sum()) for b, v in by_bucket.items()
-                                  if by_bucket.sum() > 0}
+        kinds[a["account_id"]] = {
+            location_kind(b): float(v) / float(by_bucket.sum()) for b, v in by_bucket.items() if by_bucket.sum() > 0
+        }
         labels[a["account_id"]] = "+".join(sorted(by_bucket.index))
-        may = set(held) | {s for s in (ever_held or {}).get(a["account_id"], set())
-                           if UNCLASSIFIED not in klass.get(s, {UNCLASSIFIED: 1}) and s in klass}
+        may = set(held) | {
+            s
+            for s in (ever_held or {}).get(a["account_id"], set())
+            if UNCLASSIFIED not in klass.get(s, {UNCLASSIFIED: 1}) and s in klass
+        }
         for s in sorted(may):
             variables.append((a["account_id"], s, float(held.get(s, 0.0))))
             funds.setdefault(s, klass[s])
@@ -279,14 +352,18 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     unreachable = [c for c in sorted(leaves) if c not in reachable]
     for c in unreachable:
         if leaves[c] * total > fixed.get(c, 0.0) + 0.5:
-            notes.append(f"rebalance: no tradable account holds a fund for {LABELS.get(c, c)}, so it stays "
-                         f"{leaves[c] * total - fixed.get(c, 0.0):,.0f} under target without a new ticker; "
-                         "the other targets share its part")
+            notes.append(
+                f"rebalance: no tradable account holds a fund for {LABELS.get(c, c)}, so it stays "
+                f"{leaves[c] * total - fixed.get(c, 0.0):,.0f} under target without a new ticker; "
+                "the other targets share its part"
+            )
     targets = _targets(leaves, total, fixed, unreachable)
     pinned = [c for c in sorted(set(leaves) | set(fixed)) if fixed.get(c, 0.0) > leaves.get(c, 0.0) * total + 0.005]
     for c in pinned:
-        notes.append(f"rebalance: {LABELS.get(c, c)} held where nothing trades ({fixed[c]:,.0f}) is over its "
-                     f"target of {leaves.get(c, 0.0) * total:,.0f}; the other targets share the rest")
+        notes.append(
+            f"rebalance: {LABELS.get(c, c)} held where nothing trades ({fixed[c]:,.0f}) is over its "
+            f"target of {leaves.get(c, 0.0) * total:,.0f}; the other targets share the rest"
+        )
     if not variables:
         return pd.DataFrame(columns=TRADE_COLUMNS), dict(fixed), notes + ["rebalance: nothing tradable"]
     n, m = len(variables), len(classes)
@@ -311,8 +388,8 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     size = owner_at + 2 * k * m
     cost = np.zeros(size)
     scale = max(total, 1.0)
-    cost[n:n + 2 * m] = 1000.0 / scale
-    cost[n + 2 * m:owner_at] = 1.0 / scale
+    cost[n : n + 2 * m] = 1000.0 / scale
+    cost[n + 2 * m : owner_at] = 1.0 / scale
     cost[owner_at:] = OWNER_WEIGHT / scale
     if location:  # each dollar of a class in an account that suits it less costs a little more
         for v_i, (acct, sym, _) in enumerate(variables):
@@ -356,8 +433,17 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         if abs(trade) >= MIN_TRADE or (cur > 0 and new < 0.5):
             mix = funds[s]
             label = ", ".join(f"{c} {f:.0%}" for c, f in mix.items()) if len(mix) > 1 else next(iter(mix))
-            trades.append({"account_id": acct, "bucket": labels[acct], "symbol": s, "asset_class": label,
-                           "current": round(cur, 2), "proposed": round(new, 2), "trade": round(trade, 2)})
+            trades.append(
+                {
+                    "account_id": acct,
+                    "bucket": labels[acct],
+                    "symbol": s,
+                    "asset_class": label,
+                    "current": round(cur, 2),
+                    "proposed": round(new, 2),
+                    "trade": round(trade, 2),
+                }
+            )
     for p in balance:  # how far each adult's own money is from the target mix, now and after the trades
         now, after = dict(owner_fixed[p]), dict(owner_fixed[p])
         for (acct, s_, cur), new in zip(variables, x):
@@ -365,8 +451,10 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
             for c, f in funds[s_].items():
                 now[c] = now.get(c, 0.0) + w * cur * f
                 after[c] = after.get(c, 0.0) + w * new * f
-        notes.append(f"rebalance: {p}'s own money is {_off(now, share, owner_total[p]):.0%} off the target mix now, "
-                     f"{_off(after, share, owner_total[p]):.0%} after the trades")
+        notes.append(
+            f"rebalance: {p}'s own money is {_off(now, share, owner_total[p]):.0%} off the target mix now, "
+            f"{_off(after, share, owner_total[p]):.0%} after the trades"
+        )
     out = pd.DataFrame(trades, columns=TRADE_COLUMNS)
     if len(out):
         out = out.sort_values(["account_id", "bucket", "trade"]).reset_index(drop=True)

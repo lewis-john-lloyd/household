@@ -17,15 +17,26 @@ def test_remaining_pay_dates_move_new_years_day_to_december_31():
 def regular(pay_date, stub_id, gross=5_000.0, pretax=500.0, fit=None, k401=300.0, hsa=100.0):
     taxable = gross - pretax
     fit = withholding.regular_withholding(taxable, 26, 2026) + 200 if fit is None else fit
-    common = {"pay_date": pay_date, "period_start": "2026-01-01", "period_end": "2026-01-14",
-              "person": "alex", "employer": "Acme", "stub_id": stub_id, "doc_id": "d"}
+    common = {
+        "pay_date": pay_date,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-14",
+        "person": "alex",
+        "employer": "Acme",
+        "stub_id": stub_id,
+        "doc_id": "d",
+    }
     n = int(stub_id)
-    items = [("Regular Pay", "income", gross, gross * n), ("401k", "pre_tax", k401, k401 * n),
-             ("HSA Employee", "pre_tax", hsa, hsa * n),
-             ("Medical", "pre_tax", pretax - k401 - hsa, (pretax - k401 - hsa) * n),
-             ("Federal Income Tax", "tax", fit, fit * n), ("Employee Medicare", "tax", gross * 0.0145,
-                                                           gross * 0.0145 * n),
-             ("Gross", "memo", gross, gross * n), ("FIT Taxable Wages", "memo", taxable, taxable * n)]
+    items = [
+        ("Regular Pay", "income", gross, gross * n),
+        ("401k", "pre_tax", k401, k401 * n),
+        ("HSA Employee", "pre_tax", hsa, hsa * n),
+        ("Medical", "pre_tax", pretax - k401 - hsa, (pretax - k401 - hsa) * n),
+        ("Federal Income Tax", "tax", fit, fit * n),
+        ("Employee Medicare", "tax", gross * 0.0145, gross * 0.0145 * n),
+        ("Gross", "memo", gross, gross * n),
+        ("FIT Taxable Wages", "memo", taxable, taxable * n),
+    ]
     return [{**common, "line_item": a, "kind": k, "amount": v, "ytd_amount": y} for a, k, v, y in items]
 
 
@@ -61,8 +72,12 @@ def test_scenarios_change_withholding_not_tax():
 
 def test_the_return_lines_read_like_the_forms_and_sit_beside_a_filed_return():
     stubs = stubs_through(24)
-    facts = pd.DataFrame([{"year": 2026, "kind": "filed", "key": "24", "person": "", "value": 9000},
-                          {"year": 2026, "kind": "filed", "key": "11a", "person": "", "value": 120000}])
+    facts = pd.DataFrame(
+        [
+            {"year": 2026, "kind": "filed", "key": "24", "person": "", "value": 9000},
+            {"year": 2026, "kind": "filed", "key": "11a", "person": "", "value": 120000},
+        ]
+    )
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
     _, _, detail = projection.project(2026, stubs, sales, facts)
     federal = detail[(detail["scenario"] == "as is") & (detail["form"] == "Form 1040")]
@@ -79,7 +94,13 @@ def test_the_withholding_plan_gives_a_refund_no_balance_and_owing_for_each_retur
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
     plan = projection.withholding_plan(2026, stubs, sales, facts, target=2000)
     assert [(r["return"], r["target"]) for r in plan.to_dict("records")] == [
-        ("federal", 2000), ("federal", 0), ("federal", -2000), ("wisconsin", 2000), ("wisconsin", 0), ("wisconsin", -2000)]
+        ("federal", 2000),
+        ("federal", 0),
+        ("federal", -2000),
+        ("wisconsin", 2000),
+        ("wisconsin", 0),
+        ("wisconsin", -2000),
+    ]
     federal = plan[plan["return"] == "federal"].set_index("target")
     assert (federal["paychecks_left"] == 7).all() and (federal["current_extra"] == 200).all()
     # the stubs over-withhold: even none extra leaves more than a 2,000 refund, so each target lands where none does
@@ -104,6 +125,7 @@ def test_the_withholding_plan_gives_a_refund_no_balance_and_owing_for_each_retur
 
 def test_the_penalty_rule():
     from household import tax
+
     assert tax.penalty_free(owe=999, withheld=0, total_tax=50_000)  # under 1,000 owed
     assert tax.penalty_free(owe=5_000, withheld=45_000, total_tax=50_000)  # 90% of this year's tax
     assert not tax.penalty_free(owe=5_000, withheld=40_000, total_tax=50_000)
@@ -119,8 +141,15 @@ def test_elections_show_the_year_so_far_and_say_a_backdoor_roth_is_not_tracked()
 def test_the_mega_backdoor_row_says_whether_the_plan_converts_after_tax_money():
     rows = stubs_through(10).to_dict("records")
     for stub in {r["stub_id"]: r for r in rows}.values():  # an after-tax 401(k) contribution on every stub
-        rows.append({**stub, "line_item": "401k After-Tax", "kind": "post_tax", "amount": 50.0,
-                     "ytd_amount": 50.0 * int(stub["stub_id"])})
+        rows.append(
+            {
+                **stub,
+                "line_item": "401k After-Tax",
+                "kind": "post_tax",
+                "amount": 50.0,
+                "ytd_amount": 50.0 * int(stub["stub_id"]),
+            }
+        )
     stubs = pd.DataFrame(rows)
     plain = projection.elections(2026, stubs).set_index("plan").loc["Mega backdoor Roth (after-tax 401(k))"]
     assert plain["ytd"] == 500 and plain["status"].endswith("; Roth conversion not tracked")
@@ -142,16 +171,27 @@ def test_wisconsin_lines_carry_the_form_s_line_numbers_and_say_when_they_are_las
 def test_a_limited_purpose_fsa_is_projected_against_the_health_fsa_limit():
     rows = stubs_through(24).to_dict("records")
     for stub in {r["stub_id"]: r for r in rows}.values():
-        rows.append({**stub, "line_item": "Ltd Purpose FSA", "kind": "pre_tax", "amount": 50.0,
-                     "ytd_amount": 50.0 * int(stub["stub_id"])})
+        rows.append(
+            {
+                **stub,
+                "line_item": "Ltd Purpose FSA",
+                "kind": "pre_tax",
+                "amount": 50.0,
+                "ytd_amount": 50.0 * int(stub["stub_id"]),
+            }
+        )
     fsa = projection.elections(2026, pd.DataFrame(rows)).set_index("plan").loc["Limited-purpose FSA"]
     assert (fsa["person"], fsa["ytd"], fsa["projected"], fsa["limit"]) == ("alex", 50 * 24, 50 * 26, 3_400)
     assert fsa["status"] == "room left"
 
 
 def jobs(*rows):
-    return pd.DataFrame([{"effective": e, "person": p, "employer": m, "salary": "", "band": "", "rating": "",
-                          "fte": "", "note": ""} for e, p, m in rows])
+    return pd.DataFrame(
+        [
+            {"effective": e, "person": p, "employer": m, "salary": "", "band": "", "rating": "", "fte": "", "note": ""}
+            for e, p, m in rows
+        ]
+    )
 
 
 def test_a_job_goes_on_until_comp_events_records_the_next_one():
@@ -162,8 +202,12 @@ def test_a_job_goes_on_until_comp_events_records_the_next_one():
     pos = projection.positions(stubs, 2026)
     assert pos[("alex", "Acme Widgets, LLC")]["paychecks_left"] == 17 and pos[("alex", "Acme")]["paychecks_left"] == 3
     # a raise at Acme Widgets ends nothing; the move to Willow St on May 18 ends it
-    events = jobs(("2025-01-01", "alex", "Acme Widgets"), ("2026-03-01", "alex", "Acme Widgets"),
-                  ("2026-05-18", "alex", "Willow St"), ("2026-06-01", "sam", "Quill & Ink"))
+    events = jobs(
+        ("2025-01-01", "alex", "Acme Widgets"),
+        ("2026-03-01", "alex", "Acme Widgets"),
+        ("2026-05-18", "alex", "Willow St"),
+        ("2026-06-01", "sam", "Quill & Ink"),
+    )
     gone = projection.positions(stubs, 2026, comp_events=events)[("alex", "Acme Widgets, LLC")]
     assert gone["paychecks_left"] == 0 and gone["wages"] == 10 * 4_500
     assert any("ends 2026-05-18" in n for n in gone["notes"])
@@ -182,21 +226,33 @@ def test_a_year_that_is_over_is_not_projected():
 
 
 def facts_of(rows, year="2025"):
-    return pd.DataFrame([{"year": year, "kind": k, "key": key, "person": p, "value": str(v)}
-                         for k, key, p, v in rows])
+    return pd.DataFrame([{"year": year, "kind": k, "key": key, "person": p, "value": str(v)} for k, key, p, v in rows])
 
 
 def test_a_filed_year_is_laid_out_from_its_own_figures_beside_every_filed_line():
-    rows = [("input", "wages", "alex", 90_000), ("input", "wages", "sam", 60_000),
-            ("input", "federal_withheld", "alex", 15_000), ("input", "federal_withheld", "sam", 8_000),
-            ("input", "taxable_interest", "", 20), ("input", "capital_gain_short", "", 1_000),
-            ("input", "wi_income", "", 75_510), ("input", "wi_exemptions", "", 2), ("input", "wi_withheld", "", 4_000),
-            ("input", "wi_earned_income", "alex", 50_000), ("input", "wi_earned_income", "sam", 25_000),
-            ("input", "pa_compensation", "", 50_000), ("input", "pa_withheld", "", 1_500)]
+    rows = [
+        ("input", "wages", "alex", 90_000),
+        ("input", "wages", "sam", 60_000),
+        ("input", "federal_withheld", "alex", 15_000),
+        ("input", "federal_withheld", "sam", 8_000),
+        ("input", "taxable_interest", "", 20),
+        ("input", "capital_gain_short", "", 1_000),
+        ("input", "wi_income", "", 75_510),
+        ("input", "wi_exemptions", "", 2),
+        ("input", "wi_withheld", "", 4_000),
+        ("input", "wi_earned_income", "alex", 50_000),
+        ("input", "wi_earned_income", "sam", 25_000),
+        ("input", "pa_compensation", "", 50_000),
+        ("input", "pa_withheld", "", 1_500),
+    ]
     facts = facts_of(rows)
     r = projection.tax.federal_return(projection.tax.inputs_from_facts(facts, 2025), 2025)
-    filed = [("filed", "11a", "", r["11a"]), ("filed", "24", "", r["24"]), ("filed", "wi1npr_32", "", 0.5),
-             ("filed", "pa40_12", "", 50)]  # the last one off
+    filed = [
+        ("filed", "11a", "", r["11a"]),
+        ("filed", "24", "", r["24"]),
+        ("filed", "wi1npr_32", "", 0.5),
+        ("filed", "pa40_12", "", 50),
+    ]  # the last one off
     detail = projection.as_filed(2025, pd.concat([facts, facts_of(filed)], ignore_index=True))
     assert list(dict.fromkeys(detail["form"])) == ["Form 1040", "Wisconsin Form 1NPR", "Pennsylvania PA-40"]
     by = detail.set_index("key")

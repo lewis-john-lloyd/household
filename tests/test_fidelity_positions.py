@@ -23,10 +23,15 @@ def test_every_accounts_holdings_on_the_download_date():
     r = ingest.finish_investment_rows(fidelity_positions.parse(FILE), "Portfolio_Positions_Jun-01-2001.csv", ACCOUNTS)
     held = r.tables["holdings"]
     assert held[["as_of", "account_id", "symbol", "shares", "value"]].values.tolist() == [
-        ["2001-06-01", "a_roth", "ACMEX", 5, 50], ["2001-06-01", "a_roth", "SPAXX", 4.5, 4.5], ["2001-06-01", "a_plan", "OJU1", 2.5, 50]]
+        ["2001-06-01", "a_roth", "ACMEX", 5, 50],
+        ["2001-06-01", "a_roth", "SPAXX", 4.5, 4.5],
+        ["2001-06-01", "a_plan", "OJU1", 2.5, 50],
+    ]
     assert r.tables["prices"].set_index("symbol")["close"].to_dict() == {"SPAXX": 1, "ACMEX": 10, "OJU1": 20}
-    assert r.notes == ["a_roth: ROTH IRA, 2 holdings worth 54.50 on 2001-06-01",
-                       "a_plan: ACME WIDGETS SAVINGS PLAN, 1 holdings worth 50.00 on 2001-06-01"]
+    assert r.notes == [
+        "a_roth: ROTH IRA, 2 holdings worth 54.50 on 2001-06-01",
+        "a_plan: ACME WIDGETS SAVINGS PLAN, 1 holdings worth 50.00 on 2001-06-01",
+    ]
 
 
 def test_a_download_without_its_date_is_refused():

@@ -72,8 +72,16 @@ def test_the_awards_page_reads_as_each_grants_vesting_schedule():
     r = schwab_awards.parse(PAGE)
     df = r.tables["vest_schedule"]
     assert df.groupby("grant_id")["shares"].sum().to_dict() == {"G100": 30, "G90": 10}
-    assert df.iloc[0].to_dict() == {"grant_id": "G100", "award_date": "2026-03-04", "symbol": "ACME", "award_type": "RSU",
-                                    "grant_price": 0, "expires": "", "vest_date": "2026-08-25", "shares": 5}
+    assert df.iloc[0].to_dict() == {
+        "grant_id": "G100",
+        "award_date": "2026-03-04",
+        "symbol": "ACME",
+        "award_type": "RSU",
+        "grant_price": 0,
+        "expires": "",
+        "vest_date": "2026-08-25",
+        "shares": 5,
+    }
     assert r.notes[1] == "G90 (ACME RSU of 2025-08-06): 10 granted, 6 vested, 4 unvested, 2 vests to 2026-11-25"
 
 
@@ -90,12 +98,19 @@ def test_a_grants_latest_page_is_its_schedule_and_the_price_is_the_latest_seen()
     s = schwab_awards.in_force(pd.concat([old, new]))
     assert s.groupby("grant_id")["shares"].sum().to_dict() == {"G100": 36, "G90": 10}
     vested = pd.DataFrame([{"vest_date": "2026-09-25", "fmv": "30"}, {"vest_date": "2026-08-25", "fmv": "28"}])
-    prices = pd.DataFrame([{"symbol": "ACME", "date": "2026-10-31", "close": "32"}, {"symbol": "QUILX", "date": "2026-11-01", "close": "9"}])
+    prices = pd.DataFrame(
+        [
+            {"symbol": "ACME", "date": "2026-10-31", "close": "32"},
+            {"symbol": "QUILX", "date": "2026-11-01", "close": "9"},
+        ]
+    )
     # the 12-month average of each month's last price: August 28, September 30, October 32
     got = projection.scheduled_vests(old, vested, prices)
     assert (got["price"], got["months"], got["latest"], got["price_date"]) == (30, 3, 32, "2026-10-31")
     assert projection.scheduled_vests(old, vested)["price"] == 29
-    older = pd.concat([vested, pd.DataFrame([{"vest_date": "2025-06-25", "fmv": "90"}])])  # over a year before the latest
+    older = pd.concat(
+        [vested, pd.DataFrame([{"vest_date": "2025-06-25", "fmv": "90"}])]
+    )  # over a year before the latest
     assert projection.scheduled_vests(old, older, prices)["price"] == 30
     assert projection.scheduled_vests(old.iloc[0:0], vested) is None
     assert projection.scheduled_vests(old.assign(award_type="OPTION"), vested) is None  # an option's vest is not pay
@@ -103,11 +118,22 @@ def test_a_grants_latest_page_is_its_schedule_and_the_price_is_the_latest_seen()
 
 def vest(pay_date, stub_id, amount=2_000.0):
     """A vest paid on its own stub, withheld at the flat 22%."""
-    common = {"pay_date": pay_date, "period_start": pay_date, "period_end": pay_date, "person": "alex",
-              "employer": "Acme", "stub_id": stub_id, "doc_id": "d"}
-    items = [("RSU Vest", "income", amount, amount), ("Federal Income Tax", "tax", amount * 0.22, amount * 0.22),
-             ("Employee Medicare", "tax", amount * 0.0145, amount * 0.0145), ("Gross", "memo", amount, amount),
-             ("FIT Taxable Wages", "memo", amount, amount)]
+    common = {
+        "pay_date": pay_date,
+        "period_start": pay_date,
+        "period_end": pay_date,
+        "person": "alex",
+        "employer": "Acme",
+        "stub_id": stub_id,
+        "doc_id": "d",
+    }
+    items = [
+        ("RSU Vest", "income", amount, amount),
+        ("Federal Income Tax", "tax", amount * 0.22, amount * 0.22),
+        ("Employee Medicare", "tax", amount * 0.0145, amount * 0.0145),
+        ("Gross", "memo", amount, amount),
+        ("FIT Taxable Wages", "memo", amount, amount),
+    ]
     return [{**common, "line_item": a, "kind": k, "amount": v, "ytd_amount": y} for a, k, v, y in items]
 
 
@@ -132,9 +158,13 @@ def test_the_vests_left_this_year_come_from_the_schedule_in_place_of_the_monthly
 
 def test_the_average_takes_twelve_calendar_months_and_skips_a_date_with_no_close():
     sched = schwab_awards.parse(PAGE).tables["vest_schedule"].assign(doc_id="d1")
-    prices = pd.DataFrame([{"symbol": "ACME", "date": "2025-11-30", "close": "90"},  # the same month a year before
-                           {"symbol": "ACME", "date": "2025-12-31", "close": ""},  # no close that day
-                           {"symbol": "ACME", "date": "2026-01-31", "close": "20"},
-                           {"symbol": "ACME", "date": "2026-11-07", "close": "40"}])
+    prices = pd.DataFrame(
+        [
+            {"symbol": "ACME", "date": "2025-11-30", "close": "90"},  # the same month a year before
+            {"symbol": "ACME", "date": "2025-12-31", "close": ""},  # no close that day
+            {"symbol": "ACME", "date": "2026-01-31", "close": "20"},
+            {"symbol": "ACME", "date": "2026-11-07", "close": "40"},
+        ]
+    )
     got = projection.scheduled_vests(sched, None, prices)
     assert (got["price"], got["months"], got["latest"]) == (30, 2, 40)

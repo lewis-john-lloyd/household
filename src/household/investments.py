@@ -18,8 +18,10 @@ def flows(activity):
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     df = df[df["amount"] != 0]
     df["year"] = df["date"].astype(str).str[:4]
-    out = (df.groupby(["year", "account_id", "kind"], as_index=False)
-             .agg(amount=("amount", "sum"), rows=("amount", "size")))
+    out = df.groupby(["year", "account_id", "kind"], as_index=False).agg(
+        amount=("amount", "sum"), rows=("amount", "size")
+    )
     out["amount"] = out["amount"].round(2)
-    return (out.sort_values(["year", "account_id", "kind"], ascending=[False, True, True])
-               .reset_index(drop=True)[FLOW_COLUMNS])
+    return out.sort_values(["year", "account_id", "kind"], ascending=[False, True, True]).reset_index(drop=True)[
+        FLOW_COLUMNS
+    ]

@@ -36,6 +36,10 @@ def parse(text):
     except ValueError as e:
         raise ParseError(f"{NAME}: non-numeric value ({e})") from e
     years = sorted(df["year"].unique())
-    return Result(kind="return_facts", parser=NAME, label=f"return_facts_{'_'.join(years)}",
-                  tables={"return_facts": df},
-                  keys={"return_facts": ["year", "kind", "key", "person"]})
+    return Result(
+        kind="return_facts",
+        parser=NAME,
+        label=f"return_facts_{'_'.join(years)}",
+        tables={"return_facts": df},
+        keys={"return_facts": ["year", "kind", "key", "person"]},
+    )

@@ -63,15 +63,25 @@ def discover(categorized, today=None):
             status = "price changed"
         else:
             status = "active"
-        rows.append({"key": key, "category": g["category"].mode().iloc[0], "cadence": name,
-                     "typical": round(typical, 2), "latest": round(latest, 2), "charges": len(g),
-                     "first": g["date"].iloc[0], "last": g["date"].iloc[-1],
-                     "next_expected": (last + pd.Timedelta(days=round(cadence))).date().isoformat(),
-                     "status": status})
+        rows.append(
+            {
+                "key": key,
+                "category": g["category"].mode().iloc[0],
+                "cadence": name,
+                "typical": round(typical, 2),
+                "latest": round(latest, 2),
+                "charges": len(g),
+                "first": g["date"].iloc[0],
+                "last": g["date"].iloc[-1],
+                "next_expected": (last + pd.Timedelta(days=round(cadence))).date().isoformat(),
+                "status": status,
+            }
+        )
     out = pd.DataFrame(rows, columns=COLUMNS)
     order = {"price changed": 0, "active": 1, "stopped": 2}
-    return out.sort_values(["status", "typical"], key=lambda c: c.map(order) if c.name == "status" else -c,
-                           ).reset_index(drop=True)
+    return out.sort_values(["status", "typical"], key=lambda c: c.map(order) if c.name == "status" else -c).reset_index(
+        drop=True
+    )
 
 
 # --- subscriptions you marked ---------------------------------------------------------------------
@@ -95,10 +105,41 @@ PRICE_STEP = 0.03
 RAISE_MIN = 0.5
 FRESH_DAYS = 45
 PER_YEAR = {"weekly": 52, "biweekly": 26, "monthly": 12, "quarterly": 4, "yearly": 1}
-SUB_COLUMNS = ["key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
-               "next_expected", "status", "change", "example", "note", "includes", "merged", "name"]
-EDITOR_COLUMNS = ["key", "marked", "status", "cadence", "charges", "last", "latest", "yearly", "category", "example",
-                  "note", "includes", "merged", "name"]
+SUB_COLUMNS = [
+    "key",
+    "category",
+    "cadence",
+    "charges",
+    "first",
+    "last",
+    "latest",
+    "previous",
+    "yearly",
+    "next_expected",
+    "status",
+    "change",
+    "example",
+    "note",
+    "includes",
+    "merged",
+    "name",
+]
+EDITOR_COLUMNS = [
+    "key",
+    "marked",
+    "status",
+    "cadence",
+    "charges",
+    "last",
+    "latest",
+    "yearly",
+    "category",
+    "example",
+    "note",
+    "includes",
+    "merged",
+    "name",
+]
 MAX_NAME = 60
 
 
@@ -106,11 +147,14 @@ def marks(decisions):
     """{key: (True or False, note)} from proposal_decisions: the latest subscription answer per key."""
     if decisions is None or decisions.empty:
         return {}
-    d = decisions[(decisions["kind"] == "subscription")
-                  & decisions["proposal_key"].astype(str).str.startswith("subscription:")]
+    d = decisions[
+        (decisions["kind"] == "subscription") & decisions["proposal_key"].astype(str).str.startswith("subscription:")
+    ]
     d = d.sort_values("decided_at", kind="stable")
-    return {str(k)[len("subscription:"):]: (v == "approve", str(n or "")) for k, v, n in
-            zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index)))}
+    return {
+        str(k)[len("subscription:") :]: (v == "approve", str(n or ""))
+        for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index)))
+    }
 
 
 def _charges(categorized):
@@ -133,12 +177,14 @@ def names(decisions):
     (a "recurring_name" edit, the name in its note; a reject, or a blank name, goes back to the key)."""
     if decisions is None or decisions.empty:
         return {}
-    d = decisions[(decisions["kind"] == "subscription_name")
-                  & decisions["proposal_key"].astype(str).str.startswith("subscription_name:")]
+    d = decisions[
+        (decisions["kind"] == "subscription_name")
+        & decisions["proposal_key"].astype(str).str.startswith("subscription_name:")
+    ]
     d = d.sort_values("decided_at", kind="stable")
     out = {}
     for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
-        key, name = str(k)[len("subscription_name:"):], str(n if n is not None else "").strip()
+        key, name = str(k)[len("subscription_name:") :], str(n if n is not None else "").strip()
         if v == "approve" and name:
             out[key] = name[:MAX_NAME]
         else:
@@ -158,12 +204,14 @@ def merges(decisions):
     to its end. A key in a cycle stays on its own."""
     if decisions is None or decisions.empty:
         return {}
-    d = decisions[(decisions["kind"] == "subscription_merge")
-                  & decisions["proposal_key"].astype(str).str.startswith("subscription_merge:")]
+    d = decisions[
+        (decisions["kind"] == "subscription_merge")
+        & decisions["proposal_key"].astype(str).str.startswith("subscription_merge:")
+    ]
     d = d.sort_values("decided_at", kind="stable")
     raw = {}
     for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
-        key, into = str(k)[len("subscription_merge:"):], str(n if n is not None else "").strip().upper()
+        key, into = str(k)[len("subscription_merge:") :], str(n if n is not None else "").strip().upper()
         if v == "approve" and into and into != key:
             raw[key] = into
         else:
@@ -191,9 +239,24 @@ def group_lines(df, key, merged):
 
 
 def _empty(key, note):
-    return {"key": key, "category": "", "cadence": "", "charges": 0, "first": "", "last": "", "latest": None,
-            "previous": None, "yearly": None, "next_expected": "", "status": "no charges", "change": "", "example": "",
-            "note": note, "includes": "", "merged": ""}
+    return {
+        "key": key,
+        "category": "",
+        "cadence": "",
+        "charges": 0,
+        "first": "",
+        "last": "",
+        "latest": None,
+        "previous": None,
+        "yearly": None,
+        "next_expected": "",
+        "status": "no charges",
+        "change": "",
+        "example": "",
+        "note": note,
+        "includes": "",
+        "merged": "",
+    }
 
 
 def _row(key, g, today, note, merged):
@@ -216,15 +279,30 @@ def _row(key, g, today, note, merged):
         status = "price changed"
     else:
         status = "active"
-    change = (f"{latest:,.2f}, was {previous:,.2f} ({latest / previous - 1:+.0%}) from {g['date'].iloc[-1]}"
-              if changed else "")
+    change = (
+        f"{latest:,.2f}, was {previous:,.2f} ({latest / previous - 1:+.0%}) from {g['date'].iloc[-1]}"
+        if changed
+        else ""
+    )
     others = sorted(set(g["key"].astype(str)) - {key})
-    return {"key": key, "category": g["category"].mode().iloc[0], "cadence": name or "irregular",
-            "charges": len(g), "first": g["date"].iloc[0], "last": g["date"].iloc[-1],
-            "latest": round(latest, 2), "previous": None if previous is None else round(previous, 2),
-            "yearly": round(yearly, 2), "next_expected": following, "status": status, "change": change,
-            "example": _example(g), "note": note, "includes": ", ".join(others),
-            "merged": ", ".join(members(key, merged)[1:])}
+    return {
+        "key": key,
+        "category": g["category"].mode().iloc[0],
+        "cadence": name or "irregular",
+        "charges": len(g),
+        "first": g["date"].iloc[0],
+        "last": g["date"].iloc[-1],
+        "latest": round(latest, 2),
+        "previous": None if previous is None else round(previous, 2),
+        "yearly": round(yearly, 2),
+        "next_expected": following,
+        "status": status,
+        "change": change,
+        "example": _example(g),
+        "note": note,
+        "includes": ", ".join(others),
+        "merged": ", ".join(members(key, merged)[1:]),
+    }
 
 
 def tracked(decisions):
@@ -252,8 +330,11 @@ def subscriptions(categorized, decisions, today=None):
     rows = []
     for key, note in tracked(decisions).items():
         g = group_lines(df, key, merged)
-        rows.append({**_empty(key, note), "merged": ", ".join(members(key, merged)[1:])} if g.empty
-                    else _row(key, g, today, note, merged))
+        rows.append(
+            {**_empty(key, note), "merged": ", ".join(members(key, merged)[1:])}
+            if g.empty
+            else _row(key, g, today, note, merged)
+        )
     out = pd.DataFrame(rows, columns=SUB_COLUMNS)
     order = {"price changed": 0, "active": 1, "no charges": 2, "stopped": 3}
     out["_o"] = out["status"].map(order)
@@ -278,8 +359,20 @@ def editor_rows(subs, found, categorized, decisions, today=None):
     covers, is listed only as part of that one; a merged group is judged on all its charges."""
     today = pd.Timestamp(today or date.today())
     marked, merged = marks(decisions), merges(decisions)
-    pick = ["key", "status", "cadence", "charges", "last", "latest", "yearly", "category", "example", "note",
-            "includes", "merged"]
+    pick = [
+        "key",
+        "status",
+        "cadence",
+        "charges",
+        "last",
+        "latest",
+        "yearly",
+        "category",
+        "example",
+        "note",
+        "includes",
+        "merged",
+    ]
     rows = [{**{c: r[c] for c in pick}, "marked": "yes"} for r in subs.to_dict("records")]
     df = _charges(categorized)
     covered = set()
@@ -297,16 +390,29 @@ def editor_rows(subs, found, categorized, decisions, today=None):
         if key != r["key"] or len(members(key, merged)) > 1:  # a merged group: judged on all its charges
             base = _row(key, g, today, on[1] if on else "", merged)
         else:
-            base = {"key": key, "status": r["status"], "cadence": r["cadence"], "charges": r["charges"],
-                    "last": r["last"], "latest": r["latest"], "yearly": round(r["latest"] * PER_YEAR[r["cadence"]], 2),
-                    "category": r["category"], "example": _example(g), "note": on[1] if on else "",
-                    "includes": "", "merged": ""}
+            base = {
+                "key": key,
+                "status": r["status"],
+                "cadence": r["cadence"],
+                "charges": r["charges"],
+                "last": r["last"],
+                "latest": r["latest"],
+                "yearly": round(r["latest"] * PER_YEAR[r["cadence"]], 2),
+                "category": r["category"],
+                "example": _example(g),
+                "note": on[1] if on else "",
+                "includes": "",
+                "merged": "",
+            }
         found_rows.append({**{c: base[c] for c in pick}, "marked": "no" if on else ""})
     later = {"": 0, "no": 1}
     found_rows.sort(key=lambda r: (later[r["marked"]], r["status"] == "stopped"))
     rows += found_rows
-    rows += [{**_empty(k, note), "marked": "no", "status": ""} for k, (on, note) in marked.items()
-             if not on and k not in seen and k not in merged]
+    rows += [
+        {**_empty(k, note), "marked": "no", "status": ""}
+        for k, (on, note) in marked.items()
+        if not on and k not in seen and k not in merged
+    ]
     out = named(pd.DataFrame(rows, columns=EDITOR_COLUMNS), decisions)
     return out[[c for c in EDITOR_COLUMNS]]
 
@@ -343,10 +449,16 @@ def subscription_months(categorized, decisions, categories=None, today=None):
                 else:
                     due = pd.Timestamp(before["date"].iloc[-1]) + pd.Timedelta(days=round(cadence))
                     expected = last if due.strftime("%Y-%m") == month else 0.0
-            rows.append({"month": month, "key": sub["key"], "category": sub["category"],
-                         "group": groups.get(sub["category"], ""),
-                         "expected": None if expected is None else round(expected, 2),
-                         "actual": round(float(spent.get(month, 0.0)), 2)})
+            rows.append(
+                {
+                    "month": month,
+                    "key": sub["key"],
+                    "category": sub["category"],
+                    "group": groups.get(sub["category"], ""),
+                    "expected": None if expected is None else round(expected, 2),
+                    "actual": round(float(spent.get(month, 0.0)), 2),
+                }
+            )
     return named(pd.DataFrame(rows, columns=MONTH_COLUMNS), decisions)
 
 

@@ -40,7 +40,8 @@ GROUP = re.compile(r"^([-$]*)(\d{1,3})$")
 
 def sniff(text):
     return all(s in text for s in ("Earnings Statement", "Statutory", "Net Check", "Pay Date:")) or (
-        all(s in text for s in ("Statutory", "Net Check", "Pay Date:", "Period Beginning:")))
+        all(s in text for s in ("Statutory", "Net Check", "Pay Date:", "Period Beginning:"))
+    )
 
 
 def _words(line):
@@ -121,7 +122,7 @@ def parse(text):
         raise ParseError(f"{NAME}: no earnings header")
     items, gross, net, deposited, section = [], None, None, (0.0, 0.0), "earnings"
     gtl = (0.0, 0.0)
-    for line in lines[head + 1:]:
+    for line in lines[head + 1 :]:
         label, amounts = _row(line, "left")
         if label == "Statutory":
             section = "statutory"
@@ -148,12 +149,12 @@ def parse(text):
             gtl = _split(right_amounts, TOTAL_COLUMN)
     taxable_at = _find(lines, "Your federal taxable wages")
     taxable = []
-    for following in lines[taxable_at + 1:taxable_at + 4]:  # the first dollar amount below
+    for following in lines[taxable_at + 1 : taxable_at + 4]:  # the first dollar amount below
         words = _words(following)
         dollar = next((i for i, (_, w) in enumerate(words) if w.startswith("$")), None)
         if dollar is not None:
             cents = next((i for i in range(dollar + 1, len(words)) if re.fullmatch(r"\d\d", words[i][1])), dollar)
-            taxable = _amounts(words[dollar:cents + 1], "federal taxable wages")
+            taxable = _amounts(words[dollar : cents + 1], "federal taxable wages")
             break
     if gross is None or net is None or not taxable:
         raise ParseError(f"{NAME}: missing Gross Pay, Net Pay or federal taxable wages")
@@ -163,26 +164,45 @@ def parse(text):
     by = {col: df.groupby("kind")[col].sum() for col in ("amount", "ytd_amount")}
     taxes = tuple(round(by[c].get("tax", 0.0), 2) for c in by)
     deductions = tuple(round(by[c].get("pre_tax", 0.0) + by[c].get("post_tax", 0.0), 2) for c in by)
-    checks = [("earnings", gross[0], by["amount"].get("income", 0.0)),
-              ("YTD earnings", gross[1], by["ytd_amount"].get("income", 0.0)),
-              ("net", net, gross[0] - taxes[0] - deductions[0]),
-              ("fed taxable", fed_taxable, gross[0] + gtl[0] - by["amount"].get("pre_tax", 0.0))]
+    checks = [
+        ("earnings", gross[0], by["amount"].get("income", 0.0)),
+        ("YTD earnings", gross[1], by["ytd_amount"].get("income", 0.0)),
+        ("net", net, gross[0] - taxes[0] - deductions[0]),
+        ("fed taxable", fed_taxable, gross[0] + gtl[0] - by["amount"].get("pre_tax", 0.0)),
+    ]
     if deposited != (0.0, 0.0):
         checks.append(("YTD deposited", deposited[1], gross[1] - taxes[1] - deductions[1]))
     require(checks, f"{NAME} {pay_date}")
 
-    extra = [("Group Term Life", "income", gtl[0], gtl[1]), ("Group Term Life", "post_tax", gtl[0], gtl[1])] \
-        if gtl != (0.0, 0.0) else []
-    memo = [("Gross", "memo", gross[0] + gtl[0], gross[1] + gtl[1]),
-            ("Fed Taxable Income", "memo", fed_taxable, 0.0),
-            ("Taxes", "memo", taxes[0], taxes[1]),
-            ("Deductions", "memo", deductions[0] + gtl[0], deductions[1] + gtl[1]),
-            ("Net Pay", "memo", net, 0.0)]
+    extra = (
+        [("Group Term Life", "income", gtl[0], gtl[1]), ("Group Term Life", "post_tax", gtl[0], gtl[1])]
+        if gtl != (0.0, 0.0)
+        else []
+    )
+    memo = [
+        ("Gross", "memo", gross[0] + gtl[0], gross[1] + gtl[1]),
+        ("Fed Taxable Income", "memo", fed_taxable, 0.0),
+        ("Taxes", "memo", taxes[0], taxes[1]),
+        ("Deductions", "memo", deductions[0] + gtl[0], deductions[1] + gtl[1]),
+        ("Net Pay", "memo", net, 0.0),
+    ]
     rows = pd.concat([df, pd.DataFrame(extra + memo, columns=df.columns)], ignore_index=True)
     rows["amount"], rows["ytd_amount"] = rows["amount"].round(2), rows["ytd_amount"].round(2)
-    for col, value in (("stub_id", advice.group(1) if advice else ""), ("employer", employer), ("person", person),
-                       ("period_end", end), ("period_start", start), ("pay_date", pay_date)):
+    for col, value in (
+        ("stub_id", advice.group(1) if advice else ""),
+        ("employer", employer),
+        ("person", person),
+        ("period_end", end),
+        ("period_start", start),
+        ("pay_date", pay_date),
+    ):
         rows.insert(0, col, value)
-    return Result(kind="paystub", parser=NAME, label=f"paystub_{person}_{pay_date}",
-                  covers_from=start, covers_to=end, tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]})
+    return Result(
+        kind="paystub",
+        parser=NAME,
+        label=f"paystub_{person}_{pay_date}",
+        covers_from=start,
+        covers_to=end,
+        tables={"paystubs": rows},
+        keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]},
+    )

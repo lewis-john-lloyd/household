@@ -21,7 +21,7 @@ SETTINGS = {
     "planned_supplemental_rate": "The federal rate vests and bonuses are withheld at from now on (default 0.35)",
     "after_tax_401k_converts_to_roth": "TRUE when the 401(k) plan converts after-tax money to Roth on its own",
     "withholding_tolerance": "How far, in dollars, a projected refund may miss target_refund before the weekly "
-                             "email says so (default 500)",
+    "email says so (default 500)",
     "views_url": "The views' web app link, for links in the weekly email",
     "payroll_url": "Where W-4, WT-4 and supplemental withholding are changed",
     "benefits_url": "Where 401(k) contributions are changed",
@@ -30,69 +30,69 @@ SETTINGS = {
     "lpfsa_categories": "Categories whose reimbursements come from the limited-purpose FSA, separated by commas",
     "dcfsa_categories": "Categories whose reimbursements come from the dependent care FSA, separated by commas",
     "lpfsa_claim_deadline": "The last day to claim limited-purpose FSA money: MM-DD of the year after the plan "
-                            "year (lpfsa_claim_deadline:2026 with a full date for one plan year)",
+    "year (lpfsa_claim_deadline:2026 with a full date for one plan year)",
     "dcfsa_claim_deadline": "The last day to claim dependent care FSA money: MM-DD of the year after the plan "
-                            "year (dcfsa_claim_deadline:2026 with a full date for one plan year)",
+    "year (dcfsa_claim_deadline:2026 with a full date for one plan year)",
     "household_adults": "The two adults' owner names in accounts, separated by commas: a joint account splits evenly "
-                        "between them, and accounts of any other owner count as the kids' (default: the people "
-                        "on pay stubs)",
+    "between them, and accounts of any other owner count as the kids' (default: the people "
+    "on pay stubs)",
     "home_value_basis": "Which value of a home counts toward net worth: purchase_price (until sold), median, "
-                        "lowest, or a source in property_values such as zillow or county_fair_market "
-                        "(default purchase_price)",
+    "lowest, or a source in property_values such as zillow or county_fair_market "
+    "(default purchase_price)",
     "home_sale_cost_rate": "What selling a home would cost, as a fraction of the price (commission and closing), "
-                           "for what a sale would net (default 0.06)",
+    "for what a sale would net (default 0.06)",
     "wash_sale_symbols": "The symbols whose losses are checked for wash sales, separated by commas (default: the "
-                         "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
+    "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
     "account_renamed": "An account's new name (account_renamed:<its id> = the new id): the views and reports show "
-                       "the new one, and a file named with either one finds the account",
+    "the new one, and a file named with either one finds the account",
     "legacy_account": "The old investments workbook's readings kept under one account that belong to another "
-                      "(legacy_account:<the id they were read under> = the account they belong to), such as an old "
-                      "rollover IRA whose tab was read into the IRA that took its place",
+    "(legacy_account:<the id they were read under> = the account they belong to), such as an old "
+    "rollover IRA whose tab was read into the IRA that took its place",
     "price_proxy": "A public fund a plan's fund tracks (price_proxy:<the fund's symbol, lower case, other characters "
-                   "as _> = its ticker, such as VFIAX), so the fund's value between statements moves with it",
+    "as _> = its ticker, such as VFIAX), so the fund's value between statements moves with it",
     "birth_date": "A person's birth date, YYYY-MM-DD (birth_date:<person>), for the retirement plan; their Social "
-                  "Security statement gives it too",
+    "Security statement gives it too",
     "social_security_claim_age": "The age a person claims Social Security at, 62 to 70 "
-                                 "(social_security_claim_age:<person>; default 67)",
+    "(social_security_claim_age:<person>; default 67)",
     "social_security_monthly": "A person's monthly benefit at full retirement age in today's dollars, when there is no "
-                               "statement for them yet (social_security_monthly:<person>)",
+    "statement for them yet (social_security_monthly:<person>)",
     "social_security_cut": "A cut to every Social Security benefit to assume, as a fraction, from "
-                           "social_security_cut_from (default 0; the 2025 Trustees Report has benefits payable at "
-                           "about 0.81 once the reserves run out)",
+    "social_security_cut_from (default 0; the 2025 Trustees Report has benefits payable at "
+    "about 0.81 once the reserves run out)",
     "social_security_cut_from": "The year social_security_cut starts (default 2034)",
     "retirement_year": "The year the household retires in the plan (default: the earliest whose Monte Carlo success "
-                       "reaches retirement_success_target)",
+    "reaches retirement_success_target)",
     "retirement_strategy": "The plan's strategy, as the Strategies tab names it, such as bracket/to22/constant "
-                           "(default: the one that ends with the most after-tax wealth among the most successful)",
+    "(default: the one that ends with the most after-tax wealth among the most successful)",
     "retirement_success_target": "The share of Monte Carlo runs that must never run short for a year to be one the "
-                                 "household can retire in (default 0.9)",
+    "household can retire in (default 0.9)",
     "retirement_plan_to_age": "The age the plan runs to, for the younger adult (default 95)",
     "retirement_stock_share": "The share of the portfolio in stocks for the plan's returns (default: the allocation "
-                              "targets')",
+    "targets')",
     "retirement_cagrs": "The fixed nominal yearly returns to show, separated by commas (default 0.05, 0.07, 0.09)",
     "retirement_inflation": "Inflation for the fixed returns and for amounts the law doesn't index (default 0.03)",
     "retirement_taxable_yield": "The taxable accounts' yearly dividends as a share of their value (default 0.02)",
     "retirement_taxable_savings": "What the household adds to taxable accounts a year while working, in today's "
-                                  "dollars (default: the last 12 months, as the Assumptions tab shows)",
+    "dollars (default: the last 12 months, as the Assumptions tab shows)",
     "retirement_pre_tax_contributions": "A person's pre-tax plan contributions a year while working, employer's "
-                                        "included (retirement_pre_tax_contributions:<person>; default: the last 12 "
-                                        "months' activity)",
+    "included (retirement_pre_tax_contributions:<person>; default: the last 12 "
+    "months' activity)",
     "retirement_roth_contributions": "A person's Roth and after-tax contributions a year while working "
-                                     "(retirement_roth_contributions:<person>; default: the last 12 months' activity)",
+    "(retirement_roth_contributions:<person>; default: the last 12 months' activity)",
     "retirement_spending": "A category or group's spending in retirement, a year in today's dollars, from a year on: "
-                           "retirement_spending:<category or group> = 0 from 2032, or 18000; 9000 from 2040. A name "
-                           "that isn't a category or group adds that spending",
+    "retirement_spending:<category or group> = 0 from 2032, or 18000; 9000 from 2040. A name "
+    "that isn't a category or group adds that spending",
     "retirement_leave_out": "Categories or groups that aren't spending in retirement, separated by commas (default "
-                            "taxes: the plan works out its own)",
+    "taxes: the plan works out its own)",
     "retirement_health_pre65": "Health cover a year for the household before 65, once retired (default 24000)",
     "retirement_health_supplement": "Medigap and Part D premiums a year a person from 65 (default 3000)",
     "hsa_spending_categories": "Categories or groups the HSA pays for in retirement, separated by commas (default "
-                               "medical); it pays Medicare premiums too",
+    "medical); it pays Medicare premiums too",
     "retirement_monte_carlo_runs": "How many Monte Carlo runs (default 1000)",
     "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
-                      "(receipt_sender:<store>); the receipt exporter reads only mail from these",
+    "(receipt_sender:<store>); the receipt exporter reads only mail from these",
     "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "
-                       "by | (receipt_subject:<store>); the exporter then reads only mail whose subject has one",
+    "by | (receipt_subject:<store>); the exporter then reads only mail whose subject has one",
 }
 
 LINKS = ("views_url", "payroll_url", "benefits_url", "fsa_claims_url")
@@ -107,12 +107,27 @@ def symbol_key(symbol):
     return re.sub(r"[^a-z0-9]+", "_", str(symbol).lower()).strip("_")
 
 
-NUMBERS = ("target_refund", "planned_supplemental_rate", "withholding_tolerance", "social_security_claim_age",
-           "social_security_monthly", "social_security_cut", "social_security_cut_from", "retirement_year",
-           "retirement_success_target", "retirement_plan_to_age", "retirement_stock_share", "retirement_inflation",
-           "retirement_taxable_yield", "retirement_taxable_savings", "retirement_health_pre65",
-           "retirement_health_supplement", "retirement_monte_carlo_runs", "retirement_pre_tax_contributions",
-           "retirement_roth_contributions")
+NUMBERS = (
+    "target_refund",
+    "planned_supplemental_rate",
+    "withholding_tolerance",
+    "social_security_claim_age",
+    "social_security_monthly",
+    "social_security_cut",
+    "social_security_cut_from",
+    "retirement_year",
+    "retirement_success_target",
+    "retirement_plan_to_age",
+    "retirement_stock_share",
+    "retirement_inflation",
+    "retirement_taxable_yield",
+    "retirement_taxable_savings",
+    "retirement_health_pre65",
+    "retirement_health_supplement",
+    "retirement_monte_carlo_runs",
+    "retirement_pre_tax_contributions",
+    "retirement_roth_contributions",
+)
 DEADLINES = ("lpfsa_claim_deadline", "dcfsa_claim_deadline")
 ADDRESS = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
 PHRASE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 &'.,!#-]{0,59}")
@@ -173,8 +188,14 @@ def receipt_searches(params):
         subject = value.get(f"receipt_subject:{store}", "")
         if subject and subject_problem(subject):
             continue
-        rows.append({"store": store, "senders": ", ".join(senders(v)), "subjects": " | ".join(subjects(subject)),
-                     "search": gmail_search(senders(v), subjects(subject))})
+        rows.append(
+            {
+                "store": store,
+                "senders": ", ".join(senders(v)),
+                "subjects": " | ".join(subjects(subject)),
+                "search": gmail_search(senders(v), subjects(subject)),
+            }
+        )
     return pd.DataFrame(rows, columns=columns).sort_values("store").reset_index(drop=True)
 
 
@@ -254,7 +275,8 @@ def check(params):
             except ValueError:
                 out.append((key, v, "is not a date (YYYY-MM-DD)"))
         elif base == "retirement_spending" and not re.fullmatch(
-                r"\s*-?[\d,]+(\.\d+)?(\s+from\s+\d{4})?\s*(;\s*-?[\d,]+(\.\d+)?(\s+from\s+\d{4})?\s*)*", v):
+            r"\s*-?[\d,]+(\.\d+)?(\s+from\s+\d{4})?\s*(;\s*-?[\d,]+(\.\d+)?(\s+from\s+\d{4})?\s*)*", v
+        ):
             out.append((key, v, "is not an amount, or amounts from years (0 from 2032; 9000 from 2040)"))
         elif base == "retirement_cagrs" and not re.fullmatch(r"\s*-?\d*\.?\d+(\s*,\s*-?\d*\.?\d+)*\s*", v):
             out.append((key, v, "is not numbers separated by commas"))

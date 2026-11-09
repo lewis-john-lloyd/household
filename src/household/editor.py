@@ -11,11 +11,21 @@ import pandas as pd
 
 from . import budget, compute, schema, settings
 
-PER_WORDS = {"monthly": "a month", "biweekly": "every two weeks", "weekly": "a week",
-             "semi_monthly": "twice a month", "quarterly": "a quarter", "semi_annually": "every six months",
-             "annually": "a year", "": "a month"}
-HISTORY_WORDS = {"seasonal": "the same three months a year earlier", "lookback": "the last twelve months",
-                 "trailing": "the last four months"}
+PER_WORDS = {
+    "monthly": "a month",
+    "biweekly": "every two weeks",
+    "weekly": "a week",
+    "semi_monthly": "twice a month",
+    "quarterly": "a quarter",
+    "semi_annually": "every six months",
+    "annually": "a year",
+    "": "a month",
+}
+HISTORY_WORDS = {
+    "seasonal": "the same three months a year earlier",
+    "lookback": "the last twelve months",
+    "trailing": "the last four months",
+}
 
 
 def _columns(name):
@@ -36,12 +46,15 @@ def in_words(row):
     if rule == "fixed":
         return each or "fixed, but no amount"
     if rule == "billed":
-        return f"a bill of {_money(amount)} {PER_WORDS.get(per, per)}, in the months it comes" if amount \
+        return (
+            f"a bill of {_money(amount)} {PER_WORDS.get(per, per)}, in the months it comes"
+            if amount
             else "billed, but no amount"
+        )
     if rule == "sinking_fund":
         return f"set aside {each}, spent from a running balance" if each else "sinking fund, but no amount"
     if rule in HISTORY_WORDS:
-        words = (f"what {HISTORY_WORDS[rule]} spent, plus {budget.LOOKBACK_SIGMA:g} standard deviations")
+        words = f"what {HISTORY_WORDS[rule]} spent, plus {budget.LOOKBACK_SIGMA:g} standard deviations"
         return words + (f"; {each} until there is history" if each else "")
     if rule == "recurring":
         return "its recurring charges" + (f", plus {each}" if each else "")
@@ -71,13 +84,17 @@ def budget_lines(rules, targets, actuals, month):
         category = str(row.get("category", "")).strip()
         if row["rule"] == "end" and len(states) > 1:
             category = str(states.iloc[-2]["category"]).strip()  # what it paid for before it ended
-        out.append({c: row.get(c, "") for c in schema.table(schema.LEDGER, "budget_rules").columns} | {
-            "in_force": "scheduled only" if not len(states) else ("ended" if row["rule"] == "end" else "yes"),
-            "in_words": in_words(row) if len(states) else "scheduled amounts only",
-            "this_month": round(float(now.get(line, 0.0)), 2),
-            "last_12_months": round(sum(float(spend.get((category, m), 0.0)) for m in window), 2),
-            "scheduled": "; ".join(f"{d} {_money(a)}" for d, a in zip(ahead["effective"], ahead["amount"])),
-            "spends_from": category})
+        out.append(
+            {c: row.get(c, "") for c in schema.table(schema.LEDGER, "budget_rules").columns}
+            | {
+                "in_force": "scheduled only" if not len(states) else ("ended" if row["rule"] == "end" else "yes"),
+                "in_words": in_words(row) if len(states) else "scheduled amounts only",
+                "this_month": round(float(now.get(line, 0.0)), 2),
+                "last_12_months": round(sum(float(spend.get((category, m), 0.0)) for m in window), 2),
+                "scheduled": "; ".join(f"{d} {_money(a)}" for d, a in zip(ahead["effective"], ahead["amount"])),
+                "spends_from": category,
+            }
+        )
     return pd.DataFrame(out, columns=columns)
 
 

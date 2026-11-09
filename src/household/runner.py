@@ -76,12 +76,22 @@ def parse_settings(text):
         part, where = got["legacy_investments"], "legacy_investments"
         columns = {}
         for k, v in (part.get("net_worth_columns") or {}).items():
-            if not (isinstance(k, str) and TEXT.match(k) and isinstance(v, list) and len(v) == 2
-                    and v[0] in ("value", "loan") and isinstance(v[1], str) and TEXT.match(v[1])):
-                raise SettingsError(f"{where}.net_worth_columns: each is [\"value\" or \"loan\", an id]")
+            if not (
+                isinstance(k, str)
+                and TEXT.match(k)
+                and isinstance(v, list)
+                and len(v) == 2
+                and v[0] in ("value", "loan")
+                and isinstance(v[1], str)
+                and TEXT.match(v[1])
+            ):
+                raise SettingsError(f'{where}.net_worth_columns: each is ["value" or "loan", an id]')
             columns[k] = (v[0], v[1])
-        out[where] = {"workbook_id": _id(part.get("workbook_id"), where),
-                      "tabs": _names(part.get("tabs"), where + ".tabs"), "net_worth_columns": columns}
+        out[where] = {
+            "workbook_id": _id(part.get("workbook_id"), where),
+            "tabs": _names(part.get("tabs"), where + ".tabs"),
+            "net_worth_columns": columns,
+        }
     if "legacy_budget" in got:
         part, where = got["legacy_budget"], "legacy_budget"
         year = part.get("check_year")
@@ -93,8 +103,11 @@ def parse_settings(text):
         tabs = {k: part.get(k) for k in ("grants_tab", "sales_tab")}
         if not all(isinstance(v, str) and TEXT.match(v) for v in tabs.values()):
             raise SettingsError(f"{where}: grants_tab and sales_tab name the tabs")
-        out[where] = {"workbook_id": _id(part.get("workbook_id"), where),
-                      "grant_columns": _names(part.get("grant_columns"), where + ".grant_columns"), **tabs}
+        out[where] = {
+            "workbook_id": _id(part.get("workbook_id"), where),
+            "grant_columns": _names(part.get("grant_columns"), where + ".grant_columns"),
+            **tabs,
+        }
     return out
 
 
@@ -124,7 +137,7 @@ def where(error, frames=5):
     while tb is not None:
         code = tb.tb_frame.f_code
         path = code.co_filename.replace("\\", "/")
-        short = path[path.rindex("household/"):] if "household/" in path else path.rsplit("/", 1)[-1]
+        short = path[path.rindex("household/") :] if "household/" in path else path.rsplit("/", 1)[-1]
         out.append(f"at {short}:{tb.tb_lineno} in {code.co_name}")
         tb = tb.tb_next
     return out[-frames:]
@@ -161,8 +174,11 @@ class RunLog:
         else:
             text = line
         for part in text.splitlines() or [""]:
-            self.log(logs.structured(part, self.stage.replace(" ", "_"), self.topic.replace(" ", "_"), line.level,
-                                     _clock(self.elapsed())))
+            self.log(
+                logs.structured(
+                    part, self.stage.replace(" ", "_"), self.topic.replace(" ", "_"), line.level, _clock(self.elapsed())
+                )
+            )
 
     def gap(self):
         """A blank line in the notebook between stages (not kept)."""
@@ -175,13 +191,19 @@ def brief(name, result):
     r = result or {}
     if name == "legacy investments":
         added = r.get("securities", 0) + r.get("holdings", 0)
-        return (f"{r.get('securities', 0)} funds and {r.get('holdings', 0)} readings added" if added
-                else f"nothing new ({r.get('already_held', 0)} readings already held)")
+        return (
+            f"{r.get('securities', 0)} funds and {r.get('holdings', 0)} readings added"
+            if added
+            else f"nothing new ({r.get('already_held', 0)} readings already held)"
+        )
     if name == "ingest":
         counts = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in sorted((r.get("counts") or {}).items()))
         review = r.get("review") or {}
-        return (f"{len(r.get('files') or [])} files" + (f" ({counts})" if counts else "")
-                + f"; {review.get('questions', 0)} review questions open")
+        return (
+            f"{len(r.get('files') or [])} files"
+            + (f" ({counts})" if counts else "")
+            + f"; {review.get('questions', 0)} review questions open"
+        )
     if name == "legacy net worth":
         if r.get("skipped"):
             return "waiting for homes: " + ", ".join(r["skipped"])
@@ -230,22 +252,43 @@ def run(session, folder_id, log=print, run_id=None):
     say(describe(settings), "INFO" if settings else "WARN")
     inv, budget, equity = (settings.get(k) for k in ("legacy_investments", "legacy_budget", "legacy_equity"))
     calls = {
-        "legacy investments": inv and (lambda: engine.ingest_legacy_investments(
-            session, folder_id, inv["workbook_id"], inv["tabs"], log=say)),
+        "legacy investments": inv
+        and (lambda: engine.ingest_legacy_investments(session, folder_id, inv["workbook_id"], inv["tabs"], log=say)),
         "ingest": lambda: engine.ingest_inbox(session, folder_id, log=say),
-        "legacy net worth": inv and inv["net_worth_columns"] and (lambda: engine.ingest_legacy_net_worth(
-            session, folder_id, inv["workbook_id"], inv["net_worth_columns"], log=say)),
-        "legacy equity": equity and (lambda: engine.ingest_legacy_equity(
-            session, folder_id, equity["workbook_id"], equity["grant_columns"], equity["grants_tab"],
-            equity["sales_tab"], log=say)),
+        "legacy net worth": inv
+        and inv["net_worth_columns"]
+        and (
+            lambda: engine.ingest_legacy_net_worth(
+                session, folder_id, inv["workbook_id"], inv["net_worth_columns"], log=say
+            )
+        ),
+        "legacy equity": equity
+        and (
+            lambda: engine.ingest_legacy_equity(
+                session,
+                folder_id,
+                equity["workbook_id"],
+                equity["grant_columns"],
+                equity["grants_tab"],
+                equity["sales_tab"],
+                log=say,
+            )
+        ),
         "prices": lambda: engine.fetch_prices(session, folder_id, log=say),
-        "compute": lambda: engine.compute_all(session, folder_id, budget["workbook_id"] if budget else None,
-                                              budget["check_year"] if budget else None, log=say),
+        "compute": lambda: engine.compute_all(
+            session,
+            folder_id,
+            budget["workbook_id"] if budget else None,
+            budget["check_year"] if budget else None,
+            log=say,
+        ),
     }
     todo = [(name, what, legacy) for name, what, legacy in STAGES if calls[name]]
     skipped = [name for name, _, _ in STAGES if not calls[name]]
-    say(f"run: {len(todo)} stages: {', '.join(n for n, _, _ in todo)}"
-        + (f" (not set up: {', '.join(skipped)})" if skipped else ""))
+    say(
+        f"run: {len(todo)} stages: {', '.join(n for n, _, _ in todo)}"
+        + (f" (not set up: {', '.join(skipped)})" if skipped else "")
+    )
     out, table, failed = {}, [], []
     try:
         for n, (name, what, legacy) in enumerate(todo, 1):
@@ -276,16 +319,24 @@ def run(session, folder_id, log=print, run_id=None):
         say.inside = False
         say.gap()
         say.at("run")
-        say(f"summary: {len(table) - len(failed)} of {len(todo)} stages done in {_clock(say.elapsed())}"
-            + (f"; failed: {', '.join(failed)}" if failed else ""), "ERROR" if failed else "INFO")
+        say(
+            f"summary: {len(table) - len(failed)} of {len(todo)} stages done in {_clock(say.elapsed())}"
+            + (f"; failed: {', '.join(failed)}" if failed else ""),
+            "ERROR" if failed else "INFO",
+        )
         width = max([len(n) for n, _, _ in STAGES] + [5])
         say(f"  {'stage':<{width}}  {'status':<6}  {'time':>5}  result")
         for name, status, took, what in table:
             say(f"  {name:<{width}}  {status:<6}  {_clock(took):>5}  {what}", "ERROR" if status == "failed" else "INFO")
         for name in [n for n, _, _ in todo if n not in {t[0] for t in table}]:
             say(f"  {name:<{width}}  {'not run':<6}", "WARN")
-        summary = {"run_id": run_id, "version": __version__, "seconds": round(say.elapsed(), 1), "failed": failed,
-                   "stages": [{"stage": n, "status": st, "seconds": round(t, 1), "result": w} for n, st, t, w in table]}
+        summary = {
+            "run_id": run_id,
+            "version": __version__,
+            "seconds": round(say.elapsed(), 1),
+            "failed": failed,
+            "stages": [{"stage": n, "status": st, "seconds": round(t, 1), "result": w} for n, st, t, w in table],
+        }
         try:
             _, reports, _ = engine.bootstrap(session, folder_id)
             engine._record(reports, "run", run_id, started_at, summary, say.lines)

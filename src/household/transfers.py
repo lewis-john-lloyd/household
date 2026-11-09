@@ -34,11 +34,11 @@ import pandas as pd
 WINDOW_DAYS = 6
 TRANSFER_WORDS = re.compile(
     r"TRANSFER|TRNSFER|TRNSFR|\bTFR\b|XFER|PAYMENT THANK YOU|PAYMENT - THANK YOU|PYMT|\bPMT\b|EPAY|"
-    r"ELECTRONIC PAYMENT|CREDIT CARD PAYMENT|WITHDRAWAL TO|WITHDRAWAL FROM|DEPOSIT FROM")
+    r"ELECTRONIC PAYMENT|CREDIT CARD PAYMENT|WITHDRAWAL TO|WITHDRAWAL FROM|DEPOSIT FROM"
+)
 NOT_OWN = re.compile(r"PAYPAL|VENMO|ZELLE|CASH APP|WIRE|LOAN|MTG|MORTGAGE|\bIRS\b|TAX")
 REVERSAL = re.compile(r"RETURN|REVERS")
-COLUMNS = ["txn_a", "date_a", "account_a", "payee_a", "txn_b", "date_b", "account_b", "payee_b",
-           "amount", "kind"]
+COLUMNS = ["txn_a", "date_a", "account_a", "payee_a", "txn_b", "date_b", "account_b", "payee_b", "amount", "kind"]
 
 
 def _prepare(transactions, accounts):
@@ -72,11 +72,26 @@ def pairs(transactions, accounts):
         if c.txn_id_a in used or c.txn_id_b in used:
             continue
         used.update((c.txn_id_a, c.txn_id_b))
-        rows.append({"txn_a": c.txn_id_a, "date_a": str(c.date_a), "account_a": c.account_id_a,
-                     "payee_a": c.payee_raw_a, "txn_b": c.txn_id_b, "date_b": str(c.date_b),
-                     "account_b": c.account_id_b, "payee_b": c.payee_raw_b, "amount": c.key,
-                     "kind": ("reversal" if c.account_id_a == c.account_id_b
-                              else "card_payment" if c.card_a or c.card_b else "transfer")})
+        rows.append(
+            {
+                "txn_a": c.txn_id_a,
+                "date_a": str(c.date_a),
+                "account_a": c.account_id_a,
+                "payee_a": c.payee_raw_a,
+                "txn_b": c.txn_id_b,
+                "date_b": str(c.date_b),
+                "account_b": c.account_id_b,
+                "payee_b": c.payee_raw_b,
+                "amount": c.key,
+                "kind": (
+                    "reversal"
+                    if c.account_id_a == c.account_id_b
+                    else "card_payment"
+                    if c.card_a or c.card_b
+                    else "transfer"
+                ),
+            }
+        )
     return pd.DataFrame(rows, columns=COLUMNS).sort_values(["date_a", "txn_a"]).reset_index(drop=True)
 
 
@@ -85,12 +100,15 @@ def unmatched(transactions, accounts, paired):
     df = _prepare(transactions, accounts)
     done = set(paired["txn_a"]) | set(paired["txn_b"])
     left = df[df["transferish"] & ~df["text"].str.contains(NOT_OWN) & ~df["txn_id"].isin(done)]
-    return left[["txn_id", "date", "account_id", "amount", "payee_raw"]].sort_values(
-        ["date", "account_id"]).reset_index(drop=True)
+    return (
+        left[["txn_id", "date", "account_id", "amount", "payee_raw"]]
+        .sort_values(["date", "account_id"])
+        .reset_index(drop=True)
+    )
 
 
 MAIN_ACCOUNT = "transfer_account"  # household parameter: the account a transfer from before its history was with
-PAYEE_PREFIX = "transfer_payee:"   # household parameter transfer_payee:<account>: payees that name that account
+PAYEE_PREFIX = "transfer_payee:"  # household parameter transfer_payee:<account>: payees that name that account
 ASSUMED = "assumed_before_history"
 
 
@@ -120,9 +138,20 @@ def assume_before_history(lonely, accounts, starts, main="", payees=None):
         mine = {"txn": r.txn_id, "date": str(r.date), "account": r.account_id, "payee": r.payee_raw}
         theirs = {"txn": "", "date": str(r.date), "account": other, "payee": "assumed: before this account's history"}
         a, b = (mine, theirs) if float(r.amount) < 0 else (theirs, mine)
-        rows.append({"txn_a": a["txn"], "date_a": a["date"], "account_a": a["account"], "payee_a": a["payee"],
-                     "txn_b": b["txn"], "date_b": b["date"], "account_b": b["account"], "payee_b": b["payee"],
-                     "amount": amount, "kind": ASSUMED})
+        rows.append(
+            {
+                "txn_a": a["txn"],
+                "date_a": a["date"],
+                "account_a": a["account"],
+                "payee_a": a["payee"],
+                "txn_b": b["txn"],
+                "date_b": b["date"],
+                "account_b": b["account"],
+                "payee_b": b["payee"],
+                "amount": amount,
+                "kind": ASSUMED,
+            }
+        )
         took.append(r.txn_id)
     return pd.DataFrame(rows, columns=COLUMNS), lonely[~lonely["txn_id"].isin(took)].reset_index(drop=True)
 

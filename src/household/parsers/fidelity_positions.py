@@ -67,19 +67,46 @@ def parse(text):
             shares, price = value, 1.0
         account = f"acct:{re.sub(r'[^0-9]', '', number)[-4:]}"
         accounts[account] = r.get("Account name", "").strip()
-        held.append({"as_of": day, "account_id": account, "symbol": symbol, "source": "", "shares": round(shares, 6),
-                     "value": round(value, 2)})
+        held.append(
+            {
+                "as_of": day,
+                "account_id": account,
+                "symbol": symbol,
+                "source": "",
+                "shares": round(shares, 6),
+                "value": round(value, 2),
+            }
+        )
         if price:
-            prices.append({"symbol": symbol, "date": day, "priced_date": day, "close": round(price, 6), "source": "fidelity"})
+            prices.append(
+                {"symbol": symbol, "date": day, "priced_date": day, "close": round(price, 6), "source": "fidelity"}
+            )
     if not held:
         raise ParseError(f"{NAME}: no positions")
     df = pd.DataFrame(held, columns=HOLDINGS)
-    df = df.groupby(["as_of", "account_id", "symbol", "source"], as_index=False).agg(shares=("shares", "sum"), value=("value", "sum"))
+    df = df.groupby(["as_of", "account_id", "symbol", "source"], as_index=False).agg(
+        shares=("shares", "sum"), value=("value", "sum")
+    )
     totals = df.groupby("account_id")["value"].sum()
-    return Result(kind="positions", parser=NAME, label=f"fidelity_positions_{day}", covers_from=day, covers_to=day,
-                  tables={"investment_activity": pd.DataFrame(columns=COLUMNS), "holdings": df[HOLDINGS],
-                          "prices": pd.DataFrame(prices).drop_duplicates(["symbol", "date"], keep="last")},
-                  keys={"investment_activity": ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"],
-                        "prices": ["symbol", "date"]},
-                  notes=[f"account ..{a[5:]}: {accounts[a]}, {int((df['account_id'] == a).sum())} holdings worth "
-                         f"{totals[a]:,.2f} on {day}" for a in accounts])
+    return Result(
+        kind="positions",
+        parser=NAME,
+        label=f"fidelity_positions_{day}",
+        covers_from=day,
+        covers_to=day,
+        tables={
+            "investment_activity": pd.DataFrame(columns=COLUMNS),
+            "holdings": df[HOLDINGS],
+            "prices": pd.DataFrame(prices).drop_duplicates(["symbol", "date"], keep="last"),
+        },
+        keys={
+            "investment_activity": ["activity_id"],
+            "holdings": ["as_of", "account_id", "source", "symbol"],
+            "prices": ["symbol", "date"],
+        },
+        notes=[
+            f"account ..{a[5:]}: {accounts[a]}, {int((df['account_id'] == a).sum())} holdings worth "
+            f"{totals[a]:,.2f} on {day}"
+            for a in accounts
+        ],
+    )

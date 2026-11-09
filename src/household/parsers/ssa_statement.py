@@ -62,8 +62,15 @@ def parse(text):
     estimates = []
     for m in re.finditer(rf"<{TAG}Age(\d\d)RetirementEstimate>(.*?)</{TAG}Age\1RetirementEstimate>", body, re.S):
         age, block = int(m.group(1)), m.group(2)
-        estimates.append({"person": person, "as_of": as_of, "kind": "retirement", "age": str(age),
-                          "monthly": _whole(_one(block, "Estimate", f"estimate at {age}"), f"estimate at {age}")})
+        estimates.append(
+            {
+                "person": person,
+                "as_of": as_of,
+                "kind": "retirement",
+                "age": str(age),
+                "monthly": _whole(_one(block, "Estimate", f"estimate at {age}"), f"estimate at {age}"),
+            }
+        )
     if not estimates:
         raise ParseError(f"{NAME}: no retirement estimates by age")
     ages = sorted(int(e["age"]) for e in estimates)
@@ -71,20 +78,37 @@ def parse(text):
         raise ParseError(f"{NAME}: the estimates should run from 62 to 70 once each, not {ages}")
     disability = _one(body, "DisabilityEstimate", "disability estimate", required=False)
     if disability:
-        estimates.append({"person": person, "as_of": as_of, "kind": "disability", "age": "",
-                          "monthly": _whole(disability, "disability estimate")})
+        estimates.append(
+            {
+                "person": person,
+                "as_of": as_of,
+                "kind": "disability",
+                "age": "",
+                "monthly": _whole(disability, "disability estimate"),
+            }
+        )
 
     earnings = []
-    for m in re.finditer(rf'<{TAG}Earnings\s+startYear="(\d{{4}})"\s+endYear="(\d{{4}})"\s*>(.*?)</{TAG}Earnings>',
-                         body, re.S):
+    for m in re.finditer(
+        rf'<{TAG}Earnings\s+startYear="(\d{{4}})"\s+endYear="(\d{{4}})"\s*>(.*?)</{TAG}Earnings>', body, re.S
+    ):
         start, end, block = int(m.group(1)), int(m.group(2)), m.group(3)
         if start != end:
             raise ParseError(f"{NAME}: earnings for {start} to {end} are not one year's")
-        earnings.append({"person": person, "as_of": as_of, "year": str(start),
-                         "fica_earnings": _whole(_one(block, "FicaEarnings", f"{start} FICA earnings"),
-                                                 f"{start} FICA earnings"),
-                         "medicare_earnings": _whole(_one(block, "MedicareEarnings", f"{start} Medicare earnings",
-                                                          required=False) or "0", f"{start} Medicare earnings")})
+        earnings.append(
+            {
+                "person": person,
+                "as_of": as_of,
+                "year": str(start),
+                "fica_earnings": _whole(
+                    _one(block, "FicaEarnings", f"{start} FICA earnings"), f"{start} FICA earnings"
+                ),
+                "medicare_earnings": _whole(
+                    _one(block, "MedicareEarnings", f"{start} Medicare earnings", required=False) or "0",
+                    f"{start} Medicare earnings",
+                ),
+            }
+        )
     if not earnings:
         raise ParseError(f"{NAME}: no earnings record")
     years = [int(e["year"]) for e in earnings]
@@ -92,8 +116,18 @@ def parse(text):
         raise ParseError(f"{NAME}: a year appears twice in the earnings record")
 
     statement = pd.DataFrame([{"person": person, "birth_date": born, "as_of": as_of}])
-    return Result(kind=KIND, parser=NAME, label=f"ss_statement_{person}_{as_of or 'undated'}",
-                  tables={"ss_statements": statement, "ss_estimates": pd.DataFrame(estimates),
-                          "ss_earnings": pd.DataFrame(earnings)},
-                  keys={"ss_statements": ["person", "as_of"], "ss_estimates": ["person", "as_of", "kind", "age"],
-                        "ss_earnings": ["person", "as_of", "year"]})
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"ss_statement_{person}_{as_of or 'undated'}",
+        tables={
+            "ss_statements": statement,
+            "ss_estimates": pd.DataFrame(estimates),
+            "ss_earnings": pd.DataFrame(earnings),
+        },
+        keys={
+            "ss_statements": ["person", "as_of"],
+            "ss_estimates": ["person", "as_of", "kind", "age"],
+            "ss_earnings": ["person", "as_of", "year"],
+        },
+    )

@@ -7,30 +7,108 @@ from household import house, legacy_investments as li, mortgage, networth
 from household.parsers import identify, seed
 from test_engine import session  # noqa: F401  (the fixture)
 
-PROPS = pd.DataFrame([
-    {"property_id": "willow", "address": "1 Willow St", "parcel": "", "owner": "joint", "purchased": "2001-05-01",
-     "purchase_price": "300", "basis_costs": "6", "loan_ids": "acme_loan", "sold": "", "sale_price": "", "note": ""},
-    {"property_id": "old", "address": "", "parcel": "", "owner": "joint", "purchased": "", "purchase_price": "",
-     "basis_costs": "", "loan_ids": "old_loan", "sold": "", "sale_price": "", "note": ""}])
-VALUES = pd.DataFrame([
-    {"as_of": "2001-01-12", "property_id": "old", "source": "legacy", "value": "90", "note": "", "doc_id": ""},
-    {"as_of": "2001-04-01", "property_id": "old", "source": "legacy", "value": "95", "note": "", "doc_id": ""},
-    {"as_of": "2001-06-01", "property_id": "willow", "source": "zillow", "value": "280", "note": "", "doc_id": ""},
-    {"as_of": "2001-06-05", "property_id": "willow", "source": "county_fair_market", "value": "320", "note": "",
-     "doc_id": ""},
-    {"as_of": "2001-06-09", "property_id": "willow", "source": "redfin", "value": "310", "note": "", "doc_id": ""}])
-LOANS = pd.DataFrame([{"loan_id": "acme_loan", "lender": "Acme Widgets", "originated": "2001-05-01",
-                       "principal": "240", "rate": "6", "term_months": "360", "escrow": ""}])
-BALANCES = pd.DataFrame([{"as_of": "2001-01-12", "loan_id": "old_loan", "balance": "70", "doc_id": ""},
-                         {"as_of": "2001-04-01", "loan_id": "old_loan", "balance": "60", "doc_id": ""},
-                         {"as_of": "2001-02-01", "loan_id": "side_loan", "balance": "5", "doc_id": ""}])
-IMPROVED = house.improvements(pd.DataFrame([
-    {"date": "2001-07-01", "property_id": "willow", "description": "new well pump", "kind": "capital", "cost": "8",
-     "credit": "", "receipt": "", "note": ""},
-    {"date": "2001-07-02", "property_id": "willow", "description": "heat pump", "kind": "energy_credit", "cost": "10",
-     "credit": "3", "receipt": "", "note": ""},
-    {"date": "2001-07-03", "property_id": "willow", "description": "fix a leak", "kind": "repair", "cost": "2",
-     "credit": "", "receipt": "", "note": ""}]))
+PROPS = pd.DataFrame(
+    [
+        {
+            "property_id": "willow",
+            "address": "1 Willow St",
+            "parcel": "",
+            "owner": "joint",
+            "purchased": "2001-05-01",
+            "purchase_price": "300",
+            "basis_costs": "6",
+            "loan_ids": "acme_loan",
+            "sold": "",
+            "sale_price": "",
+            "note": "",
+        },
+        {
+            "property_id": "old",
+            "address": "",
+            "parcel": "",
+            "owner": "joint",
+            "purchased": "",
+            "purchase_price": "",
+            "basis_costs": "",
+            "loan_ids": "old_loan",
+            "sold": "",
+            "sale_price": "",
+            "note": "",
+        },
+    ]
+)
+VALUES = pd.DataFrame(
+    [
+        {"as_of": "2001-01-12", "property_id": "old", "source": "legacy", "value": "90", "note": "", "doc_id": ""},
+        {"as_of": "2001-04-01", "property_id": "old", "source": "legacy", "value": "95", "note": "", "doc_id": ""},
+        {"as_of": "2001-06-01", "property_id": "willow", "source": "zillow", "value": "280", "note": "", "doc_id": ""},
+        {
+            "as_of": "2001-06-05",
+            "property_id": "willow",
+            "source": "county_fair_market",
+            "value": "320",
+            "note": "",
+            "doc_id": "",
+        },
+        {"as_of": "2001-06-09", "property_id": "willow", "source": "redfin", "value": "310", "note": "", "doc_id": ""},
+    ]
+)
+LOANS = pd.DataFrame(
+    [
+        {
+            "loan_id": "acme_loan",
+            "lender": "Acme Widgets",
+            "originated": "2001-05-01",
+            "principal": "240",
+            "rate": "6",
+            "term_months": "360",
+            "escrow": "",
+        }
+    ]
+)
+BALANCES = pd.DataFrame(
+    [
+        {"as_of": "2001-01-12", "loan_id": "old_loan", "balance": "70", "doc_id": ""},
+        {"as_of": "2001-04-01", "loan_id": "old_loan", "balance": "60", "doc_id": ""},
+        {"as_of": "2001-02-01", "loan_id": "side_loan", "balance": "5", "doc_id": ""},
+    ]
+)
+IMPROVED = house.improvements(
+    pd.DataFrame(
+        [
+            {
+                "date": "2001-07-01",
+                "property_id": "willow",
+                "description": "new well pump",
+                "kind": "capital",
+                "cost": "8",
+                "credit": "",
+                "receipt": "",
+                "note": "",
+            },
+            {
+                "date": "2001-07-02",
+                "property_id": "willow",
+                "description": "heat pump",
+                "kind": "energy_credit",
+                "cost": "10",
+                "credit": "3",
+                "receipt": "",
+                "note": "",
+            },
+            {
+                "date": "2001-07-03",
+                "property_id": "willow",
+                "description": "fix a leak",
+                "kind": "repair",
+                "cost": "2",
+                "credit": "",
+                "receipt": "",
+                "note": "",
+            },
+        ]
+    )
+)
 SCHEDULE, _ = mortgage.schedule(LOANS, through_month="2001-09")
 PARAMS = pd.DataFrame(columns=["year", "jurisdiction", "key", "value", "source"])
 
@@ -59,13 +137,20 @@ def test_the_value_counted_follows_the_setting():
     assert house.value_on(prop, VALUES, "2001-09-15", "median")[0] == 310
     assert house.value_on(prop, VALUES, "2001-09-15", "lowest")[0] == 280
     assert house.value_on(prop, VALUES, "2001-09-15", "county_fair_market") == (320, "county_fair_market on 2001-06-05")
-    assert house.value_on(PROPS.iloc[1].to_dict(), VALUES, "2001-05-01", "purchase_price") == (95, "legacy on 2001-04-01")
+    assert house.value_on(PROPS.iloc[1].to_dict(), VALUES, "2001-05-01", "purchase_price") == (
+        95,
+        "legacy on 2001-04-01",
+    )
 
 
 def test_a_home_with_only_legacy_values_is_owned_through_the_last_of_them():
     old = PROPS.iloc[1].to_dict()
     assert [house.owned(old, VALUES, d) for d in ("2001-01-01", "2001-02-28", "2001-04-01", "2001-04-30")] == [
-        False, True, True, False]
+        False,
+        True,
+        True,
+        False,
+    ]
 
 
 def test_a_loans_balance_comes_from_its_schedule_or_its_recorded_balances():
@@ -76,44 +161,63 @@ def test_a_loans_balance_comes_from_its_schedule_or_its_recorded_balances():
 
 
 def test_net_worth_adds_investments_home_equity_and_other_debt_by_owner():
-    vals = pd.DataFrame([{"date": "2001-02-28", "owner": "alex", "bucket": "ira_roth", "value": 40},
-                         {"date": "2001-02-28", "owner": "joint", "bucket": "taxable", "value": 10},
-                         {"date": "2001-02-28", "owner": "kid", "bucket": "529", "value": 30}])
+    vals = pd.DataFrame(
+        [
+            {"date": "2001-02-28", "owner": "alex", "bucket": "ira_roth", "value": 40},
+            {"date": "2001-02-28", "owner": "joint", "bucket": "taxable", "value": 10},
+            {"date": "2001-02-28", "owner": "kid", "bucket": "529", "value": 30},
+        ]
+    )
     net = networth.build(vals, ("alex", "sam"), PROPS, VALUES, LOANS, SCHEDULE, BALANCES, "purchase_price")
     got = {(p, o): v for p, o, v in zip(net["part"], net["owner"], net["value"])}
-    assert got == {("ira_roth", "alex"): 40, ("taxable", "alex"): 5, ("taxable", "sam"): 5, ("529", "kids"): 30,
-                   ("home_equity", "alex"): 10, ("home_equity", "sam"): 10,  # 90 less 70, halved
-                   ("other_debt", "alex"): -2.5, ("other_debt", "sam"): -2.5}
+    assert got == {
+        ("ira_roth", "alex"): 40,
+        ("taxable", "alex"): 5,
+        ("taxable", "sam"): 5,
+        ("529", "kids"): 30,
+        ("home_equity", "alex"): 10,
+        ("home_equity", "sam"): 10,  # 90 less 70, halved
+        ("other_debt", "alex"): -2.5,
+        ("other_debt", "sam"): -2.5,
+    }
     assert networth.totals(net) == {"2001-02-28": 95}
 
 
 def test_the_legacy_net_worth_tab_gives_home_values_and_loans_owed():
     rows = [["Date", "Value", " Old - M ", " Old - V "], [36903, 10, -70, 90], [36980, 10, "", 0], ["", ""]]
-    values, loans, notes = li.net_worth(rows, {"Old - V": ("value", "old"), "Old - M": ("loan", "old_loan"),
-                                               "Gone": ("loan", "gone")})
+    values, loans, notes = li.net_worth(
+        rows, {"Old - V": ("value", "old"), "Old - M": ("loan", "old_loan"), "Gone": ("loan", "gone")}
+    )
     assert values[["as_of", "property_id", "source", "value"]].values.tolist() == [["2001-01-12", "old", "legacy", 90]]
     assert loans[["as_of", "loan_id", "balance"]].values.tolist() == [["2001-01-12", "old_loan", 70]]
     assert notes == ["net worth: no column 'Gone'"]
 
 
 def test_homes_values_and_improvements_arrive_as_seed_files():
-    text = ("as_of,property_id,source,value,note,doc_id\n"
-            "2001-06-01,willow,zillow,280,,\n2001-06-05,willow,county_assessed,250,,\n")
+    text = (
+        "as_of,property_id,source,value,note,doc_id\n"
+        "2001-06-01,willow,zillow,280,,\n2001-06-05,willow,county_assessed,250,,\n"
+    )
     assert identify(text) is seed
     r = seed.parse(text)
     assert r.keys["property_values"] == ["as_of", "property_id", "source"] and len(r.tables["property_values"]) == 2
     bad = text.replace("zillow", "a_guess")
     with pytest.raises(Exception, match="property_values.source"):
         seed.parse(bad)
-    work = "date,property_id,description,kind,cost,credit,receipt,note,doc_id\n2001-07-01,willow,new pump,capital,8,,,,\n"
+    work = (
+        "date,property_id,description,kind,cost,credit,receipt,note,doc_id\n2001-07-01,willow,new pump,capital,8,,,,\n"
+    )
     assert seed.parse(work).tables["improvements"]["kind"].tolist() == ["capital"]
 
 
 def test_the_legacy_net_worth_import_adds_values_and_loans_once_and_waits_for_its_homes(session, monkeypatch):  # noqa: F811
     from household import engine, schema, sheets
     from test_sheets import FakeSpreadsheet, FakeWorksheet
+
     wb = FakeSpreadsheet("investments")
-    wb.tabs = {"Net Worth": FakeWorksheet("Net Worth", [["Date", "Old - M", "Old - V"], [36903, -70, 90], [36980, -60, 95]])}
+    wb.tabs = {
+        "Net Worth": FakeWorksheet("Net Worth", [["Date", "Old - M", "Old - V"], [36903, -70, 90], [36980, -60, 95]])
+    }
     session.sheets.legacy = wb
     ledger, _, _ = engine.bootstrap(session, session.root)
     columns = {"Old - V": ("value", "old"), "Old - M": ("loan", "old_loan")}
@@ -126,35 +230,86 @@ def test_the_legacy_net_worth_import_adds_values_and_loans_once_and_waits_for_it
 
 
 def test_taxes_list_each_bill_then_estimate_an_assessed_year_at_the_last_mill_rate():
-    bills = pd.DataFrame([{"tax_year": "2001", "property_id": "willow", "assessed": "250", "mill_rate": "0.02",
-                           "total_taxes": "5", "lottery_credit": "0.5", "first_dollar_credit": "0.25",
-                           "school_levy_credit": "1", "specials": "2", "net_taxes": "4.25", "amount_due": "6.25",
-                           "doc_id": ""}])
-    values = pd.concat([VALUES, pd.DataFrame([
-        {"as_of": "2002-01-01", "property_id": "willow", "source": "county_assessed", "value": "300", "note": "", "doc_id": ""}])])
+    bills = pd.DataFrame(
+        [
+            {
+                "tax_year": "2001",
+                "property_id": "willow",
+                "assessed": "250",
+                "mill_rate": "0.02",
+                "total_taxes": "5",
+                "lottery_credit": "0.5",
+                "first_dollar_credit": "0.25",
+                "school_levy_credit": "1",
+                "specials": "2",
+                "net_taxes": "4.25",
+                "amount_due": "6.25",
+                "doc_id": "",
+            }
+        ]
+    )
+    values = pd.concat(
+        [
+            VALUES,
+            pd.DataFrame(
+                [
+                    {
+                        "as_of": "2002-01-01",
+                        "property_id": "willow",
+                        "source": "county_assessed",
+                        "value": "300",
+                        "note": "",
+                        "doc_id": "",
+                    }
+                ]
+            ),
+        ]
+    )
     out = house.taxes(PROPS, values, bills, "2002-06-01")
     assert out[["tax_year", "basis", "assessed", "total_taxes", "credits", "amount_due"]].values.tolist() == [
-        ["2001", "billed", 250, 5, 0.75, 6.25], ["2002", "estimated", 300, 6, 0.75, 7.25]]
+        ["2001", "billed", 250, 5, 0.75, 6.25],
+        ["2002", "estimated", 300, 6, 0.75, 7.25],
+    ]
 
 
 def test_the_county_check_looks_up_each_home_owned_today_that_has_a_parcel():
     props = PROPS.assign(parcel=["066/0101-011-0101-0", ""])
-    assert house.parcels(props, VALUES, "2001-09-15") == [{"property_id": "willow", "parcel": "066/0101-011-0101-0",
-                                                             "since": "2001"}]
+    assert house.parcels(props, VALUES, "2001-09-15") == [
+        {"property_id": "willow", "parcel": "066/0101-011-0101-0", "since": "2001"}
+    ]
 
 
 def test_a_loans_details_come_from_its_row_its_facts_and_its_schedule():
-    facts = pd.DataFrame([
-        {"loan_id": "acme_loan", "key": "servicer", "value": "Acme Widgets", "as_of": "2001-05-01", "note": ""},
-        {"loan_id": "acme_loan", "key": "servicer", "value": "Willow St", "as_of": "2001-08-15", "note": "transferred"},
-        {"loan_id": "acme_loan", "key": "servicer", "value": "Quill & Ink", "as_of": "2002-01-01", "note": "not yet"},
-        {"loan_id": "acme_loan", "key": "apr", "value": "6.2", "as_of": "", "note": ""},
-        {"loan_id": "acme_loan", "key": "loan_officer", "value": "alex", "as_of": "", "note": ""}])
+    facts = pd.DataFrame(
+        [
+            {"loan_id": "acme_loan", "key": "servicer", "value": "Acme Widgets", "as_of": "2001-05-01", "note": ""},
+            {
+                "loan_id": "acme_loan",
+                "key": "servicer",
+                "value": "Willow St",
+                "as_of": "2001-08-15",
+                "note": "transferred",
+            },
+            {
+                "loan_id": "acme_loan",
+                "key": "servicer",
+                "value": "Quill & Ink",
+                "as_of": "2002-01-01",
+                "note": "not yet",
+            },
+            {"loan_id": "acme_loan", "key": "apr", "value": "6.2", "as_of": "", "note": ""},
+            {"loan_id": "acme_loan", "key": "loan_officer", "value": "alex", "as_of": "", "note": ""},
+        ]
+    )
     full, _ = mortgage.schedule(LOANS, through_month="9999-12")
     out = mortgage.details(LOANS, facts, full, "2001-09").set_index("key")
     assert list(out.index[:4]) == ["lender", "servicer", "originated", "first_payment"]  # in the page's order
     assert (out.at["servicer", "value"], out.at["servicer", "note"]) == ("Willow St", "transferred")
-    assert (out.at["apr", "kind"], out.at["principal", "kind"], out.at["first_payment", "value"]) == ("percent", "money", "2001-07")
+    assert (out.at["apr", "kind"], out.at["principal", "kind"], out.at["first_payment", "value"]) == (
+        "percent",
+        "money",
+        "2001-07",
+    )
     assert out.at["maturity", "value"] == "2031-06" and out.at["balance", "as_of"] == "2001-09"
     assert out.at["paid_principal", "value"] + out.at["balance", "value"] == pytest.approx(240)
     assert (out.index[-1], out.at["loan_officer", "label"]) == ("loan_officer", "Loan officer")  # unknown keys last

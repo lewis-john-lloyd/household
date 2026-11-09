@@ -69,9 +69,16 @@ def securities(rows):
             er = round(float(er), 6)  # unformatted, 0.11% reads as 0.0011
         elif not re.match(r"^\d+(\.\d+)?%?$", _text(er)):
             er = ""  # #N/A and the like
-        out.append({"symbol": symbol, "name": _text(row[at["title"]]) if "title" in at else "",
-                    "asset_class": _text(row[at["type"]]) if "type" in at else "", "expense_ratio": er,
-                    "quote": "" if symbol == "cash" else symbol, "wash_group": ""})
+        out.append(
+            {
+                "symbol": symbol,
+                "name": _text(row[at["title"]]) if "title" in at else "",
+                "asset_class": _text(row[at["type"]]) if "type" in at else "",
+                "expense_ratio": er,
+                "quote": "" if symbol == "cash" else symbol,
+                "wash_group": "",
+            }
+        )
     return pd.DataFrame(out, columns=["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"]), notes
 
 
@@ -122,8 +129,9 @@ def holdings(rows, account_id, source=""):
             notes.append(f"{account_id}: row {n}: {row[0]!r} is not a date, left out")
             continue
         if dates and as_of < dates[-1]:
-            notes.append(f"{account_id}: row {n}: {as_of} comes before the row above it ({dates[-1]}): "
-                         "is its year a typo?")
+            notes.append(
+                f"{account_id}: row {n}: {as_of} comes before the row above it ({dates[-1]}): is its year a typo?"
+            )
         dates.append(as_of)
         for value_at, shares_at, role, symbol, _ in cols:
             cell = row[value_at] if value_at < len(row) else ""
@@ -138,8 +146,16 @@ def holdings(rows, account_id, source=""):
                 shares = count if role == "shares" or count > 1 else ""
             if value == 0 and shares in ("", 0):
                 continue
-            out.append({"as_of": as_of, "account_id": account_id, "symbol": symbol, "source": source,
-                        "shares": shares, "value": value})
+            out.append(
+                {
+                    "as_of": as_of,
+                    "account_id": account_id,
+                    "symbol": symbol,
+                    "source": source,
+                    "shares": shares,
+                    "value": value,
+                }
+            )
     df = pd.DataFrame(out, columns=COLUMNS[:-1])
     df.attrs["dates"] = sorted(set(dates))  # every date the tab has a row for, a row of zeros included
     return df, notes
@@ -176,10 +192,14 @@ def merge(frames):
     df = pd.concat(frames, ignore_index=True)
     df["shares"] = pd.to_numeric(df["shares"], errors="coerce")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    out = (df.groupby(["as_of", "account_id", "symbol", "source"], sort=True, dropna=False)
-             .agg(shares=("shares", lambda s: round(s.sum(), 6) if s.notna().any() else ""),
-                  value=("value", lambda s: round(s.sum(), 2)))
-             .reset_index())
+    out = (
+        df.groupby(["as_of", "account_id", "symbol", "source"], sort=True, dropna=False)
+        .agg(
+            shares=("shares", lambda s: round(s.sum(), 6) if s.notna().any() else ""),
+            value=("value", lambda s: round(s.sum(), 2)),
+        )
+        .reset_index()
+    )
     out["doc_id"] = LEGACY_DOC
     return out[COLUMNS]
 
@@ -215,11 +235,20 @@ def net_worth(rows, columns):
             if amount is None or abs(amount) < 0.005:
                 continue
             if kind == "value":
-                vals.append({"as_of": as_of, "property_id": target, "source": "legacy", "value": round(amount, 2),
-                             "note": "", "doc_id": NET_WORTH_DOC})
+                vals.append(
+                    {
+                        "as_of": as_of,
+                        "property_id": target,
+                        "source": "legacy",
+                        "value": round(amount, 2),
+                        "note": "",
+                        "doc_id": NET_WORTH_DOC,
+                    }
+                )
             else:
-                owed.append({"as_of": as_of, "loan_id": target, "balance": round(abs(amount), 2),
-                             "doc_id": NET_WORTH_DOC})
+                owed.append(
+                    {"as_of": as_of, "loan_id": target, "balance": round(abs(amount), 2), "doc_id": NET_WORTH_DOC}
+                )
     if vals:
         values = pd.DataFrame(vals, columns=values.columns).drop_duplicates(["as_of", "property_id"], keep="last")
     if owed:

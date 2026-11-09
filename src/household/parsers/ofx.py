@@ -39,6 +39,7 @@ ENTITY = re.compile(r"&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);")
 
 def unescape(text):
     """XML character references ("SALT &amp; PEPPER"); unknown names are left as they are."""
+
     def one(m):
         name = m.group(1)
         if name.startswith("#x"):
@@ -46,7 +47,10 @@ def unescape(text):
         if name.startswith("#"):
             return chr(int(name[1:]))
         return ENTITIES.get(name.lower(), m.group(0))
+
     return ENTITY.sub(one, text)
+
+
 ACCOUNT = ("BANKACCTFROM", "CCACCTFROM")
 
 
@@ -57,7 +61,7 @@ def sniff(text):
 
 def read(text):
     """The OFX body as nested dicts: {tag: [child, ...]} for aggregates, text for leaves."""
-    body_text = text[text.find("<OFX>"):] if "<OFX>" in text else text
+    body_text = text[text.find("<OFX>") :] if "<OFX>" in text else text
     closed = {m.group(1).upper() for m in re.finditer(r"</([A-Za-z0-9.]+)>", body_text)}
     root = {}
     stack = [("", root)]
@@ -143,28 +147,63 @@ def parse(text):
         card = first(t, "CCACCTTO", "ACCTID")
         if card:
             note.append(f"card {card[-4:]}")
-        rows.append({"txn_id": f"fitid:{fitid}", "date": day(posted), "account_id": "",
-                     "amount": value, "payee_raw": " ".join((name or memo).split()),
-                     "category": "", "one_off": "FALSE", "note": "; ".join(note), "source": "ofx",
-                     "era": "ledger", "recorded_at": ""})
-    txns = pd.DataFrame(rows, columns=["txn_id", "date", "account_id", "amount", "payee_raw",
-                                       "category", "one_off", "note", "source", "era", "recorded_at"])
+        rows.append(
+            {
+                "txn_id": f"fitid:{fitid}",
+                "date": day(posted),
+                "account_id": "",
+                "amount": value,
+                "payee_raw": " ".join((name or memo).split()),
+                "category": "",
+                "one_off": "FALSE",
+                "note": "; ".join(note),
+                "source": "ofx",
+                "era": "ledger",
+                "recorded_at": "",
+            }
+        )
+    txns = pd.DataFrame(
+        rows,
+        columns=[
+            "txn_id",
+            "date",
+            "account_id",
+            "amount",
+            "payee_raw",
+            "category",
+            "one_off",
+            "note",
+            "source",
+            "era",
+            "recorded_at",
+        ],
+    )
     if txns["txn_id"].duplicated().any():
         raise ParseError(f"{NAME}: repeated FITID {txns.loc[txns['txn_id'].duplicated(), 'txn_id'].iloc[0]}")
 
     tables, keys = {"transactions": txns}, {"transactions": ["txn_id"]}
     balance, as_of = first(st, "LEDGERBAL", "BALAMT"), first(st, "LEDGERBAL", "DTASOF")
     if balance and as_of:
-        tables["balances"] = pd.DataFrame([{"as_of": day(as_of), "account_id": "",
-                                            "balance": round(float(balance), 2)}])
+        tables["balances"] = pd.DataFrame(
+            [{"as_of": day(as_of), "account_id": "", "balance": round(float(balance), 2)}]
+        )
         keys["balances"] = ["as_of", "account_id"]
     start, end = first(st, "BANKTRANLIST", "DTSTART"), first(st, "BANKTRANLIST", "DTEND")
     dates = sorted(txns["date"])
     covers_from = day(start) if start else (dates[0] if dates else "")
     covers_to = day(end) if end else (dates[-1] if dates else "")
     org = next((first(fi, "ORG") for fi in find(root, "FI")), "")
-    return Result(kind=KIND, parser=NAME, label=f"statement_{last4}_{covers_to}",
-                  covers_from=covers_from, covers_to=covers_to, account_hint=last4,
-                  tables=tables, keys=keys,
-                  notes=[f"{org or 'bank'} ..{last4}: {len(txns)} transactions"
-                         + (f", balance {float(balance):.2f} on {day(as_of)}" if balance and as_of else "")])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"statement_{last4}_{covers_to}",
+        covers_from=covers_from,
+        covers_to=covers_to,
+        account_hint=last4,
+        tables=tables,
+        keys=keys,
+        notes=[
+            f"{org or 'bank'} ..{last4}: {len(txns)} transactions"
+            + (f", balance {float(balance):.2f} on {day(as_of)}" if balance and as_of else "")
+        ],
+    )

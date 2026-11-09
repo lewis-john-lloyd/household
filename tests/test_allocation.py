@@ -9,8 +9,21 @@ NODES = [(n, p, float(w)) for n, p, w in al.SEED]
 
 
 def rows(*items, day="2001-04-10"):
-    return pd.DataFrame([{"date": day, "account_id": a, "owner": "alex", "wrapper": w, "bucket": b, "symbol": s,
-                          "asset_class": c, "value": v} for a, w, b, s, c, v in items])
+    return pd.DataFrame(
+        [
+            {
+                "date": day,
+                "account_id": a,
+                "owner": "alex",
+                "wrapper": w,
+                "bucket": b,
+                "symbol": s,
+                "asset_class": c,
+                "value": v,
+            }
+            for a, w, b, s, c, v in items
+        ]
+    )
 
 
 def test_a_blend_reads_its_parts_in_any_units_and_one_code_is_the_whole():
@@ -23,16 +36,24 @@ def test_leaf_shares_multiply_down_the_tree_with_weights_normalized_among_siblin
     _, leaves = al.leaf_shares(NODES)
     assert leaves["SDT"] == pytest.approx(0.82 * 0.75 * 0.85) and leaves["BI"] == pytest.approx(0.18 * 0.2)
     assert leaves["BA"] == 0 and sum(leaves.values()) == pytest.approx(1)
-    targets = pd.DataFrame([{"effective": "2001-01-01", "node": "SDT", "parent": "", "weight": 3},
-                            {"effective": "2001-01-01", "node": "BT", "parent": "", "weight": 1},
-                            {"effective": "2009-01-01", "node": "BT", "parent": "", "weight": 1}])
+    targets = pd.DataFrame(
+        [
+            {"effective": "2001-01-01", "node": "SDT", "parent": "", "weight": 3},
+            {"effective": "2001-01-01", "node": "BT", "parent": "", "weight": 1},
+            {"effective": "2009-01-01", "node": "BT", "parent": "", "weight": 1},
+        ]
+    )
     assert al.tree(targets, "2001-06-30") == [("SDT", "", 3.0), ("BT", "", 1.0)]
     assert al.tree(targets.iloc[0:0], "2001-06-30") == NODES  # the old workbook's targets until set
 
 
 def test_529s_are_left_out_ibonds_count_as_us_bonds_and_a_fund_with_no_class_shows_as_unclassified():
-    vals = rows(("p", "401k", "401k_pretax", "ACMEX", "SDT", 60), ("b", "ibonds", "ibonds", "IB1", "", 20),
-                ("k", "529", "529", "QUILX", "SDT", 90), ("p", "401k", "401k_pretax", "WILLX", "", 20))
+    vals = rows(
+        ("p", "401k", "401k_pretax", "ACMEX", "SDT", 60),
+        ("b", "ibonds", "ibonds", "IB1", "", 20),
+        ("k", "529", "529", "QUILX", "SDT", 90),
+        ("p", "401k", "401k_pretax", "WILLX", "", 20),
+    )
     scope = al.in_scope(pd.concat([vals, rows(("p", "401k", "401k_pretax", "ACMEX", "SDT", 1), day="2001-03-31")]))
     assert al.by_class(scope) == {"SDT": 60, "BT": 20, al.UNCLASSIFIED: 20}
     report = al.report(NODES, al.by_class(scope)).set_index("node")
@@ -46,7 +67,8 @@ VALS = rows(
     ("ira", "ira", "ira_roth", "QUILX", "SIT", 10),
     ("ira", "ira", "ira_roth", "PAGEX", "SDT 50, SIT 50", 10),
     ("tax", "taxable", "taxable", "BLUEX", "SDT", 10),
-    ("tax", "taxable", "taxable", "cash", "BA", 5))
+    ("tax", "taxable", "taxable", "cash", "BA", 5),
+)
 
 
 def test_the_rebalance_trades_only_in_tax_advantaged_accounts_among_funds_they_hold():
@@ -57,7 +79,10 @@ def test_the_rebalance_trades_only_in_tax_advantaged_accounts_among_funds_they_h
     # cash held in the taxable account can't move and is over its target of nothing, so it keeps its 5 and the
     # others share the remaining 95 in proportion: SDT 66.5, SIT 14.25, BT 14.25
     assert after == {"SDT": 66.5, "SIT": 14.25, "BT": 14.25, "BA": 5}
-    assert "rebalance: Cash held where nothing trades (5) is over its target of 0; the other targets share the rest" in notes
+    assert (
+        "rebalance: Cash held where nothing trades (5) is over its target of 0; the other targets share the rest"
+        in notes
+    )
 
 
 def test_a_fund_the_account_once_held_may_be_bought_and_a_class_no_account_can_hold_is_reported():
@@ -72,9 +97,13 @@ def test_a_fund_the_account_once_held_may_be_bought_and_a_class_no_account_can_h
 
 
 def test_ever_held_looks_back_only_to_a_date():
-    holdings = pd.DataFrame([{"as_of": "2001-01-01", "account_id": "p", "symbol": "OLD"},
-                             {"as_of": "2003-01-01", "account_id": "p", "symbol": "NEW"},
-                             {"as_of": "2003-01-01", "account_id": "p", "symbol": "cash"}])
+    holdings = pd.DataFrame(
+        [
+            {"as_of": "2001-01-01", "account_id": "p", "symbol": "OLD"},
+            {"as_of": "2003-01-01", "account_id": "p", "symbol": "NEW"},
+            {"as_of": "2003-01-01", "account_id": "p", "symbol": "cash"},
+        ]
+    )
     activity = pd.DataFrame([{"date": "2003-02-01", "account_id": "p", "symbol": "MID"}])
     assert al.ever_held(holdings, activity, "2002-01-01") == {"p": {"NEW", "MID"}}
 
@@ -92,20 +121,49 @@ def test_asset_location_moves_bonds_to_pre_tax_money_and_stocks_to_roth_without_
 
 
 def test_a_plans_pre_tax_and_roth_parts_hold_one_mix():
-    vals = rows(("plan", "401k", "401k_pretax", "ACMEX", "SDT", 750), ("plan", "401k", "401k_roth", "ACMEX", "SDT", 250))
+    vals = rows(
+        ("plan", "401k", "401k_pretax", "ACMEX", "SDT", 750), ("plan", "401k", "401k_roth", "ACMEX", "SDT", 250)
+    )
     trades, _, _ = al.rebalance(vals, [("SDT", "", 50), ("BT", "", 50)], {"plan": {"WILLX"}}, classes={"WILLX": "BT"})
     assert set(trades["bucket"]) == {"401k_pretax+401k_roth"}
     assert trades.set_index("symbol")["proposed"].to_dict() == {"WILLX": 500, "ACMEX": 500}
 
 
 def test_each_adult_is_kept_near_the_target_mix_and_not_only_the_household():
-    vals = pd.DataFrame([
-        {"date": "2001-04-10", "account_id": "a_ira", "owner": "alex", "wrapper": "ira", "bucket": "ira_roth",
-         "symbol": "ACMEX", "asset_class": "SDT", "value": 1000},
-        {"date": "2001-04-10", "account_id": "s_ira", "owner": "sam", "wrapper": "ira", "bucket": "ira_roth",
-         "symbol": "WILLX", "asset_class": "BT", "value": 1000},
-        {"date": "2001-04-10", "account_id": "j_tax", "owner": "joint", "wrapper": "taxable", "bucket": "taxable",
-         "symbol": "QUILX", "asset_class": "SDT", "value": 400}])
+    vals = pd.DataFrame(
+        [
+            {
+                "date": "2001-04-10",
+                "account_id": "a_ira",
+                "owner": "alex",
+                "wrapper": "ira",
+                "bucket": "ira_roth",
+                "symbol": "ACMEX",
+                "asset_class": "SDT",
+                "value": 1000,
+            },
+            {
+                "date": "2001-04-10",
+                "account_id": "s_ira",
+                "owner": "sam",
+                "wrapper": "ira",
+                "bucket": "ira_roth",
+                "symbol": "WILLX",
+                "asset_class": "BT",
+                "value": 1000,
+            },
+            {
+                "date": "2001-04-10",
+                "account_id": "j_tax",
+                "owner": "joint",
+                "wrapper": "taxable",
+                "bucket": "taxable",
+                "symbol": "QUILX",
+                "asset_class": "SDT",
+                "value": 400,
+            },
+        ]
+    )
     tree = [("SDT", "", 50), ("BT", "", 50)]
     held = {"a_ira": {"ACMEX", "WILLX"}, "s_ira": {"ACMEX", "WILLX"}}
     klass = {"ACMEX": "SDT", "WILLX": "BT"}

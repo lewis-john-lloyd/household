@@ -27,8 +27,28 @@ ALLOW_MARKER = "leak-guard: allow"
 FIXTURE_DIR = "tests/fixtures/"
 SKIP_SUFFIXES = {".lock"}
 ALLOWED_BINARIES = FIXTURE_DIR + "BINARIES"  # made-up binary fixtures: "path sha256", one per line
-BINARY_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".heic", ".webp", ".zip", ".gz", ".tgz", ".7z",
-                   ".tar", ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ofx", ".qfx"}
+BINARY_SUFFIXES = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".heic",
+    ".webp",
+    ".zip",
+    ".gz",
+    ".tgz",
+    ".7z",
+    ".tar",
+    ".xlsx",
+    ".xls",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ofx",
+    ".qfx",
+}
 BINARY = "binary file not listed in " + ALLOWED_BINARIES
 CHANGED = "binary file whose contents are not the ones listed (sha256) in " + ALLOWED_BINARIES
 
@@ -62,8 +82,11 @@ def allowed_binaries(read=None):
     """{path: {sha256}} from tests/fixtures/BINARIES (# starts a comment). A line is a path under
     tests/fixtures/ and the SHA-256 of its approved contents; a line without a hash, or a path
     outside the fixtures, allows nothing. read(path) -> text or None."""
-    text = read(ALLOWED_BINARIES) if read else (Path(ALLOWED_BINARIES).read_text(encoding="utf-8")
-                                                 if Path(ALLOWED_BINARIES).exists() else "")
+    text = (
+        read(ALLOWED_BINARIES)
+        if read
+        else (Path(ALLOWED_BINARIES).read_text(encoding="utf-8") if Path(ALLOWED_BINARIES).exists() else "")
+    )
     out = {}
     for line in (text or "").splitlines():
         parts = line.split("#", 1)[0].split()
@@ -98,6 +121,7 @@ def pdf_text(data):
         import io
 
         from pypdf import PdfReader
+
         return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
     except Exception:  # an unreadable PDF is refused, not passed
         return None
@@ -151,8 +175,9 @@ def main(paths):
             failed = True
             print(f"{path}:{number}: {name}: {line[:120]}")
     if failed:
-        print("\nleak guard: possible household data found; remove it, or mark an intended "
-              f"line with '{ALLOW_MARKER}'.")
+        print(
+            f"\nleak guard: possible household data found; remove it, or mark an intended line with '{ALLOW_MARKER}'."
+        )
         return 1
     return 0
 

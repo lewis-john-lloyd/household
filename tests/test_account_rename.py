@@ -9,8 +9,9 @@ from household.parsers.common import ParseError
 
 
 def params(**rows):
-    return pd.DataFrame([{"year": "", "jurisdiction": "household", "key": k, "value": v, "source": ""}
-                         for k, v in rows.items()])
+    return pd.DataFrame(
+        [{"year": "", "jurisdiction": "household", "key": k, "value": v, "source": ""} for k, v in rows.items()]
+    )
 
 
 ACCOUNTS = pd.DataFrame([{"account_id": "a_plan_old", "last4": ""}, {"account_id": "acme_brokerage", "last4": ""}])
@@ -27,8 +28,12 @@ def test_the_setting_gives_old_and_new_ids_and_a_bad_one_is_noted():
 
 
 def test_compute_reads_every_account_column_under_the_new_name(monkeypatch):
-    holdings = pd.DataFrame([{"as_of": "2001-01-31", "account_id": "a_plan_old", "symbol": "VFIAX", "value": 10},
-                             {"as_of": "2001-01-31", "account_id": "acme_brokerage", "symbol": "VFIAX", "value": 20}])
+    holdings = pd.DataFrame(
+        [
+            {"as_of": "2001-01-31", "account_id": "a_plan_old", "symbol": "VFIAX", "value": 10},
+            {"as_of": "2001-01-31", "account_id": "acme_brokerage", "symbol": "VFIAX", "value": 20},
+        ]
+    )
     monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: holdings.copy())
     monkeypatch.setattr(engine, "_RENAMED", {"a_plan_old": "a_plan_acme"})
     assert list(engine._read(None, "holdings")["account_id"]) == ["a_plan_acme", "acme_brokerage"]
@@ -52,9 +57,18 @@ def test_the_old_workbooks_readings_of_an_account_can_belong_to_another():
 
 
 def test_only_the_old_workbooks_readings_move_and_the_rest_take_the_accounts_new_name(monkeypatch):
-    holdings = pd.DataFrame([
-        {"as_of": "2001-01-31", "account_id": "a_ira", "symbol": "VFIAX", "value": 90, "doc_id": "legacy:investments"},
-        {"as_of": "2005-01-31", "account_id": "a_ira", "symbol": "VFIAX", "value": 5, "doc_id": "positions_2005"}])
+    holdings = pd.DataFrame(
+        [
+            {
+                "as_of": "2001-01-31",
+                "account_id": "a_ira",
+                "symbol": "VFIAX",
+                "value": 90,
+                "doc_id": "legacy:investments",
+            },
+            {"as_of": "2005-01-31", "account_id": "a_ira", "symbol": "VFIAX", "value": 5, "doc_id": "positions_2005"},
+        ]
+    )
     monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: holdings.copy())
     monkeypatch.setattr(engine, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
     monkeypatch.setattr(engine, "_RENAMED", {"a_ira": "a_ira_now"})
@@ -73,12 +87,20 @@ def test_every_stage_starts_from_the_ledger_as_written(monkeypatch):
 
 
 def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypatch):
-    activity = pd.DataFrame([{"activity_id": "a1", "account_id": "a_plan", "kind": "contribution", "amount": 90},
-                             {"activity_id": "a2", "account_id": "a_plan", "kind": "contribution", "amount": 5}])
-    fixes = pd.DataFrame([{"activity_id": "a1", "field": "kind", "value": "contribution"},
-                          {"activity_id": "a1", "field": "kind", "value": "transfer_in"},  # the later one is in force
-                          {"activity_id": "zz", "field": "kind", "value": "transfer_in"},
-                          {"activity_id": "a2", "field": "kind", "value": "gift"}])
+    activity = pd.DataFrame(
+        [
+            {"activity_id": "a1", "account_id": "a_plan", "kind": "contribution", "amount": 90},
+            {"activity_id": "a2", "account_id": "a_plan", "kind": "contribution", "amount": 5},
+        ]
+    )
+    fixes = pd.DataFrame(
+        [
+            {"activity_id": "a1", "field": "kind", "value": "contribution"},
+            {"activity_id": "a1", "field": "kind", "value": "transfer_in"},  # the later one is in force
+            {"activity_id": "zz", "field": "kind", "value": "transfer_in"},
+            {"activity_id": "a2", "field": "kind", "value": "gift"},
+        ]
+    )
     got, notes = engine.activity_fixes(fixes, activity)
     assert got == {"a1": {"kind": "transfer_in"}}
     assert "zz, which the ledger doesn't have" in notes[0] and "'gift' isn't a kind" in notes[1]

@@ -32,10 +32,38 @@ from .common import ParseError, Result
 
 NAME = "fidelity"
 KIND = "investment_activity"
-COLUMNS = ["activity_id", "account_id", "date", "kind", "action", "symbol", "description", "shares", "price",
-           "value", "amount", "cash_balance", "source"]
-KINDS = ("contribution", "buy", "sell", "exchange", "reinvest", "dividend", "interest", "conversion_in",
-         "conversion_out", "transfer_in", "transfer_out", "withdrawal", "fee", "adjustment", "other")
+COLUMNS = [
+    "activity_id",
+    "account_id",
+    "date",
+    "kind",
+    "action",
+    "symbol",
+    "description",
+    "shares",
+    "price",
+    "value",
+    "amount",
+    "cash_balance",
+    "source",
+]
+KINDS = (
+    "contribution",
+    "buy",
+    "sell",
+    "exchange",
+    "reinvest",
+    "dividend",
+    "interest",
+    "conversion_in",
+    "conversion_out",
+    "transfer_in",
+    "transfer_out",
+    "withdrawal",
+    "fee",
+    "adjustment",
+    "other",
+)
 CSV_HEADER = "Run Date,Action,Symbol,Description,Type,Price ($),Quantity,"
 
 
@@ -104,13 +132,21 @@ def parse_history(text):
         amount = round(_num(r.get("Amount ($)")), 2)
         kind = history_kind(r["Action"], amount)
         shares = _num(r.get("Quantity"))
-        rows.append({"date": _date(r["Run Date"]), "kind": kind, "action": " ".join(r["Action"].split()),
-                     "symbol": r.get("Symbol", ""), "description": r.get("Description", ""),
-                     "shares": round(shares, 6) if kind not in ("dividend", "interest") else 0.0,
-                     "price": round(_num(r.get("Price ($)")), 6),
-                     "value": round(-amount, 2) if kind in INSIDE else 0.0,
-                     "amount": 0.0 if kind in INSIDE else amount,
-                     "cash_balance": r.get("Cash Balance ($)", ""), "source": ""})
+        rows.append(
+            {
+                "date": _date(r["Run Date"]),
+                "kind": kind,
+                "action": " ".join(r["Action"].split()),
+                "symbol": r.get("Symbol", ""),
+                "description": r.get("Description", ""),
+                "shares": round(shares, 6) if kind not in ("dividend", "interest") else 0.0,
+                "price": round(_num(r.get("Price ($)")), 6),
+                "value": round(-amount, 2) if kind in INSIDE else 0.0,
+                "amount": 0.0 if kind in INSIDE else amount,
+                "cash_balance": r.get("Cash Balance ($)", ""),
+                "source": "",
+            }
+        )
     return rows
 
 
@@ -162,10 +198,21 @@ def parse_plan(text):
         shares, value = sign * _num(r.get("Q")), sign * _num(r.get("T") or r.get("U"))
         # a reinvested dividend is income that buys shares: it comes in as money and as shares
         amount = 0.0 if kind in ("buy", "sell", "exchange", "adjustment") else value
-        rows.append({"date": _date(r["D"]), "kind": kind, "action": (action + (" " + " ".join(memo.split()) if memo else "")).strip(),
-                     "symbol": _qif_symbol(r.get("Y", "")), "description": " ".join(r.get("Y", "").split()),
-                     "shares": round(shares, 6), "price": round(_num(r.get("I")), 6), "value": round(value, 2),
-                     "amount": round(amount, 2), "cash_balance": "", "source": ""})
+        rows.append(
+            {
+                "date": _date(r["D"]),
+                "kind": kind,
+                "action": (action + (" " + " ".join(memo.split()) if memo else "")).strip(),
+                "symbol": _qif_symbol(r.get("Y", "")),
+                "description": " ".join(r.get("Y", "").split()),
+                "shares": round(shares, 6),
+                "price": round(_num(r.get("I")), 6),
+                "value": round(value, 2),
+                "amount": round(amount, 2),
+                "cash_balance": "",
+                "source": "",
+            }
+        )
     return rows
 
 
@@ -190,9 +237,16 @@ def parse(text):
     dates = sorted(df["date"])
     counts = df["kind"].value_counts()
     what = ", ".join(f"{counts[k]} {k}" for k in KINDS if k in counts)
-    return Result(kind=KIND, parser=NAME, label=f"fidelity_{dates[-1]}", covers_from=dates[0], covers_to=dates[-1],
-                  tables={KIND: df}, keys={KIND: ["activity_id"]},
-                  notes=[f"Fidelity {'plan history' if plan else 'account history'} {dates[0]} to {dates[-1]}: {what}"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"fidelity_{dates[-1]}",
+        covers_from=dates[0],
+        covers_to=dates[-1],
+        tables={KIND: df},
+        keys={KIND: ["activity_id"]},
+        notes=[f"Fidelity {'plan history' if plan else 'account history'} {dates[0]} to {dates[-1]}: {what}"],
+    )
 
 
 def finish(result, account_id):

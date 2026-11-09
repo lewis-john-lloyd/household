@@ -47,35 +47,59 @@ def _gap(value):
 def coverage(accounts, transactions, balances, documents, categorized, explained_coverage, today):
     today = pd.Timestamp(today or date.today())
     rows = []
-    live = accounts[accounts["expected_docs"].isin(["monthly_statement", WHEN_USED])
-                    & accounts["type"].isin(SPENDING_TYPES)
-                    & (accounts["closed"].astype(str).str.strip() == "")]
+    live = accounts[
+        accounts["expected_docs"].isin(["monthly_statement", WHEN_USED])
+        & accounts["type"].isin(SPENDING_TYPES)
+        & (accounts["closed"].astype(str).str.strip() == "")
+    ]
     for a in live.to_dict("records"):
         acct = a["account_id"]
-        dates = [d for d in (
-            transactions.loc[transactions["account_id"] == acct, "date"].astype(str).str[:10].max(),
-            balances.loc[balances["account_id"] == acct, "as_of"].astype(str).str[:10].max(),
-            documents.loc[documents["account_id"] == acct, "covers_to"].astype(str).str[:10].max(),
-        ) if isinstance(d, str) and d]
+        dates = [
+            d
+            for d in (
+                transactions.loc[transactions["account_id"] == acct, "date"].astype(str).str[:10].max(),
+                balances.loc[balances["account_id"] == acct, "as_of"].astype(str).str[:10].max(),
+                documents.loc[documents["account_id"] == acct, "covers_to"].astype(str).str[:10].max(),
+            )
+            if isinstance(d, str) and d
+        ]
         newest = max(dates) if dates else ""
         gap = _gap(a.get("max_gap_days", ""))
         age = (today - pd.Timestamp(newest)).days if newest else None
         status = "never downloaded" if not newest else "due" if age > gap else "ok"
         if a["expected_docs"] == WHEN_USED and status != "ok":
             status = "download when used"
-        rows.append({"source": acct, "kind": "account", "newest": newest, "age_days": "" if age is None else age,
-                     "due_after_days": gap, "waiting_lines": "", "status": status})
+        rows.append(
+            {
+                "source": acct,
+                "kind": "account",
+                "newest": newest,
+                "age_days": "" if age is None else age,
+                "due_after_days": gap,
+                "waiting_lines": "",
+                "status": status,
+            }
+        )
     waiting = categorized[categorized["status"] == "waiting"]["decided_by"].value_counts()
     for service in SERVICES:
         span = explained_coverage.get(service)
         count = int(waiting.get(f"waiting for {service}", 0))
         newest = span[1] if span else ""
         status = ("due" if count else "ok") if span else ("never downloaded" if count else "not used")
-        rows.append({"source": service, "kind": "explanation", "newest": newest,
-                     "age_days": (today - pd.Timestamp(newest)).days if newest else "",
-                     "due_after_days": "", "waiting_lines": count, "status": status})
-    return pd.DataFrame(rows, columns=["source", "kind", "newest", "age_days", "due_after_days", "waiting_lines",
-                                       "status"])
+        rows.append(
+            {
+                "source": service,
+                "kind": "explanation",
+                "newest": newest,
+                "age_days": (today - pd.Timestamp(newest)).days if newest else "",
+                "due_after_days": "",
+                "waiting_lines": count,
+                "status": status,
+            }
+        )
+    return pd.DataFrame(
+        rows, columns=["source", "kind", "newest", "age_days", "due_after_days", "waiting_lines", "status"]
+    )
 
 
 def balance_check(balances, transactions):
@@ -97,11 +121,21 @@ def balance_check(balances, transactions):
                 first, status = opening, "baseline"
             else:
                 status = "ok" if abs(opening - first) < TOLERANCE else f"off by {opening - first:+.2f}"
-            out.append({"account_id": acct, "as_of": s["as_of"], "balance": s["balance"],
-                        "ledger_through": through, "implied_opening": opening,
-                        "first_transaction": mine["date"].min() if len(mine) else "", "status": status})
-    return pd.DataFrame(out, columns=["account_id", "as_of", "balance", "ledger_through", "implied_opening",
-                                      "first_transaction", "status"])
+            out.append(
+                {
+                    "account_id": acct,
+                    "as_of": s["as_of"],
+                    "balance": s["balance"],
+                    "ledger_through": through,
+                    "implied_opening": opening,
+                    "first_transaction": mine["date"].min() if len(mine) else "",
+                    "status": status,
+                }
+            )
+    return pd.DataFrame(
+        out,
+        columns=["account_id", "as_of", "balance", "ledger_through", "implied_opening", "first_transaction", "status"],
+    )
 
 
 def net_pays(paystubs):
@@ -155,10 +189,29 @@ def paychecks(paystubs, categorized):
                 used_stubs.add(r["stub_id"])
                 used_txns.add(r["txn_id"])
         for r in checked[~checked["stub_id"].isin(used_stubs)].to_dict("records"):
-            out.append({"date": r["pay_date"], "person": person, "employer": employer, "amount": r["net"],
-                        "txn_id": "", "account_id": "", "payee_raw": "", "status": "no deposit"})
+            out.append(
+                {
+                    "date": r["pay_date"],
+                    "person": person,
+                    "employer": employer,
+                    "amount": r["net"],
+                    "txn_id": "",
+                    "account_id": "",
+                    "payee_raw": "",
+                    "status": "no deposit",
+                }
+            )
         for r in deposits[~deposits["txn_id"].isin(used_txns)].to_dict("records"):
-            out.append({"date": r["date"], "person": person, "employer": employer, "amount": r["amount"],
-                        "txn_id": r["txn_id"], "account_id": r["account_id"], "payee_raw": r["payee_raw"],
-                        "status": "missing stub: did you forget it?"})
+            out.append(
+                {
+                    "date": r["date"],
+                    "person": person,
+                    "employer": employer,
+                    "amount": r["amount"],
+                    "txn_id": r["txn_id"],
+                    "account_id": r["account_id"],
+                    "payee_raw": r["payee_raw"],
+                    "status": "missing stub: did you forget it?",
+                }
+            )
     return pd.DataFrame(out, columns=PAYCHECK_COLUMNS).sort_values(["date", "person"]).reset_index(drop=True)

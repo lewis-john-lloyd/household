@@ -45,13 +45,23 @@ import pandas as pd
 
 WINDOW = (-2, 6)  # days from the explanation's date to the line's posting date
 DEPARTMENTS = {
-    "grocery": "food", "grocery & gourmet food": "food",
-    "apparel": "clothing", "shoes": "clothing", "watch": "clothing",
-    "pet products": "pets", "pet supplies": "pets",
-    "lawn & patio": "garden", "lawn and garden": "garden",
-    "tools & home improvement": "maintenance", "tools & hardware": "maintenance",
-    "alcohol": "booze", "beer, wine & spirits": "booze",
-    "toys & games": "family", "books": "media", "charity": "charity", "membership": "subscriptions",
+    "grocery": "food",
+    "grocery & gourmet food": "food",
+    "apparel": "clothing",
+    "shoes": "clothing",
+    "watch": "clothing",
+    "pet products": "pets",
+    "pet supplies": "pets",
+    "lawn & patio": "garden",
+    "lawn and garden": "garden",
+    "tools & home improvement": "maintenance",
+    "tools & hardware": "maintenance",
+    "alcohol": "booze",
+    "beer, wine & spirits": "booze",
+    "toys & games": "family",
+    "books": "media",
+    "charity": "charity",
+    "membership": "subscriptions",
 }
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
@@ -83,8 +93,7 @@ def _greedy(lines, candidates, key, group_cols=("group",), exclusive=None):
     """
     if lines.empty or candidates.empty:
         return []
-    merged = lines.assign(_k=lines[key]).merge(candidates.assign(_k=candidates["amount"]), on="_k",
-                                               suffixes=("", "_c"))
+    merged = lines.assign(_k=lines[key]).merge(candidates.assign(_k=candidates["amount"]), on="_k", suffixes=("", "_c"))
     gap = (pd.to_datetime(merged["date"]) - pd.to_datetime(merged["date_c"])).dt.days
     merged = merged[gap.between(*WINDOW)].assign(_gap=gap.abs())
     merged = merged.sort_values(["_gap", "rank", "date", "txn_id"])
@@ -163,10 +172,12 @@ def order_groups(items, cards, service="amazon"):
     bought = df[df["kind"] == "item"]
     foreign = bought[~bought["card"].isin(set(cards) | {"", "gift"})]["order_id"]
     bought = bought[~bought["order_id"].isin(set(foreign))]
-    shipments = (bought.groupby(["order_id", "date"], as_index=False)["amount"].sum()
-                 .assign(level="shipment", rank=0))
-    orders = (bought.groupby("order_id", as_index=False).agg(date=("order_date", "first"), amount=("amount", "sum"))
-              .assign(level="order", rank=1))
+    shipments = bought.groupby(["order_id", "date"], as_index=False)["amount"].sum().assign(level="shipment", rank=0)
+    orders = (
+        bought.groupby("order_id", as_index=False)
+        .agg(date=("order_date", "first"), amount=("amount", "sum"))
+        .assign(level="order", rank=1)
+    )
     refunds = df[df["kind"] == "refund"][["order_id", "date", "amount", "item_id"]].assign(level="refund", rank=0)
     # an item on its own, last: a store that charges each part of a shipment separately (an order history with
     # one date for the whole order cannot say which items went together)
@@ -174,8 +185,15 @@ def order_groups(items, cards, service="amazon"):
     singles = bought[several][["order_id", "date", "amount", "item_id"]].assign(level="item", rank=2)
     groups = pd.concat([shipments, orders, refunds, singles], ignore_index=True)
     groups["amount"] = groups["amount"].round(2)
-    groups["group"] = (groups["level"] + ":" + groups["order_id"] + ":" + groups["date"].astype(str)
-                       + ":" + groups.get("item_id", pd.Series("", index=groups.index)).fillna("").astype(str))
+    groups["group"] = (
+        groups["level"]
+        + ":"
+        + groups["order_id"]
+        + ":"
+        + groups["date"].astype(str)
+        + ":"
+        + groups.get("item_id", pd.Series("", index=groups.index)).fillna("").astype(str)
+    )
     return groups
 
 
@@ -213,8 +231,9 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
         shipment = same[(same["level"] == "shipment") & (same["date"] == r["date_c"])]
         return {r["group"]} | orders | set(shipment["group"])
 
-    found = (_greedy(charges, groups[groups["level"] != "refund"], "abs_amt", exclusive=exclusive)
-             + _greedy(credits, groups[groups["level"] == "refund"], "abs_amt"))
+    found = _greedy(charges, groups[groups["level"] != "refund"], "abs_amt", exclusive=exclusive) + _greedy(
+        credits, groups[groups["level"] == "refund"], "abs_amt"
+    )
     bought = items[(items["service"] == service) & (items["kind"] == "item")].copy()
     bought["amount"] = pd.to_numeric(bought["amount"])
     out = {}
@@ -228,9 +247,15 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
             same = order[(order["amount"].round(2) - abs(float(r["amt"]))).abs() < 0.005]
             order = same.head(1) if len(same) else order
         if contents is not None:
-            contents[r["txn_id"]] = [(_category(i), " ".join(str(i["item"]).split())[:ITEM_CHARS],
-                                      round(float(i["amount"]), 2), str(i.get("item_id", "")))
-                                     for i in order.to_dict("records")]
+            contents[r["txn_id"]] = [
+                (
+                    _category(i),
+                    " ".join(str(i["item"]).split())[:ITEM_CHARS],
+                    round(float(i["amount"]), 2),
+                    str(i.get("item_id", "")),
+                )
+                for i in order.to_dict("records")
+            ]
         weights = order.assign(category=order.apply(_category, axis=1)).groupby("category")["amount"].sum()
         weights = weights[weights > 0]
         if weights.empty:
@@ -256,18 +281,19 @@ def order_services(parameters=None):
     """ORDER_SERVICES and the stores the household's parameters add (order_payee:<service> = pattern)."""
     out = dict(ORDER_SERVICES)
     if parameters is not None and not parameters.empty:
-        rows = parameters[(parameters["jurisdiction"] == "household")
-                          & parameters["key"].astype(str).str.startswith(ORDER_PAYEE)]
+        rows = parameters[
+            (parameters["jurisdiction"] == "household") & parameters["key"].astype(str).str.startswith(ORDER_PAYEE)
+        ]
         for key, value in zip(rows["key"], rows["value"]):
             if str(value).strip():
-                out[str(key)[len(ORDER_PAYEE):].strip()] = str(value).strip()
+                out[str(key)[len(ORDER_PAYEE) :].strip()] = str(value).strip()
     return out
 
 
 def match_all_orders(lines, items, cards, contents=None, services=None):
     """match_orders over every store, each line matched by its own store's history."""
     out = {}
-    for service in (services or ORDER_SERVICES):
+    for service in services or ORDER_SERVICES:
         out.update(match_orders(lines, items, cards, contents, service, services))
     return out
 
@@ -303,16 +329,20 @@ def match_named(lines, items, service):
         return {}
     store["amount"] = pd.to_numeric(store["amount"])
     store["item"] = store["item"].astype(str).str.replace(APPLE_PROMO, "", regex=True)
-    orders = (store.groupby(["order_id", "kind"], sort=False)
-              .agg(amount=("amount", "sum"), date=("date", "min"), item=("item", _together)).reset_index())
+    orders = (
+        store.groupby(["order_id", "kind"], sort=False)
+        .agg(amount=("amount", "sum"), date=("date", "min"), item=("item", _together))
+        .reset_index()
+    )
     orders["amount"] = orders["amount"].round(2)
     orders = orders.assign(group=orders["order_id"] + "|" + orders["kind"], rank=0)
     upper = lines["payee_raw"].astype(str).str.upper()
     named = lines[upper.str.contains(NAMED_SERVICES[service]) & ~upper.str.contains("PAYROLL")].copy()
     named["amt"] = pd.to_numeric(named["amount"]).round(2)
     named["abs_amt"] = named["amt"].abs()
-    found = (_greedy(named[named["amt"] < 0], orders[orders["kind"] == "item"], "abs_amt")
-             + _greedy(named[named["amt"] > 0], orders[orders["kind"] == "refund"], "abs_amt"))
+    found = _greedy(named[named["amt"] < 0], orders[orders["kind"] == "item"], "abs_amt") + _greedy(
+        named[named["amt"] > 0], orders[orders["kind"] == "refund"], "abs_amt"
+    )
     return {r["txn_id"]: str(r["item"]) for r in found}
 
 
@@ -337,8 +367,9 @@ def amazon_hints(lines, items, matched, service="amazon", services=None):
     bought["amount"] = pd.to_numeric(bought["amount"])
     bought["day"] = pd.to_datetime(bought["date"], errors="coerce")
     pattern = (services or ORDER_SERVICES).get(service, service.upper())
-    store = lines[lines["payee_raw"].astype(str).str.upper().str.contains(pattern)
-                  & ~lines["txn_id"].isin(set(matched))]
+    store = lines[
+        lines["payee_raw"].astype(str).str.upper().str.contains(pattern) & ~lines["txn_id"].isin(set(matched))
+    ]
     out = {}
     for r in store.to_dict("records"):
         day, amount = pd.Timestamp(str(r["date"])[:10]), abs(float(r["amount"]))
@@ -348,7 +379,8 @@ def amazon_hints(lines, items, matched, service="amazon", services=None):
             continue
         near = near.assign(off=(near["amount"] - amount).abs()).sort_values("off").head(HINTS)
         out[r["txn_id"]] = "maybe: " + "; ".join(
-            f"{str(i)[:40]} ({a:.2f}, {d})" for i, a, d in zip(near["item"], near["amount"], near["date"]))
+            f"{str(i)[:40]} ({a:.2f}, {d})" for i, a, d in zip(near["item"], near["amount"], near["date"])
+        )
     return out
 
 
@@ -356,12 +388,22 @@ def explain(lines, details=None, items=None, cards=(), services=None):
     """Everything categorization needs from the explanation downloads. services: the stores with an
     order history and their payee patterns (order_services; ORDER_SERVICES by default)."""
     services = services or ORDER_SERVICES
-    named = {**match_paypal(lines, details), **match_venmo(lines, details), **match_named(lines, items, "google"),
-             **match_named(lines, items, "apple")}
+    named = {
+        **match_paypal(lines, details),
+        **match_venmo(lines, details),
+        **match_named(lines, items, "google"),
+        **match_named(lines, items, "apple"),
+    }
     contents = {}
     split = match_all_orders(lines, items, cards, contents, services)
     hints = {}
     for service in services:
         hints.update(amazon_hints(lines, items, split, service, services))
-    return {"payee": named, "split": split, "coverage": coverage(details, items), "hints": hints, "services": services,
-            "items": {t: json.dumps([list(i) for i in parts]) for t, parts in contents.items()}}
+    return {
+        "payee": named,
+        "split": split,
+        "coverage": coverage(details, items),
+        "hints": hints,
+        "services": services,
+        "items": {t: json.dumps([list(i) for i in parts]) for t, parts in contents.items()},
+    }

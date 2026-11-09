@@ -46,8 +46,16 @@ warning in the report's basis column, never an error.
 import numpy as np
 import pandas as pd
 
-PER_MONTH = {"monthly": 1.0, "biweekly": 26 / 12, "weekly": 52 / 12, "semi_monthly": 2.0, "quarterly": 1 / 3,
-             "semi_annually": 1 / 6, "annually": 1 / 12, "": 1.0}
+PER_MONTH = {
+    "monthly": 1.0,
+    "biweekly": 26 / 12,
+    "weekly": 52 / 12,
+    "semi_monthly": 2.0,
+    "quarterly": 1 / 3,
+    "semi_annually": 1 / 6,
+    "annually": 1 / 12,
+    "": 1.0,
+}
 LOOKBACK_SIGMA = 0.25
 SEASONAL_WINDOW = (-13, -12, -11)  # months from the budget month: the same month a year earlier, centered
 TRAILING_WINDOW = (-4, -3, -2, -1)  # the four months before the budget month
@@ -120,11 +128,18 @@ def targets(rules, actuals, through, recurring=None):
                 target += value or 0.0
                 basis.append(why)
             src = state if active else due.iloc[-1]
-            out.append({"month": month, "line": line, "category": str(src["category"]).strip(),
-                        "account": str(src.get("account", "")).strip(),
-                        "priority": str(src.get("priority", "")).strip(),
-                        "rule": state["rule"] if active else "scheduled",
-                        "target": round(target, 2), "basis": "; ".join(basis)})
+            out.append(
+                {
+                    "month": month,
+                    "line": line,
+                    "category": str(src["category"]).strip(),
+                    "account": str(src.get("account", "")).strip(),
+                    "priority": str(src.get("priority", "")).strip(),
+                    "rule": state["rule"] if active else "scheduled",
+                    "target": round(target, 2),
+                    "basis": "; ".join(basis),
+                }
+            )
     return pd.DataFrame(out, columns=TARGET_COLUMNS).sort_values(["month", "category", "line"]).reset_index(drop=True)
 
 
@@ -159,8 +174,9 @@ def _rule_target(state, month, spend, recurring=None):
         expected, n = (recurring or {}).get((str(state["category"]).strip(), month), (0.0, 0))
         allowance, _ = _per_month(state) if str(state.get("amount", "")).strip() else (0.0, "")
         allowance = allowance or 0.0
-        return expected + allowance, (f"recurring: {n} charge{'' if n == 1 else 's'} {expected:.2f}"
-                                      f" + allowance {allowance:.2f}")
+        return expected + allowance, (
+            f"recurring: {n} charge{'' if n == 1 else 's'} {expected:.2f} + allowance {allowance:.2f}"
+        )
     if rule in ("fixed", "sinking_fund"):
         value, why = _per_month(state)
         return (None, why) if value is None else (value, f"{rule}: {why}")
@@ -218,8 +234,11 @@ def versus(targets_df, actuals, categories=None):
     out["target"], out["actual"] = out["target"].round(2), out["actual"].round(2)
     out["remaining"] = (out["target"] - out["actual"]).round(2)
     out = out[~((out["target"] == 0) & (out["actual"] < 0))]  # money in to an unbudgeted category (shares sold)
-    return (out[["month", "category", "group", "priority", "target", "actual", "remaining"]]
-            .sort_values(["month", "category"]).reset_index(drop=True))
+    return (
+        out[["month", "category", "group", "priority", "target", "actual", "remaining"]]
+        .sort_values(["month", "category"])
+        .reset_index(drop=True)
+    )
 
 
 def sinking_funds(targets_df, actuals):
@@ -237,6 +256,14 @@ def sinking_funds(targets_df, actuals):
         for row in g.to_dict("records"):
             spent = float(spend.get((row["category"], row["month"]), 0.0))
             balance += row["target"] - spent
-            out.append({"month": row["month"], "line": line, "category": row["category"],
-                        "set_aside": row["target"], "spent": round(spent, 2), "balance": round(balance, 2)})
+            out.append(
+                {
+                    "month": row["month"],
+                    "line": line,
+                    "category": row["category"],
+                    "set_aside": row["target"],
+                    "spent": round(spent, 2),
+                    "balance": round(balance, 2),
+                }
+            )
     return pd.DataFrame(out)

@@ -20,19 +20,44 @@ from .common import ParseError, Result
 from .. import schema
 
 NAME = "seed"
-SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules",
-            "loans", "comp_events", "loan_balances", "properties", "property_values", "improvements",
-            "allocation_targets", "securities", "property_taxes", "stock_splits", "loan_facts",
-            "activity_corrections")
+SEEDABLE = (
+    "accounts",
+    "categories",
+    "category_aliases",
+    "payee_rules",
+    "parameters",
+    "budget_rules",
+    "loans",
+    "comp_events",
+    "loan_balances",
+    "properties",
+    "property_values",
+    "improvements",
+    "allocation_targets",
+    "securities",
+    "property_taxes",
+    "stock_splits",
+    "loan_facts",
+    "activity_corrections",
+)
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
-KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],
-        "budget_rules": ["line", "effective"], "comp_events": ["effective", "person", "employer"],
-        "loan_balances": ["as_of", "loan_id"], "property_values": ["as_of", "property_id", "source"],
-        "improvements": ["date", "property_id", "description"], "property_taxes": ["tax_year", "property_id"], "stock_splits": ["symbol", "date"], "loan_facts": ["loan_id", "key", "as_of"], "allocation_targets": ["effective", "node"],
-        "activity_corrections": ["activity_id", "field", "value"],
-        # a security's later row with another class or quote is its new description (the last row wins)
-        "securities": ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"]}
+KEYS = {
+    "payee_rules": ["pattern", "effective"],
+    "parameters": ["year", "jurisdiction", "key"],
+    "budget_rules": ["line", "effective"],
+    "comp_events": ["effective", "person", "employer"],
+    "loan_balances": ["as_of", "loan_id"],
+    "property_values": ["as_of", "property_id", "source"],
+    "improvements": ["date", "property_id", "description"],
+    "property_taxes": ["tax_year", "property_id"],
+    "stock_splits": ["symbol", "date"],
+    "loan_facts": ["loan_id", "key", "as_of"],
+    "allocation_targets": ["effective", "node"],
+    "activity_corrections": ["activity_id", "field", "value"],
+    # a security's later row with another class or quote is its new description (the last row wins)
+    "securities": ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"],
+}
 
 
 def _table(text):
@@ -52,8 +77,10 @@ def parse(text):
     keys = KEYS.get(table.name, [table.columns[0]])
     repeated = df.duplicated(keys)
     if repeated.any():
-        raise ParseError(f"{NAME}: duplicate {', '.join(keys)} in {table.name}: "
-                         f"{df.loc[repeated, keys].astype(str).agg('/'.join, axis=1).tolist()}")
+        raise ParseError(
+            f"{NAME}: duplicate {', '.join(keys)} in {table.name}: "
+            f"{df.loc[repeated, keys].astype(str).agg('/'.join, axis=1).tolist()}"
+        )
     for column, allowed in table.enums.items():
         bad = sorted(set(df[column]) - set(allowed) - {""})
         if bad:
@@ -68,6 +95,11 @@ def parse(text):
         blank = df[df["category"] == ""]
         if not blank.empty:
             raise ParseError(f"{NAME}: alias with no category: {list(blank['alias'])}")
-    return Result(kind=f"{table.name}_seed", parser=NAME, label=f"{table.name}_seed",
-                  tables={table.name: df}, keys={table.name: keys},
-                  notes=[f"{table.name}: {len(df)} rows"])
+    return Result(
+        kind=f"{table.name}_seed",
+        parser=NAME,
+        label=f"{table.name}_seed",
+        tables={table.name: df},
+        keys={table.name: keys},
+        notes=[f"{table.name}: {len(df)} rows"],
+    )

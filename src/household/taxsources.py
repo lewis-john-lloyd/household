@@ -82,7 +82,7 @@ def _numbers(line):
 def _table(pages, first, last, width, columns):
     """(at least, less than, values...) rows from table lines with this many numbers."""
     out = []
-    for text in pages[first - 1:last]:
+    for text in pages[first - 1 : last]:
         for line in text.splitlines():
             nums = _numbers(line)
             if nums and len(nums) == columns and 0 < nums[1] - nums[0] <= width:
@@ -122,12 +122,12 @@ def _wisconsin_checks(year, item, pages, page, text):
         return f"withholding schedule amounts not on page: {', '.join(missing)}" if missing else None
     if item.startswith("wi_standard_deduction"):
         rows = [r[:2] + [r[3]] for r in _table(pages, page, page + 2, 500, 6)]  # MFJ is the 2nd column
-        return _table_result(rows, lambda r: wisconsin.standard_deduction(r[0], year), 250,
-                             "standard deduction table")
+        return _table_result(rows, lambda r: wisconsin.standard_deduction(r[0], year), 250, "standard deduction table")
     if item.startswith("wi_school_property_credit"):
         rows = _table(pages, page, page, 25, 3)
-        return _table_result(rows, lambda r: wisconsin.school_property_credit(r[0], year), 50,
-                             "homeowner's credit table")
+        return _table_result(
+            rows, lambda r: wisconsin.school_property_credit(r[0], year), 50, "homeowner's credit table"
+        )
     return None
 
 
@@ -148,9 +148,11 @@ def citations():
     """Every citation as (year, item, document, page, quote); methods have year None."""
     out = [(year, item, *c) for (year, item), c in sorted(taxdata.CITATIONS.items())]
     out += [(None, item, *c) for item, c in taxdata.METHODS.items()]
-    out += [(year, f"Form line {line} ({key})", document, page, quote)  # not wi_..., so no value checks apply
-            for year, lines in sorted(taxdata.FORM_LINES.items())
-            for key, (line, document, page, quote) in sorted(lines.items())]
+    out += [
+        (year, f"Form line {line} ({key})", document, page, quote)  # not wi_..., so no value checks apply
+        for year, lines in sorted(taxdata.FORM_LINES.items())
+        for key, (line, document, page, quote) in sorted(lines.items())
+    ]
     return out
 
 
@@ -168,11 +170,18 @@ def check(pages_by_document):
             text = normalize(pages[page - 1])
             if normalize(quote) not in text:
                 problems.append("quote not on page")
-            problems += [p for p in (_says_value(year, item, quote),
-                                     _extra_checks(year, item, text, pages, page)) if p]
-        rows.append({"year": "" if year is None else year, "item": item, "document": document,
-                     "page": page, "quote": quote,
-                     "ok": not problems, "detail": "; ".join(problems)})
+            problems += [p for p in (_says_value(year, item, quote), _extra_checks(year, item, text, pages, page)) if p]
+        rows.append(
+            {
+                "year": "" if year is None else year,
+                "item": item,
+                "document": document,
+                "page": page,
+                "quote": quote,
+                "ok": not problems,
+                "detail": "; ".join(problems),
+            }
+        )
     return pd.DataFrame(rows, columns=CHECK_COLUMNS)
 
 
@@ -198,12 +207,29 @@ def report(source_documents):
     for year, item, document, page, quote in citations():
         title, sha = taxdata.DOCUMENTS[document]
         value = "" if year is None else taxdata.params(year).get(item, "")
-        rows.append({"year": "" if year is None else year, "item": item, "value": value,
-                     "document": title, "page": page, "quote": quote,
-                     "record": links.get(sha) or "not in record store"})
+        rows.append(
+            {
+                "year": "" if year is None else year,
+                "item": item,
+                "value": value,
+                "document": title,
+                "page": page,
+                "quote": quote,
+                "record": links.get(sha) or "not in record store",
+            }
+        )
     for key, reason in taxdata.UNCITED.items():
         year, item = (key, "all") if isinstance(key, int) else key
         value = "" if item == "all" else taxdata.params(year).get(item, "")
-        rows.append({"year": year, "item": item, "value": value, "document": "", "page": "",
-                     "quote": reason, "record": "no source on file"})
+        rows.append(
+            {
+                "year": year,
+                "item": item,
+                "value": value,
+                "document": "",
+                "page": "",
+                "quote": reason,
+                "record": "no source on file",
+            }
+        )
     return pd.DataFrame(rows, columns=REPORT_COLUMNS)

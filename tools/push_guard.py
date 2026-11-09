@@ -120,8 +120,11 @@ def pattern_findings(path, line):
     if leak_guard.ALLOW_MARKER in line or path.endswith("leak_guard.py"):
         return []
     in_fixtures = path.startswith(leak_guard.FIXTURE_DIR)
-    return [name for name, pattern, in_fix in leak_guard.CHECKS
-            if (in_fix or not in_fixtures) and pattern.search(leak_guard.without_hashes(line))]
+    return [
+        name
+        for name, pattern, in_fix in leak_guard.CHECKS
+        if (in_fix or not in_fixtures) and pattern.search(leak_guard.without_hashes(line))
+    ]
 
 
 def line_findings(path, line, denylist):
@@ -204,9 +207,14 @@ def check(ranges, denylist):
         # which binaries are made-up fixtures: the list as the push leaves it, and as the checkout has it
         # (an old tag pushed again predates the list); each version must match a listed sha256
         tip = args[0].split("..")[-1]
-        allowed = leak_guard.merge_allowed(*(leak_guard.allowed_binaries(
-            lambda p, ref=ref: (git_bytes("show", f"{ref}:{p}") or b"").decode("utf-8", "replace"))
-            for ref in (tip, "HEAD")))
+        allowed = leak_guard.merge_allowed(
+            *(
+                leak_guard.allowed_binaries(
+                    lambda p, ref=ref: (git_bytes("show", f"{ref}:{p}") or b"").decode("utf-8", "replace")
+                )
+                for ref in (tip, "HEAD")
+            )
+        )
         for sha, paths in commit_binaries(git("log", "--no-renames", "--numstat", "--format=%x1e%H", *args)).items():
             found = binary_findings(paths, lambda p, sha=sha: git_bytes("show", f"{sha}:{p}"), denylist, allowed)
             findings += [f"commit {sha[:7]} {f}" for f in found]
@@ -229,8 +237,10 @@ def _denylist(what):
         return load_denylist(path), False
     if os.environ.get("HOUSEHOLD_NO_DENYLIST") == "1":
         return None, False
-    print(f"push guard: no denylist at {path}. Build one with tools/denylist.py, "
-          f"or {what} with HOUSEHOLD_NO_DENYLIST=1 to skip that check.")
+    print(
+        f"push guard: no denylist at {path}. Build one with tools/denylist.py, "
+        f"or {what} with HOUSEHOLD_NO_DENYLIST=1 to skip that check."
+    )
     return None, True
 
 
@@ -247,18 +257,35 @@ def main(stdin_lines, argv=()):
     argv = list(argv)
     if argv[:1] == ["--staged"]:
         denylist, stop = _denylist("commit")
-        return 1 if stop else _report(check_staged(denylist), "the commit would hold",
-                                      "Change it to a made-up value, stage it again and commit.")
+        return (
+            1
+            if stop
+            else _report(
+                check_staged(denylist),
+                "the commit would hold",
+                "Change it to a made-up value, stage it again and commit.",
+            )
+        )
     if argv[:1] == ["--message"] and len(argv) == 2:
         denylist, stop = _denylist("commit")
         body = Path(argv[1]).read_text(encoding="utf-8")
-        return 1 if stop else _report(message_findings("commit message", body, denylist),
-                                      "the commit message holds", "Reword the message and commit again.")
+        return (
+            1
+            if stop
+            else _report(
+                message_findings("commit message", body, denylist),
+                "the commit message holds",
+                "Reword the message and commit again.",
+            )
+        )
     denylist, stop = _denylist("push")
     if stop:
         return 1
-    if _report(check(outgoing(stdin_lines), denylist), "the push would publish",
-               "Fix the commits (amend or rebase) and push again."):
+    if _report(
+        check(outgoing(stdin_lines), denylist),
+        "the push would publish",
+        "Fix the commits (amend or rebase) and push again.",
+    ):
         return 1
     if os.environ.get("HOUSEHOLD_PUSH_QUICK") != "1":
         for command in ([sys.executable, "tools/import_guard.py"], [sys.executable, "-m", "pytest", "-q"]):

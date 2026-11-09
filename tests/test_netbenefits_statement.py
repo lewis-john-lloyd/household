@@ -49,9 +49,12 @@ def test_each_fund_is_read_at_the_start_and_the_end_with_wrapped_names_joined():
     assert identify(text) is nb
     held = nb.parse(text).tables["holdings"]
     assert held[["as_of", "symbol", "shares", "value"]].values.tolist() == [
-        ["2001-03-31", "S&P 500 Index", 2.0, 40.0], ["2001-06-30", "S&P 500 Index", 2.5, 55.0],
-        ["2001-03-31", "US Bond Index", 3.0, 30.0], ["2001-06-30", "US Bond Index", 3.3, 33.0],
-        ["2001-06-30", "Target Ret 2065", 1.0, 12.0]]  # a fund held at neither date is left out
+        ["2001-03-31", "S&P 500 Index", 2.0, 40.0],
+        ["2001-06-30", "S&P 500 Index", 2.5, 55.0],
+        ["2001-03-31", "US Bond Index", 3.0, 30.0],
+        ["2001-06-30", "US Bond Index", 3.3, 33.0],
+        ["2001-06-30", "Target Ret 2065", 1.0, 12.0],
+    ]  # a fund held at neither date is left out
 
 
 def test_a_statement_that_doesnt_add_up_is_refused():
@@ -60,8 +63,16 @@ def test_a_statement_that_doesnt_add_up_is_refused():
     with pytest.raises(ParseError, match="shares at"):
         nb.parse(statement(table=TABLE.replace("¤55.00", "¤65.00")))
     with pytest.raises(ParseError, match="no fund rows"):
-        nb.parse(statement(table=TABLE.replace("S&P 500 ", "").replace("US Bond ", "").replace("Target Ret ", "")
-                           .replace("2.000", "x").replace("3.000", "x").replace("0.000", "x")))
+        nb.parse(
+            statement(
+                table=TABLE.replace("S&P 500 ", "")
+                .replace("US Bond ", "")
+                .replace("Target Ret ", "")
+                .replace("2.000", "x")
+                .replace("3.000", "x")
+                .replace("0.000", "x")
+            )
+        )
 
 
 def test_a_statement_printed_with_the_browser_title_first_is_still_one():

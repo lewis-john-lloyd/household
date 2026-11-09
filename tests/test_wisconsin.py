@@ -28,11 +28,14 @@ def test_credits():
     assert wisconsin.married_couple_credit([50_000, 0], 2025) == 0
 
 
-@pytest.mark.parametrize("base, periods, married, exemptions, withheld", [
-    (350, 52, False, 1, 7.59),     # Pub W-166 example 1
-    (500, 52, False, 3, 14.34),    # example 2
-    (1_000, 26, True, 3, 22.08),   # example 3
-])
+@pytest.mark.parametrize(
+    "base, periods, married, exemptions, withheld",
+    [
+        (350, 52, False, 1, 7.59),  # Pub W-166 example 1
+        (500, 52, False, 3, 14.34),  # example 2
+        (1_000, 26, True, 3, 22.08),  # example 3
+    ],
+)
 def test_withholding_matches_w166_examples(base, periods, married, exemptions, withheld):
     assert wisconsin.regular_withholding(base, periods, 2026, married, exemptions) == withheld
 
@@ -41,9 +44,15 @@ def test_flat_rate_band_follows_the_annualized_payment():
     assert [wisconsin.flat_rate(b, 26) for b in (30, 704, 2_000, 50_000)] == [0.0354, 0.0465, 0.053, 0.0765]
 
 
-PART_YEAR = {"federal_agi": 200_000, "wi_income": 100_000, "wi_exemptions": 2, "wi_itemized_interest": 20_000,
-             "wi_property_tax": 5_000, "wi_withheld": 4_000,
-             "wi_earned_income_by_person": [("a", 120_000), ("b", 30_000)]}
+PART_YEAR = {
+    "federal_agi": 200_000,
+    "wi_income": 100_000,
+    "wi_exemptions": 2,
+    "wi_itemized_interest": 20_000,
+    "wi_property_tax": 5_000,
+    "wi_withheld": 4_000,
+    "wi_earned_income_by_person": [("a", 120_000), ("b", 30_000)],
+}
 
 
 def test_part_year_return_prorates_tax_and_credits():
@@ -56,9 +65,12 @@ def test_part_year_return_prorates_tax_and_credits():
 
 
 def test_full_year_return_uses_wisconsin_income_and_federal_fallbacks():
-    i = {**{k: v for k, v in PART_YEAR.items() if k not in ("wi_income", "wi_itemized_interest",
-                                                            "wi_property_tax")},
-         "wi_subtractions": 10_000, "mortgage_interest": 20_000, "real_estate_tax": 5_000}
+    i = {
+        **{k: v for k, v in PART_YEAR.items() if k not in ("wi_income", "wi_itemized_interest", "wi_property_tax")},
+        "wi_subtractions": 10_000,
+        "mortgage_interest": 20_000,
+        "real_estate_tax": 5_000,
+    }
     r = wisconsin.wisconsin_return(i, 2026)
     assert (r["wi_income"], r["wi_taxable"]) == (190_000, 188_600)
     assert r["wi_net_tax"] == round(0.053 * 188_600 - 781.92) - 1_000 - 300 - 480
@@ -66,30 +78,52 @@ def test_full_year_return_uses_wisconsin_income_and_federal_fallbacks():
 
 
 def test_return_check_includes_wisconsin_lines():
-    rows = [("input", "wages", "a", 120_000), ("input", "wages", "b", 80_000),
-            ("input", "wi_income", "", 100_000), ("input", "wi_exemptions", "", 2),
-            ("input", "wi_earned_income", "a", 120_000), ("input", "wi_earned_income", "b", 30_000),
-            ("filed", "wi1npr_32", "", 0.5), ("filed", "wi1npr_48", "", 480), ("filed", "wi1npr_38", "", 1)]
-    facts = pd.DataFrame([{"year": "2025", "kind": k, "key": key, "person": p, "value": str(v)}
-                          for k, key, p, v in rows])
+    rows = [
+        ("input", "wages", "a", 120_000),
+        ("input", "wages", "b", 80_000),
+        ("input", "wi_income", "", 100_000),
+        ("input", "wi_exemptions", "", 2),
+        ("input", "wi_earned_income", "a", 120_000),
+        ("input", "wi_earned_income", "b", 30_000),
+        ("filed", "wi1npr_32", "", 0.5),
+        ("filed", "wi1npr_48", "", 480),
+        ("filed", "wi1npr_38", "", 1),
+    ]
+    facts = pd.DataFrame(
+        [{"year": "2025", "kind": k, "key": key, "person": p, "value": str(v)} for k, key, p, v in rows]
+    )
     check = tax.check_against_return(facts).set_index("line")
     assert check.loc["wi1npr_32", "match"] and check.loc["wi1npr_48", "match"]
     assert not check.loc["wi1npr_38", "match"]
 
 
 def stub(pay_date, stub_id, base, wi, person="alex", lines=("Regular Pay",)):
-    common = {"pay_date": pay_date, "period_start": "2026-01-01", "period_end": "2026-01-14",
-              "person": person, "employer": "Acme", "stub_id": stub_id}
-    rows = [(lines[0], "income", base), ("FIT Taxable Wages", "memo", base), ("Gross", "memo", base),
-            ("Federal Income Tax", "tax", 0.0), ("WI State Income Tax", "tax", wi)]
+    common = {
+        "pay_date": pay_date,
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-14",
+        "person": person,
+        "employer": "Acme",
+        "stub_id": stub_id,
+    }
+    rows = [
+        (lines[0], "income", base),
+        ("FIT Taxable Wages", "memo", base),
+        ("Gross", "memo", base),
+        ("Federal Income Tax", "tax", 0.0),
+        ("WI State Income Tax", "tax", wi),
+    ]
     return [{**common, "line_item": a, "kind": k, "amount": v, "ytd_amount": v} for a, k, v in rows]
 
 
 def test_backtest_decodes_wt4_settings_and_flat_rates():
     regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 4)
-    rows = (stub("2026-01-16", "1", 4_000, regular) + stub("2026-01-30", "2", 4_000, regular + 25)
-            + stub("2026-02-03", "3", 50_000, round(0.0765 * 50_000, 2), lines=("Stock Unit",))
-            + stub("2026-02-13", "4", 4_000, 99.0))
+    rows = (
+        stub("2026-01-16", "1", 4_000, regular)
+        + stub("2026-01-30", "2", 4_000, regular + 25)
+        + stub("2026-02-03", "3", 50_000, round(0.0765 * 50_000, 2), lines=("Stock Unit",))
+        + stub("2026-02-13", "4", 4_000, 99.0)
+    )
     bt = wisconsin.backtest(pd.DataFrame(rows)).set_index("stub_id")
     assert bt.loc["1", "explanation"] == "WT-4: 4 exemptions"
     assert bt.loc["2", "explanation"] == "WT-4: 4 exemptions, 25 additional"
@@ -102,21 +136,32 @@ def test_projection_adds_wisconsin_withholding_for_paychecks_and_vests():
     regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 0)
     federal = withholding.regular_withholding(4_000, 26, 2026)
     vest = round(0.0765 * 20_000, 2)
-    paid = [("2026-08-27", "v0", 20_000, vest, 0.22 * 20_000, "Stock Unit"),
-            ("2026-09-28", "v1", 20_000, vest, 0.22 * 20_000, "Stock Unit"),
-            ("2026-10-02", "r0", 4_000, regular, federal, "Regular Pay"),
-            ("2026-10-16", "r1", 4_000, regular, federal, "Regular Pay"),
-            ("2026-10-28", "v2", 20_000, vest, 0.22 * 20_000, "Stock Unit")]
+    paid = [
+        ("2026-08-27", "v0", 20_000, vest, 0.22 * 20_000, "Stock Unit"),
+        ("2026-09-28", "v1", 20_000, vest, 0.22 * 20_000, "Stock Unit"),
+        ("2026-10-02", "r0", 4_000, regular, federal, "Regular Pay"),
+        ("2026-10-16", "r1", 4_000, regular, federal, "Regular Pay"),
+        ("2026-10-28", "v2", 20_000, vest, 0.22 * 20_000, "Stock Unit"),
+    ]
     rows, ytd = [], {}
     for day, stub_id, base, wi, fit, line in paid:
-        common = {"pay_date": day, "period_start": "2026-01-01", "period_end": "2026-01-14",
-                  "person": "alex", "employer": "Acme", "stub_id": stub_id}
-        for name, kind, amount in ((line, "income", base), ("FIT Taxable Wages", "memo", base),
-                                   ("Gross", "memo", base), ("Federal Income Tax", "tax", fit),
-                                   ("WI State Income Tax", "tax", wi)):
+        common = {
+            "pay_date": day,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-14",
+            "person": "alex",
+            "employer": "Acme",
+            "stub_id": stub_id,
+        }
+        for name, kind, amount in (
+            (line, "income", base),
+            ("FIT Taxable Wages", "memo", base),
+            ("Gross", "memo", base),
+            ("Federal Income Tax", "tax", fit),
+            ("WI State Income Tax", "tax", wi),
+        ):
             ytd[name] = ytd.get(name, 0.0) + amount
-            rows.append({**common, "line_item": name, "kind": kind, "amount": amount,
-                         "ytd_amount": ytd[name]})
+            rows.append({**common, "line_item": name, "kind": kind, "amount": amount, "ytd_amount": ytd[name]})
     pos = projection.positions(pd.DataFrame(rows), 2026)[("alex", "Acme")]
     assert (pos["paychecks_left"], pos["vests_left"]) == (5, 2)
     expected = 2 * regular + 3 * vest + 5 * regular + 2 * 0.0765 * 20_000
@@ -127,12 +172,19 @@ def test_projection_adds_wisconsin_withholding_for_paychecks_and_vests():
 
 
 def test_people_can_explain_a_residual_the_rules_cannot():
-    decisions = pd.DataFrame([
-        {"proposal_key": "wi:4", "kind": "withholding", "decided_at": "", "decision": "approve",
-         "note": "lived in another state, employer here"},
-        {"proposal_key": "wi:9", "kind": "withholding", "decided_at": "", "decision": "reject", "note": "x"},
-        {"proposal_key": "federal:4", "kind": "withholding", "decided_at": "", "decision": "approve",
-         "note": "y"}])
+    decisions = pd.DataFrame(
+        [
+            {
+                "proposal_key": "wi:4",
+                "kind": "withholding",
+                "decided_at": "",
+                "decision": "approve",
+                "note": "lived in another state, employer here",
+            },
+            {"proposal_key": "wi:9", "kind": "withholding", "decided_at": "", "decision": "reject", "note": "x"},
+            {"proposal_key": "federal:4", "kind": "withholding", "decided_at": "", "decision": "approve", "note": "y"},
+        ]
+    )
     explained = withholding.explained_by_people(decisions, "wi")
     assert explained == {"4": "lived in another state, employer here"}
     regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 4)
@@ -143,8 +195,10 @@ def test_people_can_explain_a_residual_the_rules_cannot():
 
 
 def test_break_even_extra_withholding_uses_the_longest_paycheck_run_and_floors_at_zero():
-    pos = {("a", "X"): {"paychecks_left": 5, "extra_withholding": 1_000.0},
-           ("b", "Y"): {"paychecks_left": 2, "extra_withholding": 0.0}}
+    pos = {
+        ("a", "X"): {"paychecks_left": 5, "extra_withholding": 1_000.0},
+        ("b", "Y"): {"paychecks_left": 2, "extra_withholding": 0.0},
+    }
     assert projection.break_even_extra(pos, 2_500) == 1_500  # owe 2,500: 500 more on each of 5
     assert projection.break_even_extra(pos, -2_500) == 500
     assert projection.break_even_extra(pos, -9_000) == 0
@@ -155,8 +209,10 @@ def test_break_even_extra_withholding_uses_the_longest_paycheck_run_and_floors_a
 def test_other_state_tax_withheld_is_credited_against_wisconsin():
     regular = wisconsin.regular_withholding(4_000, 26, 2026, True, 4)
     rows = stub("2026-01-16", "1", 4_000, regular) + stub("2026-01-30", "2", 4_000, round(regular - 120.0, 2))
-    rows += [{**rows[-1], "line_item": "PA", "kind": "tax", "amount": 120.0, "ytd_amount": 120.0},
-             {**rows[-1], "line_item": "SS", "kind": "tax", "amount": 248.0, "ytd_amount": 248.0}]
+    rows += [
+        {**rows[-1], "line_item": "PA", "kind": "tax", "amount": 120.0, "ytd_amount": 120.0},
+        {**rows[-1], "line_item": "SS", "kind": "tax", "amount": 248.0, "ytd_amount": 248.0},
+    ]
     bt = wisconsin.backtest(pd.DataFrame(rows)).set_index("stub_id")
     assert bt.loc["2", "explanation"] == "WT-4: 4 exemptions, less PA income tax withheld (120.00)"
     assert bt.loc["2", "residual"] == 0

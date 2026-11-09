@@ -30,8 +30,15 @@ ALL_PAGES = True  # check histories run to many pages
 # Deductions taken before federal income tax. Anything else is post-tax; the
 # FIT taxable wages check fails loudly if a new pre-tax line appears.
 PRE_TAX = {
-    "401K Pretax", "Bonus 401K Pre", "HSA Employee", "HSA ER Update", "FSA Dependent",
-    "Ltd Purpose FSA", "Medical", "Dental", "Vision",
+    "401K Pretax",
+    "Bonus 401K Pre",
+    "HSA Employee",
+    "HSA ER Update",
+    "FSA Dependent",
+    "Ltd Purpose FSA",
+    "Medical",
+    "Dental",
+    "Vision",
 }
 
 
@@ -79,13 +86,17 @@ def parse(text):
     notes = [n for _, ns in stubs for n in ns]
     person = rows["person"].iloc[0]
     dates = sorted(rows["pay_date"].unique())
-    label = (f"paystub_{person}_{dates[0]}" if len(stubs) == 1
-             else f"paystubs_{person}_{dates[0]}_{dates[-1]}")
-    return Result(kind="paystub", parser=NAME, label=label,
-                  covers_from=rows["period_start"].min(), covers_to=rows["period_end"].max(),
-                  tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]},
-                  notes=notes)
+    label = f"paystub_{person}_{dates[0]}" if len(stubs) == 1 else f"paystubs_{person}_{dates[0]}_{dates[-1]}"
+    return Result(
+        kind="paystub",
+        parser=NAME,
+        label=label,
+        covers_from=rows["period_start"].min(),
+        covers_to=rows["period_end"].max(),
+        tables={"paystubs": rows},
+        keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]},
+        notes=notes,
+    )
 
 
 def _parse_one(text):
@@ -96,21 +107,21 @@ def _parse_one(text):
 
     top = _index(lines, lambda l: "Pay Statement" in l, what="title")
     details = _index(lines, lambda l: l.strip().startswith("Pay Details"), top, "Pay Details")
-    employer = next((t.text for l in lines[top + 1:details] for t in tokens(l)[:1]
-                     if t.start < 5), "")
-    person_line = next(l for l in lines[details + 1:] if l.strip())
+    employer = next((t.text for l in lines[top + 1 : details] for t in tokens(l)[:1] if t.start < 5), "")
+    person_line = next(l for l in lines[details + 1 :] if l.strip())
     person = tokens(person_line)[0].text.split()[0].lower()
 
     head = _index(lines, lambda l: "Pay Type" in l and "Deduction" in l, details, "earnings header")
     taxes_at = _index(lines, lambda l: l.strip() == "Taxes", head, "Taxes section")
     ded_col = lines[head].find("Deduction")
     earn_edges = _header_edges(lines[head], ["Hours", "Pay Rate", "Current", "YTD"])
-    ded_edges = _header_edges(lines[head][ded_col:], ["Employee Current", "Employee YTD",
-                                                       "Employer Current", "Employer YTD"])
+    ded_edges = _header_edges(
+        lines[head][ded_col:], ["Employee Current", "Employee YTD", "Employer Current", "Employer YTD"]
+    )
     ded_edges = [e + ded_col for e in ded_edges]
 
     items = []
-    for line in lines[head + 1:taxes_at]:
+    for line in lines[head + 1 : taxes_at]:
         toks = tokens(line)
         left = [t for t in toks if t.start < ded_col - 2]
         right = [t for t in toks if t.start >= ded_col - 2]
@@ -129,7 +140,7 @@ def _parse_one(text):
 
     summary_at = _index(lines, lambda l: l.strip() == "Pay Summary", taxes_at, "Pay Summary")
     tax_head = _index(lines, lambda l: "Based On" in l, taxes_at, "taxes header")
-    for line in lines[tax_head + 1:summary_at]:
+    for line in lines[tax_head + 1 : summary_at]:
         toks = tokens(line)
         if line.strip().startswith(("Paid Time Off", "Net Pay Distribution")):
             break
@@ -138,7 +149,7 @@ def _parse_one(text):
             items.append((toks[0].text, "tax", nums[1], nums[2]))
 
     summary = {}
-    for line in lines[summary_at + 1:]:
+    for line in lines[summary_at + 1 :]:
         toks = tokens(line)
         if toks and toks[0].text in ("Current", "YTD"):
             summary[toks[0].text] = [t.value for t in toks[1:] if t.numeric]
@@ -167,10 +178,14 @@ def _parse_one(text):
                 notes.append(str(e).replace("failed self-checks", "YTD differs from its lines"))
 
     memo = pd.DataFrame(
-        [(label, "memo", c, y) for label, c, y in zip(
-            ("Gross", "FIT Taxable Wages", "Taxes", "Deductions", "Net Pay"),
-            summary["Current"], summary["YTD"])],
-        columns=df.columns)
+        [
+            (label, "memo", c, y)
+            for label, c, y in zip(
+                ("Gross", "FIT Taxable Wages", "Taxes", "Deductions", "Net Pay"), summary["Current"], summary["YTD"]
+            )
+        ],
+        columns=df.columns,
+    )
     rows = pd.concat([df, memo], ignore_index=True)
     stub = re.search(r"Document\s+(\d+)", text)
     if stub:

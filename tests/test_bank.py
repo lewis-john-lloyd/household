@@ -20,14 +20,17 @@ def sgml(transactions, balance="512.34", acct="99-1234", status="0"):
     body = "".join(
         f"<STMTTRN>\r\n<TRNTYPE>{kind}\r\n<DTPOSTED>{d(*when)}120000.000[0:GMT]\r\n<TRNAMT>{amount}\r\n"
         f"<FITID>{fitid}\r\n<NAME>{name}\r\n<MEMO>\r\n</STMTTRN>\r\n"
-        for kind, when, amount, fitid, name in transactions)
-    return ("OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nCHARSET:1252\r\n\r\n<OFX>\r\n<SIGNONMSGSRSV1>"
-            f"\r\n<SONRS>\r\n<STATUS>\r\n<CODE>{status}\r\n<SEVERITY>INFO\r\n</STATUS>\r\n<FI>\r\n<ORG>Example CU"
-            "\r\n</FI>\r\n</SONRS>\r\n</SIGNONMSGSRSV1>\r\n<BANKMSGSRSV1>\r\n<STMTTRNRS>\r\n<STMTRS>\r\n"
-            f"<CURDEF>USD\r\n<BANKACCTFROM>\r\n<BANKID>1\r\n<ACCTID>{acct}\r\n<ACCTTYPE>CHECKING\r\n"
-            f"</BANKACCTFROM>\r\n<BANKTRANLIST>\r\n<DTSTART>{d(1, 1)}\r\n<DTEND>{d(1, 31)}\r\n{body}"
-            f"</BANKTRANLIST>\r\n<LEDGERBAL>\r\n<BALAMT>{balance}\r\n<DTASOF>{d(2, 1)}\r\n</LEDGERBAL>\r\n"
-            "</STMTRS>\r\n</STMTTRNRS>\r\n</BANKMSGSRSV1>\r\n</OFX>\r\n")
+        for kind, when, amount, fitid, name in transactions
+    )
+    return (
+        "OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nCHARSET:1252\r\n\r\n<OFX>\r\n<SIGNONMSGSRSV1>"
+        f"\r\n<SONRS>\r\n<STATUS>\r\n<CODE>{status}\r\n<SEVERITY>INFO\r\n</STATUS>\r\n<FI>\r\n<ORG>Example CU"
+        "\r\n</FI>\r\n</SONRS>\r\n</SIGNONMSGSRSV1>\r\n<BANKMSGSRSV1>\r\n<STMTTRNRS>\r\n<STMTRS>\r\n"
+        f"<CURDEF>USD\r\n<BANKACCTFROM>\r\n<BANKID>1\r\n<ACCTID>{acct}\r\n<ACCTTYPE>CHECKING\r\n"
+        f"</BANKACCTFROM>\r\n<BANKTRANLIST>\r\n<DTSTART>{d(1, 1)}\r\n<DTEND>{d(1, 31)}\r\n{body}"
+        f"</BANKTRANLIST>\r\n<LEDGERBAL>\r\n<BALAMT>{balance}\r\n<DTASOF>{d(2, 1)}\r\n</LEDGERBAL>\r\n"
+        "</STMTRS>\r\n</STMTTRNRS>\r\n</BANKMSGSRSV1>\r\n</OFX>\r\n"
+    )
 
 
 def xml_card(transactions, balance="-42.10"):
@@ -35,33 +38,45 @@ def xml_card(transactions, balance="-42.10"):
         f"<STMTTRN><TRNTYPE>{kind}</TRNTYPE><DTPOSTED>{d(*when)}000000.000</DTPOSTED>"
         f"<TRNAMT>{amount}</TRNAMT><FITID>{fitid}</FITID><NAME>{name}</NAME>"
         f"<CCACCTTO><ACCTID>7777</ACCTID></CCACCTTO><MEMO>{memo}</MEMO></STMTTRN>"
-        for kind, when, amount, fitid, name, memo in transactions)
-    return ('<?xml version="1.0" encoding="utf-8" ?><?OFX OFXHEADER="200" VERSION="202"?><OFX>'
-            "<SIGNONMSGSRSV1><SONRS><STATUS><CODE>0</CODE></STATUS><FI><ORG>Example Card</ORG></FI></SONRS>"
-            "</SIGNONMSGSRSV1><CREDITCARDMSGSRSV1><CCSTMTTRNRS><STATUS><CODE>0</CODE></STATUS><CCSTMTRS>"
-            "<CURDEF>USD</CURDEF><CCACCTFROM><ACCTID>0042</ACCTID></CCACCTFROM><BANKTRANLIST>"
-            f"<DTSTART>{d(1, 1)}</DTSTART><DTEND>{d(1, 31)}</DTEND>{body}</BANKTRANLIST>"
-            f"<LEDGERBAL><BALAMT>{balance}</BALAMT><DTASOF>{d(2, 1)}</DTASOF></LEDGERBAL>"
-            "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>")
+        for kind, when, amount, fitid, name, memo in transactions
+    )
+    return (
+        '<?xml version="1.0" encoding="utf-8" ?><?OFX OFXHEADER="200" VERSION="202"?><OFX>'
+        "<SIGNONMSGSRSV1><SONRS><STATUS><CODE>0</CODE></STATUS><FI><ORG>Example Card</ORG></FI></SONRS>"
+        "</SIGNONMSGSRSV1><CREDITCARDMSGSRSV1><CCSTMTTRNRS><STATUS><CODE>0</CODE></STATUS><CCSTMTRS>"
+        "<CURDEF>USD</CURDEF><CCACCTFROM><ACCTID>0042</ACCTID></CCACCTFROM><BANKTRANLIST>"
+        f"<DTSTART>{d(1, 1)}</DTSTART><DTEND>{d(1, 31)}</DTEND>{body}</BANKTRANLIST>"
+        f"<LEDGERBAL><BALAMT>{balance}</BALAMT><DTASOF>{d(2, 1)}</DTASOF></LEDGERBAL>"
+        "</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>"
+    )
 
 
-CHECKING = [("DEBIT", (1, 5), "-12.50", "A1", "COFFEE SHOP"), ("CREDIT", (1, 9), "100.00", "A2", "PAYROLL"),
-            ("DEBIT", (1, 9), "-12.50", "A3", "COFFEE SHOP")]
-CARD = [("DEBIT", (1, 3), "-30.00", "C1", "GROCER", "GROCER"),
-        ("CREDIT", (1, 20), "25.00", "C2", "PAYMENT THANK YOU", "AUTOPAY")]
+CHECKING = [
+    ("DEBIT", (1, 5), "-12.50", "A1", "COFFEE SHOP"),
+    ("CREDIT", (1, 9), "100.00", "A2", "PAYROLL"),
+    ("DEBIT", (1, 9), "-12.50", "A3", "COFFEE SHOP"),
+]
+CARD = [
+    ("DEBIT", (1, 3), "-30.00", "C1", "GROCER", "GROCER"),
+    ("CREDIT", (1, 20), "25.00", "C2", "PAYMENT THANK YOU", "AUTOPAY"),
+]
 
-ACCOUNTS = pd.DataFrame([
-    {"account_id": "bills", "type": "checking", "last4": "1234"},
-    {"account_id": "card", "type": "credit_card", "last4": "42"},  # a Sheet drops the leading zeros
-    {"account_id": "savings", "type": "savings", "last4": ""},
-    {"account_id": "usaa_card", "type": "credit_card", "last4": ""},
-])
+ACCOUNTS = pd.DataFrame(
+    [
+        {"account_id": "bills", "type": "checking", "last4": "1234"},
+        {"account_id": "card", "type": "credit_card", "last4": "42"},  # a Sheet drops the leading zeros
+        {"account_id": "savings", "type": "savings", "last4": ""},
+        {"account_id": "usaa_card", "type": "credit_card", "last4": ""},
+    ]
+)
 
-USAA = ("Date,Description,Original Description,Category,Amount,Status\n"
-        '2001-01-05,"Grocer","GROCER   STORE 12  ANYTOWN",Groceries,30.00,Posted\n'
-        '2001-01-05,"Grocer","GROCER   STORE 12  ANYTOWN",Groceries,30.00,Posted\n'
-        '2001-01-07,"Card Payment","CARD PAYMENT",Credit Card Payment,-55.00,Posted\n'
-        '2001-01-08,"Cafe","CAFE",Category Pending,4.00,Pending\n')
+USAA = (
+    "Date,Description,Original Description,Category,Amount,Status\n"
+    '2001-01-05,"Grocer","GROCER   STORE 12  ANYTOWN",Groceries,30.00,Posted\n'
+    '2001-01-05,"Grocer","GROCER   STORE 12  ANYTOWN",Groceries,30.00,Posted\n'
+    '2001-01-07,"Card Payment","CARD PAYMENT",Credit Card Payment,-55.00,Posted\n'
+    '2001-01-08,"Cafe","CAFE",Category Pending,4.00,Pending\n'
+)
 
 
 def test_sgml_download_gives_transactions_balance_and_last_four():
@@ -74,8 +89,7 @@ def test_sgml_download_gives_transactions_balance_and_last_four():
     assert list(t["payee_raw"]) == ["COFFEE SHOP", "PAYROLL", "COFFEE SHOP"]
     assert set(t["source"]) == {"ofx"} and (t["note"] == "").all()  # the empty SGML <MEMO> is no aggregate
     assert r.account_hint == "1234" and (r.covers_from, r.covers_to) == ("2001-01-01", "2001-01-31")
-    assert r.tables["balances"].to_dict("records") == [{"as_of": "2001-02-01", "account_id": "",
-                                                        "balance": 512.34}]
+    assert r.tables["balances"].to_dict("records") == [{"as_of": "2001-02-01", "account_id": "", "balance": 512.34}]
 
 
 def test_xml_card_download_keeps_memo_and_cardholder():
@@ -86,12 +100,15 @@ def test_xml_card_download_keeps_memo_and_cardholder():
     assert r.account_hint == "0042" and r.tables["balances"]["balance"][0] == -42.10
 
 
-@pytest.mark.parametrize("change, message", [
-    (lambda t: t.replace("<TRNAMT>-12.50", "<TRNAMT>12.50", 1), "DEBIT"),
-    (lambda t: t.replace("<FITID>A3", "<FITID>A1"), "repeated FITID"),
-    (lambda t: t.replace("<CODE>0", "<CODE>2000"), "status"),
-    (lambda t: t.replace("<CURDEF>USD", "<CURDEF>CAD"), "currency"),
-])
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        (lambda t: t.replace("<TRNAMT>-12.50", "<TRNAMT>12.50", 1), "DEBIT"),
+        (lambda t: t.replace("<FITID>A3", "<FITID>A1"), "repeated FITID"),
+        (lambda t: t.replace("<CODE>0", "<CODE>2000"), "status"),
+        (lambda t: t.replace("<CURDEF>USD", "<CURDEF>CAD"), "currency"),
+    ],
+)
 def test_ofx_checks(change, message):
     with pytest.raises(ParseError, match=message):
         ofx.parse(change(sgml(CHECKING)))
@@ -135,9 +152,11 @@ def test_fitid_ids_are_stable_across_downloads_and_belong_to_the_account():
     assert set(two.tables["balances"]["account_id"]) == {"bills"} and two.account_id == "bills"
 
 
-SEED = ("account_id,institution,owner,type,tax_treatment,opened,closed,last4,expected_docs,max_gap_days\n"
-        "bills,Example Bank,joint,checking,none,,,1234,monthly_statement,45\n"
-        "usaa_card,Example Bank,joint,credit_card,none,,,,monthly_statement,45\n")
+SEED = (
+    "account_id,institution,owner,type,tax_treatment,opened,closed,last4,expected_docs,max_gap_days\n"
+    "bills,Example Bank,joint,checking,none,,,1234,monthly_statement,45\n"
+    "usaa_card,Example Bank,joint,credit_card,none,,,,monthly_statement,45\n"
+)
 
 
 def test_inbox_files_downloads_by_account_and_adds_overlaps_once(setup):  # noqa: F811
@@ -163,17 +182,19 @@ def test_inbox_files_downloads_by_account_and_adds_overlaps_once(setup):  # noqa
     assert docs.loc["usaa_card.csv", "account_id"] == "usaa_card"
 
 
-BOA = ("Posted Date,Reference Number,Payee,Address,Amount\r\n"
-       '01/05/2001,REF003,"CARD PAYMENT","",68.15\r\n'
-       '12/29/2000,REF002,"STREAMING*ONE  example.com/billCA","example.com/bill CA ",-31.79\r\n'
-       '12/27/2000,REF001,"STREAMING TWO","",-36.36\r\n')
+BOA = (
+    "Posted Date,Reference Number,Payee,Address,Amount\r\n"
+    '01/05/2001,REF003,"CARD PAYMENT","",68.15\r\n'
+    '12/29/2000,REF002,"STREAMING*ONE  example.com/billCA","example.com/bill CA ",-31.79\r\n'
+    '12/27/2000,REF001,"STREAMING TWO","",-36.36\r\n'
+)
 
 
 def test_boa_statement_keys_on_reference_and_takes_last_four_from_the_name():
     from household.parsers import boa_csv
+
     assert identify(BOA) is boa_csv
-    accounts = pd.concat([ACCOUNTS, pd.DataFrame([{"account_id": "boa", "type": "credit_card",
-                                                   "last4": "4321"}])])
+    accounts = pd.concat([ACCOUNTS, pd.DataFrame([{"account_id": "boa", "type": "credit_card", "last4": "4321"}])])
     r = ingest.finish_bank_rows(boa_csv.parse(BOA), "January2001_4321.csv", accounts, "now")
     t = r.tables["transactions"]
     assert list(t["amount"]) == [68.15, -31.79, -36.36]  # signed as in the ledger already
@@ -183,8 +204,11 @@ def test_boa_statement_keys_on_reference_and_takes_last_four_from_the_name():
 
 
 def test_xml_entities_and_amex_account_ids():
-    text = xml_card(CARD).replace("GROCER</NAME>", "SALT &amp; PEPPER</NAME>", 1).replace(
-        "<ACCTID>0042</ACCTID></CCACCTFROM>", "<ACCTID>TOKEN9|31042</ACCTID></CCACCTFROM>")
+    text = (
+        xml_card(CARD)
+        .replace("GROCER</NAME>", "SALT &amp; PEPPER</NAME>", 1)
+        .replace("<ACCTID>0042</ACCTID></CCACCTFROM>", "<ACCTID>TOKEN9|31042</ACCTID></CCACCTFROM>")
+    )
     r = ofx.parse(text)
     assert r.tables["transactions"]["payee_raw"][0] == "SALT & PEPPER"
     assert r.account_hint == "1042"
@@ -193,16 +217,19 @@ def test_xml_entities_and_amex_account_ids():
 
 
 CASH = chr(36)  # QIF split amounts start with a dollar sign
-PAYPAL = ("!Type:Cash\r\nD01/05/2001\r\nT-26.50\r\nLPreApproved Payment Bill User Payment\r\n"
-          f"SPreApproved Payment Bill User Payment\r\n{CASH}-26.50\r\nSFee\r\n{CASH}0.00\r\nCX\r\nPA Newspaper\r\n^\r\n"
-          "!Type:Cash\r\nD01/05/2001\r\nT26.50\r\nLGeneral Card Deposit\r\nCX\r\nP\r\n^\r\n"
-          "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLGeneral Authorization\r\nCX\r\nPA Store\r\n^\r\n"
-          "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLExpress Checkout Payment\r\nCX\r\nMA desk\r\nPA Store\r\n^\r\n"
-          "!Type:Cash\r\nD01/07/2001\r\nT75.00\r\nLMobile Payment\r\nCX\r\nPA Friend\r\n^\r\n")
+PAYPAL = (
+    "!Type:Cash\r\nD01/05/2001\r\nT-26.50\r\nLPreApproved Payment Bill User Payment\r\n"
+    f"SPreApproved Payment Bill User Payment\r\n{CASH}-26.50\r\nSFee\r\n{CASH}0.00\r\nCX\r\nPA Newspaper\r\n^\r\n"
+    "!Type:Cash\r\nD01/05/2001\r\nT26.50\r\nLGeneral Card Deposit\r\nCX\r\nP\r\n^\r\n"
+    "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLGeneral Authorization\r\nCX\r\nPA Store\r\n^\r\n"
+    "!Type:Cash\r\nD01/06/2001\r\nT-1,040.00\r\nLExpress Checkout Payment\r\nCX\r\nMA desk\r\nPA Store\r\n^\r\n"
+    "!Type:Cash\r\nD01/07/2001\r\nT75.00\r\nLMobile Payment\r\nCX\r\nPA Friend\r\n^\r\n"
+)
 
 
 def test_paypal_keeps_payments_with_a_counterparty_and_drops_funding_and_holds():
     from household.parsers import paypal_qif
+
     assert identify(PAYPAL) is paypal_qif
     r = paypal_qif.parse(PAYPAL)
     d = r.tables["payment_details"]

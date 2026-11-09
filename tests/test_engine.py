@@ -23,8 +23,10 @@ class FakeClient:
     def __init__(self):
         self.files = {}
         legacy = FakeSpreadsheet("budget-reports")
-        legacy.tabs = {"2001-data": FakeWorksheet("2001-data", legacy_rows("legacy_data.csv")),
-                       "2001": FakeWorksheet("2001", legacy_rows("legacy_rollup.csv"))}
+        legacy.tabs = {
+            "2001-data": FakeWorksheet("2001-data", legacy_rows("legacy_data.csv")),
+            "2001": FakeWorksheet("2001", legacy_rows("legacy_rollup.csv")),
+        }
         self.legacy = legacy
 
     def open(self, title, folder_id=None):
@@ -78,8 +80,7 @@ def test_ingest_then_compute_then_rerun(session):
 
     legacy = engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")
     assert legacy["appended"] == legacy["read"] == 6
-    computed = engine.compute_all(session, session.root, "legacy-key", legacy_year=2001,
-                                  run_id="run-2")
+    computed = engine.compute_all(session, session.root, "legacy-key", legacy_year=2001, run_id="run-2")
     assert computed["mismatches"] == 0 and computed["possible_duplicates"] == 0
     assert computed["tax_check_mismatches"] == 0
     assert computed["withholding_unexplained"] == 0  # the synthetic stub is from 2001: no tables
@@ -112,9 +113,12 @@ def test_review_reads_answers_and_rewrites_the_queue(session):
     engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
     ledger = session.sheets.files["ledger"]
     ledger.worksheet("categories").append_rows([["food", "food", "high"], ["household", "household", "medium"]])
-    ledger.worksheet("transactions").append_rows([
-        ["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"],
-        ["b2", "2025-09-01", "card", -14.0, "QUILL & INK #2", "", "FALSE", "", "ofx", "ledger", "", "t"]])
+    ledger.worksheet("transactions").append_rows(
+        [
+            ["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"],
+            ["b2", "2025-09-01", "card", -14.0, "QUILL & INK #2", "", "FALSE", "", "ofx", "ledger", "", "t"],
+        ]
+    )
 
     first = engine.review(session, session.root, log=None)
     queue = rows(ledger, "review")
@@ -134,8 +138,9 @@ def test_answers_written_before_the_review_tab_failed_to_rewrite_are_not_written
     engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
     ledger = session.sheets.files["ledger"]
     ledger.worksheet("categories").append_rows([["food", "food", "high"], ["household", "household", "medium"]])
-    ledger.worksheet("transactions").append_rows([
-        ["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"]])
+    ledger.worksheet("transactions").append_rows(
+        [["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"]]
+    )
     engine.review(session, session.root, log=None)
     tab = ledger.worksheet("review").rows
     tab[1][tab[0].index("answer")] = "household"
@@ -143,6 +148,7 @@ def test_answers_written_before_the_review_tab_failed_to_rewrite_are_not_written
 
     def fails(*a, **k):
         raise RuntimeError("503: the service is unavailable")
+
     monkeypatch.setattr(sheets, "rewrite_review", fails)
     with pytest.raises(RuntimeError):
         engine.review(session, session.root, log=None, now="2026-11-01T00:00:00")
@@ -150,7 +156,9 @@ def test_answers_written_before_the_review_tab_failed_to_rewrite_are_not_written
     monkeypatch.setattr(sheets, "rewrite_review", real)
     again = engine.review(session, session.root, log=None, now="2026-11-01T00:05:00")
     assert again["questions"] == 0
-    assert rows(ledger, "proposal_decisions")[["proposal_key", "note"]].values.tolist() == [["payee:QUILL & INK", "household"]]
+    assert rows(ledger, "proposal_decisions")[["proposal_key", "note"]].values.tolist() == [
+        ["payee:QUILL & INK", "household"]
+    ]
 
 
 def test_compute_writes_the_mortgage_schedule_when_a_loan_is_on_file(session):
@@ -166,8 +174,13 @@ def test_compute_writes_the_mortgage_schedule_when_a_loan_is_on_file(session):
 
 def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session):
     import json
-    for name, mime in (("pay_statement.pdf", "application/pdf"), ("schwab_equity.csv", "text/csv"),
-                       ("accounts_seed.csv", "text/csv"), ("return_facts.csv", "text/csv")):
+
+    for name, mime in (
+        ("pay_statement.pdf", "application/pdf"),
+        ("schwab_equity.csv", "text/csv"),
+        ("accounts_seed.csv", "text/csv"),
+        ("return_facts.csv", "text/csv"),
+    ):
         drop(session, name, mime)
     engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
     engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")
@@ -196,8 +209,12 @@ def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session)
 
 
 def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(session):
-    for name, mime in (("pay_statement.pdf", "application/pdf"), ("schwab_equity.csv", "text/csv"),
-                       ("accounts_seed.csv", "text/csv"), ("return_facts.csv", "text/csv")):
+    for name, mime in (
+        ("pay_statement.pdf", "application/pdf"),
+        ("schwab_equity.csv", "text/csv"),
+        ("accounts_seed.csv", "text/csv"),
+        ("return_facts.csv", "text/csv"),
+    ):
         drop(session, name, mime)
     printed = {"ingest": [], "compute": []}
     engine.ingest_inbox(session, session.root, run_id="run-1", log=printed["ingest"].append)
@@ -206,22 +223,43 @@ def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(sessio
     notes = sheets.read_table(session.sheets.files[sheets.REPORTS_TITLE], schema.table(schema.REPORTS, "run_notes"))
     for stage, lines in printed.items():
         kept = notes[notes["stage"] == stage].sort_values("n", key=lambda n: n.astype(int))["message"].tolist()
-        assert kept[:len(lines)] == [str(line) for line in lines]  # ingest adds the parsers' notes after
+        assert kept[: len(lines)] == [str(line) for line in lines]  # ingest adds the parsers' notes after
     assert len(notes[notes["stage"] == "compute"]) == len(printed["compute"])
 
 
 def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(session):
     import json
+
     seed = "category,group,priority\nfood,living,high\nkids,family,high\n"
     session._drive.add("categories.csv", session.box, "text/csv", seed.encode())
     engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
     edits = session._drive.folder("web_edits", session.box)
-    change = {"format": "household_changes", "version": 1, "created_at": "2026-01-31T12:00:00Z", "base_run": "run-1",
-              "edits": [{"kind": "budget_line", "line": "groceries", "effective": "2026-01-01", "rule": "fixed",
-                         "category": "food", "amount": "50", "per": "weekly", "was": None},
-                        {"kind": "category", "category": "food", "group": "groceries", "priority": "high",
-                         "was": {"group": "living", "priority": "high"}},
-                        {"kind": "parameter", "key": "transfer_account", "value": "checking", "was": None}]}
+    change = {
+        "format": "household_changes",
+        "version": 1,
+        "created_at": "2026-01-31T12:00:00Z",
+        "base_run": "run-1",
+        "edits": [
+            {
+                "kind": "budget_line",
+                "line": "groceries",
+                "effective": "2026-01-01",
+                "rule": "fixed",
+                "category": "food",
+                "amount": "50",
+                "per": "weekly",
+                "was": None,
+            },
+            {
+                "kind": "category",
+                "category": "food",
+                "group": "groceries",
+                "priority": "high",
+                "was": {"group": "living", "priority": "high"},
+            },
+            {"kind": "parameter", "key": "transfer_account", "value": "checking", "was": None},
+        ],
+    }
     session._drive.add("changes_2026-01-31T120000Z.json", edits, "application/json", json.dumps(change).encode())
     lines = []
     ingested = engine.ingest_inbox(session, session.root, run_id="run-2", log=lines.append)
@@ -235,19 +273,37 @@ def test_a_change_set_from_the_views_reaches_the_ledger_and_the_editor_tables(se
     assert (line["line"], line["in_words"], line["in_force"]) == ("groceries", "50.00 a week", "yes")
     assert read("editor_categories").set_index("category").at["food", "group"] == "groceries"
     settings_now = read("editor_parameters")
-    assert settings_now[settings_now["value"] != ""][["key", "value"]].values.tolist() == [["transfer_account", "checking"]]
+    assert settings_now[settings_now["value"] != ""][["key", "value"]].values.tolist() == [
+        ["transfer_account", "checking"]
+    ]
 
 
 def test_change_sets_written_come_from_the_ledger_and_reach_back_further_than_a_discard_is_remembered():
     import pandas as pd
     from datetime import datetime, timezone
-    sources = pd.DataFrame([
-        {"kind": "changes", "original_name": "changes_2026-01-31T120000.000Z_e5.json", "drive_link": "https://drive.example/file/d/e5",
-         "received_at": "2026-01-31T12:10:00+00:00"},
-        {"kind": "changes", "original_name": "changes_2025-11-01T120000.000Z_a1.json", "drive_link": "https://drive.example/file/d/a1",
-         "received_at": "2025-11-01T12:10:00+00:00"},
-        {"kind": "paystub", "original_name": "pay_statement.pdf", "drive_link": "https://drive.example/file/d/p1",
-         "received_at": "2026-01-31T12:10:00+00:00"}])
+
+    sources = pd.DataFrame(
+        [
+            {
+                "kind": "changes",
+                "original_name": "changes_2026-01-31T120000.000Z_e5.json",
+                "drive_link": "https://drive.example/file/d/e5",
+                "received_at": "2026-01-31T12:10:00+00:00",
+            },
+            {
+                "kind": "changes",
+                "original_name": "changes_2025-11-01T120000.000Z_a1.json",
+                "drive_link": "https://drive.example/file/d/a1",
+                "received_at": "2025-11-01T12:10:00+00:00",
+            },
+            {
+                "kind": "paystub",
+                "original_name": "pay_statement.pdf",
+                "drive_link": "https://drive.example/file/d/p1",
+                "received_at": "2026-01-31T12:10:00+00:00",
+            },
+        ]
+    )
     out = engine.changes_written(sources, now=datetime(2026, 2, 1, tzinfo=timezone.utc))
     assert out.values.tolist() == [["e5", "changes_2026-01-31T120000.000Z_e5.json", "2026-01-31T12:10:00+00:00"]]
     assert engine.CHANGES_WRITTEN_DAYS > 30
@@ -258,12 +314,57 @@ def test_review_answers_the_ledger_already_holds_are_not_written_again():
     # the answers were written, then rewriting the review tab failed: the next run reads them again
     import pandas as pd
     from household.engine import _not_yet
-    held = pd.DataFrame([{"proposal_key": "payee:ACME GROCER", "kind": "payee", "decided_at": "t1", "decision": "approve", "note": "food"},
-                         {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t1", "decision": "approve", "note": "gifts"},
-                         {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t2", "decision": "approve", "note": "kids"}])
-    again = pd.DataFrame([{"proposal_key": "payee:ACME GROCER", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "food"},
-                          {"proposal_key": "payee:WILLOW ST", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "gifts"},
-                          {"proposal_key": "payee:QUILL & INK", "kind": "payee", "decided_at": "t3", "decision": "approve", "note": "hobby"}])
+
+    held = pd.DataFrame(
+        [
+            {
+                "proposal_key": "payee:ACME GROCER",
+                "kind": "payee",
+                "decided_at": "t1",
+                "decision": "approve",
+                "note": "food",
+            },
+            {
+                "proposal_key": "payee:WILLOW ST",
+                "kind": "payee",
+                "decided_at": "t1",
+                "decision": "approve",
+                "note": "gifts",
+            },
+            {
+                "proposal_key": "payee:WILLOW ST",
+                "kind": "payee",
+                "decided_at": "t2",
+                "decision": "approve",
+                "note": "kids",
+            },
+        ]
+    )
+    again = pd.DataFrame(
+        [
+            {
+                "proposal_key": "payee:ACME GROCER",
+                "kind": "payee",
+                "decided_at": "t3",
+                "decision": "approve",
+                "note": "food",
+            },
+            {
+                "proposal_key": "payee:WILLOW ST",
+                "kind": "payee",
+                "decided_at": "t3",
+                "decision": "approve",
+                "note": "gifts",
+            },
+            {
+                "proposal_key": "payee:QUILL & INK",
+                "kind": "payee",
+                "decided_at": "t3",
+                "decision": "approve",
+                "note": "hobby",
+            },
+        ]
+    )
     out = _not_yet(again, held, ["proposal_key"], ["kind", "decision", "note"])
     # the same as the latest is skipped; back to an earlier answer, or a new payee, is written
     assert out["proposal_key"].tolist() == ["payee:WILLOW ST", "payee:QUILL & INK"]

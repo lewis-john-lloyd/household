@@ -26,8 +26,21 @@ from test_inbox import FakeDrive  # noqa: F401
 from test_retirement import household, params, person
 
 GOLDEN = Path(__file__).parent / "golden.json"
-VOLATILE = {"run_id", "computed_at", "seconds", "at", "started_at", "finished_at", "recorded_at", "received_at",
-            "elapsed", "took", "drive_link", "doc_id", "sha256"}
+VOLATILE = {
+    "run_id",
+    "computed_at",
+    "seconds",
+    "at",
+    "started_at",
+    "finished_at",
+    "recorded_at",
+    "received_at",
+    "elapsed",
+    "took",
+    "drive_link",
+    "doc_id",
+    "sha256",
+}
 
 
 def digest(df):
@@ -60,14 +73,32 @@ def check(name, tables):
 
 
 def test_the_retirement_plan_is_unchanged():
-    h = household(monte_carlo_runs=100, plan_to_age=85,
-                  people=[person(born=date(1966, 6, 1), first=1990), person("sam", date(1968, 2, 1), 30_000, 1992)])
+    h = household(
+        monte_carlo_runs=100,
+        plan_to_age=85,
+        people=[person(born=date(1966, 6, 1), first=1990), person("sam", date(1968, 2, 1), 30_000, 1992)],
+    )
     years, table, plan, ss, earned, notes = R.run(h, params(), "2026-11-01")
-    path, rows = R.spending_path({"food": 10.0, "camps": 2.0}, {"food": "food", "camps": "kids"}, range(2030, 2041),
-                                 {"kids": [(2035, 0.0)]}, {"acme_loan": (2037, 3.0)})
-    check("retirement", {"years": years, "strategies": table, "plan": plan, "social_security": ss,
-                         "earnings": earned, "notes": pd.DataFrame({"note": notes}),
-                         "spending_path": pd.DataFrame(sorted(path.items())), "spending_rows": pd.DataFrame(rows)})
+    path, rows = R.spending_path(
+        {"food": 10.0, "camps": 2.0},
+        {"food": "food", "camps": "kids"},
+        range(2030, 2041),
+        {"kids": [(2035, 0.0)]},
+        {"acme_loan": (2037, 3.0)},
+    )
+    check(
+        "retirement",
+        {
+            "years": years,
+            "strategies": table,
+            "plan": plan,
+            "social_security": ss,
+            "earnings": earned,
+            "notes": pd.DataFrame({"note": notes}),
+            "spending_path": pd.DataFrame(sorted(path.items())),
+            "spending_rows": pd.DataFrame(rows),
+        },
+    )
 
 
 @freeze_time("2026-11-09 12:00:00")
@@ -133,22 +164,32 @@ OJU1,S&P 500 index (plan),SDT,,,
 
 def golden_ofx():
     from test_bank import sgml
-    return sgml([("DEBIT", (1, 5), "-12.50", "G1", "ACME GROCER"), ("CREDIT", (1, 9), "90.00", "G2", "ACME WIDGETS PAYROLL"),
-                ("DEBIT", (1, 12), "-20.00", "G3", "PAGE TURNER BOOKS"), ("DEBIT", (1, 20), "-7.50", "G4", "WILLOW ST")],
-               acct="99-1234")
+
+    return sgml(
+        [
+            ("DEBIT", (1, 5), "-12.50", "G1", "ACME GROCER"),
+            ("CREDIT", (1, 9), "90.00", "G2", "ACME WIDGETS PAYROLL"),
+            ("DEBIT", (1, 12), "-20.00", "G3", "PAGE TURNER BOOKS"),
+            ("DEBIT", (1, 20), "-7.50", "G4", "WILLOW ST"),
+        ],
+        acct="99-1234",
+    )
 
 
 @freeze_time("2026-11-09 12:00:00")
 def test_a_fuller_household_through_ingest_and_compute_is_unchanged(session):  # noqa: F811
     from test_fidelity import IRA
     from test_fidelity_positions import FILE as POSITIONS
+
     for name, text in GOLDEN_FILES.items():
         session._drive.add(name, session.box, "text/csv", text.encode())
     session._drive.add("history_a_ira.csv", session.box, "text/csv", IRA.encode("utf-8"))
     session._drive.add("portfolio_positions.csv", session.box, "text/csv", POSITIONS.encode())
     session._drive.add("checking.qfx", session.box, "application/octet-stream", golden_ofx().encode())
     first = engine.ingest_inbox(session, session.root, run_id="golden-1")
-    assert "refused" not in first["counts"] and "failed" not in first["counts"] and "unrecognized" not in first["counts"], first
+    assert (
+        "refused" not in first["counts"] and "failed" not in first["counts"] and "unrecognized" not in first["counts"]
+    ), first
     engine.compute_all(session, session.root, run_id="golden-2")
     tables = {}
     for book in ("ledger", "reports"):

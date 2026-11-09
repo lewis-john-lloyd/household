@@ -55,10 +55,14 @@ ONE_BY_ONE = tuple(explain.ORDER_SERVICES)  # an unmatched line from a store wit
 DECISION_KIND = "category"
 
 # processor prefixes in front of the merchant ("APLPAY WILLOW ST", "TST* CAFE", "SQ *SHOP")
-PREFIX = re.compile(r"^(APLPAY|GGLPAY|GOOGLE PAY|TST\s?\*?|SQ\s?\*|SP\s|PY\s?\*|DD\s?\*|PAYPAL\s?\*|BT\s?\*|"
-                    r"IC\s?\*|CKO\s?\*|FS\s?\*|PP\s?\*)\s*")
-STATE = re.compile(r"(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|"
-                   r"NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)")
+PREFIX = re.compile(
+    r"^(APLPAY|GGLPAY|GOOGLE PAY|TST\s?\*?|SQ\s?\*|SP\s|PY\s?\*|DD\s?\*|PAYPAL\s?\*|BT\s?\*|"
+    r"IC\s?\*|CKO\s?\*|FS\s?\*|PP\s?\*)\s*"
+)
+STATE = re.compile(
+    r"(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|"
+    r"NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)"
+)
 NOISE = {"CO", "OP", "INC", "LLC", "COM", "WWW", "THE", "CORP", "LTD", "US", "USA"}
 KEY_WORDS = 3
 SPLIT_PART = re.compile(r"^(?P<category>[a-z][a-z0-9_]*)\s*[:=]?\s*(?:-?\$?-?(?P<amount>\d+(?:\.\d{1,2})?))?$")
@@ -78,23 +82,53 @@ BY_LINE = ("paypal", "venmo", "apple", "google")
 
 # the bank's category (USAA's CSV) to a household category, for guesses only
 BANK_HINTS = {
-    "groceries": "food", "fast food": "restaurant", "restaurants": "restaurant",
-    "food & dining": "restaurant", "coffee shops": "restaurant", "alcohol & bars": "booze",
-    "gas": "petrol", "pharmacy": "medical", "doctor": "medical", "dentist": "dental",
-    "clothing": "clothing", "mortgage & rent": "mortgage", "mortgage payment": "mortgage",
-    "life insurance": "insurance", "health insurance": "insurance", "interest income": "interest",
-    "paycheck": "pay", "income": "pay", "bonus": "pay", "tuition": "tuition", "education": "tuition",
-    "babysitter & daycare": "childcare", "kids activities": "camps", "mobile phone": "phone",
-    "television": "media", "newspapers & magazines": "media", "books": "media", "music": "media",
-    "pet food & supplies": "pets", "veterinary": "pets", "lawn & garden": "garden",
-    "furnishings": "furnishing", "home improvement": "maintenance", "gifts & donations": "charity",
-    "federal tax": "taxes", "state tax": "taxes", "hotel": "travel", "travel": "travel",
-    "rental car & taxi": "travel", "movies & dvds": "culture", "amusement": "culture",
+    "groceries": "food",
+    "fast food": "restaurant",
+    "restaurants": "restaurant",
+    "food & dining": "restaurant",
+    "coffee shops": "restaurant",
+    "alcohol & bars": "booze",
+    "gas": "petrol",
+    "pharmacy": "medical",
+    "doctor": "medical",
+    "dentist": "dental",
+    "clothing": "clothing",
+    "mortgage & rent": "mortgage",
+    "mortgage payment": "mortgage",
+    "life insurance": "insurance",
+    "health insurance": "insurance",
+    "interest income": "interest",
+    "paycheck": "pay",
+    "income": "pay",
+    "bonus": "pay",
+    "tuition": "tuition",
+    "education": "tuition",
+    "babysitter & daycare": "childcare",
+    "kids activities": "camps",
+    "mobile phone": "phone",
+    "television": "media",
+    "newspapers & magazines": "media",
+    "books": "media",
+    "music": "media",
+    "pet food & supplies": "pets",
+    "veterinary": "pets",
+    "lawn & garden": "garden",
+    "furnishings": "furnishing",
+    "home improvement": "maintenance",
+    "gifts & donations": "charity",
+    "federal tax": "taxes",
+    "state tax": "taxes",
+    "hotel": "travel",
+    "travel": "travel",
+    "rental car & taxi": "travel",
+    "movies & dvds": "culture",
+    "amusement": "culture",
     "arts": "culture",
 }
 
 
 # --- payee keys ---------------------------------------------------------------------------------
+
 
 def payee_key(text):
     """The merchant part of a payee, for grouping and for review answers.
@@ -129,8 +163,8 @@ def _words(s):
     return [w for w in words if w not in NOISE]
 
 
-PREFIX_CHARS = 5   # a key this long or longer covers every key that starts with it
-SAME_CHARS = 10    # keys that agree on this many letters are the same merchant (cut-off names)
+PREFIX_CHARS = 5  # a key this long or longer covers every key that starts with it
+SAME_CHARS = 10  # keys that agree on this many letters are the same merchant (cut-off names)
 
 
 def _compact(key):
@@ -154,8 +188,7 @@ def same_merchant(key, answered):
         return True
     # the shared letters must reach past a first word, or every UNIVERSITY ... would be one merchant
     first = min(len(key.split()[0]), len(answered.split()[0]))
-    return (len(a) >= SAME_CHARS and len(b) >= SAME_CHARS and a[:SAME_CHARS] == b[:SAME_CHARS]
-            and first < SAME_CHARS)
+    return len(a) >= SAME_CHARS and len(b) >= SAME_CHARS and a[:SAME_CHARS] == b[:SAME_CHARS] and first < SAME_CHARS
 
 
 def _longest_prefix(key, prefixes):
@@ -180,6 +213,7 @@ def _by_first_word(keys):
 
 # --- rules and decisions ------------------------------------------------------------------------
 
+
 def _rules(payee_rules):
     if payee_rules is None or payee_rules.empty:
         return []
@@ -189,11 +223,16 @@ def _rules(payee_rules):
         if not pattern:
             continue
         prec = str(r.get("precedence", "")).strip()
-        out.append({"pattern": pattern, "regex": re.compile(pattern, re.IGNORECASE),
-                    "category": str(r.get("category", "")).strip(),
-                    "effective": str(r.get("effective", "")).strip()[:10] or "0000",
-                    "precedence": float(prec) if prec else 100.0,
-                    "ask": str(r.get("ask", "")).strip().upper() == "TRUE"})
+        out.append(
+            {
+                "pattern": pattern,
+                "regex": re.compile(pattern, re.IGNORECASE),
+                "category": str(r.get("category", "")).strip(),
+                "effective": str(r.get("effective", "")).strip()[:10] or "0000",
+                "precedence": float(prec) if prec else 100.0,
+                "ask": str(r.get("ask", "")).strip().upper() == "TRUE",
+            }
+        )
     return out
 
 
@@ -228,13 +267,17 @@ def payee_decisions(decisions):
     """{payee key: category} from review answers (proposal_decisions), latest answer per key."""
     if decisions is None or decisions.empty:
         return {}
-    d = decisions[(decisions["kind"] == DECISION_KIND) & (decisions["decision"] == "approve")
-                  & decisions["proposal_key"].astype(str).str.startswith("payee:")]
+    d = decisions[
+        (decisions["kind"] == DECISION_KIND)
+        & (decisions["decision"] == "approve")
+        & decisions["proposal_key"].astype(str).str.startswith("payee:")
+    ]
     d = d.sort_values("decided_at")
-    return {str(k)[len("payee:"):]: str(v).strip() for k, v in zip(d["proposal_key"], d["note"])}
+    return {str(k)[len("payee:") :]: str(v).strip() for k, v in zip(d["proposal_key"], d["note"])}
 
 
 # --- model --------------------------------------------------------------------------------------
+
 
 def _features(df):
     text = df["payee_text"] if "payee_text" in df else df["payee_raw"]
@@ -258,15 +301,22 @@ class Model:
         if len(self.classes) < 2:
             return
         self.pipe = make_pipeline(
-            make_union(TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True,
-                                       min_df=2 if len(labeled) > 100 else 1),
-                       TfidfVectorizer(token_pattern=r"\S+")),
+            make_union(
+                TfidfVectorizer(
+                    analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True, min_df=2 if len(labeled) > 100 else 1
+                ),
+                TfidfVectorizer(token_pattern=r"\S+"),
+            ),
             # saga visits the rows in a random order: a fixed seed makes the same ledger give the same guesses
-            LogisticRegression(C=3, solver="saga", max_iter=200, tol=1e-3, random_state=0))
+            LogisticRegression(C=3, solver="saga", max_iter=200, tol=1e-3, random_state=0),
+        )
         with warnings.catch_warnings():  # saga stops at max_iter on some runs; the fit is still good
             warnings.simplefilter("ignore")
-            self.pipe.fit(_features(labeled), labeled["category"],
-                          logisticregression__sample_weight=np.asarray(weights, dtype=float))
+            self.pipe.fit(
+                _features(labeled),
+                labeled["category"],
+                logisticregression__sample_weight=np.asarray(weights, dtype=float),
+            )
         self.classes = self.pipe.classes_
 
     def proba(self, df):
@@ -279,16 +329,19 @@ class Model:
 
 def training_set(df, exclude=()):
     """Labeled rows and their weights: the old books, heavier from 2023, and every answer since, heaviest."""
-    labeled = df[(df["category"].astype(str).str.strip() != "")
-                 & (df["decided_by"].isin(["old books", "you", "rule", "your decision"]))
-                 & ~df["txn_id"].isin(set(exclude))
-                 & (df["category"] != "transfer")]
+    labeled = df[
+        (df["category"].astype(str).str.strip() != "")
+        & (df["decided_by"].isin(["old books", "you", "rule", "your decision"]))
+        & ~df["txn_id"].isin(set(exclude))
+        & (df["category"] != "transfer")
+    ]
     year = labeled["date"].astype(str).str[:4]
     weights = np.where(labeled["era"] != "legacy", 5.0, np.where(year >= "2023", 2.0, 1.0))
     return labeled, weights
 
 
 # --- categorize ---------------------------------------------------------------------------------
+
 
 def _bank_hint(note):
     parts = str(note).split("|")
@@ -362,8 +415,9 @@ def parse_split(text, amount=None, known=None):
     sign = -1 if float(amount) < 0 else 1
     if rest is not None:
         if given >= line:
-            raise ValueError(f"the parts come to {given / 100:.2f}, leaving nothing of the line's "
-                             f"{line / 100:.2f} for {rest}")
+            raise ValueError(
+                f"the parts come to {given / 100:.2f}, leaving nothing of the line's {line / 100:.2f} for {rest}"
+            )
         parts = [(c, line - given if v is None else v) for c, v in parts]
     elif given != line:
         raise ValueError(f"the parts come to {given / 100:.2f}, the line is {line / 100:.2f}")
@@ -376,8 +430,16 @@ def split_text(parts):
     return "; ".join(c if v is None else f"{c} {abs(v):.2f}" for c, v in parts)
 
 
-def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpaired_guess="",
-               explanations=None, review_from=REVIEW_FROM, categories=None):
+def categorize(
+    transactions,
+    payee_rules=None,
+    decisions=None,
+    unpaired=(),
+    unpaired_guess="",
+    explanations=None,
+    review_from=REVIEW_FROM,
+    categories=None,
+):
     """Every transaction with category, decided_by, confidence, status and, when open, how it is asked.
 
     transactions are effective (corrections applied), transfer pairs marked and
@@ -398,23 +460,29 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
     known = None if categories is None else {str(c).strip() for c in categories}
     df["date"] = df["date"].astype(str).str[:10]
     explanations = explanations or {}
-    named, split, covered = (explanations.get("payee", {}), explanations.get("split", {}),
-                             explanations.get("coverage", {}))
+    named, split, covered = (
+        explanations.get("payee", {}),
+        explanations.get("split", {}),
+        explanations.get("coverage", {}),
+    )
     df["payee_text"] = [named.get(t, p) for t, p in zip(df["txn_id"], df["payee_raw"].astype(str))]
     hints = explanations.get("hints", {})
     df["hint"] = df["txn_id"].map(lambda t: hints.get(t, ""))
     contents = explanations.get("items", {})  # what an explained charge bought, as JSON, for the views
     df["items"] = df["txn_id"].map(lambda t: contents.get(t, ""))
-    df["key"] = [apple_key(text) if t in named and _waiting(p) == "apple" else payee_key(text)
-                 for t, p, text in zip(df["txn_id"], df["payee_raw"].astype(str), df["payee_text"])]
+    df["key"] = [
+        apple_key(text) if t in named and _waiting(p) == "apple" else payee_key(text)
+        for t, p, text in zip(df["txn_id"], df["payee_raw"].astype(str), df["payee_text"])
+    ]
     unpaired = set(unpaired)
     rules, answered = _rules(payee_rules), payee_decisions(decisions)
     answered_index = _by_first_word(answered)
 
     out = []  # one dict per row: category, source, confidence, status, ask, guess, splits
     df["note"] = df["note"].astype(str) if "note" in df else ""
-    for r in df[["txn_id", "date", "payee_raw", "payee_text", "note", "amount", "era", "category",
-                 "key", "split"]].itertuples(index=False):
+    for r in df[
+        ["txn_id", "date", "payee_raw", "payee_text", "note", "amount", "era", "category", "key", "split"]
+    ].itertuples(index=False):
         if r.split and r.split != "nan":
             try:
                 parts = parse_split(r.split, r.amount, known)
@@ -422,12 +490,17 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
                 out.append({"decided_by": f"your split: {e}", "ask": "line"})
                 continue
             biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
-            out.append({"category": biggest, "decided_by": "you, split", "status": "decided",
-                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
+            out.append(
+                {
+                    "category": biggest,
+                    "decided_by": "you, split",
+                    "status": "decided",
+                    "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else "",
+                }
+            )
             continue
         if r.category:
-            source = ("old books" if r.era == "legacy" else
-                      "transfer pair" if r.category == "transfer" else "you")
+            source = "old books" if r.era == "legacy" else "transfer pair" if r.category == "transfer" else "you"
             out.append({"category": r.category, "decided_by": source, "status": "decided"})
             continue
         payee = str(r.payee_raw)
@@ -436,10 +509,14 @@ def categorize(transactions, payee_rules=None, decisions=None, unpaired=(), unpa
         if r.txn_id in split:  # what an order history says the line bought decides, ahead of any payee rule
             parts = split[r.txn_id]
             biggest = max(parts, key=lambda cv: abs(cv[1]))[0]
-            out.append({"category": biggest, "decided_by": explain.order_service(payee, explanations.get("services")) or service
-                        or "explained",
-                        "status": "decided",
-                        "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else ""})
+            out.append(
+                {
+                    "category": biggest,
+                    "decided_by": explain.order_service(payee, explanations.get("services")) or service or "explained",
+                    "status": "decided",
+                    "splits": "; ".join(f"{c} {v:.2f}" for c, v in parts) if len(parts) > 1 else "",
+                }
+            )
         elif rule and not rule["ask"]:
             out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
         elif rule:  # guess from the rule, ask about this line
@@ -520,8 +597,9 @@ def _guess(df, pending, unpaired):
     df.loc[wait.index[wait], "guess"] = guess[wait]
 
     df.loc[pending, "confidence"] = conf
-    df.loc[pending, "category"] = df.loc[pending, "category"].where(df.loc[pending, "category"] != "",
-                                                                    df.loc[pending, "guess"])
+    df.loc[pending, "category"] = df.loc[pending, "category"].where(
+        df.loc[pending, "category"] != "", df.loc[pending, "guess"]
+    )
 
 
 # --- review ---------------------------------------------------------------------------------------
@@ -577,22 +655,45 @@ def queue(categorized, carry=None):
         for key, g in payees.groupby("group"):
             amounts = pd.to_numeric(g["amount"])
             guess = g["guess"].mode().iloc[0]
-            rows.append({"key": key, "answer": "", "split": "", "guess": guess, "lines": len(g),
-                         "total": round(float(amounts.sum()), 2),
-                         "example": " | ".join(_shown(g).value_counts().index[:3]), "first": g["date"].min(),
-                         "last": g["date"].max(), "accounts": ", ".join(sorted(set(g["account_id"]))),
-                         "guessed_by": g["decided_by"].mode().iloc[0],
-                         "confidence": round(float(pd.to_numeric(g["confidence"]).mean()), 3),
-                         "kind": "payee", "note": ""})
+            rows.append(
+                {
+                    "key": key,
+                    "answer": "",
+                    "split": "",
+                    "guess": guess,
+                    "lines": len(g),
+                    "total": round(float(amounts.sum()), 2),
+                    "example": " | ".join(_shown(g).value_counts().index[:3]),
+                    "first": g["date"].min(),
+                    "last": g["date"].max(),
+                    "accounts": ", ".join(sorted(set(g["account_id"]))),
+                    "guessed_by": g["decided_by"].mode().iloc[0],
+                    "confidence": round(float(pd.to_numeric(g["confidence"]).mean()), 3),
+                    "kind": "payee",
+                    "note": "",
+                }
+            )
     rows.sort(key=lambda r: (-r["lines"], -abs(r["total"]), r["key"]))
     singles = open_[open_["ask"] == "line"].sort_values(["date", "txn_id"])
     for r in singles.to_dict("records"):
-        rows.append({"key": r["txn_id"], "answer": "", "split": "", "guess": r["guess"], "lines": 1,
-                     "total": round(float(r["amount"]), 2),
-                     "example": _shown(pd.DataFrame([r])).iloc[0] + (f" | {r['hint']}" if r.get("hint") else ""),
-                     "first": r["date"],
-                     "last": r["date"], "accounts": r["account_id"], "guessed_by": r["decided_by"],
-                     "confidence": r["confidence"], "kind": "line", "note": ""})
+        rows.append(
+            {
+                "key": r["txn_id"],
+                "answer": "",
+                "split": "",
+                "guess": r["guess"],
+                "lines": 1,
+                "total": round(float(r["amount"]), 2),
+                "example": _shown(pd.DataFrame([r])).iloc[0] + (f" | {r['hint']}" if r.get("hint") else ""),
+                "first": r["date"],
+                "last": r["date"],
+                "accounts": r["account_id"],
+                "guessed_by": r["decided_by"],
+                "confidence": r["confidence"],
+                "kind": "line",
+                "note": "",
+            }
+        )
     out = pd.DataFrame(rows, columns=list(REVIEW_COLUMNS))
     if carry is not None and not carry.empty:
         kept = carry.set_index("key")
@@ -636,8 +737,9 @@ def harvest(review, categories, now=None):
             continue
         category = str(r.get("guess", "")).strip() if answer.lower() in ACCEPT else answer.lower()
         key = str(r.get("key", "")).strip()
-        if key and (typed_split or (category not in known
-                                    and (";" in answer or "," in answer or re.search(r"\d", answer)))):
+        if key and (
+            typed_split or (category not in known and (";" in answer or "," in answer or re.search(r"\d", answer)))
+        ):
             if r.get("kind") != "line":
                 left.append({**r, "note": "a split answers one line: answer a merchant with one category"})
                 continue
@@ -646,21 +748,46 @@ def harvest(review, categories, now=None):
             except ValueError as e:
                 left.append({**r, "note": f"split: {e}"})
                 continue
-            corrections.append({"txn_id": key, "field": "split", "value": split_text(parts), "recorded_at": now,
-                                "reason": "review", "source": "hand"})
+            corrections.append(
+                {
+                    "txn_id": key,
+                    "field": "split",
+                    "value": split_text(parts),
+                    "recorded_at": now,
+                    "reason": "review",
+                    "source": "hand",
+                }
+            )
             continue
         if category not in known or not key:
             left.append({**r, "note": f"not a category: {answer}" if key else "no key"})
             continue
         if r.get("kind") == "line":
-            corrections.append({"txn_id": key, "field": "category", "value": category, "recorded_at": now,
-                                "reason": "review", "source": "hand"})
+            corrections.append(
+                {
+                    "txn_id": key,
+                    "field": "category",
+                    "value": category,
+                    "recorded_at": now,
+                    "reason": "review",
+                    "source": "hand",
+                }
+            )
         else:
-            decisions.append({"proposal_key": f"payee:{payee_key(key) or key.upper()}", "kind": DECISION_KIND,
-                              "decided_at": now, "decision": "approve", "note": category})
-    return (pd.DataFrame(decisions, columns=["proposal_key", "kind", "decided_at", "decision", "note"]),
-            pd.DataFrame(corrections, columns=["txn_id", "field", "value", "recorded_at", "reason", "source"]),
-            pd.DataFrame(left, columns=list(REVIEW_COLUMNS)))
+            decisions.append(
+                {
+                    "proposal_key": f"payee:{payee_key(key) or key.upper()}",
+                    "kind": DECISION_KIND,
+                    "decided_at": now,
+                    "decision": "approve",
+                    "note": category,
+                }
+            )
+    return (
+        pd.DataFrame(decisions, columns=["proposal_key", "kind", "decided_at", "decision", "note"]),
+        pd.DataFrame(corrections, columns=["txn_id", "field", "value", "recorded_at", "reason", "source"]),
+        pd.DataFrame(left, columns=list(REVIEW_COLUMNS)),
+    )
 
 
 def summary(categorized, review_from=REVIEW_FROM):

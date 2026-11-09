@@ -51,16 +51,47 @@ def parse(text):
         except ValueError as e:
             raise ParseError(f"{NAME}: bad row {r['Date']} {r['Amount']!r}") from e
         hints = [h for h in (" ".join(r["Description"].split()), r["Category"].strip()) if h]
-        out.append({"txn_id": "", "date": date, "account_id": "", "amount": amount,
-                    "payee_raw": " ".join(r["Original Description"].split()), "category": "",
-                    "one_off": "FALSE", "note": " | ".join(hints), "source": "csv", "era": "ledger",
-                    "recorded_at": ""})
-    txns = pd.DataFrame(out, columns=["txn_id", "date", "account_id", "amount", "payee_raw", "category",
-                                      "one_off", "note", "source", "era", "recorded_at"])
+        out.append(
+            {
+                "txn_id": "",
+                "date": date,
+                "account_id": "",
+                "amount": amount,
+                "payee_raw": " ".join(r["Original Description"].split()),
+                "category": "",
+                "one_off": "FALSE",
+                "note": " | ".join(hints),
+                "source": "csv",
+                "era": "ledger",
+                "recorded_at": "",
+            }
+        )
+    txns = pd.DataFrame(
+        out,
+        columns=[
+            "txn_id",
+            "date",
+            "account_id",
+            "amount",
+            "payee_raw",
+            "category",
+            "one_off",
+            "note",
+            "source",
+            "era",
+            "recorded_at",
+        ],
+    )
     dates = sorted(txns["date"])
     pending = len(rows) - len(posted)
-    return Result(kind=KIND, parser=NAME, label=f"usaa_{dates[-1] if dates else 'empty'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"transactions": txns}, keys={"transactions": ["txn_id"]},
-                  card_charges_positive=CARD_CHARGES_POSITIVE,
-                  notes=[f"USAA: {len(txns)} posted" + (f", {pending} pending left out" if pending else "")])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"usaa_{dates[-1] if dates else 'empty'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"transactions": txns},
+        keys={"transactions": ["txn_id"]},
+        card_charges_positive=CARD_CHARGES_POSITIVE,
+        notes=[f"USAA: {len(txns)} posted" + (f", {pending} pending left out" if pending else "")],
+    )

@@ -39,7 +39,10 @@ def sniff(text):
 
 
 def _cells(row):
-    return [" ".join(ofx.unescape(re.sub(r"<[^>]+>", " ", c)).split()) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S | re.I)]
+    return [
+        " ".join(ofx.unescape(re.sub(r"<[^>]+>", " ", c)).split())
+        for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S | re.I)
+    ]
 
 
 def _money(text, what):
@@ -77,7 +80,7 @@ def parse(text):
     if at is None:
         raise ParseError(f"{NAME}: no Date, Transaction, Amount, HSA Cash Balance header")
     lines = []
-    for r in rows[at + 1:]:
+    for r in rows[at + 1 :]:
         if len(r) < 4 or not r[0]:
             continue
         try:
@@ -98,20 +101,52 @@ def parse(text):
         if balance is not None and abs(round(balance + amount, 2) - after) > 0.005:
             raise ParseError(f"{NAME}: {day} {what}: {balance:,.2f} and {amount:,.2f} is not the {after:,.2f} it shows")
         balance = after
-        acts.append({"date": day, "kind": kind, "action": what, "symbol": "cash", "description": what,
-                     "shares": amount, "price": 1.0, "value": amount,
-                     "amount": 0.0 if kind == "exchange" else amount, "cash_balance": after, "source": ""})
+        acts.append(
+            {
+                "date": day,
+                "kind": kind,
+                "action": what,
+                "symbol": "cash",
+                "description": what,
+                "shares": amount,
+                "price": 1.0,
+                "value": amount,
+                "amount": 0.0 if kind == "exchange" else amount,
+                "cash_balance": after,
+                "source": "",
+            }
+        )
     df = pd.DataFrame(acts, columns=COLUMNS[2:])
     key = df[["date", "action", "amount", "value", "cash_balance"]].astype(str).agg("|".join, axis=1)
     df.insert(0, "account_id", "")
     df.insert(0, "activity_id", [f"key:{k}|{i}" for k, i in zip(key, key.groupby(key).cumcount())])
     newest = lines[-1]
-    held = pd.DataFrame([{"as_of": newest[0], "account_id": "", "symbol": "cash", "source": "", "shares": newest[3],
-                          "value": newest[3]}], columns=["as_of", "account_id", "symbol", "source", "shares", "value"])
+    held = pd.DataFrame(
+        [
+            {
+                "as_of": newest[0],
+                "account_id": "",
+                "symbol": "cash",
+                "source": "",
+                "shares": newest[3],
+                "value": newest[3],
+            }
+        ],
+        columns=["as_of", "account_id", "symbol", "source", "shares", "value"],
+    )
     counts = df["kind"].value_counts()
-    return Result(kind=KIND, parser=NAME, label=f"healthequity_cash_{newest[0]}", covers_from=lines[0][0],
-                  covers_to=newest[0], account_hint="institution:HealthEquity",
-                  tables={KIND: df, "holdings": held},
-                  keys={KIND: ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
-                  notes=[f"HealthEquity cash {lines[0][0]} to {newest[0]}: "
-                         + ", ".join(f"{n} {k}" for k, n in counts.items()) + f"; cash {newest[3]:,.2f} on {newest[0]}"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"healthequity_cash_{newest[0]}",
+        covers_from=lines[0][0],
+        covers_to=newest[0],
+        account_hint="institution:HealthEquity",
+        tables={KIND: df, "holdings": held},
+        keys={KIND: ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
+        notes=[
+            f"HealthEquity cash {lines[0][0]} to {newest[0]}: "
+            + ", ".join(f"{n} {k}" for k, n in counts.items())
+            + f"; cash {newest[3]:,.2f} on {newest[0]}"
+        ],
+    )

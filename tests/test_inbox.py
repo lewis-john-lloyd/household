@@ -27,16 +27,19 @@ class FakeFiles:
     def list(self, q, fields, pageSize=None):
         parent = re.search(r"'([^']+)' in parents", q).group(1)
         name = re.search(r"name = '([^']+)'", q)
-        found = [f for f in self.drive.items.values() if f["parent"] == parent
-                 and (name is None or f["name"] == name.group(1))
-                 and (("mimeType != '" + FOLDER) not in q or f["mimeType"] != FOLDER)
-                 and (("mimeType = '" + FOLDER) not in q or f["mimeType"] == FOLDER)]
+        found = [
+            f
+            for f in self.drive.items.values()
+            if f["parent"] == parent
+            and (name is None or f["name"] == name.group(1))
+            and (("mimeType != '" + FOLDER) not in q or f["mimeType"] != FOLDER)
+            and (("mimeType = '" + FOLDER) not in q or f["mimeType"] == FOLDER)
+        ]
         return Request({"files": [dict(f) for f in found]})
 
     def create(self, body, fields, media_body=None):
         data = media_body.getbytes(0, media_body.size()) if media_body is not None else b""
-        return Request({"id": self.drive.add(body["name"], body["parents"][0],
-                                             body.get("mimeType", "text/csv"), data)})
+        return Request({"id": self.drive.add(body["name"], body["parents"][0], body.get("mimeType", "text/csv"), data)})
 
     def update(self, fileId, body, fields, addParents=None, removeParents=None):
         drive = self.drive
@@ -151,11 +154,17 @@ def test_overlapping_export_adds_only_new_rows(setup):
     drive, ledger, box, record = setup
     drop(drive, box, "schwab_equity.csv")
     inbox.process(ledger, drive, "root")
-    newer = (FIXTURES / "schwab_equity.csv").read_text().replace(
-        '"02/27/2001","Sale"',
-        '"03/29/2001","Deposit","XYZ","RS","4","","","","","","","","","","","","","","","","","","","","",""\n'
-        '"","","","","","","","","12/01/2000","G1","03/25/2001","$90.00","","","","","","","","","","","","","",""\n'  # leak-guard: allow (synthetic)
-        '"02/27/2001","Sale"', 1)
+    newer = (
+        (FIXTURES / "schwab_equity.csv")
+        .read_text()
+        .replace(
+            '"02/27/2001","Sale"',
+            '"03/29/2001","Deposit","XYZ","RS","4","","","","","","","","","","","","","","","","","","","","",""\n'
+            '"","","","","","","","","12/01/2000","G1","03/25/2001","$90.00","","","","","","","","","","","","","",""\n'  # leak-guard: allow (synthetic)
+            '"02/27/2001","Sale"',
+            1,
+        )
+    )
     drive.add("export2.csv", box, "text/csv", newer.encode())
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["appended"] == {"equity_vests": 1, "equity_sales": 0}
@@ -164,7 +173,9 @@ def test_overlapping_export_adds_only_new_rows(setup):
 
 def test_failed_self_check_leaves_file_and_writes_nothing(setup):
     drive, ledger, box, record = setup
-    broken = (FIXTURES / "pay_statement.txt").read_text().replace("$4,000.00", "$4,100.00", 1)  # leak-guard: allow (synthetic)
+    broken = (
+        (FIXTURES / "pay_statement.txt").read_text().replace("$4,000.00", "$4,100.00", 1)  # leak-guard: allow (made up)
+    )  # leak-guard: allow (synthetic)
     drive.add("stub.txt", box, "text/plain", broken.encode())
     [summary] = inbox.process(ledger, drive, "root")
     assert summary["status"] == "failed" and "self-checks" in summary["reason"]
@@ -188,8 +199,10 @@ def test_partial_overlap_names_the_earlier_file(setup):
     drive, ledger, box, record = setup
     drop(drive, box, "schwab_equity.csv")
     inbox.process(ledger, drive, "root")
-    extra = ('"03/29/2001","Deposit","XYZ","RS","4","","","","","","","","","","","","","","","","","","","","",""\n'
-             '"","","","","","","","","12/01/2000","G1","03/25/2001","$90.00","","","","","","","","","","","","","",""\n')  # leak-guard: allow (synthetic)
+    extra = (
+        '"03/29/2001","Deposit","XYZ","RS","4","","","","","","","","","","","","","","","","","","","","",""\n'
+        '"","","","","","","","","12/01/2000","G1","03/25/2001","$90.00","","","","","","","","","","","","","",""\n'  # leak-guard: allow (made up)
+    )  # leak-guard: allow (synthetic)
     newer = (FIXTURES / "schwab_equity.csv").read_text() + extra
     drive.add("export2.csv", box, "text/csv", newer.encode())
     [summary] = inbox.process(ledger, drive, "root")
@@ -258,8 +271,7 @@ def test_overlapping_files_in_one_run_add_rows_once(setup):
 def test_registered_file_left_in_inbox_is_filed_next_run(setup, monkeypatch):
     drive, ledger, box, record = setup
     drop(drive, box, "pay_statement.txt")
-    monkeypatch.setattr(inbox, "move_all",
-                        lambda d, moves: {m[0]: TimeoutError("timed out") for m in moves})
+    monkeypatch.setattr(inbox, "move_all", lambda d, moves: {m[0]: TimeoutError("timed out") for m in moves})
     [first] = inbox.process(ledger, drive, "root")
     assert first["status"] == "error" and "not moved" in first["reason"]
     monkeypatch.undo()
@@ -286,8 +298,10 @@ def test_a_move_the_batch_rejects_is_retried_alone(setup, monkeypatch):
 
     def first_fails(self):
         request_id, request = self.requests[0]
-        self.requests[0] = (request_id, type("Boom", (), {"execute": lambda s: (_ for _ in ()).throw(
-            TimeoutError("timed out"))})())
+        self.requests[0] = (
+            request_id,
+            type("Boom", (), {"execute": lambda s: (_ for _ in ()).throw(TimeoutError("timed out"))})(),
+        )
         real(self)
 
     monkeypatch.setattr(FakeBatch, "execute", first_fails)
@@ -344,6 +358,7 @@ def test_a_file_too_big_to_download_is_left_in_the_inbox(setup, monkeypatch):
 def test_a_zip_past_its_limits_is_refused_before_it_is_unpacked(monkeypatch):
     import io as _io
     import zipfile as _zipfile
+
     buffer = _io.BytesIO()
     with _zipfile.ZipFile(buffer, "w") as z:
         for n in range(3):

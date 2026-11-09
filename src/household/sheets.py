@@ -54,14 +54,12 @@ def ensure_tables(spreadsheet, tables):
                 continue
             if len(values) > 1 and any(str(c).strip() for c in values[1]):
                 if spreadsheet.title != REPORTS_TITLE:
-                    raise SchemaMismatch(
-                        f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
+                    raise SchemaMismatch(f"{spreadsheet.title}/{t.name}: header {header} != {list(t.columns)}")
                 existing[t.name].clear()  # derived rows; this run rebuilds them
             migrate.append((t, existing[t.name], len(header)))
     if migrate:
         _migrate_empty_tables(spreadsheet, migrate)
-    refresh = [r for t in present if t not in [m[0] for m in migrate]
-               for r in _dropdowns(existing[t.name].id, t)]
+    refresh = [r for t in present if t not in [m[0] for m in migrate] for r in _dropdowns(existing[t.name].id, t)]
     if refresh:  # keeps dropdowns in step with the schema, stale ones cleared; one call
         spreadsheet.batch_update({"requests": refresh})
     missing = [t for t in tables if t.name not in existing]
@@ -73,16 +71,31 @@ def ensure_tables(spreadsheet, tables):
 
 def _migrate_empty_tables(spreadsheet, migrate):
     """Rewrite the header of tables that hold no data; two API calls (three with dropdowns)."""
-    spreadsheet.batch_update({"requests": [
-        {"updateSheetProperties": {
-            "properties": {"sheetId": ws.id, "gridProperties": {
-                "columnCount": max(len(t.columns), old_width), "frozenRowCount": 1}},
-            "fields": "gridProperties.columnCount,gridProperties.frozenRowCount"}}
-        for t, ws, old_width in migrate]})
-    spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": [
-        {"range": f"'{t.name}'!A1",
-         "values": [list(t.columns) + [""] * max(0, old_width - len(t.columns))]}
-        for t, ws, old_width in migrate]})
+    spreadsheet.batch_update(
+        {
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": ws.id,
+                            "gridProperties": {"columnCount": max(len(t.columns), old_width), "frozenRowCount": 1},
+                        },
+                        "fields": "gridProperties.columnCount,gridProperties.frozenRowCount",
+                    }
+                }
+                for t, ws, old_width in migrate
+            ]
+        }
+    )
+    spreadsheet.values_batch_update(
+        {
+            "valueInputOption": "RAW",
+            "data": [
+                {"range": f"'{t.name}'!A1", "values": [list(t.columns) + [""] * max(0, old_width - len(t.columns))]}
+                for t, ws, old_width in migrate
+            ],
+        }
+    )
     validations = [r for t, ws, _ in migrate for r in _dropdowns(ws.id, t)]
     if validations:
         spreadsheet.batch_update({"requests": validations})
@@ -101,29 +114,46 @@ def _dropdowns(sheet_id, t):
 
 def _create_tables(spreadsheet, tables):
     """Three API calls regardless of table count: add tabs, write headers, add dropdowns."""
-    reply = spreadsheet.batch_update({"requests": [
-        {"addSheet": {"properties": {"title": t.name, "gridProperties": {
-            "rowCount": 1000, "columnCount": len(t.columns), "frozenRowCount": 1}}}}
-        for t in tables]})
+    reply = spreadsheet.batch_update(
+        {
+            "requests": [
+                {
+                    "addSheet": {
+                        "properties": {
+                            "title": t.name,
+                            "gridProperties": {"rowCount": 1000, "columnCount": len(t.columns), "frozenRowCount": 1},
+                        }
+                    }
+                }
+                for t in tables
+            ]
+        }
+    )
     sheet_ids = [r["addSheet"]["properties"]["sheetId"] for r in reply["replies"]]
-    spreadsheet.values_batch_update({"valueInputOption": "RAW", "data": [
-        {"range": f"'{t.name}'!A1", "values": [list(t.columns)]} for t in tables]})
-    validations = [_validation(sheet_id, t, column, values)
-                   for sheet_id, t in zip(sheet_ids, tables)
-                   for column, values in t.enums.items()]
+    spreadsheet.values_batch_update(
+        {"valueInputOption": "RAW", "data": [{"range": f"'{t.name}'!A1", "values": [list(t.columns)]} for t in tables]}
+    )
+    validations = [
+        _validation(sheet_id, t, column, values)
+        for sheet_id, t in zip(sheet_ids, tables)
+        for column, values in t.enums.items()
+    ]
     if validations:
         spreadsheet.batch_update({"requests": validations})
 
 
 def _validation(sheet_id, t, column, values):
     index = t.columns.index(column)
-    return {"setDataValidation": {
-        "range": {"sheetId": sheet_id, "startRowIndex": 1,
-                  "startColumnIndex": index, "endColumnIndex": index + 1},
-        "rule": {"condition": {"type": "ONE_OF_LIST",
-                               "values": [{"userEnteredValue": v} for v in values]},
-                 "strict": True, "showCustomUi": True},
-    }}
+    return {
+        "setDataValidation": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": index, "endColumnIndex": index + 1},
+            "rule": {
+                "condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": v} for v in values]},
+                "strict": True,
+                "showCustomUi": True,
+            },
+        }
+    }
 
 
 def _drop_default_sheet(spreadsheet, existing, tables):
@@ -208,8 +238,15 @@ def append_tables(spreadsheet, tables, size=None):
         if df is None or df.empty:
             continue
         values = df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
-        requests.append({"appendCells": {"sheetId": spreadsheet.worksheet(t.name).id, "fields": "userEnteredValue",
-                                         "rows": [{"values": [_cell(v) for v in row]} for row in values]}})
+        requests.append(
+            {
+                "appendCells": {
+                    "sheetId": spreadsheet.worksheet(t.name).id,
+                    "fields": "userEnteredValue",
+                    "rows": [{"values": [_cell(v) for v in row]} for row in values],
+                }
+            }
+        )
     if requests:
         body = {"requests": requests}
         if size is not None:
@@ -278,8 +315,10 @@ def price_formula(quote, day):
     """The last close on or before day, in the week before it, as "YYYY-MM-DD close"; "none" when there is none."""
     y, m, d = (int(p) for p in day.split("-"))
     when = f"DATE({y},{m},{d})"
-    return (f'=IFERROR(LET(r,GOOGLEFINANCE("{quote}","close",{when}-7,{when}),'
-            f'TEXT(INDEX(r,ROWS(r),1),"yyyy-mm-dd")&" "&INDEX(r,ROWS(r),2)),"none")')
+    return (
+        f'=IFERROR(LET(r,GOOGLEFINANCE("{quote}","close",{when}-7,{when}),'
+        f'TEXT(INDEX(r,ROWS(r),1),"yyyy-mm-dd")&" "&INDEX(r,ROWS(r),2)),"none")'
+    )
 
 
 def replace_table(spreadsheet, t, df):

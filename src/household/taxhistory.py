@@ -41,8 +41,17 @@ def _state_tax(filed):
         out["pa"] = (max(filed["pa40_12"] - credits, 0), min(credits, filed["pa40_12"]))
     if "wi1npr_52" in filed or "wi_net_tax" in filed:
         net = filed.get("wi1npr_52", filed.get("wi_net_tax", 0))
-        credits = sum(filed.get(k, 0) for k in ("wi1npr_40", "wi1npr_43c", "wi1npr_48", "wi_itemized_credit",
-                                                 "wi_school_property_credit", "wi_married_couple_credit"))
+        credits = sum(
+            filed.get(k, 0)
+            for k in (
+                "wi1npr_40",
+                "wi1npr_43c",
+                "wi1npr_48",
+                "wi_itemized_credit",
+                "wi_school_property_credit",
+                "wi_married_couple_credit",
+            )
+        )
         out["wi"] = (net, credits)
     return out
 
@@ -60,8 +69,17 @@ def history(facts):
         def add(jurisdiction, split, parts, total, year=year):
             for n, (part, value) in enumerate(parts):
                 if round(value, 2):
-                    rows.append({"year": year, "jurisdiction": jurisdiction, "split": split, "part": part, "order": n,
-                                 "value": round(value, 2), "total": round(total, 2)})
+                    rows.append(
+                        {
+                            "year": year,
+                            "jurisdiction": jurisdiction,
+                            "split": split,
+                            "part": part,
+                            "order": n,
+                            "value": round(value, 2),
+                            "total": round(total, 2),
+                        }
+                    )
 
         states = _state_tax(filed)
         if "11a" in filed and "24" in filed:
@@ -69,13 +87,23 @@ def history(facts):
             wages = filed.get("1z", g("wages"))
             gains = max(g("capital_gain_short") + g("capital_gain_long"), -3000.0)
             came = [(f"Wages, {p}", v) for p, v in people] if people else [("Wages", wages)]
-            came += [("Interest & dividends", g("taxable_interest") + g("ordinary_dividends")),
-                     ("Capital gains", gains)]
+            came += [
+                ("Interest & dividends", g("taxable_interest") + g("ordinary_dividends")),
+                ("Capital gains", gains),
+            ]
             other = income - sum(v for _, v in came)  # what is left: 529 earnings, pensions, IRAs, other income
             came.append(("Other income", other))
             add("federal", "came", came, income)
-            add("federal", "taxed", [("Taxable income", filed.get("15", 0.0)),
-                                     ("Deducted", filed.get("12e", 0.0)), ("Adjustments", g("adjustments"))], income)
+            add(
+                "federal",
+                "taxed",
+                [
+                    ("Taxable income", filed.get("15", 0.0)),
+                    ("Deducted", filed.get("12e", 0.0)),
+                    ("Adjustments", g("adjustments")),
+                ],
+                income,
+            )
             other_taxes = filed.get("23", 0.0)
             after = filed["24"] - other_taxes
             refundable = filed.get("refundable_credits", 0.0)
@@ -83,31 +111,51 @@ def history(facts):
             federal = after - refundable
             state = sum(t for t, _ in states.values())
             kept = income - federal - other_taxes - state
-            add("federal", "went", [(KEPT, kept - credits), (CREDITS, credits), ("State income tax", state),
-                                    ("Other federal taxes", other_taxes), ("Federal income tax", federal)], income)
+            add(
+                "federal",
+                "went",
+                [
+                    (KEPT, kept - credits),
+                    (CREDITS, credits),
+                    ("State income tax", state),
+                    ("Other federal taxes", other_taxes),
+                    ("Federal income tax", federal),
+                ],
+                income,
+            )
         if "pa" in states:
             total = filed.get("pa40_9", 0.0)
-            came = [("Compensation", max(g("pa_compensation"), 0)),
-                    ("Interest & dividends", max(g("pa_interest"), 0) + max(g("pa_dividends"), 0)),
-                    ("Capital gains", max(g("pa_gains"), 0))]
+            came = [
+                ("Compensation", max(g("pa_compensation"), 0)),
+                ("Interest & dividends", max(g("pa_interest"), 0) + max(g("pa_dividends"), 0)),
+                ("Capital gains", max(g("pa_gains"), 0)),
+            ]
             came.append(("Other income", total - sum(v for _, v in came)))
             add("pa", "came", came, total)
-            add("pa", "taxed", [("Taxable income", filed.get("pa40_11", 0.0)),
-                                ("Deducted", total - filed.get("pa40_11", total))], total)
+            add(
+                "pa",
+                "taxed",
+                [("Taxable income", filed.get("pa40_11", 0.0)), ("Deducted", total - filed.get("pa40_11", total))],
+                total,
+            )
             tax, credits = states["pa"]
-            add("pa", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)],
-                total)
+            add("pa", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)], total)
         if "wi" in states:
             total = g("wi_income") or filed.get("wi_income", 0.0)
             tax, credits = states["wi"]
             add("wi", "came", [("Wisconsin income", total)], total)
-            add("wi", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)],
-                total)
+            add("wi", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)], total)
     return pd.DataFrame(rows, columns=COLUMNS)
 
 
-INPUT_KEYS = ("taxable_interest", "ordinary_dividends", "capital_gain_short", "capital_gain_long", "adjustments",
-              "wi_income")
+INPUT_KEYS = (
+    "taxable_interest",
+    "ordinary_dividends",
+    "capital_gain_short",
+    "capital_gain_long",
+    "adjustments",
+    "wi_income",
+)
 
 
 def projected(year, lines):
@@ -127,35 +175,96 @@ def projected(year, lines):
 # A filed return's lines as the forms number them: (form, line, key, label), in the order they read. A key a year
 # filed that isn't here is listed after its form's lines under its own name.
 FEDERAL = "Form 1040"
-FILED_LINES = [(FEDERAL, line, key, label) for line, key, label in (
-    ("1z", "1z", "Wages (W-2 box 1)"), ("2b", "2b", "Taxable interest"), ("3a", "3a", "Qualified dividends"),
-    ("3b", "3b", "Ordinary dividends"), ("4b", "4b", "IRA distributions, taxable"), ("5b", "5b", "Pensions, taxable"),
-    ("7", "7", "Capital gain or loss"), ("7", "7a", "Capital gain or loss"), ("8", "8", "Other income"),
-    ("9", "9", "Total income"), ("10", "10", "Adjustments to income"), ("11", "11", "Adjusted gross income"),
-    ("11", "11a", "Adjusted gross income"), ("12", "12", "Deductions"), ("12", "12e", "Deductions"),
-    ("13", "13", "Qualified business income deduction"), ("14", "14", "Total deductions"),
-    ("15", "15", "Taxable income"), ("16", "16", "Tax"), ("17", "17", "Additional taxes (Schedule 2)"),
-    ("18", "18", "Tax and additional taxes"), ("19", "19", "Child tax credit"), ("20", "20", "Other credits"),
-    ("21", "21", "Total credits"), ("22", "22", "Tax after credits"), ("23", "23", "Other taxes"),
-    ("24", "24", "Total tax"), ("25a", "25a", "Withheld, W-2s"), ("25b", "25b", "Withheld, 1099s"),
-    ("25c", "25c", "Withheld, other"), ("25d", "25d", "Withheld, total"), ("26", "26", "Estimated payments"),
-    ("", "refundable_credits", "Refundable credits"), ("31", "31", "Excess Social Security withheld"),
-    ("32", "32", "Other payments and refundable credits"), ("33", "33", "Total payments"),
-    ("34", "34", "Overpaid"), ("35a", "35a", "Refund"), ("36", "36", "Applied to next year's estimated tax"),
-    ("37", "37", "Amount owed"))]
-FILED_LINES += [("Wisconsin Form 1", "", key, label) for key, label in (
-    ("wi_income", "Wisconsin income"), ("wi_standard_deduction", "Standard deduction"), ("wi_exemptions", "Exemptions"),
-    ("wi_taxable", "Taxable income"), ("wi_tax", "Tax"), ("wi_itemized_credit", "Itemized deduction credit"),
-    ("wi_school_property_credit", "School property tax credit"), ("wi_married_couple_credit", "Married couple credit"),
-    ("wi_net_tax", "Net tax"), ("wi_withheld", "Wisconsin tax withheld"), ("wi_owe_or_refund", "Refund or amount owed"))]
-FILED_LINES += [("Wisconsin Form 1NPR", line, "wi1npr_" + line, label) for line, label in (
-    ("32", "Wisconsin share of income"), ("34c", "Standard deduction"), ("36c", "Exemptions"), ("37", "Taxable income"),
-    ("38", "Tax on all income"), ("39", "Tax on the Wisconsin share"), ("40", "Itemized deduction credit"),
-    ("43c", "School property tax credit"), ("45", "Tax after those credits"), ("48", "Married couple credit"),
-    ("52", "Net tax"), ("58", "Wisconsin tax withheld"))]
-FILED_LINES += [("Pennsylvania PA-40", line, "pa40_" + line, label) for line, label in (
-    ("9", "Total PA taxable income"), ("11", "Adjusted PA taxable income"), ("12", "Tax"), ("13", "PA tax withheld"),
-    ("22", "Resident credit"), ("23", "Other credits"), ("24", "Total payments and credits"))]
+FILED_LINES = [
+    (FEDERAL, line, key, label)
+    for line, key, label in (
+        ("1z", "1z", "Wages (W-2 box 1)"),
+        ("2b", "2b", "Taxable interest"),
+        ("3a", "3a", "Qualified dividends"),
+        ("3b", "3b", "Ordinary dividends"),
+        ("4b", "4b", "IRA distributions, taxable"),
+        ("5b", "5b", "Pensions, taxable"),
+        ("7", "7", "Capital gain or loss"),
+        ("7", "7a", "Capital gain or loss"),
+        ("8", "8", "Other income"),
+        ("9", "9", "Total income"),
+        ("10", "10", "Adjustments to income"),
+        ("11", "11", "Adjusted gross income"),
+        ("11", "11a", "Adjusted gross income"),
+        ("12", "12", "Deductions"),
+        ("12", "12e", "Deductions"),
+        ("13", "13", "Qualified business income deduction"),
+        ("14", "14", "Total deductions"),
+        ("15", "15", "Taxable income"),
+        ("16", "16", "Tax"),
+        ("17", "17", "Additional taxes (Schedule 2)"),
+        ("18", "18", "Tax and additional taxes"),
+        ("19", "19", "Child tax credit"),
+        ("20", "20", "Other credits"),
+        ("21", "21", "Total credits"),
+        ("22", "22", "Tax after credits"),
+        ("23", "23", "Other taxes"),
+        ("24", "24", "Total tax"),
+        ("25a", "25a", "Withheld, W-2s"),
+        ("25b", "25b", "Withheld, 1099s"),
+        ("25c", "25c", "Withheld, other"),
+        ("25d", "25d", "Withheld, total"),
+        ("26", "26", "Estimated payments"),
+        ("", "refundable_credits", "Refundable credits"),
+        ("31", "31", "Excess Social Security withheld"),
+        ("32", "32", "Other payments and refundable credits"),
+        ("33", "33", "Total payments"),
+        ("34", "34", "Overpaid"),
+        ("35a", "35a", "Refund"),
+        ("36", "36", "Applied to next year's estimated tax"),
+        ("37", "37", "Amount owed"),
+    )
+]
+FILED_LINES += [
+    ("Wisconsin Form 1", "", key, label)
+    for key, label in (
+        ("wi_income", "Wisconsin income"),
+        ("wi_standard_deduction", "Standard deduction"),
+        ("wi_exemptions", "Exemptions"),
+        ("wi_taxable", "Taxable income"),
+        ("wi_tax", "Tax"),
+        ("wi_itemized_credit", "Itemized deduction credit"),
+        ("wi_school_property_credit", "School property tax credit"),
+        ("wi_married_couple_credit", "Married couple credit"),
+        ("wi_net_tax", "Net tax"),
+        ("wi_withheld", "Wisconsin tax withheld"),
+        ("wi_owe_or_refund", "Refund or amount owed"),
+    )
+]
+FILED_LINES += [
+    ("Wisconsin Form 1NPR", line, "wi1npr_" + line, label)
+    for line, label in (
+        ("32", "Wisconsin share of income"),
+        ("34c", "Standard deduction"),
+        ("36c", "Exemptions"),
+        ("37", "Taxable income"),
+        ("38", "Tax on all income"),
+        ("39", "Tax on the Wisconsin share"),
+        ("40", "Itemized deduction credit"),
+        ("43c", "School property tax credit"),
+        ("45", "Tax after those credits"),
+        ("48", "Married couple credit"),
+        ("52", "Net tax"),
+        ("58", "Wisconsin tax withheld"),
+    )
+]
+FILED_LINES += [
+    ("Pennsylvania PA-40", line, "pa40_" + line, label)
+    for line, label in (
+        ("9", "Total PA taxable income"),
+        ("11", "Adjusted PA taxable income"),
+        ("12", "Tax"),
+        ("13", "PA tax withheld"),
+        ("22", "Resident credit"),
+        ("23", "Other credits"),
+        ("24", "Total payments and credits"),
+    )
+]
 FILED_COLUMNS = ["year", "form", "order", "line", "key", "label", "value"]
 PREFIXES = (("wi1npr_", "Wisconsin Form 1NPR"), ("wi_", "Wisconsin Form 1"), ("pa40_", "Pennsylvania PA-40"))
 
@@ -177,7 +286,16 @@ def filed_lines(facts):
             else:
                 form = next((f for p, f in PREFIXES if key.startswith(p)), FEDERAL)
                 n, line, label = len(FILED_LINES), "", key
-            rows.append({"year": year, "form": form, "order": n, "line": line, "key": key, "label": label,
-                         "value": round(float(value), 4)})
+            rows.append(
+                {
+                    "year": year,
+                    "form": form,
+                    "order": n,
+                    "line": line,
+                    "key": key,
+                    "label": label,
+                    "value": round(float(value), 4),
+                }
+            )
     out = pd.DataFrame(rows, columns=FILED_COLUMNS)
     return out.sort_values(["year", "form", "order", "key"]).reset_index(drop=True)

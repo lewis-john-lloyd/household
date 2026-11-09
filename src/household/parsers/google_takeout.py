@@ -66,8 +66,10 @@ def _item(description, product):
     description = description.strip()
     inner = re.search(r"\(([^()]*)\)\s*$", description)
     if inner:
-        return f"{inner.group(1).strip()}: {description[:inner.start()].strip()}"
-    return f"{product.strip()}: {description}" if product.strip() and product.strip() not in description else description
+        return f"{inner.group(1).strip()}: {description[: inner.start()].strip()}"
+    return (
+        f"{product.strip()}: {description}" if product.strip() and product.strip() not in description else description
+    )
 
 
 def parse(text):
@@ -76,14 +78,26 @@ def parse(text):
     rows = []
     for r in raw.to_dict("records"):
         amount, day = _amount(r["Amount"]), _date(r["Time"])
-        rows.append({"service": SERVICE, "order_id": r["Transaction ID"].strip(),
-                     "kind": "refund" if amount < 0 else "item", "order_date": day, "date": day,
-                     "amount": abs(amount), "card": _card(r["Payment method"]),
-                     "department": r["Product"].strip(), "item": _item(r["Description"], r["Product"]),
-                     "website": ""})
+        rows.append(
+            {
+                "service": SERVICE,
+                "order_id": r["Transaction ID"].strip(),
+                "kind": "refund" if amount < 0 else "item",
+                "order_date": day,
+                "date": day,
+                "amount": abs(amount),
+                "card": _card(r["Payment method"]),
+                "department": r["Product"].strip(),
+                "item": _item(r["Description"], r["Product"]),
+                "website": "",
+            }
+        )
     df = pd.DataFrame(rows, columns=[c for c in COLUMNS if c != "item_id"])
-    df.insert(0, "item_id", [hashlib.sha256(f"{SERVICE}|{o}|{k}".encode()).hexdigest()[:16]
-                             for o, k in zip(df["order_id"], df["kind"])])
+    df.insert(
+        0,
+        "item_id",
+        [hashlib.sha256(f"{SERVICE}|{o}|{k}".encode()).hexdigest()[:16] for o, k in zip(df["order_id"], df["kind"])],
+    )
     if df["item_id"].duplicated().any():
         raise ParseError(f"{NAME}: repeated transaction id")
     return _result(df, [f"Google: {len(df)} purchases"])
@@ -91,10 +105,17 @@ def parse(text):
 
 def _result(df, notes):
     dates = sorted(d for d in df["date"] if d)
-    return Result(kind=KIND, parser=NAME, label=f"google_purchases_{dates[-1] if dates else 'none'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]},
-                  record="" if df.empty else df.to_csv(index=False), notes=notes)
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"google_purchases_{dates[-1] if dates else 'none'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"order_items": df} if len(df) else {},
+        keys={"order_items": ["item_id"]},
+        record="" if df.empty else df.to_csv(index=False),
+        notes=notes,
+    )
 
 
 def combine(results):

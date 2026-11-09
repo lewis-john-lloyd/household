@@ -55,8 +55,9 @@ def parse(text):
     person = tokens(title)[0].text.split()[0].lower()
     employer = footer.split("|")[0].strip()
 
-    head = next((i for i, l in enumerate(lines)
-                 if l.strip().startswith("Earnings") and "Deductions" in l and "YTD" in l), None)
+    head = next(
+        (i for i, l in enumerate(lines) if l.strip().startswith("Earnings") and "Deductions" in l and "YTD" in l), None
+    )
     if head is None:
         raise ParseError(f"{NAME}: no earnings header")
     header = lines[head]
@@ -88,8 +89,7 @@ def parse(text):
             else:
                 kind = "employer" if name in EMPLOYER else "income"
                 items.append((name, kind, cols.get(2, 0.0), cols.get(3, 0.0)))
-        if not ded_done and rt and rt[0].numeric and any(k != "income" and k != "employer"
-                                                          for _, k, _, _ in items):
+        if not ded_done and rt and rt[0].numeric and any(k != "income" and k != "employer" for _, k, _, _ in items):
             # Some stubs (bonus checks) print the deductions total with no label.
             cols = {nearest(t, ded_edges): t.value for t in rt if t.numeric}
             deductions_total = (cols.get(0, 0.0), cols.get(1, 0.0))
@@ -104,13 +104,14 @@ def parse(text):
                 kind = "pre_tax" if name in PRE_TAX else "post_tax"
                 items.append((name, kind, cols.get(0, 0.0), cols.get(1, 0.0)))
 
-    tax_head = next((k for k in range(head + 1, len(lines))
-                     if lines[k].strip().startswith("Taxes") and "Amount" in lines[k]), None)
+    tax_head = next(
+        (k for k in range(head + 1, len(lines)) if lines[k].strip().startswith("Taxes") and "Amount" in lines[k]), None
+    )
     if tax_head is None:
         raise ParseError(f"{NAME}: no taxes header")
     tax_line = lines[tax_head]
     tax_edges = [tax_line.find("Amount") + 6, tax_line.find("YTD") + 3]
-    for line in lines[tax_head + 1:]:
+    for line in lines[tax_head + 1 :]:
         toks = [t for t in tokens(line) if t.start < ded_col - 2]
         if not toks or toks[0].numeric:
             continue
@@ -141,19 +142,33 @@ def parse(text):
     ]
     require(checks, f"{NAME} {pay_date}")
 
-    memo = pd.DataFrame([
-        ("Gross", "memo", gross[0], gross[1]),
-        ("Fed Taxable Income", "memo", fed_taxable, 0.0),
-        ("Taxes", "memo", taxes_total[0], taxes_total[1]),
-        ("Deductions", "memo", deductions_total[0], deductions_total[1]),
-        ("Net Pay", "memo", net, 0.0),
-    ], columns=df.columns)
+    memo = pd.DataFrame(
+        [
+            ("Gross", "memo", gross[0], gross[1]),
+            ("Fed Taxable Income", "memo", fed_taxable, 0.0),
+            ("Taxes", "memo", taxes_total[0], taxes_total[1]),
+            ("Deductions", "memo", deductions_total[0], deductions_total[1]),
+            ("Net Pay", "memo", net, 0.0),
+        ],
+        columns=df.columns,
+    )
     rows = pd.concat([df, memo], ignore_index=True)
     stub = re.search(r"Voucher Number\s{2,}(\d+)", text)
-    for col, value in (("stub_id", stub.group(1) if stub else ""), ("employer", employer), ("person", person), ("period_end", period_end),
-                       ("period_start", period_start), ("pay_date", pay_date)):
+    for col, value in (
+        ("stub_id", stub.group(1) if stub else ""),
+        ("employer", employer),
+        ("person", person),
+        ("period_end", period_end),
+        ("period_start", period_start),
+        ("pay_date", pay_date),
+    ):
         rows.insert(0, col, value)
-    return Result(kind="paystub", parser=NAME, label=f"paystub_{person}_{pay_date}",
-                  covers_from=period_start, covers_to=period_end,
-                  tables={"paystubs": rows},
-                  keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]})
+    return Result(
+        kind="paystub",
+        parser=NAME,
+        label=f"paystub_{person}_{pay_date}",
+        covers_from=period_start,
+        covers_to=period_end,
+        tables={"paystubs": rows},
+        keys={"paystubs": ["pay_date", "person", "employer", "stub_id"]},
+    )

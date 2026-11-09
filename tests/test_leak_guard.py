@@ -3,9 +3,7 @@ from pathlib import Path
 
 import pytest
 
-spec = importlib.util.spec_from_file_location(
-    "leak_guard", Path(__file__).parents[1] / "tools" / "leak_guard.py"
-)
+spec = importlib.util.spec_from_file_location("leak_guard", Path(__file__).parents[1] / "tools" / "leak_guard.py")
 leak_guard = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(leak_guard)
 

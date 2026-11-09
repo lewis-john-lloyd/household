@@ -4,13 +4,22 @@ import pytest
 from household import mortgage
 from household.parsers import seed
 
-LOAN = {"loan_id": "home", "lender": "Lender", "originated": "2019-12-15", "principal": "200000", "rate": "6",
-        "term_months": "360", "escrow": ""}
+LOAN = {
+    "loan_id": "home",
+    "lender": "Lender",
+    "originated": "2019-12-15",
+    "principal": "200000",
+    "rate": "6",
+    "term_months": "360",
+    "escrow": "",
+}
 
 
 def events(*rows):
-    return pd.DataFrame([{"date": d, "loan_id": "home", "kind": k, "amount": a, "doc_id": ""} for d, k, a in rows],
-                        columns=["date", "loan_id", "kind", "amount", "doc_id"])
+    return pd.DataFrame(
+        [{"date": d, "loan_id": "home", "kind": k, "amount": a, "doc_id": ""} for d, k, a in rows],
+        columns=["date", "loan_id", "kind", "amount", "doc_id"],
+    )
 
 
 def run(loan=LOAN, ev=None, through="2050-12"):
@@ -62,7 +71,12 @@ def test_escrow_comes_off_first_and_overpayment_is_extra_principal():
     loan = dict(LOAN, escrow="300")
     s = run(loan, events(("2020-02-01", "payment", "1499.10"), ("2020-03-01", "payment", "1599.10")), "2020-04")
     assert s.loc["2020-02", ["payment", "escrow", "interest", "principal", "extra_principal"]].tolist() == [
-        1499.10, 300.0, 1000.0, 199.1, 0.0]
+        1499.10,
+        300.0,
+        1000.0,
+        199.1,
+        0.0,
+    ]
     assert s.loc["2020-03", "extra_principal"] == 100.0
     assert s.loc["2020-04", "payment"] == 1499.10  # no record that month: the scheduled payment
 
@@ -75,18 +89,19 @@ def test_missing_loan_data_is_a_note_not_an_error():
 
 
 def test_the_household_payments_sit_beside_the_schedule():
-    categorized = pd.DataFrame([
-        {"date": "2020-02-03", "amount": -1199.10, "category": "mortgage", "era": "ledger"},
-        {"date": "2020-02-20", "amount": -50.00, "category": "food", "era": "ledger"},
-        {"date": "2020-02-03", "amount": -900.00, "category": "mortgage", "era": "legacy"}])
+    categorized = pd.DataFrame(
+        [
+            {"date": "2020-02-03", "amount": -1199.10, "category": "mortgage", "era": "ledger"},
+            {"date": "2020-02-20", "amount": -50.00, "category": "food", "era": "ledger"},
+            {"date": "2020-02-03", "amount": -900.00, "category": "mortgage", "era": "legacy"},
+        ]
+    )
     s, _ = mortgage.schedule(pd.DataFrame([LOAN]), None, categorized, "2020-03")
     assert s["paid_from_ledger"].tolist() == [1199.10, 0.0]
     assert mortgage.summary(s) == ["mortgage: home balance 199,600.80 after 2 payments (through 2020-03)"]
 
 
 def test_loans_can_be_seeded():
-    text = ("loan_id,lender,originated,principal,rate,term_months,escrow\n"
-            "home,Lender,2020-01-15,200000,6,360,300\n")
+    text = "loan_id,lender,originated,principal,rate,term_months,escrow\nhome,Lender,2020-01-15,200000,6,360,300\n"
     result = seed.parse(text)
     assert result.keys == {"loans": ["loan_id"]} and len(result.tables["loans"]) == 1
-

@@ -46,8 +46,14 @@ def schedule_gl(i, year):
     adjustment = whole((1 - ratio) * paid) if ratio < 1 else 0  # line 4d
     adjusted = paid - adjustment  # line 4e
     limit = whole(rate * both)  # line 5
-    return {"gl_3": whole(both), "gl_4c": whole(paid), "gl_4d": adjustment, "gl_4e": whole(adjusted),
-            "gl_5": limit, "gl_6": whole(min(adjusted, limit))}
+    return {
+        "gl_3": whole(both),
+        "gl_4c": whole(paid),
+        "gl_4d": adjustment,
+        "gl_4e": whole(adjusted),
+        "gl_5": limit,
+        "gl_6": whole(min(adjusted, limit)),
+    }
 
 
 def pa_return(i, year):
@@ -60,9 +66,17 @@ def pa_return(i, year):
     credit = schedule_gl(i, year)["gl_6"]
     other = whole(g("pa_other_credits"))  # line 23: Schedule OC and DC credits, such as dependent care
     payments = whole(g("pa_withheld")) + whole(g("pa_estimated_payments")) + credit + other
-    return {"pa40_9": whole(total), "pa40_11": whole(taxable), "pa40_12": tax,
-            "pa40_13": whole(g("pa_withheld")), "pa40_22": credit, "pa40_23": other, "pa40_24": payments,
-            "pa40_26": max(tax - payments, 0), "pa40_29": max(payments - tax, 0)}
+    return {
+        "pa40_9": whole(total),
+        "pa40_11": whole(taxable),
+        "pa40_12": tax,
+        "pa40_13": whole(g("pa_withheld")),
+        "pa40_22": credit,
+        "pa40_23": other,
+        "pa40_24": payments,
+        "pa40_26": max(tax - payments, 0),
+        "pa40_29": max(payments - tax, 0),
+    }
 
 
 def has_pennsylvania(inputs):
@@ -70,6 +84,7 @@ def has_pennsylvania(inputs):
 
 
 # --- withholding -----------------------------------------------------------------------------
+
 
 def _is_deferral(name):
     n = name.lower().replace(" ", "")
@@ -90,8 +105,18 @@ def stub_compensation(rows):
 
 def backtest(paystubs):
     """Expected vs actual Pennsylvania withholding for every stub with a Pennsylvania line."""
-    cols = ["pay_date", "person", "employer", "stub_id", "kind", "base", "withheld", "expected",
-            "residual", "explanation"]
+    cols = [
+        "pay_date",
+        "person",
+        "employer",
+        "stub_id",
+        "kind",
+        "base",
+        "withheld",
+        "expected",
+        "residual",
+        "explanation",
+    ]
     if paystubs.empty:
         return pd.DataFrame(columns=cols)
     pa = paystubs[(paystubs["kind"] == "tax") & paystubs["line_item"].isin(PA_LINES)]
@@ -101,12 +126,19 @@ def backtest(paystubs):
     withheld = amounts.groupby(pa["stub_id"].astype(str)).sum()
     out = []
     for stub_id, rows in paystubs[paystubs["stub_id"].astype(str).isin(set(withheld.index))].groupby(
-            paystubs["stub_id"].astype(str)):
+        paystubs["stub_id"].astype(str)
+    ):
         year = int(str(rows["pay_date"].iloc[0])[:4])
         w = round(float(withheld[stub_id]), 2)
         base, excluded = stub_compensation(rows)
-        row = {"pay_date": str(rows["pay_date"].iloc[0]), "person": rows["person"].iloc[0],
-               "employer": rows["employer"].iloc[0], "stub_id": stub_id, "base": base, "withheld": w}
+        row = {
+            "pay_date": str(rows["pay_date"].iloc[0]),
+            "person": rows["person"].iloc[0],
+            "employer": rows["employer"].iloc[0],
+            "stub_id": stub_id,
+            "base": base,
+            "withheld": w,
+        }
         if year not in taxdata.PARAMS:
             row.update(kind="unchecked", explanation=f"no {year} Pennsylvania rate")
         elif w == 0:
@@ -114,14 +146,20 @@ def backtest(paystubs):
         else:
             rate = taxdata.params(year)["pa_rate"]
             expected = round(rate * base, 2)
-            row.update(kind="regular", expected=expected, residual=round(w - expected, 2),
-                       explanation=f"{rate * 100:g}% of Pennsylvania compensation")
+            row.update(
+                kind="regular",
+                expected=expected,
+                residual=round(w - expected, 2),
+                explanation=f"{rate * 100:g}% of Pennsylvania compensation",
+            )
             if abs(w - expected) >= CENT:
                 taxed = [k for k, v in excluded.items() if abs(round(rate * (base + v), 2) - w) < CENT]
                 if taxed:
-                    row.update(expected=round(rate * (base + excluded[taxed[0]]), 2), residual=0.0,
-                               explanation=f"{rate * 100:g}% of Pennsylvania compensation, with "
-                                           f"{taxed[0]} taxed on this stub")
+                    row.update(
+                        expected=round(rate * (base + excluded[taxed[0]]), 2),
+                        residual=0.0,
+                        explanation=f"{rate * 100:g}% of Pennsylvania compensation, with {taxed[0]} taxed on this stub",
+                    )
                 else:
                     row["explanation"] = f"unexplained {w - expected:+.2f}"
         out.append(row)

@@ -52,13 +52,15 @@ def parse_data_rows(rows):
         category = str(row[idx["category"]]).strip()
         if not category and str(row[idx["cost"]]).strip() == "":
             continue  # blank row
-        records.append({
-            "date": parse_date(row[idx["date"]]),
-            "category": category,
-            "payee_raw": str(row[idx["transaction"]]).strip(),
-            "cost": round(parse_money(row[idx["cost"]]), 2),
-            "note": str(row[note_idx]).strip() if note_idx is not None else "",
-        })
+        records.append(
+            {
+                "date": parse_date(row[idx["date"]]),
+                "category": category,
+                "payee_raw": str(row[idx["transaction"]]).strip(),
+                "cost": round(parse_money(row[idx["cost"]]), 2),
+                "note": str(row[note_idx]).strip() if note_idx is not None else "",
+            }
+        )
     return pd.DataFrame(records, columns=["date", "category", "payee_raw", "cost", "note"])
 
 

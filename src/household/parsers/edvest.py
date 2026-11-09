@@ -71,9 +71,17 @@ def parse(text):
         if not (r.get("Fund Name") or "").strip():
             continue
         numbers.add(r["Fund Account Number"].strip())
-        held.append({"as_of": "", "account_id": "", "symbol": r["Fund Name"].strip(), "source": "",
-                     "shares": round(_num(r["Shares"], "Shares"), 6), "value": round(_num(r["Total Value"], "Total Value"), 2),
-                     "price": round(_num(r["Price"], "Price"), 6)})
+        held.append(
+            {
+                "as_of": "",
+                "account_id": "",
+                "symbol": r["Fund Name"].strip(),
+                "source": "",
+                "shares": round(_num(r["Shares"], "Shares"), 6),
+                "value": round(_num(r["Total Value"], "Total Value"), 2),
+                "price": round(_num(r["Price"], "Price"), 6),
+            }
+        )
     for r in csv.DictReader(io.StringIO(body[at:])):
         if not (r.get("Trade Date") or "").strip():
             continue
@@ -83,13 +91,27 @@ def parse(text):
         except ValueError as e:
             raise ParseError(f"{NAME}: not a date: {r['Trade Date']!r}") from e
         kind = kind_of(r["Transaction Type"], r["Transaction Description"])
-        amount, shares, price = (_num(r["Net Amount"], "Net Amount"), _num(r["Shares"], "Shares"),
-                                 _num(r["Share Price"], "Share Price"))
+        amount, shares, price = (
+            _num(r["Net Amount"], "Net Amount"),
+            _num(r["Shares"], "Shares"),
+            _num(r["Share Price"], "Share Price"),
+        )
         symbol = r["Investment Name"].strip()
-        acts.append({"date": day, "kind": kind, "action": " ".join(r["Transaction Description"].split()),
-                     "symbol": symbol, "description": r["Transaction Type"].strip(), "shares": round(shares, 6),
-                     "price": round(price, 6), "value": round(_num(r["Gross Amount"], "Gross Amount"), 2),
-                     "amount": 0.0 if kind == "exchange" else round(amount, 2), "cash_balance": "", "source": ""})
+        acts.append(
+            {
+                "date": day,
+                "kind": kind,
+                "action": " ".join(r["Transaction Description"].split()),
+                "symbol": symbol,
+                "description": r["Transaction Type"].strip(),
+                "shares": round(shares, 6),
+                "price": round(price, 6),
+                "value": round(_num(r["Gross Amount"], "Gross Amount"), 2),
+                "amount": 0.0 if kind == "exchange" else round(amount, 2),
+                "cash_balance": "",
+                "source": "",
+            }
+        )
         if price:
             prices.append({"symbol": symbol, "date": day, "priced_date": day, "close": round(price, 6), "source": NAME})
     if len(numbers) != 1:
@@ -102,14 +124,30 @@ def parse(text):
     df.insert(0, "account_id", "")
     df.insert(0, "activity_id", [f"key:{k}|{i}" for k, i in zip(key, key.groupby(key).cumcount())])
     dates = sorted(df["date"]) or [""]
-    result = Result(kind=KIND, parser=NAME, label=f"edvest_{dates[-1]}", covers_from=dates[0], covers_to=dates[-1],
-                    account_hint=re.sub(r"\D", "", number)[-4:],
-                    tables={KIND: df, "holdings": pd.DataFrame(held, columns=HOLDINGS + ["price"]),
-                            "prices": pd.DataFrame(prices, columns=["symbol", "date", "priced_date", "close", "source"])},
-                    keys={KIND: ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"],
-                          "prices": ["symbol", "date"]},
-                    notes=[f"Edvest {dates[0]} to {dates[-1]}: " + ", ".join(f"{n} {k}" for k, n in df["kind"].value_counts().items())
-                           + "; " + ", ".join(f"{h['symbol']} {h['shares']:g} shares" for h in held)])
+    result = Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"edvest_{dates[-1]}",
+        covers_from=dates[0],
+        covers_to=dates[-1],
+        account_hint=re.sub(r"\D", "", number)[-4:],
+        tables={
+            KIND: df,
+            "holdings": pd.DataFrame(held, columns=HOLDINGS + ["price"]),
+            "prices": pd.DataFrame(prices, columns=["symbol", "date", "priced_date", "close", "source"]),
+        },
+        keys={
+            KIND: ["activity_id"],
+            "holdings": ["as_of", "account_id", "source", "symbol"],
+            "prices": ["symbol", "date"],
+        },
+        notes=[
+            f"Edvest {dates[0]} to {dates[-1]}: "
+            + ", ".join(f"{n} {k}" for k, n in df["kind"].value_counts().items())
+            + "; "
+            + ", ".join(f"{h['symbol']} {h['shares']:g} shares" for h in held)
+        ],
+    )
     return result
 
 
@@ -126,9 +164,13 @@ def date_positions(result, file_name):
         datetime.strptime(day, "%Y-%m-%d")
     except ValueError as e:
         raise ParseError(f"{NAME}: {file_name}: no download date in the name") from e
-    prices = [{"symbol": s, "date": day, "priced_date": day, "close": p, "source": NAME}
-              for s, p in zip(held["symbol"], held["price"]) if p]
+    prices = [
+        {"symbol": s, "date": day, "priced_date": day, "close": p, "source": NAME}
+        for s, p in zip(held["symbol"], held["price"])
+        if p
+    ]
     result.tables["holdings"] = held.assign(as_of=day)[HOLDINGS]
-    result.tables["prices"] = pd.concat([result.tables["prices"], pd.DataFrame(prices)], ignore_index=True) \
-        .drop_duplicates(["symbol", "date"], keep="last")
+    result.tables["prices"] = pd.concat(
+        [result.tables["prices"], pd.DataFrame(prices)], ignore_index=True
+    ).drop_duplicates(["symbol", "date"], keep="last")
     return result

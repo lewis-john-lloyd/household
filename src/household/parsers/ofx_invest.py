@@ -108,10 +108,21 @@ def _row(tag, item, secs, plan):
     if tag == "INVBANKTRAN":
         st = (item.get("STMTTRN") or [{}])[0]
         amount = round(_num(st.get("TRNAMT"), "TRNAMT"), 2)
-        return {"fitid": st.get("FITID", ""), "date": ofx.day(st.get("DTPOSTED")), "kind": "transfer_in" if amount > 0 else "transfer_out",
-                "action": "INVBANKTRAN " + _memo(st.get("NAME") or st.get("MEMO") or st.get("TRNTYPE", "")), "symbol": "",
-                "description": "", "shares": 0.0, "price": 0.0, "value": 0.0, "amount": amount, "source": "", "cash": amount,
-                "sweep": ""}
+        return {
+            "fitid": st.get("FITID", ""),
+            "date": ofx.day(st.get("DTPOSTED")),
+            "kind": "transfer_in" if amount > 0 else "transfer_out",
+            "action": "INVBANKTRAN " + _memo(st.get("NAME") or st.get("MEMO") or st.get("TRNTYPE", "")),
+            "symbol": "",
+            "description": "",
+            "shares": 0.0,
+            "price": 0.0,
+            "value": 0.0,
+            "amount": amount,
+            "source": "",
+            "cash": amount,
+            "sweep": "",
+        }
     body = item
     for inner in ("INVBUY", "INVSELL"):
         if item.get(inner):
@@ -126,18 +137,38 @@ def _row(tag, item, secs, plan):
     price = _num(body.get("UNITPRICE"), "UNITPRICE")
     total = abs(_num(body.get("TOTAL"), "TOTAL"))
     source = (body.get("INV401KSOURCE") or "").lower()
-    row = {"fitid": tran.get("FITID", ""), "date": ofx.day(tran["DTTRADE"]), "action": f"{tag} {memo}".strip(), "symbol": symbol,
-           "description": name, "price": round(price, 6), "source": source, "sweep": ""}
+    row = {
+        "fitid": tran.get("FITID", ""),
+        "date": ofx.day(tran["DTTRADE"]),
+        "action": f"{tag} {memo}".strip(),
+        "symbol": symbol,
+        "description": name,
+        "price": round(price, 6),
+        "source": source,
+        "sweep": "",
+    }
     value = round(total or abs(units * price), 2)
     if tag in BUYS:
         sweep = "Settlement Fund" in memo
         kind = "contribution" if plan else "buy"
-        row.update(kind=kind, shares=round(abs(units), 6), value=value, amount=value if plan else 0.0,
-                   cash=0.0 if plan or sweep else -value, sweep="in" if sweep and not plan else "")
+        row.update(
+            kind=kind,
+            shares=round(abs(units), 6),
+            value=value,
+            amount=value if plan else 0.0,
+            cash=0.0 if plan or sweep else -value,
+            sweep="in" if sweep and not plan else "",
+        )
     elif tag in SELLS:
         sweep = "Settlement Fund" in memo
-        row.update(kind="withdrawal" if plan else "sell", shares=-round(abs(units), 6), value=-value,
-                   amount=-value if plan else 0.0, cash=0.0 if plan or sweep else value, sweep="out" if sweep and not plan else "")
+        row.update(
+            kind="withdrawal" if plan else "sell",
+            shares=-round(abs(units), 6),
+            value=-value,
+            amount=-value if plan else 0.0,
+            cash=0.0 if plan or sweep else value,
+            sweep="out" if sweep and not plan else "",
+        )
     elif tag == "REINVEST":
         row.update(kind="reinvest", shares=round(abs(units), 6), value=value, amount=value, cash=0.0)
     elif tag == "INCOME":
@@ -150,8 +181,13 @@ def _row(tag, item, secs, plan):
         if plan:
             row.update(kind="exchange", shares=sign * round(abs(units), 6), value=sign * moved, amount=0.0, cash=0.0)
         else:
-            row.update(kind="transfer_in" if into else "transfer_out", shares=sign * round(abs(units), 6),
-                       value=sign * moved, amount=sign * moved, cash=0.0)
+            row.update(
+                kind="transfer_in" if into else "transfer_out",
+                shares=sign * round(abs(units), 6),
+                value=sign * moved,
+                amount=sign * moved,
+                cash=0.0,
+            )
     elif tag in ("INVEXPENSE", "MARGININTEREST"):
         row.update(kind="fee", shares=0.0, value=0.0, amount=-round(total, 2), cash=0.0 if plan else -round(total, 2))
     elif tag == "SPLIT":
@@ -167,20 +203,34 @@ ORDER = {"cash_in": 0, "sweep_out": 1, "cash_out": 2, "sweep_in": 3}
 
 def infer_deposits(rows):
     """Contribution rows for the deposits seen only as a sweep into the settlement fund (see the module doc)."""
+
     def phase(r):
         if r["sweep"] == "in":
             return ORDER["sweep_in"]
         if r["sweep"] == "out":
             return ORDER["sweep_out"]
         return ORDER["cash_in"] if r["cash"] >= 0 else ORDER["cash_out"]
+
     pool, out = 0.0, []
     for r in sorted(rows, key=lambda r: (r["date"], phase(r))):
         if r["sweep"] == "in":
             short = round(r["value"] - max(pool, 0.0), 2)
             if short > 0.005:
-                out.append({**r, "fitid": f"deposit:{r['fitid']}", "kind": "contribution", "action": "deposit (inferred)",
-                            "symbol": "", "description": "", "shares": 0.0, "price": 0.0, "value": 0.0, "amount": short,
-                            "sweep": ""})
+                out.append(
+                    {
+                        **r,
+                        "fitid": f"deposit:{r['fitid']}",
+                        "kind": "contribution",
+                        "action": "deposit (inferred)",
+                        "symbol": "",
+                        "description": "",
+                        "shares": 0.0,
+                        "price": 0.0,
+                        "value": 0.0,
+                        "amount": short,
+                        "sweep": "",
+                    }
+                )
                 pool += short
             pool -= r["value"]
         elif r["sweep"] == "out":
@@ -217,8 +267,15 @@ def parse(text):
         for r in rows:
             r["account_id"] = account
             if r["price"] and r["symbol"]:
-                prices.append({"symbol": r["symbol"], "date": r["date"], "priced_date": r["date"], "close": r["price"],
-                               "source": "ofx"})
+                prices.append(
+                    {
+                        "symbol": r["symbol"],
+                        "date": r["date"],
+                        "priced_date": r["date"],
+                        "close": r["price"],
+                        "source": "ofx",
+                    }
+                )
         acts += rows
         for tag in POSITIONS:
             for pos in ofx.find(st, tag):
@@ -226,40 +283,75 @@ def parse(text):
                 uid = ofx.first(p, "SECID", "UNIQUEID")
                 symbol = secs.get(uid, (uid, ""))[0]
                 units = _num(p.get("UNITS"), "UNITS")
-                price, when = _num(p.get("UNITPRICE"), "UNITPRICE"), ofx.day(p.get("DTPRICEASOF") or ofx.first(st, "DTASOF"))
+                price, when = (
+                    _num(p.get("UNITPRICE"), "UNITPRICE"),
+                    ofx.day(p.get("DTPRICEASOF") or ofx.first(st, "DTASOF")),
+                )
                 if price:
-                    prices.append({"symbol": symbol, "date": when, "priced_date": when, "close": round(price, 6), "source": "ofx"})
+                    prices.append(
+                        {"symbol": symbol, "date": when, "priced_date": when, "close": round(price, 6), "source": "ofx"}
+                    )
                 if units:
-                    held.append({"as_of": as_of, "account_id": account, "source": (p.get("INV401KSOURCE") or "").lower(),
-                                 "symbol": symbol, "shares": round(units, 6), "value": round(_num(p.get("MKTVAL"), "MKTVAL"), 2)})
+                    held.append(
+                        {
+                            "as_of": as_of,
+                            "account_id": account,
+                            "source": (p.get("INV401KSOURCE") or "").lower(),
+                            "symbol": symbol,
+                            "shares": round(units, 6),
+                            "value": round(_num(p.get("MKTVAL"), "MKTVAL"), 2),
+                        }
+                    )
         counts = pd.Series([r["kind"] for r in rows]).value_counts() if rows else pd.Series(dtype=int)
         what = ", ".join(f"{n} {k}" for k, n in counts.items())
         inferred = sum(1 for r in rows if r["action"] == "deposit (inferred)")
-        notes.append(f"account ..{account[5:]}{' (plan)' if plan else ''}: {what or 'no activity'}; "
-                     f"{sum(1 for h in held if h['account_id'] == account)} positions on {as_of}"
-                     + (f"; {inferred} deposit(s) inferred from sweeps" if inferred else "")
-                     + (f"; {repeats} transaction(s) listed twice, read once" if repeats else ""))
+        notes.append(
+            f"account ..{account[5:]}{' (plan)' if plan else ''}: {what or 'no activity'}; "
+            f"{sum(1 for h in held if h['account_id'] == account)} positions on {as_of}"
+            + (f"; {inferred} deposit(s) inferred from sweeps" if inferred else "")
+            + (f"; {repeats} transaction(s) listed twice, read once" if repeats else "")
+        )
     for info_tag in INFOS:
         for info in ofx.find(root, info_tag):
             sec = (info.get("SECINFO") or [{}])[0]
             uid, price = ofx.first(sec, "SECID", "UNIQUEID"), ofx.first(sec, "UNITPRICE")
             if uid and price and ofx.first(sec, "DTASOF"):
                 when = ofx.day(ofx.first(sec, "DTASOF"))
-                prices.append({"symbol": secs[uid][0], "date": when, "priced_date": when, "close": round(_num(price, "UNITPRICE"), 6),
-                               "source": "ofx"})
+                prices.append(
+                    {
+                        "symbol": secs[uid][0],
+                        "date": when,
+                        "priced_date": when,
+                        "close": round(_num(price, "UNITPRICE"), 6),
+                        "source": "ofx",
+                    }
+                )
     if not acts and not held:
         raise ParseError(f"{NAME}: no activity or positions in the file")
     df = pd.DataFrame(acts)
     if len(df):
-        key = df[["account_id", "fitid", "action", "source", "symbol", "shares", "amount"]].astype(str).agg("|".join, axis=1)
+        key = (
+            df[["account_id", "fitid", "action", "source", "symbol", "shares", "amount"]]
+            .astype(str)
+            .agg("|".join, axis=1)
+        )
         n = key.groupby(key).cumcount()
         df["activity_id"] = [f"key:{k}|{i}" for k, i in zip(key, n)]
         df["cash_balance"] = ""
     df = df.reindex(columns=COLUMNS)
     dates = sorted(set(spans) | set(df["date"].dropna()) | {h["as_of"] for h in held})
     price_df = pd.DataFrame(prices, columns=PRICES).drop_duplicates(["symbol", "date"], keep="last")
-    return Result(kind=KIND, parser=NAME, label=f"ofx_investments_{dates[-1]}", covers_from=dates[0], covers_to=dates[-1],
-                  tables={KIND: df, "holdings": pd.DataFrame(held, columns=HOLDINGS), "prices": price_df},
-                  keys={KIND: ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"],
-                        "prices": ["symbol", "date"]},
-                  notes=notes)
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"ofx_investments_{dates[-1]}",
+        covers_from=dates[0],
+        covers_to=dates[-1],
+        tables={KIND: df, "holdings": pd.DataFrame(held, columns=HOLDINGS), "prices": price_df},
+        keys={
+            KIND: ["activity_id"],
+            "holdings": ["as_of", "account_id", "source", "symbol"],
+            "prices": ["symbol", "date"],
+        },
+        notes=notes,
+    )

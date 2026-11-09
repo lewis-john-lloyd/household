@@ -24,12 +24,17 @@ def test_the_download_reads_as_contributions_a_rollover_a_withdrawal_and_dated_p
     r = ingest.finish_investment_rows(edvest.parse(FILE), "ofxdownload_06012001.csv", ACCOUNTS)
     a = r.tables["investment_activity"].sort_values("date")
     assert a[["date", "kind", "shares", "amount"]].values.tolist() == [
-        ["2001-01-12", "transfer_in", 5, 50], ["2001-02-16", "contribution", 1, 10], ["2001-02-16", "contribution", 5, 50],
-        ["2001-03-16", "withdrawal", -2.5, -25]]
+        ["2001-01-12", "transfer_in", 5, 50],
+        ["2001-02-16", "contribution", 1, 10],
+        ["2001-02-16", "contribution", 5, 50],
+        ["2001-03-16", "withdrawal", -2.5, -25],
+    ]
     assert set(a["account_id"]) == {"a_529"} and a["activity_id"].is_unique
     held = r.tables["holdings"]
     assert held[["as_of", "account_id", "symbol", "shares", "value"]].values.tolist() == [
-        ["2001-06-01", "a_529", "Acme Stock Index Portfolio", 7.5, 90], ["2001-06-01", "a_529", "Willow Bond Portfolio", 1, 10]]
+        ["2001-06-01", "a_529", "Acme Stock Index Portfolio", 7.5, 90],
+        ["2001-06-01", "a_529", "Willow Bond Portfolio", 1, 10],
+    ]
     # the transactions take each portfolio from nothing to the shares the positions show
     assert a.groupby("symbol")["shares"].sum().to_dict() == dict(zip(held["symbol"], held["shares"]))
     assert r.tables["prices"].set_index(["symbol", "date"])["close"][("Acme Stock Index Portfolio", "2001-06-01")] == 12

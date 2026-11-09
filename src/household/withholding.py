@@ -49,17 +49,27 @@ def stub_summary(rows):
     """One row per stub from paystub line items: base wages, federal withheld, kind."""
     out = []
     for (pay_date, person, employer, stub_id), x in rows.groupby(
-            ["pay_date", "person", "employer", "stub_id"], sort=True):
+        ["pay_date", "person", "employer", "stub_id"], sort=True
+    ):
         x = x.copy()
         x["amount"] = pd.to_numeric(x["amount"], errors="coerce").fillna(0.0)
         taxable = x[(x["kind"] == "memo") & x["line_item"].isin(TAXABLE_MEMOS)]["amount"].sum()
         gtl = x[(x["kind"] == "income") & x["line_item"].map(_is_group_term_life)]["amount"].sum()
         fit = x[(x["kind"] == "tax") & x["line_item"].isin(FIT_LINES)]["amount"].sum()
         earned = x[(x["kind"] == "income") & (x["amount"] != 0)]["line_item"]
-        out.append({"pay_date": str(pay_date), "person": person, "employer": employer,
-                    "stub_id": str(stub_id), "period_start": str(x["period_start"].iloc[0]),
-                    "period_end": str(x["period_end"].iloc[0]), "base": round(taxable - gtl, 2),
-                    "withheld": round(fit, 2), "lines": "+".join(earned)})
+        out.append(
+            {
+                "pay_date": str(pay_date),
+                "person": person,
+                "employer": employer,
+                "stub_id": str(stub_id),
+                "period_start": str(x["period_start"].iloc[0]),
+                "period_end": str(x["period_end"].iloc[0]),
+                "base": round(taxable - gtl, 2),
+                "withheld": round(fit, 2),
+                "lines": "+".join(earned),
+            }
+        )
     return pd.DataFrame(out)
 
 
@@ -76,7 +86,7 @@ def explained_by_people(decisions, prefix):
     out = {}
     for key, note in zip(rows["proposal_key"].astype(str), rows["note"].astype(str)):
         if key.startswith(prefix + ":"):
-            out[key[len(prefix) + 1:]] = note
+            out[key[len(prefix) + 1 :]] = note
     return out
 
 
@@ -92,8 +102,18 @@ def backtest(paystubs, explained=None):
 
     explained maps stub_id to a person's explanation for a residual the rules
     don't account for (see explained_by_people)."""
-    cols = ["pay_date", "person", "employer", "stub_id", "kind", "base", "withheld", "expected",
-            "residual", "explanation"]
+    cols = [
+        "pay_date",
+        "person",
+        "employer",
+        "stub_id",
+        "kind",
+        "base",
+        "withheld",
+        "expected",
+        "residual",
+        "explanation",
+    ]
     internal = ["period_start", "period_end"]
     if paystubs.empty:
         return pd.DataFrame(columns=cols)
@@ -107,16 +127,18 @@ def backtest(paystubs, explained=None):
         elif s["base"] == 0 and s["withheld"] == 0:
             row.update(kind="empty", expected=0.0, residual=0.0, explanation="nothing to withhold")
         else:
-            flat = next((r for r in FLAT_RATES if abs(round(r * s["base"], 2) - s["withheld"]) < CENT),
-                        None)
+            flat = next((r for r in FLAT_RATES if abs(round(r * s["base"], 2) - s["withheld"]) < CENT), None)
             if flat is not None:
-                row.update(kind="supplemental", expected=round(flat * s["base"], 2), residual=0.0,
-                           explanation=f"flat {flat:.0%}")
+                row.update(
+                    kind="supplemental",
+                    expected=round(flat * s["base"], 2),
+                    residual=0.0,
+                    explanation=f"flat {flat:.0%}",
+                )
             else:
                 periods = periods_per_year(s["period_start"], s["period_end"])
                 expected = regular_withholding(s["base"], periods, year)
-                row.update(kind="regular", expected=expected,
-                           residual=round(s["withheld"] - expected, 2))
+                row.update(kind="regular", expected=expected, residual=round(s["withheld"] - expected, 2))
         rows.append(row)
     df = pd.DataFrame(rows, columns=cols + internal)
     _explain_regular(df)
@@ -126,9 +148,9 @@ def backtest(paystubs, explained=None):
 
 # Step 3 is a sum of per-dependent credits (500 for other dependents; 2,000 or 2,200 per
 # child), so only those combinations are tried; arbitrary amounts would fit any residual.
-STEP3_CANDIDATES = sorted({500 * a + 2000 * b + 2200 * c
-                           for a in range(9) for b in range(6) for c in range(6)} - {0}
-                          | {0})
+STEP3_CANDIDATES = sorted(
+    {500 * a + 2000 * b + 2200 * c for a in range(9) for b in range(6) for c in range(6)} - {0} | {0}
+)
 
 
 def decode_w4(residual, periods, prefer=()):

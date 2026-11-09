@@ -74,8 +74,9 @@ def test_monthly_actuals_match_legacy_rollup(legacy_df):
 
 def test_compare_reports_a_mismatch(legacy_df):
     txns = ingest.legacy_to_transactions(legacy_df.iloc[1:], recorded_at="t")
-    check = compute.compare_to_legacy(compute.monthly_actuals(txns),
-                                      legacy.parse_rollup_rows(rows("legacy_rollup.csv")))
+    check = compute.compare_to_legacy(
+        compute.monthly_actuals(txns), legacy.parse_rollup_rows(rows("legacy_rollup.csv"))
+    )
     bad = check[~check["match"]]
     assert list(bad["category"]) == ["TOTAL", "food"]
     assert list(bad["diff"]) == [pytest.approx(-42.10)] * 2
@@ -88,8 +89,9 @@ def test_legacy_check_reads_legacy_rows_as_ingested(legacy_df):
     blank = txns.iloc[:1].assign(txn_id="blank1", category="", payee_raw="NEVER CATEGORIZED")
     checked, left_out = compute.legacy_rows(pd.concat([txns, bank, blank], ignore_index=True))
     assert list(left_out["txn_id"]) == ["blank1"]
-    check = compute.compare_to_legacy(compute.monthly_actuals(checked),
-                                      legacy.parse_rollup_rows(rows("legacy_rollup.csv")))
+    check = compute.compare_to_legacy(
+        compute.monthly_actuals(checked), legacy.parse_rollup_rows(rows("legacy_rollup.csv"))
+    )
     assert check["match"].all(), check
     assert month in set(check["month"])
 
@@ -97,10 +99,12 @@ def test_legacy_check_reads_legacy_rows_as_ingested(legacy_df):
 def test_corrections_supersede_latest_wins(legacy_df):
     txns = ingest.legacy_to_transactions(legacy_df, recorded_at="t")
     first = txns["txn_id"].iloc[0]
-    corrections = pd.DataFrame([
-        {"txn_id": first, "field": "category", "value": "dining", "recorded_at": "2026-01-01"},
-        {"txn_id": first, "field": "category", "value": "groceries", "recorded_at": "2026-02-01"},
-    ])
+    corrections = pd.DataFrame(
+        [
+            {"txn_id": first, "field": "category", "value": "dining", "recorded_at": "2026-01-01"},
+            {"txn_id": first, "field": "category", "value": "groceries", "recorded_at": "2026-02-01"},
+        ]
+    )
     effective = compute.effective_transactions(txns, corrections)
     assert effective.loc[effective["txn_id"] == first, "category"].item() == "groceries"
     assert txns.loc[txns["txn_id"] == first, "category"].item() == "food"  # input untouched
@@ -148,6 +152,5 @@ def test_void_correction_removes_and_restores(legacy_df):
     first = txns["txn_id"].iloc[0]
     void = pd.DataFrame([{"txn_id": first, "field": "void", "value": "TRUE", "recorded_at": "1"}])
     assert first not in set(compute.effective_transactions(txns, void)["txn_id"])
-    undo = pd.concat([void, pd.DataFrame([{"txn_id": first, "field": "void", "value": "FALSE",
-                                           "recorded_at": "2"}])])
+    undo = pd.concat([void, pd.DataFrame([{"txn_id": first, "field": "void", "value": "FALSE", "recorded_at": "2"}])])
     assert first in set(compute.effective_transactions(txns, undo)["txn_id"])

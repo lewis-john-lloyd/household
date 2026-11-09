@@ -19,14 +19,32 @@ import re
 
 import pandas as pd
 
-BASE = re.compile(r"^(salary|regular|pto|holiday|bereave|.*time off|telework|fmla|sick|vacation(?!.*p[a-z]*out)|"
-                  r"leave w/?o pay|jury)", re.I)
+BASE = re.compile(
+    r"^(salary|regular|pto|holiday|bereave|.*time off|telework|fmla|sick|vacation(?!.*p[a-z]*out)|"
+    r"leave w/?o pay|jury)",
+    re.I,
+)
 SALARY_TOLERANCE = 0.005
 HOURLY_TOLERANCE = 0.05
 MIN_HOURLY = 3
 NO_ROW = -1  # a paycheck with no comp_events row in force
-COLUMNS = ["person", "employer", "kind", "from", "to", "paychecks", "stubs_annual", "comp_effective",
-           "comp_employer", "comp_salary", "comp_fte", "comp_annual", "off", "status", "finding"]
+COLUMNS = [
+    "person",
+    "employer",
+    "kind",
+    "from",
+    "to",
+    "paychecks",
+    "stubs_annual",
+    "comp_effective",
+    "comp_employer",
+    "comp_salary",
+    "comp_fte",
+    "comp_annual",
+    "off",
+    "status",
+    "finding",
+]
 
 
 def periods_per_year(start, end):
@@ -70,8 +88,9 @@ def paychecks(paystubs):
     out = lines.groupby(keys, as_index=False)["amount"].sum().rename(columns={"amount": "base"})
     out = out[out["base"] > 0]
     out["base"] = out["base"].round(2)
-    out["annual"] = [round(b * periods_per_year(s, e), 2)
-                     for b, s, e in zip(out["base"], out["period_start"], out["period_end"])]
+    out["annual"] = [
+        round(b * periods_per_year(s, e), 2) for b, s, e in zip(out["base"], out["period_start"], out["period_end"])
+    ]
     return out.sort_values(["person", "employer", "pay_date"], kind="stable").reset_index(drop=True)
 
 
@@ -103,8 +122,7 @@ def check(paystubs, comp_events, since=None):
         g["kind"] = ["salary" if n >= 2 else "hourly" for n in sizes]
         groups = [("salary", r) for _, r in g[g["kind"] == "salary"].groupby("run", sort=False)]
         hourly = g[g["kind"] == "hourly"]
-        groups += [("hourly", r) for _, r in hourly.groupby("row", sort=False)
-                   if len(r) >= MIN_HOURLY]
+        groups += [("hourly", r) for _, r in hourly.groupby("row", sort=False) if len(r) >= MIN_HOURLY]
         for kind, r in groups:
             out.append(_judge(person, employer, kind, r, rows))
     df = pd.DataFrame(out, columns=COLUMNS)
@@ -115,28 +133,49 @@ def _judge(person, employer, kind, r, rows):
     annual = float(r["annual"].iloc[0]) if kind == "salary" else float(r["annual"].median())
     first, last = str(r["period_start"].iloc[0])[:10], str(r["period_end"].iloc[-1])[:10]
     n = len(r)
-    what = (f"paid at {annual:,.0f} a year" if kind == "salary" else f"paid a median of {annual:,.0f} a year")
+    what = f"paid at {annual:,.0f} a year" if kind == "salary" else f"paid a median of {annual:,.0f} a year"
     span = f"from {first} to {last} ({n} paychecks)"
-    base = {"person": person, "employer": employer, "kind": kind, "from": first, "to": last, "paychecks": n,
-            "stubs_annual": round(annual, 2)}
+    base = {
+        "person": person,
+        "employer": employer,
+        "kind": kind,
+        "from": first,
+        "to": last,
+        "paychecks": n,
+        "stubs_annual": round(annual, 2),
+    }
     key = int(r["row"].iloc[0])
     if key == NO_ROW:
-        return {**base, "comp_effective": "", "comp_employer": "", "comp_salary": None, "comp_fte": None,
-                "comp_annual": None, "off": None, "status": "no row",
-                "finding": f"{what} {span}; comp_events has no row for {person} by then"}
+        return {
+            **base,
+            "comp_effective": "",
+            "comp_employer": "",
+            "comp_salary": None,
+            "comp_fte": None,
+            "comp_annual": None,
+            "off": None,
+            "status": "no row",
+            "finding": f"{what} {span}; comp_events has no row for {person} by then",
+        }
     row = rows.loc[key]
     expected = None if pd.isna(row["salary"]) else float(row["salary"]) * float(row["fte"])
     off = None if not expected else annual / expected - 1
     tolerance = SALARY_TOLERANCE if kind == "salary" else HOURLY_TOLERANCE
     agrees = off is not None and abs(off) <= tolerance
     fte = "" if float(row["fte"]) == 1 else f" at {float(row['fte']):g} FTE"
-    said = ("no salary" if expected is None else f"{float(row['salary']):,.0f}{fte}")
-    return {**base, "comp_effective": row["effective"], "comp_employer": row["employer"],
-            "comp_salary": None if pd.isna(row["salary"]) else float(row["salary"]), "comp_fte": float(row["fte"]),
-            "comp_annual": None if expected is None else round(expected, 2),
-            "off": None if off is None else round(off, 4), "status": "agrees" if agrees else "disagrees",
-            "finding": f"{what} {span}; comp_events says {said} from {row['effective']}"
-                       + ("" if agrees or off is None else f" ({off:+.1%})")}
+    said = "no salary" if expected is None else f"{float(row['salary']):,.0f}{fte}"
+    return {
+        **base,
+        "comp_effective": row["effective"],
+        "comp_employer": row["employer"],
+        "comp_salary": None if pd.isna(row["salary"]) else float(row["salary"]),
+        "comp_fte": float(row["fte"]),
+        "comp_annual": None if expected is None else round(expected, 2),
+        "off": None if off is None else round(off, 4),
+        "status": "agrees" if agrees else "disagrees",
+        "finding": f"{what} {span}; comp_events says {said} from {row['effective']}"
+        + ("" if agrees or off is None else f" ({off:+.1%})"),
+    }
 
 
 def jobs(comp_events, checked):

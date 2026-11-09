@@ -31,8 +31,11 @@ def test_added_lines_and_outgoing_ranges():
     diff = "+++ b/src/x.py\n@@ -1 +1 @@\n-old\n+new line\n+++ /dev/null\n+gone\n"
     assert push_guard.added_lines(diff) == [("src/x.py", "new line"), ("", "gone")]
     zero = push_guard.ZERO
-    lines = ["refs/heads/main abc refs/heads/main def", f"refs/heads/new abc refs/heads/new {zero}",
-             f"(delete) {zero} refs/heads/old def"]
+    lines = [
+        "refs/heads/main abc refs/heads/main def",
+        f"refs/heads/new abc refs/heads/new {zero}",
+        f"(delete) {zero} refs/heads/old def",
+    ]
     assert push_guard.outgoing(lines, exists=lambda sha: True) == [["def..abc"], ["abc", "--not", "--remotes"]]
     # a force push of rewritten history: the remote's commit is not here, so everything new is checked
     assert push_guard.outgoing(lines[:1], exists=lambda sha: False) == [["abc", "--not", "--remotes"]]
@@ -77,9 +80,11 @@ def test_a_push_with_a_household_value_is_stopped(tmp_path, monkeypatch):
 
 
 def test_personal_categories_join_the_denylist(tmp_path):
-    (tmp_path / "c.json").write_text('{"values": [["category", "group", "priority"], ["food", "food", "high"], '
-                                     '["alex", "personal", "low"], ["joint", "personal", "low"], '
-                                     '["aunt_bea", "family_support", "medium"], ["misc", "other"]]}')
+    (tmp_path / "c.json").write_text(
+        '{"values": [["category", "group", "priority"], ["food", "food", "high"], '
+        '["alex", "personal", "low"], ["joint", "personal", "low"], '
+        '["aunt_bea", "family_support", "medium"], ["misc", "other"]]}'
+    )
     assert denylist.personal_categories(str(tmp_path / "c.json")) == {"alex", "aunt_bea"}
 
 
@@ -138,7 +143,8 @@ def test_leak_guard_reads_a_listed_pdf_and_refuses_an_unreadable_one(tmp_path, m
     (tmp_path / "tests" / "fixtures").mkdir(parents=True)
     broken = b"%PDF-1.4 broken"
     (tmp_path / "tests" / "fixtures" / "BINARIES").write_text(
-        f"tests/fixtures/x.pdf {hashlib.sha256(broken).hexdigest()}\n")
+        f"tests/fixtures/x.pdf {hashlib.sha256(broken).hexdigest()}\n"
+    )
     (tmp_path / "tests" / "fixtures" / "x.pdf").write_bytes(broken)
     assert [n for _, n, _ in push_guard.leak_guard.scan("tests/fixtures/x.pdf")] == ["listed PDF that can't be read"]
     (tmp_path / "y.jpg").write_bytes(b"\xff\xd8\xff")
@@ -166,9 +172,14 @@ def _pushed(tmp_path, monkeypatch, steps):
 
 
 def test_a_binary_added_then_deleted_in_the_same_push_is_still_refused(tmp_path, monkeypatch):
-    found = _pushed(tmp_path, monkeypatch, [
-        lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff"),
-        lambda w: (w / "statement.pdf").unlink()])
+    found = _pushed(
+        tmp_path,
+        monkeypatch,
+        [
+            lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff"),
+            lambda w: (w / "statement.pdf").unlink(),
+        ],
+    )
     assert len(found) == 1 and "statement.pdf" in found[0]
 
 
@@ -177,19 +188,22 @@ def test_a_binary_replaced_before_the_push_is_checked_in_every_version(tmp_path,
         (w / "tests" / "fixtures").mkdir(parents=True)
         (w / "tests" / "fixtures" / "BINARIES").write_text(f"tests/fixtures/chart.png {'0' * 64}  # made up\n")
         (w / "statement.pdf").write_bytes(b"%PDF-1.4 real \x00\xff")
-    found = _pushed(tmp_path, monkeypatch, [
-        listed,
-        lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 other \x00\xfe")])
+
+    found = _pushed(
+        tmp_path, monkeypatch, [listed, lambda w: (w / "statement.pdf").write_bytes(b"%PDF-1.4 other \x00\xfe")]
+    )
     assert len(found) == 2 and all("statement.pdf" in f for f in found)
     assert len({f.split()[1] for f in found}) == 2  # one finding for each commit's version
 
 
 def test_the_binary_list_allows_only_fixtures_pinned_by_their_hash():
     good = "a" * 64
-    text = (f"tests/fixtures/x.png {good}  # made up\n"
-            f"docs/real.png {good}\n"            # outside the fixtures: allows nothing
-            "tests/fixtures/y.png\n"              # no hash: allows nothing
-            f"tests/fixtures/x.png {'b' * 64}\n")  # a second approved version
+    text = (
+        f"tests/fixtures/x.png {good}  # made up\n"
+        f"docs/real.png {good}\n"  # outside the fixtures: allows nothing
+        "tests/fixtures/y.png\n"  # no hash: allows nothing
+        f"tests/fixtures/x.png {'b' * 64}\n"
+    )  # a second approved version
     assert push_guard.leak_guard.allowed_binaries(lambda p: text) == {"tests/fixtures/x.png": {good, "b" * 64}}
 
 

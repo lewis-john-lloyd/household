@@ -41,17 +41,43 @@ from . import logs, settings
 from .legacy_investments import LEGACY_DOC
 from .prices import month_ends
 
-COLUMNS = ["date", "account_id", "owner", "wrapper", "bucket", "symbol", "source", "asset_class", "shares", "price",
-           "value", "basis"]
+COLUMNS = [
+    "date",
+    "account_id",
+    "owner",
+    "wrapper",
+    "bucket",
+    "symbol",
+    "source",
+    "asset_class",
+    "shares",
+    "price",
+    "value",
+    "basis",
+]
 
 # accounts.type -> wrapper; "retirement" is the older word for both kinds of retirement account
-WRAPPERS = {"workplace_plan": "401k", "ira": "ira", "hsa": "hsa", "education": "529", "savings_bonds": "ibonds",
-            "brokerage": "taxable"}
+WRAPPERS = {
+    "workplace_plan": "401k",
+    "ira": "ira",
+    "hsa": "hsa",
+    "education": "529",
+    "savings_bonds": "ibonds",
+    "brokerage": "taxable",
+}
 INVESTED_TYPES = set(WRAPPERS) | {"retirement"}
 BUCKETS = ("401k_pretax", "401k_roth", "ira_pretax", "ira_roth", "hsa", "529", "ibonds", "taxable", "other")
-BUCKET_NAMES = {"401k_pretax": "401(k) pre-tax", "401k_roth": "401(k) Roth", "ira_pretax": "IRA pre-tax",
-                "ira_roth": "IRA Roth", "hsa": "HSA", "529": "529", "ibonds": "I-Bonds", "taxable": "Taxable",
-                "other": "Other"}
+BUCKET_NAMES = {
+    "401k_pretax": "401(k) pre-tax",
+    "401k_roth": "401(k) Roth",
+    "ira_pretax": "IRA pre-tax",
+    "ira_roth": "IRA Roth",
+    "hsa": "HSA",
+    "529": "529",
+    "ibonds": "I-Bonds",
+    "taxable": "Taxable",
+    "other": "Other",
+}
 # parsers whose readings give only part of an account: HealthEquity's cash history and its fund history
 PARTIAL_PARSERS = ("healthequity_cash", "healthequity")
 LEGACY_SNAPSHOT_DAYS = 30
@@ -182,8 +208,7 @@ def _readings(rows, day, klass, partial=frozenset(), gone=()):
         keep.append(now)
         docs = set(now["doc_id"]) & set(partial)
         if docs:
-            more = g[g["doc_id"].isin(docs) & (g["as_of"] < latest)
-                     & ~g["symbol"].isin(set(now["symbol"]))]
+            more = g[g["doc_id"].isin(docs) & (g["as_of"] < latest) & ~g["symbol"].isin(set(now["symbol"]))]
             more = more.sort_values("as_of").drop_duplicates(["symbol", "source"], keep="last")
             keep.append(more)
     return pd.concat(keep, ignore_index=True)
@@ -223,7 +248,9 @@ def _positions(positions, activity, prices, klass, day, base, partial=frozenset(
         shares, value = _num(r["shares"]), _num(r["value"]) or 0.0
         basis, price = ("read" if r["as_of"] == day else "carried"), ""
         if r["kind"] == "fund" and shares is not None and symbol:
-            moves = activity[(activity["symbol"] == symbol) & (activity["date"] > r["as_of"]) & (activity["date"] <= day)]
+            moves = activity[
+                (activity["symbol"] == symbol) & (activity["date"] > r["as_of"]) & (activity["date"] <= day)
+            ]
             if r["source"]:
                 moves = moves[moves["source"] == r["source"]]
             delta = pd.to_numeric(moves["shares"], errors="coerce").fillna(0.0).sum()
@@ -236,24 +263,47 @@ def _positions(positions, activity, prices, klass, day, base, partial=frozenset(
                     basis = "priced"
         elif shares is None and r["kind"] == "cash":
             shares = value
-        out.append({**base, "symbol": symbol, "source": r["source"], "asset_class": cls,
-                    "shares": round(shares, 6) if shares is not None else "", "price": price,
-                    "value": round(value, 2), "basis": basis, READ: r["as_of"]})
+        out.append(
+            {
+                **base,
+                "symbol": symbol,
+                "source": r["source"],
+                "asset_class": cls,
+                "shares": round(shares, 6) if shares is not None else "",
+                "price": price,
+                "value": round(value, 2),
+                "basis": basis,
+                READ: r["as_of"],
+            }
+        )
     funds = held[held["kind"] == "fund"] if len(held) else held
     fund_at = funds["as_of"].max() if len(funds) else ""
     if fund_at:  # funds bought since the fund reading join in from activity alone
         seen = {r["symbol"] for r in out}
-        later = activity[(activity["date"] > fund_at) & (activity["date"] <= day) & (activity["symbol"] != "")
-                         & ~activity["symbol"].isin(seen)]
+        later = activity[
+            (activity["date"] > fund_at)
+            & (activity["date"] <= day)
+            & (activity["symbol"] != "")
+            & ~activity["symbol"].isin(seen)
+        ]
         for symbol, g in later.groupby("symbol"):
             if is_cash(symbol, klass.get(symbol, "")):
                 continue
             shares = pd.to_numeric(g["shares"], errors="coerce").fillna(0.0).sum()
             close = prices.on(symbol, day)
             if shares > 1e-6 and close is not None:
-                out.append({**base, "symbol": symbol, "source": "", "asset_class": klass.get(symbol, ""),
-                            "shares": round(shares, 6), "price": close, "value": round(shares * close, 2),
-                            "basis": "rolled"})
+                out.append(
+                    {
+                        **base,
+                        "symbol": symbol,
+                        "source": "",
+                        "asset_class": klass.get(symbol, ""),
+                        "shares": round(shares, 6),
+                        "price": close,
+                        "value": round(shares * close, 2),
+                        "basis": "rolled",
+                    }
+                )
     return out, fund_at
 
 
@@ -261,8 +311,12 @@ def account_on(account, holdings, activity, prices, klass, day, partial=frozense
     """The rows for one account (an accounts record) on day. holdings and activity are that account's rows;
     partial is the ids of partial documents and gone the dates the legacy workbook stopped listing it."""
     wrap, treatment = wrapper(account), account.get("tax_treatment", "")
-    base = {"date": day, "account_id": account["account_id"], "owner": str(account.get("owner", "")).strip(),
-            "wrapper": wrap}
+    base = {
+        "date": day,
+        "account_id": account["account_id"],
+        "owner": str(account.get("owner", "")).strip(),
+        "wrapper": wrap,
+    }
     closed = str(account.get("closed", "")).strip()
     if holdings.empty or (closed and closed[:10] <= day):
         return []
@@ -270,8 +324,14 @@ def account_on(account, holdings, activity, prices, klass, day, partial=frozense
     positions = holdings.drop(totals.index)
     out, fund_at = _positions(positions, activity, prices, klass, day, base, partial, gone)
     if len(totals):
-        out = _with_statement(out, totals, fund_at, day, base,
-                              lambda then: _positions(positions, activity, prices, klass, then, base, partial, gone)[0])
+        out = _with_statement(
+            out,
+            totals,
+            fund_at,
+            day,
+            base,
+            lambda then: _positions(positions, activity, prices, klass, then, base, partial, gone)[0],
+        )
     for r in out:
         r["bucket"] = bucket(wrap, treatment, r["source"])
     return [r for r in out if abs(r["value"]) >= 0.005]
@@ -293,9 +353,21 @@ def _with_statement(out, totals, fund_at, day, base, positions_on):
     if len(before) and stated_on > (fund_at or ""):
         then = sum(r["value"] for r in positions_on(stated_on))
         if not out or then <= 0:  # no funds known: the statement's sources are the account, as stated
-            return [{**base, "symbol": "", "source": src, "asset_class": "", "shares": "", "price": "",
-                     "value": round(float(v), 2), "basis": "read" if stated_on == day else "carried", READ: stated_on}
-                    for src, v in zip(stated["source"], amounts) if v]
+            return [
+                {
+                    **base,
+                    "symbol": "",
+                    "source": src,
+                    "asset_class": "",
+                    "shares": "",
+                    "price": "",
+                    "value": round(float(v), 2),
+                    "basis": "read" if stated_on == day else "carried",
+                    READ: stated_on,
+                }
+                for src, v in zip(stated["source"], amounts)
+                if v
+            ]
         # the funds give only the mix: one row per fund (an older reading's sources aside), scaled to the statement
         merged = {}
         for r in out:
@@ -313,8 +385,14 @@ def _with_statement(out, totals, fund_at, day, base, positions_on):
         for part, share in (("roth", roth), ("pretax", 1 - roth)):
             if share > 1e-9:
                 shares = r["shares"]
-                split.append({**r, "source": part, "value": round(r["value"] * share, 2),
-                              "shares": round(shares * share, 6) if shares != "" else ""})
+                split.append(
+                    {
+                        **r,
+                        "source": part,
+                        "value": round(r["value"] * share, 2),
+                        "shares": round(shares * share, 6) if shares != "" else "",
+                    }
+                )
     return split
 
 
@@ -336,8 +414,11 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
     for c in ("as_of", "account_id", "symbol", "source", "doc_id"):
         h[c] = h[c].astype(str).str.strip()
     h["as_of"] = h["as_of"].str[:10]
-    a = activity.copy() if activity is not None and len(activity) else pd.DataFrame(
-        columns=["account_id", "date", "symbol", "source", "shares"])
+    a = (
+        activity.copy()
+        if activity is not None and len(activity)
+        else pd.DataFrame(columns=["account_id", "date", "symbol", "source", "shares"])
+    )
     for c in ("account_id", "date", "symbol", "source"):
         a[c] = a[c].astype(str).str.strip()
     a["date"] = a["date"].str[:10]
@@ -355,8 +436,9 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
         acts = a[a["account_id"] == acct["account_id"]]
         for day in dates:
             rows += account_on(acct, mine, acts, priced, klass, day, partial, gone.get(acct["account_id"], ()))
-    out = fill_gaps(pd.DataFrame(rows, columns=COLUMNS + [READ]).fillna({READ: ""}), h, priced, klass, proxies or {},
-                    partial)
+    out = fill_gaps(
+        pd.DataFrame(rows, columns=COLUMNS + [READ]).fillna({READ: ""}), h, priced, klass, proxies or {}, partial
+    )
     notes += stale(out, today)
     rows = out.drop(columns=[READ]).to_dict("records")
     unknown = sorted(set(h["account_id"]) - set(accounts["account_id"].astype(str).str.strip()))
@@ -364,10 +446,18 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
         notes.append(logs.warn("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown)))
     out = pd.DataFrame(rows, columns=COLUMNS)
     latest = out[out["date"] == out["date"].max()] if len(out) else out
-    blank = sorted(set(latest.loc[(latest["asset_class"] == "") & (latest["symbol"] != "")
-                                  & ~latest["wrapper"].isin(("529", "ibonds")), "symbol"]))
+    blank = sorted(
+        set(
+            latest.loc[
+                (latest["asset_class"] == "") & (latest["symbol"] != "") & ~latest["wrapper"].isin(("529", "ibonds")),
+                "symbol",
+            ]
+        )
+    )
     if blank:
-        notes.append(logs.warn(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank)))
+        notes.append(
+            logs.warn(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank))
+        )
     return out, notes
 
 
@@ -394,8 +484,11 @@ def proxies(params):
     if params is None or not len(params):
         return {}
     p = params[params["jurisdiction"].astype(str) == "household"]
-    return {k[len(settings.PROXY_PREFIX):]: settings.value(params, k).strip()
-            for k in set(p["key"].astype(str)) if k.startswith(settings.PROXY_PREFIX) and settings.value(params, k).strip()}
+    return {
+        k[len(settings.PROXY_PREFIX) :]: settings.value(params, k).strip()
+        for k in set(p["key"].astype(str))
+        if k.startswith(settings.PROXY_PREFIX) and settings.value(params, k).strip()
+    }
 
 
 def fill_gaps(out, holdings, prices, klass, proxies, partial=frozenset()):
@@ -411,8 +504,11 @@ def fill_gaps(out, holdings, prices, klass, proxies, partial=frozenset()):
     if out.empty:
         return out
     h = holdings[~holdings["doc_id"].isin(partial)] if len(holdings) else holdings
-    read = (h.assign(v=pd.to_numeric(h["value"], errors="coerce").fillna(0.0))
-            .groupby(["account_id", "as_of"])["v"].sum()) if len(h) else pd.Series(dtype=float)
+    read = (
+        (h.assign(v=pd.to_numeric(h["value"], errors="coerce").fillna(0.0)).groupby(["account_id", "as_of"])["v"].sum())
+        if len(h)
+        else pd.Series(dtype=float)
+    )
     next_reading = {}
     for (account, day), total in read.items():
         next_reading.setdefault(account, []).append((day, total))
@@ -461,8 +557,12 @@ def stale(out, today):
         newest = max(str(r) for r in g[READ] if str(r)) if any(str(r) for r in g[READ]) else ""
         if newest and (date.fromisoformat(today) - date.fromisoformat(newest)).days > STALE_DAYS:
             how = "moved with its funds' prices since" if (g["basis"] == TRACKED).any() else "carried as read"
-            lines.append(logs.warn(f"valuation: {account} was last read {newest}; its value is {how}: add a statement "
-                                   "or download to update it"))
+            lines.append(
+                logs.warn(
+                    f"valuation: {account} was last read {newest}; its value is {how}: add a statement "
+                    "or download to update it"
+                )
+            )
     return lines
 
 

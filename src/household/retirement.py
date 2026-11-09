@@ -63,12 +63,18 @@ from . import markets, retirelaw as law, settings, taxdata, valuation
 
 LAW_YEAR = max(taxdata.MFJ_BRACKETS)
 ORDERS = ("conventional", "proportional", "bracket")
-ORDER_NAMES = {"conventional": "Taxable, then pre-tax, then Roth", "proportional": "In proportion to balances",
-               "bracket": "Pre-tax to the 12% bracket, then taxable"}
+ORDER_NAMES = {
+    "conventional": "Taxable, then pre-tax, then Roth",
+    "proportional": "In proportion to balances",
+    "bracket": "Pre-tax to the 12% bracket, then taxable",
+}
 CONVERSIONS = (0.0, 0.12, 0.22, 0.24)
 RULES = ("constant", "guardrails", "vpw")
-RULE_NAMES = {"constant": "Constant real spending", "guardrails": "Guardrails (Guyton-Klinger)",
-              "vpw": "Variable percentage withdrawal"}
+RULE_NAMES = {
+    "constant": "Constant real spending",
+    "guardrails": "Guardrails (Guyton-Klinger)",
+    "vpw": "Variable percentage withdrawal",
+}
 BRACKET_ORDER_RATE = 0.12
 GUARD_BAND, GUARD_STEP, GUARD_LAST_YEARS = 0.20, 0.10, 15
 VPW_RETURNS = (0.050, 0.019)  # the real stock and bond returns VPW's table assumes (Bogleheads VPW)
@@ -77,12 +83,21 @@ GAIN_RATE_AT_END = 0.15  # and the taxable accounts' unrealized gain after this
 TRUSTEES_CUT_YEAR = 2034  # the year the 2025 Trustees Report projects combined OASDI reserves run out
 ITERATIONS = 8
 SEED = 1928
-DEFAULTS = {"plan_to_age": 95, "success_target": 0.90, "inflation": 0.03, "cagrs": (0.05, 0.07, 0.09),
-            "monte_carlo_runs": 1000, "taxable_yield": 0.02, "health_pre65": 24_000, "health_supplement": 3_000,
-            "claim_age": 67}
+DEFAULTS = {
+    "plan_to_age": 95,
+    "success_target": 0.90,
+    "inflation": 0.03,
+    "cagrs": (0.05, 0.07, 0.09),
+    "monte_carlo_runs": 1000,
+    "taxable_yield": 0.02,
+    "health_pre65": 24_000,
+    "health_supplement": 3_000,
+    "claim_age": 67,
+}
 
 
 # --- inputs -----------------------------------------------------------------------------------------------
+
 
 @dataclass
 class Person:
@@ -153,9 +168,11 @@ class Strategy:
 
     @property
     def label(self):
-        bits = [ORDER_NAMES[self.order],
-                f"convert to the top of {int(round(self.convert_to * 100))}%" if self.convert_to else "no conversions",
-                RULE_NAMES[self.rule].lower()]
+        bits = [
+            ORDER_NAMES[self.order],
+            f"convert to the top of {int(round(self.convert_to * 100))}%" if self.convert_to else "no conversions",
+            RULE_NAMES[self.rule].lower(),
+        ]
         if self.sepp:
             bits.append("72(t) to 59 1/2")
         if self.claims:
@@ -175,6 +192,7 @@ def parse_strategy(text):
 
 
 # --- Social Security --------------------------------------------------------------------------------------
+
 
 def _claim_year(p, age):
     return p.born.year + age
@@ -227,6 +245,7 @@ def benefits(h, retire_year, claims, today_year):
 
 # --- tax, vectorized over paths ---------------------------------------------------------------------------
 
+
 def _schedule(x, steps):
     tax = np.zeros_like(x)
     for i, (floor, rate) in enumerate(steps):
@@ -258,8 +277,9 @@ def taxable_social_security(ss, other, deflator):
 def deduction(n65, agi, year):
     d = P["standard_deduction_mfj"] + law.AGED_DEDUCTION_MFJ * n65
     if law.SENIOR_YEARS[0] <= year <= law.SENIOR_YEARS[1]:
-        d = d + n65 * np.maximum(law.SENIOR_DEDUCTION - law.SENIOR_PHASE_RATE
-                                 * np.maximum(agi - law.SENIOR_PHASE_START_MFJ, 0), 0)
+        d = d + n65 * np.maximum(
+            law.SENIOR_DEDUCTION - law.SENIOR_PHASE_RATE * np.maximum(agi - law.SENIOR_PHASE_START_MFJ, 0), 0
+        )
     return d
 
 
@@ -281,8 +301,11 @@ def taxes(ordinary, gains, dividends, ss, penalized, excluded, n65, n_people, de
     federal += law.NIIT_RATE * np.minimum(preferred_income, np.maximum(agi - law.NIIT_THRESHOLD_MFJ / deflator, 0))
     penalty = law.EARLY_PENALTY * penalized
     wi_income = np.maximum(agi - ss_taxed - law.WI_LTCG_EXCLUSION * gains - excluded, 0)
-    full, start, rate = (P["wi_standard_deduction_mfj"], P["wi_standard_deduction_phase_start_mfj"],
-                         P["wi_standard_deduction_phase_rate_mfj"])
+    full, start, rate = (
+        P["wi_standard_deduction_mfj"],
+        P["wi_standard_deduction_phase_start_mfj"],
+        P["wi_standard_deduction_phase_rate_mfj"],
+    )
     std = np.maximum(full - rate * np.maximum(wi_income - start, 0), 0)
     exemptions = (P["wi_exemption"] * n_people + law.WI_AGED_EXEMPTION * n65) / deflator
     wisconsin = _schedule(np.maximum(wi_income - std - exemptions, 0), WI) + law.WI_EARLY_SHARE * penalty
@@ -299,6 +322,7 @@ def irmaa(magi, enrolled):
 
 
 # --- the simulation ---------------------------------------------------------------------------------------
+
 
 def _age_mid(p, year):
     return year + 0.5 - (p.born.year + (p.born.month - 1) / 12)
@@ -377,9 +401,21 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
             magi[year] = working_magi * one
             if record:
                 totals[i] = tax_val + hsa + sum(pre_plan[k] + pre_ira[k] + roth[k] for k in names)
-                rows.append(_row(year, people, "working", tax_val, hsa, pre_plan, pre_ira, roth,
-                                 contributions=h.taxable_savings + h.hsa_contribution
-                                 + sum(sum(c.values()) for c in h.contributions.values())))
+                rows.append(
+                    _row(
+                        year,
+                        people,
+                        "working",
+                        tax_val,
+                        hsa,
+                        pre_plan,
+                        pre_ira,
+                        roth,
+                        contributions=h.taxable_savings
+                        + h.hsa_contribution
+                        + sum(sum(c.values()) for c in h.contributions.values()),
+                    )
+                )
             continue
 
         end_age = {p.name: year - p.born.year for p in people}
@@ -394,8 +430,9 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
                 k = p.name
                 if strategy.sepp and early[k]:
                     sepp[k] = law.sepp_payment(pre_ira[k] + pre_plan[k], end_age[k])
-                    sepp_until[k] = max(year + law.SEPP_MIN_YEARS - 1,
-                                        int(p.born.year + law.EARLY_AGE + (p.born.month > 6)))
+                    sepp_until[k] = max(
+                        year + law.SEPP_MIN_YEARS - 1, int(p.born.year + law.EARLY_AGE + (p.born.month > 6))
+                    )
         rule55 = {p.name: retire_year >= p.born.year + law.RULE_OF_55 for p in people}
 
         income_ss = sum(ss[k].get(year, 0.0) for k in names) * one
@@ -432,8 +469,11 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
         if strategy.rule == "guardrails" and year > retire_year:
             rate = np.where(portfolio > 0, last_withdrawal / np.maximum(portfolio, 1), np.inf)
             cut = (rate > wr0 * (1 + GUARD_BAND)) & (years_left > GUARD_LAST_YEARS)
-            multiplier = np.where(cut, multiplier * (1 - GUARD_STEP),
-                                  np.where(rate < wr0 * (1 - GUARD_BAND), multiplier * (1 + GUARD_STEP), multiplier))
+            multiplier = np.where(
+                cut,
+                multiplier * (1 - GUARD_STEP),
+                np.where(rate < wr0 * (1 - GUARD_BAND), multiplier * (1 + GUARD_STEP), multiplier),
+            )
         spend = base * multiplier if strategy.rule != "vpw" else None
         forced = sum(rmd[k] + paid_sepp[k] for k in names)
         if strategy.rule == "vpw":
@@ -470,8 +510,10 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
             if strategy.order == "bracket":
                 room = np.maximum(bracket_top(BRACKET_ORDER_RATE) + deduct - ordinary_fixed - ss_taxed, 0)
                 pre_total = sum(caps[s] for s in pre)
-                capped = {s: np.minimum(caps[s], room * np.where(pre_total > 0, caps[s] / np.maximum(pre_total, 1), 0))
-                          for s in pre}
+                capped = {
+                    s: np.minimum(caps[s], room * np.where(pre_total > 0, caps[s] / np.maximum(pre_total, 1), 0))
+                    for s in pre
+                }
                 first = {f"{s}#room": capped[s] for s in pre}
                 for s in pre:
                     caps[s] = caps[s] - capped[s]
@@ -489,22 +531,26 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
             w_tax, w_hsa = got.get("taxable", 0.0), got.get("hsa", 0.0)
             gain_share = np.where(tax_val > 0, np.clip(1 - basis / np.maximum(tax_val, 1e-9), 0, 1), 0)
             gains = w_tax * gain_share
-            ordinary = (ordinary_fixed + sum(w_pre[k] + w_pre_late[k] + w_roth_late[k] for k in names) + w_hsa)
+            ordinary = ordinary_fixed + sum(w_pre[k] + w_pre_late[k] + w_roth_late[k] for k in names) + w_hsa
             conv = {k: np.zeros(n) for k in names}
             if strategy.convert_to:
                 room = np.maximum(bracket_top(strategy.convert_to) + deduct - ordinary - ss_taxed, 0)
                 left = {k: pre_plan[k] + pre_ira[k] - w_pre[k] - w_pre_late[k] for k in names}
                 total_left = sum(left.values())
                 for k in names:
-                    conv[k] = np.where(total_left > 0, np.minimum(room, total_left) * left[k]
-                                       / np.maximum(total_left, 1e-9), 0)
+                    conv[k] = np.where(
+                        total_left > 0, np.minimum(room, total_left) * left[k] / np.maximum(total_left, 1e-9), 0
+                    )
                 ordinary = ordinary + sum(conv.values())
             penalized = sum(w_pre_late[k] + w_roth_late[k] for k in names)
-            excluded = sum(np.minimum(law.WI_RETIREMENT_EXCLUSION / deflator,
-                                      rmd[k] + paid_sepp[k] + w_pre[k] + w_pre_late[k])
-                           * (end_age[k] >= law.WI_RETIREMENT_AGE) for k in names)
-            fed, wi, agi, ss_taxed = taxes(ordinary, gains, dividends, income_ss, penalized, excluded, n65,
-                                           len(names), deflator, year)
+            excluded = sum(
+                np.minimum(law.WI_RETIREMENT_EXCLUSION / deflator, rmd[k] + paid_sepp[k] + w_pre[k] + w_pre_late[k])
+                * (end_age[k] >= law.WI_RETIREMENT_AGE)
+                for k in names
+            )
+            fed, wi, agi, ss_taxed = taxes(
+                ordinary, gains, dividends, income_ss, penalized, excluded, n65, len(names), deflator, year
+            )
             tax = fed + wi
         withdrawn = w_tax + w_hsa + sum(w_pre[k] + w_pre_late[k] + w_roth[k] + w_roth_late[k] for k in names)
         if strategy.rule == "vpw":  # spending is what the withdrawals and income leave after health and tax
@@ -550,37 +596,82 @@ def simulate(h, strategy, retire_year, returns, inflation, today_year, record=Fa
         lowest = np.minimum(lowest, np.where(base > 0, spend / base, 1.0))
         if record:
             totals[i] = tax_val + hsa + sum(pre_plan[k] + pre_ira[k] + roth[k] for k in names)
-            rows.append(_row(year, people, "retired", tax_val, hsa, pre_plan, pre_ira, roth, spending=spend,
-                             health=health, social_security=income_ss, rmd=sum(rmd.values()),
-                             from_taxable=w_tax + dividends, from_pre_tax=sum(w_pre[k] + w_pre_late[k] for k in names)
-                             + sum(paid_sepp.values()), from_roth=sum(w_roth[k] + w_roth_late[k] for k in names),
-                             from_hsa=w_hsa + hsa_pay, converted=sum(conv.values()), ordinary_income=ordinary,
-                             capital_gains=gains + dividends, federal_tax=fed, state_tax=wi, irmaa=surcharge,
-                             penalty=law.EARLY_PENALTY * penalized * (1 + law.WI_EARLY_SHARE), short=lacking))
+            rows.append(
+                _row(
+                    year,
+                    people,
+                    "retired",
+                    tax_val,
+                    hsa,
+                    pre_plan,
+                    pre_ira,
+                    roth,
+                    spending=spend,
+                    health=health,
+                    social_security=income_ss,
+                    rmd=sum(rmd.values()),
+                    from_taxable=w_tax + dividends,
+                    from_pre_tax=sum(w_pre[k] + w_pre_late[k] for k in names) + sum(paid_sepp.values()),
+                    from_roth=sum(w_roth[k] + w_roth_late[k] for k in names),
+                    from_hsa=w_hsa + hsa_pay,
+                    converted=sum(conv.values()),
+                    ordinary_income=ordinary,
+                    capital_gains=gains + dividends,
+                    federal_tax=fed,
+                    state_tax=wi,
+                    irmaa=surcharge,
+                    penalty=law.EARLY_PENALTY * penalized * (1 + law.WI_EARLY_SHARE),
+                    short=lacking,
+                )
+            )
 
     pre_end = sum(pre_plan[k] + pre_ira[k] for k in names)
-    after_tax = (tax_val - GAIN_RATE_AT_END * np.maximum(tax_val - basis, 0) + hsa
-                 + sum(roth[k] for k in names) + pre_end * (1 - HEIR_RATE))
-    return {"short": short, "first_short": first_short, "end": tax_val + hsa + sum(roth.values()) + pre_end,
-            "after_tax": after_tax, "tax": lifetime_tax, "irmaa": lifetime_irmaa, "penalty": lifetime_penalty,
-            "converted": converted, "spent": spent, "base_spent": base_spent, "lowest": lowest,
-            "at_retirement": at_retirement if at_retirement is not None else np.zeros(n), "first_rate": wr0,
-            "first_need": first_need,
-            "totals": totals, "rows": rows}
+    after_tax = (
+        tax_val
+        - GAIN_RATE_AT_END * np.maximum(tax_val - basis, 0)
+        + hsa
+        + sum(roth[k] for k in names)
+        + pre_end * (1 - HEIR_RATE)
+    )
+    return {
+        "short": short,
+        "first_short": first_short,
+        "end": tax_val + hsa + sum(roth.values()) + pre_end,
+        "after_tax": after_tax,
+        "tax": lifetime_tax,
+        "irmaa": lifetime_irmaa,
+        "penalty": lifetime_penalty,
+        "converted": converted,
+        "spent": spent,
+        "base_spent": base_spent,
+        "lowest": lowest,
+        "at_retirement": at_retirement if at_retirement is not None else np.zeros(n),
+        "first_rate": wr0,
+        "first_need": first_need,
+        "totals": totals,
+        "rows": rows,
+    }
 
 
 def _row(year, people, phase, tax_val, hsa, pre_plan, pre_ira, roth, **values):
     names = [p.name for p in people]
     first = lambda v: float(np.atleast_1d(v)[0])  # noqa: E731
-    row = {"year": year, "ages": "/".join(str(year - p.born.year) for p in people), "phase": phase,
-           "taxable": first(tax_val), "pre_tax": first(sum(pre_plan[k] + pre_ira[k] for k in names)),
-           "roth": first(sum(roth[k] for k in names)), "hsa": first(hsa)}
+    row = {
+        "year": year,
+        "ages": "/".join(str(year - p.born.year) for p in people),
+        "phase": phase,
+        "taxable": first(tax_val),
+        "pre_tax": first(sum(pre_plan[k] + pre_ira[k] for k in names)),
+        "roth": first(sum(roth[k] for k in names)),
+        "hsa": first(hsa),
+    }
     row["total"] = row["taxable"] + row["pre_tax"] + row["roth"] + row["hsa"]
     row.update({k: first(v) for k, v in values.items()})
     return row
 
 
 # --- returns ----------------------------------------------------------------------------------------------
+
 
 def fixed_paths(h, cagr):
     real = (1 + cagr) / (1 + h.inflation) - 1
@@ -649,17 +740,83 @@ def success(result):
 
 # --- the reports ------------------------------------------------------------------------------------------
 
-YEAR_COLUMNS = ["retire_year", "ages", "model", "scenario", "success", "median_end", "p10_end", "short_from",
-                "at_retirement", "first_spending", "withdrawal_rate", "chosen"]
-STRATEGY_COLUMNS = ["strategy", "label", "order", "convert_to", "rule", "sepp", "claims", "model", "success",
-                    "median_after_tax", "p10_after_tax", "median_tax", "median_irmaa", "median_penalty",
-                    "median_converted", "median_spent", "lowest_spending", "chosen"]
-PLAN_COLUMNS = ["strategy", "year", "ages", "phase", "contributions", "spending", "health", "social_security",
-                "rmd", "from_taxable", "from_pre_tax", "from_roth", "from_hsa", "converted", "ordinary_income",
-                "capital_gains", "federal_tax", "state_tax", "irmaa", "penalty", "short", "taxable", "pre_tax", "roth",
-                "hsa", "total", "p10_total", "p50_total", "p90_total"]
-SS_COLUMNS = ["person", "claim_age", "claim_year", "statement_monthly", "computed_monthly", "plan_monthly",
-              "plan_yearly", "aime", "pia", "note"]
+YEAR_COLUMNS = [
+    "retire_year",
+    "ages",
+    "model",
+    "scenario",
+    "success",
+    "median_end",
+    "p10_end",
+    "short_from",
+    "at_retirement",
+    "first_spending",
+    "withdrawal_rate",
+    "chosen",
+]
+STRATEGY_COLUMNS = [
+    "strategy",
+    "label",
+    "order",
+    "convert_to",
+    "rule",
+    "sepp",
+    "claims",
+    "model",
+    "success",
+    "median_after_tax",
+    "p10_after_tax",
+    "median_tax",
+    "median_irmaa",
+    "median_penalty",
+    "median_converted",
+    "median_spent",
+    "lowest_spending",
+    "chosen",
+]
+PLAN_COLUMNS = [
+    "strategy",
+    "year",
+    "ages",
+    "phase",
+    "contributions",
+    "spending",
+    "health",
+    "social_security",
+    "rmd",
+    "from_taxable",
+    "from_pre_tax",
+    "from_roth",
+    "from_hsa",
+    "converted",
+    "ordinary_income",
+    "capital_gains",
+    "federal_tax",
+    "state_tax",
+    "irmaa",
+    "penalty",
+    "short",
+    "taxable",
+    "pre_tax",
+    "roth",
+    "hsa",
+    "total",
+    "p10_total",
+    "p50_total",
+    "p90_total",
+]
+SS_COLUMNS = [
+    "person",
+    "claim_age",
+    "claim_year",
+    "statement_monthly",
+    "computed_monthly",
+    "plan_monthly",
+    "plan_yearly",
+    "aime",
+    "pia",
+    "note",
+]
 EARNINGS_COLUMNS = ["person", "year", "fica_earnings", "indexed", "counted"]
 
 
@@ -681,13 +838,22 @@ def search(h, strategy, today_year, candidates=None):
         for model, r in res.items():
             at = float(np.median(r["at_retirement"]))
             starts = [s for s in r["first_short"] if s]
-            rows.append({"retire_year": y, "ages": _ages(h, y), "model": model.split(" ")[0] if model.startswith("fixed")
-                         else model, "scenario": model[len("fixed "):] if model.startswith("fixed") else "",
-                         "success": success(r), "median_end": float(np.median(r["end"])),
-                         "p10_end": float(np.percentile(r["end"], 10)),
-                         "short_from": int(min(starts)) if starts and model.startswith("fixed") else "",
-                         "at_retirement": at, "first_spending": float(np.median(r["first_need"])),
-                         "withdrawal_rate": float(np.median(r["first_rate"])), "chosen": ""})
+            rows.append(
+                {
+                    "retire_year": y,
+                    "ages": _ages(h, y),
+                    "model": model.split(" ")[0] if model.startswith("fixed") else model,
+                    "scenario": model[len("fixed ") :] if model.startswith("fixed") else "",
+                    "success": success(r),
+                    "median_end": float(np.median(r["end"])),
+                    "p10_end": float(np.percentile(r["end"], 10)),
+                    "short_from": int(min(starts)) if starts and model.startswith("fixed") else "",
+                    "at_retirement": at,
+                    "first_spending": float(np.median(r["first_need"])),
+                    "withdrawal_rate": float(np.median(r["first_rate"])),
+                    "chosen": "",
+                }
+            )
         if chosen is None and success(res["monte carlo"]) >= h.success_target:
             chosen = y
     return pd.DataFrame(rows, columns=YEAR_COLUMNS), chosen
@@ -697,10 +863,16 @@ def variants(h, base, claim_choices=(62, 67, 70)):
     """The base strategy under the other spending rules, and with each adult claiming at each age."""
     out = [replace(base, rule=r) for r in RULES if r != base.rule]
     if len(h.people) <= 2:
-        combos = [(a,) for a in claim_choices] if len(h.people) == 1 else \
-            [(a, b) for a in claim_choices for b in claim_choices]
-        out += [replace(base, claims=tuple(zip([p.name for p in h.people], c))) for c in combos
-                if tuple(c) != tuple(p.claim_age for p in h.people)]
+        combos = (
+            [(a,) for a in claim_choices]
+            if len(h.people) == 1
+            else [(a, b) for a in claim_choices for b in claim_choices]
+        )
+        out += [
+            replace(base, claims=tuple(zip([p.name for p in h.people], c)))
+            for c in combos
+            if tuple(c) != tuple(p.claim_age for p in h.people)
+        ]
     return out
 
 
@@ -712,28 +884,46 @@ def strategies(h, retire_year, base, today_year, only=None):
     if only is not None:
         grid = list(only)
     else:
-        grid = [Strategy(o, c, "constant", s) for o in ORDERS for c in CONVERSIONS for s in (False, True)
-                if s is False or any(_age_mid(p, retire_year) < law.EARLY_AGE for p in h.people)]
+        grid = [
+            Strategy(o, c, "constant", s)
+            for o in ORDERS
+            for c in CONVERSIONS
+            for s in (False, True)
+            if s is False or any(_age_mid(p, retire_year) < law.EARLY_AGE for p in h.people)
+        ]
         grid += variants(h, base)
         if base not in grid:
             grid.insert(0, base)
     results, rows = {}, []
     for s in grid:
-        res = run_all(h, s, retire_year, today_year, {"monte_carlo": mc, ("historical", retire_year): hist},
-                      record=True)
+        res = run_all(
+            h, s, retire_year, today_year, {"monte_carlo": mc, ("historical", retire_year): hist}, record=True
+        )
         results[s] = res
         for model in ("historical", "monte carlo"):
             r = res[model]
-            rows.append({"strategy": s.key, "label": s.label, "order": s.order, "convert_to": s.convert_to,
-                         "rule": s.rule, "sepp": s.sepp, "claims": ", ".join(f"{n} {a}" for n, a in s.claims),
-                         "model": model, "success": success(r), "median_after_tax": float(np.median(r["after_tax"])),
-                         "p10_after_tax": float(np.percentile(r["after_tax"], 10)),
-                         "median_tax": float(np.median(r["tax"])), "median_irmaa": float(np.median(r["irmaa"])),
-                         "median_penalty": float(np.median(r["penalty"])),
-                         "median_converted": float(np.median(r["converted"])),
-                         "median_spent": float(np.median(r["spent"])),
-                         "lowest_spending": float(np.percentile(np.where(np.isfinite(r["lowest"]), r["lowest"], 1), 10)),
-                         "chosen": ""})
+            rows.append(
+                {
+                    "strategy": s.key,
+                    "label": s.label,
+                    "order": s.order,
+                    "convert_to": s.convert_to,
+                    "rule": s.rule,
+                    "sepp": s.sepp,
+                    "claims": ", ".join(f"{n} {a}" for n, a in s.claims),
+                    "model": model,
+                    "success": success(r),
+                    "median_after_tax": float(np.median(r["after_tax"])),
+                    "p10_after_tax": float(np.percentile(r["after_tax"], 10)),
+                    "median_tax": float(np.median(r["tax"])),
+                    "median_irmaa": float(np.median(r["irmaa"])),
+                    "median_penalty": float(np.median(r["penalty"])),
+                    "median_converted": float(np.median(r["converted"])),
+                    "median_spent": float(np.median(r["spent"])),
+                    "lowest_spending": float(np.percentile(np.where(np.isfinite(r["lowest"]), r["lowest"], 1), 10)),
+                    "chosen": "",
+                }
+            )
     return pd.DataFrame(rows, columns=STRATEGY_COLUMNS), results
 
 
@@ -761,8 +951,16 @@ def plan_rows(h, strategy, retire_year, today_year, results=None):
     p10, p50, p90 = (np.percentile(mc["totals"], q, axis=1) for q in (10, 50, 90))
     rows = []
     for j, row in enumerate(det["rows"]):
-        rows.append({**{c: "" for c in PLAN_COLUMNS}, **row, "strategy": strategy.key,
-                     "p10_total": float(p10[j]), "p50_total": float(p50[j]), "p90_total": float(p90[j])})
+        rows.append(
+            {
+                **{c: "" for c in PLAN_COLUMNS},
+                **row,
+                "strategy": strategy.key,
+                "p10_total": float(p10[j]),
+                "p50_total": float(p50[j]),
+                "p90_total": float(p90[j]),
+            }
+        )
     return pd.DataFrame(rows, columns=PLAN_COLUMNS).fillna("")
 
 
@@ -779,24 +977,50 @@ def social_security(h, retire_year, today_year, claims=None):
         a, plan_pia = pia(p, retire_year, today_year)
         claim_year = _claim_year(p, age)
         full = plan[p.name].get(claim_year + 1, 0.0)
-        note = "" if p.earnings else ("no statement: set social_security_monthly:" + p.name if not p.fra_monthly
-                                      else "from social_security_monthly (no statement)")
-        rows.append({"person": p.name, "claim_age": age, "claim_year": claim_year,
-                     "statement_monthly": p.statement.get(age, ""), "computed_monthly": round(working, 2),
-                     "plan_monthly": round(plan_pia * factor, 2), "plan_yearly": round(full, 2), "aime": a,
-                     "pia": plan_pia, "note": note})
+        note = (
+            ""
+            if p.earnings
+            else (
+                "no statement: set social_security_monthly:" + p.name
+                if not p.fra_monthly
+                else "from social_security_monthly (no statement)"
+            )
+        )
+        rows.append(
+            {
+                "person": p.name,
+                "claim_age": age,
+                "claim_year": claim_year,
+                "statement_monthly": p.statement.get(age, ""),
+                "computed_monthly": round(working, 2),
+                "plan_monthly": round(plan_pia * factor, 2),
+                "plan_yearly": round(full, 2),
+                "aime": a,
+                "pia": plan_pia,
+                "note": note,
+            }
+        )
         if p.earnings:
             last = max(p.earnings)
             future = {y: p.earnings[last] for y in range(last + 1, retire_year)}
             index_year = min(p.born.year + 60, today_year - 2)
             base = law.AWI[min(index_year, max(law.AWI))]
             all_years = {**p.earnings, **future}
-            indexed = {y: e * base / law.AWI[y] if y <= index_year and y in law.AWI else e for y, e in all_years.items()}
-            top = set(sorted(indexed, key=lambda y: -indexed[y])[:law.COMPUTATION_YEARS])
+            indexed = {
+                y: e * base / law.AWI[y] if y <= index_year and y in law.AWI else e for y, e in all_years.items()
+            }
+            top = set(sorted(indexed, key=lambda y: -indexed[y])[: law.COMPUTATION_YEARS])
             for y in sorted(all_years):
-                earned.append({"person": p.name, "year": y, "fica_earnings": all_years[y],
-                               "indexed": round(indexed[y], 2), "counted": "yes" if y in top and indexed[y] > 0
-                               else "", "projected": y > last})
+                earned.append(
+                    {
+                        "person": p.name,
+                        "year": y,
+                        "fica_earnings": all_years[y],
+                        "indexed": round(indexed[y], 2),
+                        "counted": "yes" if y in top and indexed[y] > 0 else "",
+                        "projected": y > last,
+                    }
+                )
     earnings = pd.DataFrame(earned, columns=EARNINGS_COLUMNS + ["projected"])
     earnings["projected"] = earnings["projected"].map(lambda v: "projected" if v else "posted")
     return pd.DataFrame(rows, columns=SS_COLUMNS), earnings.rename(columns={"projected": "basis"})
@@ -804,8 +1028,16 @@ def social_security(h, retire_year, today_year, claims=None):
 
 # --- building the inputs from the ledger ------------------------------------------------------------------
 
-BUCKET_MAP = {"401k_pretax": "pre_plan", "ira_pretax": "pre_ira", "401k_roth": "roth", "ira_roth": "roth",
-              "hsa": "hsa", "taxable": "taxable", "ibonds": "taxable", "other": "taxable"}
+BUCKET_MAP = {
+    "401k_pretax": "pre_plan",
+    "ira_pretax": "pre_ira",
+    "401k_roth": "roth",
+    "ira_roth": "roth",
+    "hsa": "hsa",
+    "taxable": "taxable",
+    "ibonds": "taxable",
+    "other": "taxable",
+}
 STOCK_CLASSES = ("SDT", "SDS", "SIT", "SIE", "REIT")
 
 
@@ -848,8 +1080,11 @@ def baseline(actuals, categories, today, leave_out=("taxes",)):
     months = sorted(m for m in a["month"].unique() if m < month)[-12:]
     a = a[a["month"].isin(months)]
     skip = {"", "transfer"} | set(leave_out)
-    keep = [c for c in a["category"].astype(str).unique()
-            if c not in skip and groups.get(c, "") not in ({"income", "savings", "transfer"} | set(leave_out))]
+    keep = [
+        c
+        for c in a["category"].astype(str).unique()
+        if c not in skip and groups.get(c, "") not in ({"income", "savings", "transfer"} | set(leave_out))
+    ]
     kept = a[a["category"].isin(keep)]
     by = kept.groupby("category")["spend"].sum()
     scale = 12 / len(months) if months else 1
@@ -892,18 +1127,40 @@ def spending_path(base, groups, years, changes, loans):
     for name, steps in changes.items():
         members = [name] if name in base else by_group.get(name, [])
         now = sum(base[c] for c in members)
-        rows.append({"key": name, "now": now, "steps": "; ".join(
-            f"{v:,.0f}" + (f" from {s}" if s else "") for s, v in steps),
-            "basis": "a category" if name in base else ("a group" if members else "added")})
+        rows.append(
+            {
+                "key": name,
+                "now": now,
+                "steps": "; ".join(f"{v:,.0f}" + (f" from {s}" if s else "") for s, v in steps),
+                "basis": "a category" if name in base else ("a group" if members else "added"),
+            }
+        )
     for loan_id, (payoff_year, yearly) in loans.items():
         if loan_id not in changes:
-            rows.append({"key": loan_id, "now": yearly, "steps": f"0 from {payoff_year + 1}",
-                         "basis": "the loan's payments end when it is paid off"})
+            rows.append(
+                {
+                    "key": loan_id,
+                    "now": yearly,
+                    "steps": f"0 from {payoff_year + 1}",
+                    "basis": "the loan's payments end when it is paid off",
+                }
+            )
     return path, rows
 
 
-BUDGET_COLUMNS = ["line", "group", "kind", "now", "first_year", "at_retirement", "retire_year", "setting", "is_set",
-                  "lumpy", "note"]
+BUDGET_COLUMNS = [
+    "line",
+    "group",
+    "kind",
+    "now",
+    "first_year",
+    "at_retirement",
+    "retire_year",
+    "setting",
+    "is_set",
+    "lumpy",
+    "note",
+]
 
 
 def _step(steps, year, current):
@@ -927,10 +1184,21 @@ def budget_table(h, retire_year):
     rows = []
 
     def row(line, group, kind, now, at, note=""):
-        rows.append({"line": line, "group": group, "kind": kind, "now": round(now, 2),
-                     "first_year": "" if at is None else round(at(first), 2),
-                     "at_retirement": "" if at is None else round(at(retire_year), 2), "retire_year": retire_year,
-                     "setting": raw.get(line, ""), "is_set": "yes" if line in raw else "", "lumpy": round(lumpy[line], 3) if line in lumpy else "", "note": note})
+        rows.append(
+            {
+                "line": line,
+                "group": group,
+                "kind": kind,
+                "now": round(now, 2),
+                "first_year": "" if at is None else round(at(first), 2),
+                "at_retirement": "" if at is None else round(at(retire_year), 2),
+                "retire_year": retire_year,
+                "setting": raw.get(line, ""),
+                "is_set": "yes" if line in raw else "",
+                "lumpy": round(lumpy[line], 3) if line in lumpy else "",
+                "note": note,
+            }
+        )
 
     by_group = {}
     for c in base:
@@ -941,26 +1209,58 @@ def budget_table(h, retire_year):
         if g in changes and g not in base:
             row(g, g, "group", now, lambda y, g=g, now=now: _step(changes[g], y, now))
         else:
-            row(g, g, "group", now, lambda y, ms=members: sum(
-                _step(changes[c], y, base[c]) if c in changes else base[c] for c in ms))
+            row(
+                g,
+                g,
+                "group",
+                now,
+                lambda y, ms=members: sum(_step(changes[c], y, base[c]) if c in changes else base[c] for c in ms),
+            )
         for c in members:
             if members == [g]:
                 continue  # a group of one category of its name is one line
             covered = g in changes and c not in changes and g not in base
-            row(c, g, "category", base[c], None if covered else (lambda y, c=c: _step(changes.get(c, []), y, base[c])),
-                "counted in its group's setting" if covered else "")
+            row(
+                c,
+                g,
+                "category",
+                base[c],
+                None if covered else (lambda y, c=c: _step(changes.get(c, []), y, base[c])),
+                "counted in its group's setting" if covered else "",
+            )
     for name in sorted(changes):
         if name not in base and name not in by_group:
             row(name, "", "added", 0.0, lambda y, n=name: _step(changes[n], y, 0.0))
     for loan_id, (payoff_year, yearly) in sorted(loans.items()):
         if loan_id not in changes:
-            row(loan_id, "", "loan", 0.0, lambda y, p=payoff_year, v=yearly: -v if y > p else 0.0,
-                f"its payments, {yearly:,.0f} a year, end after {payoff_year}")
+            row(
+                loan_id,
+                "",
+                "loan",
+                0.0,
+                lambda y, p=payoff_year, v=yearly: -v if y > p else 0.0,
+                f"its payments, {yearly:,.0f} a year, end after {payoff_year}",
+            )
     return pd.DataFrame(rows, columns=BUDGET_COLUMNS)
 
 
-def build(params, people_names, statements, estimates, earnings, accounts, values, activity, lots, actuals,
-          categories, schedule, vests, allocation_share, today):
+def build(
+    params,
+    people_names,
+    statements,
+    estimates,
+    earnings,
+    accounts,
+    values,
+    activity,
+    lots,
+    actuals,
+    categories,
+    schedule,
+    vests,
+    allocation_share,
+    today,
+):
     """(Household, notes, assumption rows) from the ledger and Reports frames; Household None when an adult's
     birth date is missing."""
     today_year = int(today[:4])
@@ -969,8 +1269,9 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
     number = lambda key, default: settings.number(params, key, default)  # noqa: E731
 
     def note(section, key, label, val, source, setting=""):
-        assume.append({"section": section, "key": key, "label": label, "value": val, "source": source,
-                       "setting": setting})
+        assume.append(
+            {"section": section, "key": key, "label": label, "value": val, "source": source, "setting": setting}
+        )
 
     if not people_names:
         return None, ["retirement: no adults (household_adults, or the people on pay stubs)"], pd.DataFrame(assume)
@@ -982,31 +1283,60 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
         try:
             born_d = date.fromisoformat(str(born).strip())
         except ValueError:
-            notes.append(f"retirement: no birth date for {name}: set birth_date:{name} (YYYY-MM-DD) or add their "
-                         "Social Security statement")
+            notes.append(
+                f"retirement: no birth date for {name}: set birth_date:{name} (YYYY-MM-DD) or add their "
+                "Social Security statement"
+            )
             return None, notes, pd.DataFrame(assume)
         as_of = str(mine["as_of"].iloc[-1]) if len(mine) else ""
-        e = earnings[(earnings["person"].astype(str) == name) & (earnings["as_of"].astype(str) == as_of)] \
-            if len(mine) and earnings is not None and len(earnings) else pd.DataFrame()
-        est = estimates[(estimates["person"].astype(str) == name) & (estimates["as_of"].astype(str) == as_of)
-                        & (estimates["kind"].astype(str) == "retirement")] \
-            if len(mine) and estimates is not None and len(estimates) else pd.DataFrame()
+        e = (
+            earnings[(earnings["person"].astype(str) == name) & (earnings["as_of"].astype(str) == as_of)]
+            if len(mine) and earnings is not None and len(earnings)
+            else pd.DataFrame()
+        )
+        est = (
+            estimates[
+                (estimates["person"].astype(str) == name)
+                & (estimates["as_of"].astype(str) == as_of)
+                & (estimates["kind"].astype(str) == "retirement")
+            ]
+            if len(mine) and estimates is not None and len(estimates)
+            else pd.DataFrame()
+        )
         claim = int(number(f"social_security_claim_age:{name}", DEFAULTS["claim_age"]))
         claim = min(max(claim, 62), 70)
-        person = Person(name, born_d, claim,
-                        {int(y): float(v) for y, v in zip(e.get("year", []), _num(e.get("fica_earnings", [])))},
-                        {int(a): float(v) for a, v in zip(est.get("age", []), _num(est.get("monthly", [])))},
-                        int(as_of[:4]) if as_of else 0,
-                        number(f"social_security_monthly:{name}", 0.0),
-                        float(_num(e.get("medicare_earnings", pd.Series(dtype=float))).iloc[-1]) if len(e) else 0.0)
+        person = Person(
+            name,
+            born_d,
+            claim,
+            {int(y): float(v) for y, v in zip(e.get("year", []), _num(e.get("fica_earnings", [])))},
+            {int(a): float(v) for a, v in zip(est.get("age", []), _num(est.get("monthly", [])))},
+            int(as_of[:4]) if as_of else 0,
+            number(f"social_security_monthly:{name}", 0.0),
+            float(_num(e.get("medicare_earnings", pd.Series(dtype=float))).iloc[-1]) if len(e) else 0.0,
+        )
         people.append(person)
-        note("people", f"born:{name}", f"{name} born", born_d.isoformat(),
-             "the setting" if value(f"birth_date:{name}") else "the Social Security statement", f"birth_date:{name}")
-        note("people", f"claim:{name}", f"{name} claims Social Security at", claim, "default (full retirement age)"
-             if not value(f"social_security_claim_age:{name}") else "the setting", f"social_security_claim_age:{name}")
+        note(
+            "people",
+            f"born:{name}",
+            f"{name} born",
+            born_d.isoformat(),
+            "the setting" if value(f"birth_date:{name}") else "the Social Security statement",
+            f"birth_date:{name}",
+        )
+        note(
+            "people",
+            f"claim:{name}",
+            f"{name} claims Social Security at",
+            claim,
+            "default (full retirement age)" if not value(f"social_security_claim_age:{name}") else "the setting",
+            f"social_security_claim_age:{name}",
+        )
         if not person.earnings and not person.fra_monthly:
-            notes.append(f"retirement: no Social Security statement for {name}; their benefit counts as none until "
-                         f"one is added (or social_security_monthly:{name} is set)")
+            notes.append(
+                f"retirement: no Social Security statement for {name}; their benefit counts as none until "
+                f"one is added (or social_security_monthly:{name} is set)"
+            )
 
     adults = [p.name for p in people]
     accts = accounts.set_index("account_id") if len(accounts) else pd.DataFrame()
@@ -1031,8 +1361,9 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
             for a, s in shares.items():
                 bal[kind][a] += amount * s
     lot_rows = lots[lots["account_id"].isin(taxable_accounts)] if lots is not None and len(lots) else pd.DataFrame()
-    lot_value, lot_basis = (float(_num(lot_rows["value"]).sum()), float(_num(lot_rows["basis"]).sum())) \
-        if len(lot_rows) else (0.0, 0.0)
+    lot_value, lot_basis = (
+        (float(_num(lot_rows["value"]).sum()), float(_num(lot_rows["basis"]).sum())) if len(lot_rows) else (0.0, 0.0)
+    )
     basis = lot_basis + max(taxable - lot_value, 0.0)
 
     since = (pd.Timestamp(today) - pd.DateOffset(years=1)).date().isoformat()
@@ -1046,9 +1377,13 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
             if r["account_id"] not in accts.index:
                 continue
             acct = accts.loc[r["account_id"]]
-            kind = BUCKET_MAP.get(valuation.bucket(valuation.wrapper({**acct.to_dict(), "account_id": r["account_id"]}),
-                                                   acct["tax_treatment"],
-                                                   r.get("source", "")))
+            kind = BUCKET_MAP.get(
+                valuation.bucket(
+                    valuation.wrapper({**acct.to_dict(), "account_id": r["account_id"]}),
+                    acct["tax_treatment"],
+                    r.get("source", ""),
+                )
+            )
             shares = _owners(acct["owner"], adults)
             recent = r["date"] > since
             if str(acct["type"]) in ("ira", "education") and recent and r["kind"] in ("contribution", "withdrawal"):
@@ -1058,7 +1393,11 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
                     roth_basis[a] += r["amount"] * s
             if not recent or not shares:
                 continue
-            if r["kind"] in ("contribution", "conversion_in", "conversion_out") and kind in ("pre_plan", "pre_ira", "roth"):
+            if r["kind"] in ("contribution", "conversion_in", "conversion_out") and kind in (
+                "pre_plan",
+                "pre_ira",
+                "roth",
+            ):
                 for a, s in shares.items():
                     key = "roth" if kind == "roth" else ("pre_plan" if kind == "pre_plan" else "pre_ira")
                     if key == "pre_ira":
@@ -1067,9 +1406,9 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
             if r["kind"] == "contribution" and kind == "hsa":
                 hsa_in += r["amount"]
 
-    base, groups, months, lumpy = baseline(actuals, categories, today,
-                                           [x.strip() for x in value("retirement_leave_out", "taxes").split(",")
-                                            if x.strip()])
+    base, groups, months, lumpy = baseline(
+        actuals, categories, today, [x.strip() for x in value("retirement_leave_out", "taxes").split(",") if x.strip()]
+    )
     leave_out = [x.strip() for x in value("retirement_leave_out", "taxes").split(",") if x.strip()]
     came_in = left_out = 0.0
     if actuals is not None and len(actuals) and months:
@@ -1077,32 +1416,44 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
         a = a[a["month"].astype(str).isin(months)]
         scale = 12 / len(months)
         came_in = -float(a[a["category"].map(lambda c: groups.get(str(c)) == "income")]["spend"].sum()) * scale
-        left_out = float(a[a["category"].map(lambda c: str(c) in leave_out or groups.get(str(c)) in leave_out)]
-                         ["spend"].sum()) * scale
+        left_out = (
+            float(a[a["category"].map(lambda c: str(c) in leave_out or groups.get(str(c)) in leave_out)]["spend"].sum())
+            * scale
+        )
     vested = 0.0
     if vests is not None and len(vests):
         vv = vests[vests["vest_date"].astype(str) > since]
         vested = float((_num(vv["net_shares"]) * _num(vv["fmv"])).sum())
 
     changes = {}
-    for key in set(params.loc[params["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(params) else ():
+    for key in (
+        set(params.loc[params["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(params) else ()
+    ):
         base_key, _, name = key.partition(":")
         if base_key == "retirement_spending" and name and str(value(key)).strip():
             steps = spending_steps(value(key))
             if steps is None:
-                notes.append(f"retirement: {key} can't be read ({value(key)!r}); write it like 12000 or "
-                             "0 from 2032 or 18000; 9000 from 2040")
+                notes.append(
+                    f"retirement: {key} can't be read ({value(key)!r}); write it like 12000 or "
+                    "0 from 2032 or 18000; 9000 from 2040"
+                )
             elif steps:
                 changes[name] = steps
     loans = {}
     if schedule is not None and len(schedule):
-        s = schedule.assign(interest=_num(schedule["interest"]), principal=_num(schedule["principal"]),
-                            extra=_num(schedule.get("extra_principal", 0)), month=schedule["month"].astype(str))
+        s = schedule.assign(
+            interest=_num(schedule["interest"]),
+            principal=_num(schedule["principal"]),
+            extra=_num(schedule.get("extra_principal", 0)),
+            month=schedule["month"].astype(str),
+        )
         for loan_id, g in s.groupby("loan_id"):
             last12 = g[(g["month"] < today[:7])].tail(12)
             if len(last12) and g["month"].max() >= today[:7]:
-                loans[str(loan_id)] = (int(g["month"].max()[:4]),
-                                       float((last12["interest"] + last12["principal"] - last12["extra"]).sum()))
+                loans[str(loan_id)] = (
+                    int(g["month"].max()[:4]),
+                    float((last12["interest"] + last12["principal"] - last12["extra"]).sum()),
+                )
     start = today_year + 1
     end = max(p.born.year for p in people) + int(number("retirement_plan_to_age", DEFAULTS["plan_to_age"]))
     path, adjust = spending_path(base, groups, range(start, end + 1), changes, loans)
@@ -1123,87 +1474,214 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
         cagrs = tuple(float(x) for x in cagr_text.split(",")) if cagr_text else DEFAULTS["cagrs"]
     except ValueError:
         cagrs = DEFAULTS["cagrs"]
-        notes.append(f"retirement: retirement_cagrs isn't numbers separated by commas ({cagr_text!r}); using the default")
+        notes.append(
+            f"retirement: retirement_cagrs isn't numbers separated by commas ({cagr_text!r}); using the default"
+        )
     stock = number("retirement_stock_share", allocation_share if allocation_share is not None else 0.7)
-    h = Household(start=start, people=people, pre_plan=bal["pre_plan"], pre_ira=bal["pre_ira"], roth=bal["roth"],
-                  roth_basis=roth_basis, taxable=taxable, basis=basis, hsa=hsa, contributions=contributions,
-                  hsa_contribution=hsa_in, taxable_savings=taxable_savings, spending=path, hsa_spending=hsa_spending,
-                  health_pre65=number("retirement_health_pre65", DEFAULTS["health_pre65"]),
-                  health_supplement=number("retirement_health_supplement", DEFAULTS["health_supplement"]),
-                  stock_share=min(max(stock, 0.0), 1.0),
-                  taxable_yield=number("retirement_taxable_yield", DEFAULTS["taxable_yield"]),
-                  inflation=number("retirement_inflation", DEFAULTS["inflation"]), cagrs=cagrs,
-                  plan_to_age=int(number("retirement_plan_to_age", DEFAULTS["plan_to_age"])),
-                  success_target=number("retirement_success_target", DEFAULTS["success_target"]),
-                  monte_carlo_runs=int(number("retirement_monte_carlo_runs", DEFAULTS["monte_carlo_runs"])),
-                  ss_cut=number("social_security_cut", 0.0),
-                  ss_cut_from=int(number("social_security_cut_from", TRUSTEES_CUT_YEAR)), pending=pending,
-                  budget={"base": base, "groups": groups, "changes": changes, "loans": loans, "lumpy": lumpy,
-                          "months": months, "settings": {
-                              k.partition(":")[2]: str(value(k)) for k in (set(params.loc[
-                                  params["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(params)
-                                  else ()) if k.startswith("retirement_spending:")}})
+    h = Household(
+        start=start,
+        people=people,
+        pre_plan=bal["pre_plan"],
+        pre_ira=bal["pre_ira"],
+        roth=bal["roth"],
+        roth_basis=roth_basis,
+        taxable=taxable,
+        basis=basis,
+        hsa=hsa,
+        contributions=contributions,
+        hsa_contribution=hsa_in,
+        taxable_savings=taxable_savings,
+        spending=path,
+        hsa_spending=hsa_spending,
+        health_pre65=number("retirement_health_pre65", DEFAULTS["health_pre65"]),
+        health_supplement=number("retirement_health_supplement", DEFAULTS["health_supplement"]),
+        stock_share=min(max(stock, 0.0), 1.0),
+        taxable_yield=number("retirement_taxable_yield", DEFAULTS["taxable_yield"]),
+        inflation=number("retirement_inflation", DEFAULTS["inflation"]),
+        cagrs=cagrs,
+        plan_to_age=int(number("retirement_plan_to_age", DEFAULTS["plan_to_age"])),
+        success_target=number("retirement_success_target", DEFAULTS["success_target"]),
+        monte_carlo_runs=int(number("retirement_monte_carlo_runs", DEFAULTS["monte_carlo_runs"])),
+        ss_cut=number("social_security_cut", 0.0),
+        ss_cut_from=int(number("social_security_cut_from", TRUSTEES_CUT_YEAR)),
+        pending=pending,
+        budget={
+            "base": base,
+            "groups": groups,
+            "changes": changes,
+            "loans": loans,
+            "lumpy": lumpy,
+            "months": months,
+            "settings": {
+                k.partition(":")[2]: str(value(k))
+                for k in (
+                    set(params.loc[params["jurisdiction"].astype(str) == "household", "key"].astype(str))
+                    if len(params)
+                    else ()
+                )
+                if k.startswith("retirement_spending:")
+            },
+        },
+    )
 
     for a in adults:
         for kind, label in (("pre_plan", "pre-tax in workplace plans"), ("pre_ira", "pre-tax IRAs"), ("roth", "Roth")):
             note("today", f"{kind}:{a}", f"{a}: {label}", round(bal[kind][a], 2), "investment values today")
-        note("today", f"roth_basis:{a}", f"{a}: Roth contributions and conversions (free before 59 1/2)",
-             round(roth_basis[a], 2), "investment activity (conversions taken as backdoor ones, already taxed)")
+        note(
+            "today",
+            f"roth_basis:{a}",
+            f"{a}: Roth contributions and conversions (free before 59 1/2)",
+            round(roth_basis[a], 2),
+            "investment activity (conversions taken as backdoor ones, already taxed)",
+        )
     note("today", "taxable", "Taxable accounts", round(taxable, 2), "investment values today")
     note("today", "basis", "Their cost basis", round(basis, 2), "open lots, and cash at its value")
     note("today", "hsa", "HSA", round(hsa, 2), "investment values today")
     for a in adults:
         for kind, label in (("pre_plan", "pre-tax"), ("roth", "Roth")):
-            note("saving", f"{kind}:{a}", f"{a}: {label} contributions a year", round(contributions[a][kind], 2),
-                 "investment activity, last 12 months")
+            note(
+                "saving",
+                f"{kind}:{a}",
+                f"{a}: {label} contributions a year",
+                round(contributions[a][kind], 2),
+                "investment activity, last 12 months",
+            )
     note("saving", "hsa", "HSA contributions a year", round(hsa_in, 2), "investment activity, last 12 months")
     for a in adults:
         for kind, key in (("pre_plan", "retirement_pre_tax_contributions"), ("roth", "retirement_roth_contributions")):
             assume[[i for i, x in enumerate(assume) if x["key"] == f"{kind}:{a}" and x["section"] == "saving"][0]][
-                "setting"] = f"{key}:{a}"
-    note("saving", "taxable", "Taxable savings a year", round(taxable_savings, 2),
-         "the setting" if value("retirement_taxable_savings") else
-         f"last 12 months: income {came_in:,.0f} and shares vested {vested:,.0f}, less spending as set for "
-         f"{start} {path.get(start, 0.0):,.0f}, {', '.join(leave_out) or 'nothing left out'} {left_out:,.0f}, "
-         f"IRAs and 529s {into_ira_529:,.0f}" + (" (below zero: none)" if derived < 0 else ""),
-         "retirement_taxable_savings")
+                "setting"
+            ] = f"{key}:{a}"
+    note(
+        "saving",
+        "taxable",
+        "Taxable savings a year",
+        round(taxable_savings, 2),
+        "the setting"
+        if value("retirement_taxable_savings")
+        else f"last 12 months: income {came_in:,.0f} and shares vested {vested:,.0f}, less spending as set for "
+        f"{start} {path.get(start, 0.0):,.0f}, {', '.join(leave_out) or 'nothing left out'} {left_out:,.0f}, "
+        f"IRAs and 529s {into_ira_529:,.0f}" + (" (below zero: none)" if derived < 0 else ""),
+        "retirement_taxable_savings",
+    )
     for c in sorted(base, key=lambda c: (groups.get(c, ""), c)):
-        note("spending", c, f"{groups.get(c, '')}: {c}", round(base[c], 2),
-             (f"actual, {months[0]} to {months[-1]}" if months else "")
-             + (f"; {lumpy[c]:.0%} of it in two months, so it may not recur" if c in lumpy else ""),
-             f"retirement_spending:{c}")
+        note(
+            "spending",
+            c,
+            f"{groups.get(c, '')}: {c}",
+            round(base[c], 2),
+            (f"actual, {months[0]} to {months[-1]}" if months else "")
+            + (f"; {lumpy[c]:.0%} of it in two months, so it may not recur" if c in lumpy else ""),
+            f"retirement_spending:{c}",
+        )
     note("spending", "total", "Spending now, a year", round(sum(base.values()), 2), "the categories above")
     for r in adjust:
-        note("changes", r["key"], f"{r['key']} ({r['basis']})", r["steps"], f"now {r['now']:,.0f} a year",
-             f"retirement_spending:{r['key']}")
-    note("health", "pre65", "Health cover before 65, a year for the household", h.health_pre65, "setting or default",
-         "retirement_health_pre65")
-    note("health", "supplement", "Medigap and Part D, a year a person from 65", h.health_supplement,
-         "setting or default", "retirement_health_supplement")
-    note("health", "hsa_spending", "Spending the HSA pays (medical)", round(hsa_spending, 2),
-         "categories or groups named in hsa_spending_categories (default medical)", "hsa_spending_categories")
-    note("returns", "stock_share", "Stocks in the portfolio", round(h.stock_share, 4),
-         "setting" if value("retirement_stock_share") else "the allocation targets", "retirement_stock_share")
-    note("returns", "cagrs", "Fixed yearly returns (nominal)", ", ".join(f"{c:.1%}" for c in cagrs), "setting or default",
-         "retirement_cagrs")
-    note("returns", "inflation", "Inflation for the fixed returns", h.inflation, "setting or default",
-         "retirement_inflation")
+        note(
+            "changes",
+            r["key"],
+            f"{r['key']} ({r['basis']})",
+            r["steps"],
+            f"now {r['now']:,.0f} a year",
+            f"retirement_spending:{r['key']}",
+        )
+    note(
+        "health",
+        "pre65",
+        "Health cover before 65, a year for the household",
+        h.health_pre65,
+        "setting or default",
+        "retirement_health_pre65",
+    )
+    note(
+        "health",
+        "supplement",
+        "Medigap and Part D, a year a person from 65",
+        h.health_supplement,
+        "setting or default",
+        "retirement_health_supplement",
+    )
+    note(
+        "health",
+        "hsa_spending",
+        "Spending the HSA pays (medical)",
+        round(hsa_spending, 2),
+        "categories or groups named in hsa_spending_categories (default medical)",
+        "hsa_spending_categories",
+    )
+    note(
+        "returns",
+        "stock_share",
+        "Stocks in the portfolio",
+        round(h.stock_share, 4),
+        "setting" if value("retirement_stock_share") else "the allocation targets",
+        "retirement_stock_share",
+    )
+    note(
+        "returns",
+        "cagrs",
+        "Fixed yearly returns (nominal)",
+        ", ".join(f"{c:.1%}" for c in cagrs),
+        "setting or default",
+        "retirement_cagrs",
+    )
+    note(
+        "returns",
+        "inflation",
+        "Inflation for the fixed returns",
+        h.inflation,
+        "setting or default",
+        "retirement_inflation",
+    )
     mean_r, mean_i = central(h)
-    note("returns", "history", "History's real return for this mix, and inflation, a year (geometric)",
-         f"{mean_r:.2%}, {mean_i:.2%}", f"markets.py, {markets.FIRST} to {markets.LAST}")
-    note("returns", "yield", "Taxable accounts' dividends", h.taxable_yield, "setting or default",
-         "retirement_taxable_yield")
+    note(
+        "returns",
+        "history",
+        "History's real return for this mix, and inflation, a year (geometric)",
+        f"{mean_r:.2%}, {mean_i:.2%}",
+        f"markets.py, {markets.FIRST} to {markets.LAST}",
+    )
+    note(
+        "returns",
+        "yield",
+        "Taxable accounts' dividends",
+        h.taxable_yield,
+        "setting or default",
+        "retirement_taxable_yield",
+    )
     note("returns", "runs", "Monte Carlo runs", h.monte_carlo_runs, "setting or default", "retirement_monte_carlo_runs")
-    note("plan", "to_age", "The plan runs until the younger is", h.plan_to_age, "setting or default",
-         "retirement_plan_to_age")
-    note("plan", "target", "Success needed to retire", h.success_target, "setting or default",
-         "retirement_success_target")
-    note("plan", "ss_cut", "Social Security cut assumed", f"{h.ss_cut:.0%} from {h.ss_cut_from}", "setting or none",
-         "social_security_cut")
+    note(
+        "plan",
+        "to_age",
+        "The plan runs until the younger is",
+        h.plan_to_age,
+        "setting or default",
+        "retirement_plan_to_age",
+    )
+    note(
+        "plan",
+        "target",
+        "Success needed to retire",
+        h.success_target,
+        "setting or default",
+        "retirement_success_target",
+    )
+    note(
+        "plan",
+        "ss_cut",
+        "Social Security cut assumed",
+        f"{h.ss_cut:.0%} from {h.ss_cut_from}",
+        "setting or none",
+        "social_security_cut",
+    )
     for p in people:
         note("law", f"rmd:{p.name}", f"{p.name}: RMDs from age", law.rmd_age(p.born.year), "IRC 401(a)(9), SECURE 2.0")
-        note("law", f"fra:{p.name}", f"{p.name}: full retirement age (months)", law.fra_months(p.born.year),
-             "Social Security Act 216(l)")
+        note(
+            "law",
+            f"fra:{p.name}",
+            f"{p.name}: full retirement age (months)",
+            law.fra_months(p.born.year),
+            "Social Security Act 216(l)",
+        )
     note("law", "tax_year", "Tax law used (held in today's dollars)", LAW_YEAR, "taxdata.py")
     return h, notes, pd.DataFrame(assume)
 
@@ -1230,24 +1708,32 @@ def run(h, params, today):
     today_year = int(today[:4])
     notes = []
     base = parse_strategy(settings.value(params, "retirement_strategy")) or Strategy()
-    if settings.value(params, "retirement_strategy") and not parse_strategy(settings.value(params, "retirement_strategy")):
-        notes.append("retirement: retirement_strategy isn't a strategy key (like bracket/to22/constant); using "
-                     + base.key)
+    if settings.value(params, "retirement_strategy") and not parse_strategy(
+        settings.value(params, "retirement_strategy")
+    ):
+        notes.append(
+            "retirement: retirement_strategy isn't a strategy key (like bracket/to22/constant); using " + base.key
+        )
     fixed_year = settings.value(params, "retirement_year")
     years, chosen = search(h, base, today_year)
     if fixed_year and str(fixed_year).isdigit():
         chosen = int(fixed_year)
     elif chosen is None:
         chosen = int(years["retire_year"].max())
-        notes.append(f"retirement: no year through {chosen} reaches {h.success_target:.0%} Monte Carlo success; "
-                     "the plan shows the last one tried")
+        notes.append(
+            f"retirement: no year through {chosen} reaches {h.success_target:.0%} Monte Carlo success; "
+            "the plan shows the last one tried"
+        )
     table, results = strategies(h, chosen, base, today_year)
     pick = parse_strategy(settings.value(params, "retirement_strategy")) or best(table) or base
     if pick != base and not fixed_year:  # the better strategy may move the year: try the years around it
         near = range(max(chosen - SEARCH_AGAIN, h.start), chosen + SEARCH_AGAIN + 1)
         redo, again = search(h, pick, today_year, near)
-        years = pd.concat([years[~years["retire_year"].isin(list(near))], redo]).sort_values(
-            ["retire_year", "model", "scenario"]).reset_index(drop=True)
+        years = (
+            pd.concat([years[~years["retire_year"].isin(list(near))], redo])
+            .sort_values(["retire_year", "model", "scenario"])
+            .reset_index(drop=True)
+        )
         if again is None and success_at(redo, chosen + SEARCH_AGAIN) < h.success_target:
             again = chosen + SEARCH_AGAIN  # still short: the earliest year past the window that the first search met
         if again and again != chosen:
@@ -1263,6 +1749,9 @@ def run(h, params, today):
     plan = pd.concat([plan_rows(h, s, chosen, today_year, results.get(s)) for s in results], ignore_index=True)
     ss, earned = social_security(h, chosen, today_year, dict(pick.claims))
     mc = table[(table["strategy"] == pick.key) & (table["model"] == "monte carlo")]
-    notes.insert(0, f"retirement: {chosen} ({_ages(h, chosen)}) with {pick.label}: "
-                    f"{float(mc['success'].iloc[0]) if len(mc) else 0:.0%} of Monte Carlo runs never run short")
+    notes.insert(
+        0,
+        f"retirement: {chosen} ({_ages(h, chosen)}) with {pick.label}: "
+        f"{float(mc['success'].iloc[0]) if len(mc) else 0:.0%} of Monte Carlo runs never run short",
+    )
     return years, table, plan, ss, earned, notes

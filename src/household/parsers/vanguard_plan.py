@@ -36,7 +36,12 @@ HOLDINGS = ["as_of", "account_id", "symbol", "source", "shares", "value"]
 
 def sniff(text):
     head = text[:20000]
-    return "vanguard.com" in text and "ACCOUNT SUMMARY:" in head and "Source Activity" in text and "Investment Activity" in text
+    return (
+        "vanguard.com" in text
+        and "ACCOUNT SUMMARY:" in head
+        and "Source Activity" in text
+        and "Investment Activity" in text
+    )
 
 
 def _amounts(line):
@@ -44,7 +49,7 @@ def _amounts(line):
 
 
 def _name(line):
-    return " ".join(line[:MONEY.search(line).start()].split()).rstrip("-").strip() if MONEY.search(line) else ""
+    return " ".join(line[: MONEY.search(line).start()].split()).rstrip("-").strip() if MONEY.search(line) else ""
 
 
 def source_key(name):
@@ -108,13 +113,27 @@ def parse(text):
     _adds_up([invested[5]], total_value, "the funds' Total Invested against the sources' Total Value")
 
     account = f"acct:{plan.group(1)[-4:]}"
-    held = pd.DataFrame([{"as_of": end, "account_id": account, "symbol": "", "source": source_key(n), "shares": "",
-                          "value": closing} for n, closing in sources if closing], columns=HOLDINGS)
+    held = pd.DataFrame(
+        [
+            {"as_of": end, "account_id": account, "symbol": "", "source": source_key(n), "shares": "", "value": closing}
+            for n, closing in sources
+            if closing
+        ],
+        columns=HOLDINGS,
+    )
     if held["source"].duplicated().any():
         raise ParseError(f"{NAME}: two sources with one name")
     roth = sum(c for n, c in sources if "roth" in n.lower())
-    return Result(kind=KIND, parser=NAME, label=f"vanguard_plan_{end}", covers_from=start, covers_to=end,
-                  tables={"investment_activity": pd.DataFrame(columns=COLUMNS), "holdings": held},
-                  keys={"investment_activity": ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
-                  notes=[f"account ..{plan.group(1)[-4:]}: plan statement {start} to {end}, {len(held)} sources "
-                         f"worth {total_value:,.2f} ({roth:,.2f} Roth) in {len(funds)} funds"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"vanguard_plan_{end}",
+        covers_from=start,
+        covers_to=end,
+        tables={"investment_activity": pd.DataFrame(columns=COLUMNS), "holdings": held},
+        keys={"investment_activity": ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
+        notes=[
+            f"account ..{plan.group(1)[-4:]}: plan statement {start} to {end}, {len(held)} sources "
+            f"worth {total_value:,.2f} ({roth:,.2f} Roth) in {len(funds)} funds"
+        ],
+    )

@@ -51,8 +51,7 @@ def close(a, b):
 
 def require(checks, what):
     """Raise ParseError listing every failed (name, expected, actual) check."""
-    failed = [f"{name}: expected {exp:.2f}, got {act:.2f}" for name, exp, act in checks
-              if not close(exp, act)]
+    failed = [f"{name}: expected {exp:.2f}, got {act:.2f}" for name, exp, act in checks if not close(exp, act)]
     if failed:
         raise ParseError(f"{what} failed self-checks: " + "; ".join(failed))
 
@@ -80,6 +79,7 @@ class Result:
     staged, so a parser whose rows depend on the ledger (a change set naming
     transactions and categories) can refuse the file whole.
     """
+
     kind: str
     parser: str
     label: str
@@ -92,7 +92,7 @@ class Result:
     keys: dict = field(default_factory=dict)
     notes: list = field(default_factory=list)
     record: object = None  # text to file in place of the original, which then goes to the trash
-    check: object = None   # read -> None, raising ParseError when the rows don't fit the ledger as it stands
+    check: object = None  # read -> None, raising ParseError when the rows don't fit the ledger as it stands
 
     def frame(self, name):
         return self.tables.get(name, pd.DataFrame())

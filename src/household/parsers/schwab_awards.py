@@ -49,8 +49,7 @@ def _count(text, what, grant):
 
 
 def _starts(cells, i):
-    return (i + 2 < len(cells) and DATE.match(cells[i]) and SYMBOL.match(cells[i + 1])
-            and cells[i + 2].upper() in TYPES)
+    return i + 2 < len(cells) and DATE.match(cells[i]) and SYMBOL.match(cells[i + 1]) and cells[i + 2].upper() in TYPES
 
 
 def parse(text):
@@ -60,21 +59,24 @@ def parse(text):
         raise ParseError(f"{NAME}: no grant found (an award date, symbol and award type)")
     rows, notes = [], []
     for n, at in enumerate(starts):
-        block = cells[at:starts[n + 1] if n + 1 < len(starts) else len(cells)]
+        block = cells[at : starts[n + 1] if n + 1 < len(starts) else len(cells)]
         award_date, symbol, award_type = _day(block[0]), block[1], block[2].upper()
         grant_price = _count(block[3], "Award Price", "")
         granted = _count(block[4], "Granted", "")
         try:
             k = block.index("Canceled")
             grant_id = block[k + 1]
-            vested, unvested, canceled = (_count(block[k + j], what, grant_id)
-                                          for j, what in ((2, "Vested"), (3, "Unvested"), (4, "Canceled")))
+            vested, unvested, canceled = (
+                _count(block[k + j], what, grant_id) for j, what in ((2, "Vested"), (3, "Unvested"), (4, "Canceled"))
+            )
             s = block.index("Vesting Schedule")
         except (ValueError, IndexError) as e:
             raise ParseError(f"{NAME}: the grant of {block[0]} has no Award ID or Vesting Schedule") from e
         if abs(vested + unvested + canceled - granted) > 0.001:
-            raise ParseError(f"{NAME}: {grant_id}: {vested:g} vested, {unvested:g} unvested and {canceled:g} canceled "
-                             f"are not the {granted:g} granted")
+            raise ParseError(
+                f"{NAME}: {grant_id}: {vested:g} vested, {unvested:g} unvested and {canceled:g} canceled "
+                f"are not the {granted:g} granted"
+            )
         schedule, j = [], s + 1
         while j < len(block) and block[j] in ("Vest Date", "# of Shares"):
             j += 1
@@ -84,16 +86,36 @@ def parse(text):
         total = sum(sh for _, sh in schedule)
         if abs(total - granted) > 0.001 and abs(total - (granted - canceled)) > 0.001:
             raise ParseError(f"{NAME}: {grant_id}: the schedule's {total:g} shares are not the {granted:g} granted")
-        rows += [{"grant_id": grant_id, "award_date": award_date, "symbol": symbol, "award_type": award_type,
-                  "grant_price": grant_price, "expires": "", "vest_date": d, "shares": sh} for d, sh in schedule]
-        notes.append(f"{grant_id} ({symbol} {award_type} of {award_date}): {granted:g} granted, {vested:g} vested, "
-                     f"{unvested:g} unvested, {len(schedule)} vests to {schedule[-1][0] if schedule else 'none'}")
+        rows += [
+            {
+                "grant_id": grant_id,
+                "award_date": award_date,
+                "symbol": symbol,
+                "award_type": award_type,
+                "grant_price": grant_price,
+                "expires": "",
+                "vest_date": d,
+                "shares": sh,
+            }
+            for d, sh in schedule
+        ]
+        notes.append(
+            f"{grant_id} ({symbol} {award_type} of {award_date}): {granted:g} granted, {vested:g} vested, "
+            f"{unvested:g} unvested, {len(schedule)} vests to {schedule[-1][0] if schedule else 'none'}"
+        )
     df = pd.DataFrame(rows, columns=COLUMNS)
     if df.duplicated(["grant_id", "vest_date"]).any():
         raise ParseError(f"{NAME}: a grant lists one vest date twice")
-    return Result(kind=KIND, parser=NAME, label=f"schwab_awards_{df['vest_date'].max()}",
-                  covers_from=df["vest_date"].min(), covers_to=df["vest_date"].max(),
-                  tables={KIND: df}, keys={KIND: ["grant_id", "vest_date"]}, notes=notes)
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"schwab_awards_{df['vest_date'].max()}",
+        covers_from=df["vest_date"].min(),
+        covers_to=df["vest_date"].max(),
+        tables={KIND: df},
+        keys={KIND: ["grant_id", "vest_date"]},
+        notes=notes,
+    )
 
 
 def in_force(schedule):

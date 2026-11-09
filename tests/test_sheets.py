@@ -17,7 +17,7 @@ class FakeWorksheet:
 
     def update(self, values, range_name="A1", **_):
         assert range_name == "A1"
-        self.rows = [list(r) for r in values] + self.rows[len(values):]
+        self.rows = [list(r) for r in values] + self.rows[len(values) :]
 
     def freeze(self, rows):
         pass
@@ -148,10 +148,12 @@ def test_replace_table_rewrites_reports():
     reports = FakeSpreadsheet("reports")
     sheets.ensure_tables(reports, schema.REPORTS)
     t = schema.table(schema.REPORTS, "run_log")
-    sheets.replace_table(reports, t, pd.DataFrame([{"run_id": "r1", "computed_at": "x",
-                                                    "stage": "compute", "detail": "d"}]))
-    sheets.replace_table(reports, t, pd.DataFrame([{"run_id": "r2", "computed_at": "x",
-                                                    "stage": "compute", "detail": "d"}]))
+    sheets.replace_table(
+        reports, t, pd.DataFrame([{"run_id": "r1", "computed_at": "x", "stage": "compute", "detail": "d"}])
+    )
+    sheets.replace_table(
+        reports, t, pd.DataFrame([{"run_id": "r2", "computed_at": "x", "stage": "compute", "detail": "d"}])
+    )
     assert reports.tabs["run_log"].rows == [list(t.columns), ["r2", "x", "compute", "d"]]
 
 
@@ -195,8 +197,9 @@ def test_dropdowns_are_cleared_then_set_so_an_old_layout_leaves_none_behind():
     sheets.ensure_tables(ledger, schema.LEDGER)
     ledger.batch_updates.clear()
     sheets.ensure_tables(ledger, schema.LEDGER)
-    requests = [r["setDataValidation"] for body in ledger.batch_updates for r in body["requests"]
-                if "setDataValidation" in r]
+    requests = [
+        r["setDataValidation"] for body in ledger.batch_updates for r in body["requests"] if "setDataValidation" in r
+    ]
     ids = {name: tab.id for name, tab in ledger.tabs.items()}
     budget = [r for r in requests if r["range"]["sheetId"] == ids["budget_rules"]]
     assert "rule" not in budget[0] and "startColumnIndex" not in budget[0]["range"]  # a clear, first
@@ -220,8 +223,11 @@ def test_dates_typed_into_sheets_read_back_as_iso():
     sheets.ensure_tables(ledger, schema.LEDGER)
     t = schema.table(schema.LEDGER, "budget_rules")
     blank = [""] * (len(t.columns) - 2)
-    ledger.tabs["budget_rules"].rows += [["food", 45839] + blank, ["fuel", "7/1/2025"] + blank,
-                                         ["rent", "2025-07-01"] + blank]
+    ledger.tabs["budget_rules"].rows += [
+        ["food", 45839] + blank,
+        ["fuel", "7/1/2025"] + blank,
+        ["rent", "2025-07-01"] + blank,
+    ]
     assert sheets.read_table(ledger, t)["effective"].tolist() == ["2025-07-01"] * 3
     assert sheets.iso_date("not a date") == "not a date" and sheets.iso_date(True) is True
 
@@ -251,13 +257,27 @@ def test_append_tables_is_one_atomic_write_with_values_typed_as_raw():
     params = schema.table(schema.LEDGER, "parameters")
     sources = schema.table(schema.LEDGER, "source_documents")
     before = len(ledger.batch_updates)
-    counts = sheets.append_tables(ledger, [
-        (params, pd.DataFrame([{"jurisdiction": "household", "key": "target_refund", "value": "50"}]).reindex(columns=params.columns, fill_value="")),
-        (sources, pd.DataFrame([{"doc_id": "d1", "kind": "changes", "original_name": "c.json", "precedence": 2}]).reindex(columns=sources.columns, fill_value="")),
-        (TXNS, pd.DataFrame(columns=TXNS.columns))])
+    counts = sheets.append_tables(
+        ledger,
+        [
+            (
+                params,
+                pd.DataFrame([{"jurisdiction": "household", "key": "target_refund", "value": "50"}]).reindex(
+                    columns=params.columns, fill_value=""
+                ),
+            ),
+            (
+                sources,
+                pd.DataFrame([{"doc_id": "d1", "kind": "changes", "original_name": "c.json", "precedence": 2}]).reindex(
+                    columns=sources.columns, fill_value=""
+                ),
+            ),
+            (TXNS, pd.DataFrame(columns=TXNS.columns)),
+        ],
+    )
     assert counts == {"parameters": 1, "source_documents": 1, "transactions": 0}
     assert len(ledger.batch_updates) == before + 1
-    assert ledger.worksheet("parameters").rows[1][:list(params.columns).index("value") + 1][-1] == "50"
+    assert ledger.worksheet("parameters").rows[1][: list(params.columns).index("value") + 1][-1] == "50"
     row = ledger.worksheet("source_documents").rows[1]
     assert row[0] == "d1" and row[list(sources.columns).index("precedence")] == 2
     assert row[list(sources.columns).index("sha256")] == ""
@@ -268,16 +288,29 @@ def test_a_failed_append_tables_writes_nothing():
     sheets.ensure_tables(ledger, schema.LEDGER)
     ledger.fail_batch = RuntimeError("503: the service is unavailable")
     with pytest.raises(RuntimeError):
-        sheets.append_tables(ledger, [
-            (schema.table(schema.LEDGER, "parameters"), pd.DataFrame([{"jurisdiction": "household", "key": "k", "value": "v"}])
-             .reindex(columns=schema.table(schema.LEDGER, "parameters").columns, fill_value="")),
-            (schema.table(schema.LEDGER, "source_documents"), pd.DataFrame([{"doc_id": "d1"}])
-             .reindex(columns=schema.table(schema.LEDGER, "source_documents").columns, fill_value=""))])
+        sheets.append_tables(
+            ledger,
+            [
+                (
+                    schema.table(schema.LEDGER, "parameters"),
+                    pd.DataFrame([{"jurisdiction": "household", "key": "k", "value": "v"}]).reindex(
+                        columns=schema.table(schema.LEDGER, "parameters").columns, fill_value=""
+                    ),
+                ),
+                (
+                    schema.table(schema.LEDGER, "source_documents"),
+                    pd.DataFrame([{"doc_id": "d1"}]).reindex(
+                        columns=schema.table(schema.LEDGER, "source_documents").columns, fill_value=""
+                    ),
+                ),
+            ],
+        )
     assert len(ledger.worksheet("parameters").rows) == 1 and len(ledger.worksheet("source_documents").rows) == 1
 
 
 def test_cells_are_typed_as_a_raw_append_would_write_them():
     import numpy as np
+
     assert sheets._cell("") == {} and sheets._cell(None) == {}
     assert sheets._cell(True) == {"userEnteredValue": {"boolValue": True}}
     assert sheets._cell(np.int64(5)) == {"userEnteredValue": {"numberValue": 5}}

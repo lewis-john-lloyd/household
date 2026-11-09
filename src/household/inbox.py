@@ -57,11 +57,17 @@ def list_files(drive, folder_id, folders=False):
     """The files (or, with folders, the folders) directly in a folder, less the exporter's searches file."""
     op = "=" if folders else "!="
     query = f"'{folder_id}' in parents and trashed = false and mimeType {op} '{backup.FOLDER_MIME}'"
-    response = drive.files().list(q=query, fields="files(id,name,mimeType,size,properties)",
-                                  pageSize=1000).execute(num_retries=RETRIES)
+    response = (
+        drive.files()
+        .list(q=query, fields="files(id,name,mimeType,size,properties)", pageSize=1000)
+        .execute(num_retries=RETRIES)
+    )
     key, _ = SEARCHES_PROPERTY  # any file a script marks as its own (searches, parcels) is not an export
-    return [{k: v for k, v in f.items() if k != "properties"} for f in response.get("files", [])
-            if not (f.get("properties") or {}).get(key)]
+    return [
+        {k: v for k, v in f.items() if k != "properties"}
+        for f in response.get("files", [])
+        if not (f.get("properties") or {}).get(key)
+    ]
 
 
 def write_receipt_searches(drive, searches):
@@ -69,15 +75,34 @@ def write_receipt_searches(drive, searches):
     the only thing of yours it can read besides Gmail. The number of files written: 0 when the exporter
     hasn't run since it began keeping one. Too long a list is refused rather than cut short."""
     import json
-    payload = json.dumps({"version": 1, "searches": [
-        {"store": r["store"], "senders": [a.strip() for a in r["senders"].split(",") if a.strip()],
-         "subjects": [w.strip() for w in r["subjects"].split("|") if w.strip()]} for r in searches.to_dict("records")]},
-        separators=(",", ":"))
+
+    payload = json.dumps(
+        {
+            "version": 1,
+            "searches": [
+                {
+                    "store": r["store"],
+                    "senders": [a.strip() for a in r["senders"].split(",") if a.strip()],
+                    "subjects": [w.strip() for w in r["subjects"].split("|") if w.strip()],
+                }
+                for r in searches.to_dict("records")
+            ],
+        },
+        separators=(",", ":"),
+    )
     if len(payload) > SEARCHES_MAX:
         raise ValueError(f"the receipt searches come to {len(payload)} characters, over {SEARCHES_MAX}")
     key, value = SEARCHES_PROPERTY
-    found = drive.files().list(q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
-                               fields="files(id)", pageSize=10).execute(num_retries=RETRIES).get("files", [])
+    found = (
+        drive.files()
+        .list(
+            q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
+            fields="files(id)",
+            pageSize=10,
+        )
+        .execute(num_retries=RETRIES)
+        .get("files", [])
+    )
     for f in found:
         drive.files().update(fileId=f["id"], body={"description": payload}, fields="id").execute(num_retries=RETRIES)
     return len(found)
@@ -90,12 +115,21 @@ def write_parcels(drive, homes):
     """Write the county check's parcels ([{property_id, parcel, since}], house.parcels) into its parcels file's
     description, the only thing of yours it reads. The number of files written: 0 before it has first run."""
     import json
+
     payload = json.dumps({"version": 1, "parcels": homes}, separators=(",", ":"))
     if len(payload) > SEARCHES_MAX:
         raise ValueError(f"the parcels come to {len(payload)} characters, over {SEARCHES_MAX}")
     key, value = PARCELS_PROPERTY
-    found = drive.files().list(q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
-                               fields="files(id)", pageSize=10).execute(num_retries=RETRIES).get("files", [])
+    found = (
+        drive.files()
+        .list(
+            q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
+            fields="files(id)",
+            pageSize=10,
+        )
+        .execute(num_retries=RETRIES)
+        .get("files", [])
+    )
     for f in found:
         drive.files().update(fileId=f["id"], body={"description": payload}, fields="id").execute(num_retries=RETRIES)
     return len(found)
@@ -107,6 +141,7 @@ def list_inbox(drive, inbox):
     Each folder's files come in name order, so change sets (named by the time they were saved) are read
     oldest first and a later one's edits supersede an earlier one's.
     """
+
     def by_name(found):  # Drive allows two files one name: the file id settles the order between them
         return sorted(found, key=lambda f: (f["name"], f.get("id", "")))
 
@@ -128,8 +163,9 @@ def download(drive, file_id):
 
 
 def _move_request(drive, file_id, from_id, to_id, name):
-    return drive.files().update(fileId=file_id, addParents=to_id, removeParents=from_id,
-                                body={"name": name}, fields="id")
+    return drive.files().update(
+        fileId=file_id, addParents=to_id, removeParents=from_id, body={"name": name}, fields="id"
+    )
 
 
 def move(drive, file_id, from_id, to_id, name):
@@ -147,7 +183,7 @@ def move_all(drive, moves):
     """
     failed = {}
     for start in range(0, len(moves), BATCH_LIMIT):
-        chunk = moves[start:start + BATCH_LIMIT]
+        chunk = moves[start : start + BATCH_LIMIT]
         retry = []
 
         def collect(request_id, response, exception, chunk=chunk, retry=retry):
@@ -208,9 +244,14 @@ def parse_zip(data):
         if found:
             raise ParseError(f"zip holds exports of several services: {sorted(found)}")
         # an export split across zips: a part holding nothing read is still that service's, and trashed
-        owner = next((p for p in ZIP_PARSERS.values()
-                      if getattr(p, "ZIP_PREFIX", None) and names and all(n.startswith(p.ZIP_PREFIX) for n in names)),
-                     None)
+        owner = next(
+            (
+                p
+                for p in ZIP_PARSERS.values()
+                if getattr(p, "ZIP_PREFIX", None) and names and all(n.startswith(p.ZIP_PREFIX) for n in names)
+            ),
+            None,
+        )
         return owner.combine([]) if owner else None
     name, results = next(iter(found.items()))
     return ZIP_PARSERS[name].combine(results)
@@ -247,8 +288,7 @@ def to_text(name, mime, data, all_pages=False):
 
 
 def _key(df, keys):
-    return df[keys].astype(str).apply(
-        lambda c: c.str.replace(r"\.0+$", "", regex=True)).agg("|".join, axis=1)
+    return df[keys].astype(str).apply(lambda c: c.str.replace(r"\.0+$", "", regex=True)).agg("|".join, axis=1)
 
 
 def fresh_rows(incoming, existing, keys):
@@ -324,7 +364,7 @@ def _quiet(_):
 def _describe(summary):
     if summary["status"] in ("ingested", "already_present"):
         rows = ", ".join(f"{n} {t}" for t, n in summary.get("appended", {}).items() if n)
-        detail = f'{summary.get("parser", "")}{": " + rows if rows else ""}'
+        detail = f"{summary.get('parser', '')}{': ' + rows if rows else ''}"
         return f"{detail} -> {summary.get('filed_as', 'duplicates')}"
     return summary.get("reason", "")
 
@@ -360,21 +400,28 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
         summaries.append(summary)
         started = time.perf_counter()
         try:
-            move_to = _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock,
-                                record, trimmed, unparsed)
+            move_to = _read_one(
+                f, drive, ledger_tables, by_sha, names, received_at, summary, clock, record, trimmed, unparsed
+            )
             if move_to:
                 moves.append((f, summary, move_to))
         except Exception as e:  # keep going; the file stays in the inbox for the next run
             summary.update(status="error", reason=f"{type(e).__name__}: {e}")
-        log(logs.Line(f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
-                      f"({time.perf_counter() - started:.1f}s)",
-                      "WARN" if summary["status"] in ("unrecognized", "failed", "refused") else "INFO"))
+        log(
+            logs.Line(
+                f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
+                f"({time.perf_counter() - started:.1f}s)",
+                "WARN" if summary["status"] in ("unrecognized", "failed", "refused") else "INFO",
+            )
+        )
         if summary.get("parser") == changes.NAME and summary["status"] == "ingested":
             for note in summary.get("notes") or []:  # each edit a person made in the views, as it is written
                 log(f"  {note}")
 
-    pending = {name: len(ledger_tables.pending[name])
-               for name in sorted(ledger_tables.pending, key=lambda n: n == "source_documents")}
+    pending = {
+        name: len(ledger_tables.pending[name])
+        for name in sorted(ledger_tables.pending, key=lambda n: n == "source_documents")
+    }
     if pending:
         log("writing to ledger: " + ", ".join(f"{n} rows to {t}" for t, n in pending.items()))
     started = time.perf_counter()
@@ -385,8 +432,10 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     clock.add("write ledger", started)
     if pending:
         size = getattr(ledger_tables, "bytes", 0)
-        log(f"written in one write of {size / 1e6:.2f} MB ({time.perf_counter() - started:.1f}s)"
-            + ("; over the 2 MB Google suggests for one request" if size > 2e6 else ""))
+        log(
+            f"written in one write of {size / 1e6:.2f} MB ({time.perf_counter() - started:.1f}s)"
+            + ("; over the 2 MB Google suggests for one request" if size > 2e6 else "")
+        )
     if moves:
         log(f"filing {len(moves)} files in Drive")
 
@@ -394,8 +443,10 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     targets = {"record_store": record}
     if any(where == "duplicates" for _, _, (where, _) in moves):
         targets["duplicates"] = backup.find_or_create_folder(drive, "duplicates", record)
-    failed = move_all(drive, [(f["id"], f.get("parent", inbox), targets[where], name)
-                              for f, _, (where, name) in moves if where != "trash"])
+    failed = move_all(
+        drive,
+        [(f["id"], f.get("parent", inbox), targets[where], name) for f, _, (where, name) in moves if where != "trash"],
+    )
     for f, _, (where, _) in moves:
         if where == "trash":
             try:
@@ -418,8 +469,9 @@ def _link(file_id):
     return f"https://drive.google.com/file/d/{file_id}"  # leak-guard: allow (template, no ID)
 
 
-def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, clock, record=None,
-              trimmed=None, unparsed=None):
+def _read_one(
+    f, drive, ledger_tables, by_sha, names, received_at, summary, clock, record=None, trimmed=None, unparsed=None
+):
     """Phase 1 for one file: returns (folder, name) to move it to ("trash" too), or None to leave it.
 
     A file sent before is a duplicate, unless it was filed unread (a pay stub in a layout no parser
@@ -458,11 +510,18 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
                 text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
             result = parser.parse(text)
         if "transactions" in result.tables:  # a bank download: find its account
-            ingest.finish_bank_rows(result, f["name"], ingest.named_accounts(
-                ledger_tables.read("accounts"), ledger_tables.read("parameters")), received_at)
+            ingest.finish_bank_rows(
+                result,
+                f["name"],
+                ingest.named_accounts(ledger_tables.read("accounts"), ledger_tables.read("parameters")),
+                received_at,
+            )
         if "investment_activity" in result.tables:  # an investment account's history: find its account
-            ingest.finish_investment_rows(result, f["name"], ingest.named_accounts(
-                ledger_tables.read("accounts"), ledger_tables.read("parameters")))
+            ingest.finish_investment_rows(
+                result,
+                f["name"],
+                ingest.named_accounts(ledger_tables.read("accounts"), ledger_tables.read("parameters")),
+            )
         if result.check is not None:  # rows that must fit the ledger as it stands (a change set)
             result.check(ledger_tables.read)
     except ParseError as e:
@@ -479,8 +538,13 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
     if result.record is not None:
         new_name = new_name.rsplit(".", 1)[0] + ".csv"
     if unfiled:
-        summary.update(status="ingested", parser=result.parser, filed_as=new_name,
-                       appended={}, notes=["registered on an earlier run; filed now"])
+        summary.update(
+            status="ingested",
+            parser=result.parser,
+            filed_as=new_name,
+            appended={},
+            notes=["registered on an earlier run; filed now"],
+        )
         return ("record_store", new_name)
 
     doc_id = sha[:16]
@@ -495,8 +559,9 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
         staged[name] = (rows, fresh_rows(rows, existing, result.keys[name]))
         overlaps |= overlapping_docs(rows, existing, result.keys[name])
     if staged and all(new.empty for _, new in staged.values()):
-        summary.update(status="already_present", parser=result.parser,
-                       overlaps=sorted(names.get(d, d) for d in overlaps))
+        summary.update(
+            status="already_present", parser=result.parser, overlaps=sorted(names.get(d, d) for d in overlaps)
+        )
         return ("trash" if result.record is not None else "duplicates", f["name"])
     link = _link(f["id"])
     if result.record is not None:  # file the trimmed copy now; the original goes to the trash
@@ -509,16 +574,29 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
         summary.setdefault("skipped", {})[name] = len(rows) - len(new)
     if overlaps:
         summary["overlaps"] = sorted(names.get(d, d) for d in overlaps)
-    ledger_tables.stage("source_documents", pd.DataFrame([{
-        "doc_id": doc_id, "kind": result.kind, "sha256": sha, "original_name": f["name"],
-        "drive_link": link, "account_id": result.account_id,
-        "covers_from": result.covers_from, "covers_to": result.covers_to,
-        "parser": result.parser, "received_at": received_at, "precedence": "",
-    }]))
+    ledger_tables.stage(
+        "source_documents",
+        pd.DataFrame(
+            [
+                {
+                    "doc_id": doc_id,
+                    "kind": result.kind,
+                    "sha256": sha,
+                    "original_name": f["name"],
+                    "drive_link": link,
+                    "account_id": result.account_id,
+                    "covers_from": result.covers_from,
+                    "covers_to": result.covers_to,
+                    "parser": result.parser,
+                    "received_at": received_at,
+                    "precedence": "",
+                }
+            ]
+        ),
+    )
     by_sha[sha] = link
     names[doc_id] = f["name"]
-    summary.update(status="ingested", parser=result.parser, filed_as=new_name,
-                   appended=appended, notes=result.notes)
+    summary.update(status="ingested", parser=result.parser, filed_as=new_name, appended=appended, notes=result.notes)
     if result.record is not None:
         trimmed.add(sha)
         return ("trash", new_name)

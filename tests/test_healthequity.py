@@ -38,15 +38,53 @@ def workbook(rows):
     return buf.getvalue()
 
 
-AS_TEXT = [[TITLE, TITLE], [RANGE], HEADER,
-           ["01/05/2001", "ACMEX", "Buy", "Investment: ACMEX", "$10.00", "$50.00", "5.000", "5.000", "$50.00"],  # leak-guard: allow (made up)
-           ["02/05/2001", "ACMEX", "Buy", "Investment: ACMEX", "$12.50", "$25.00", "2.000", "7.000", "$87.50"],  # leak-guard: allow (made up)
-           ["03/16/2001", "ACMEX", "Dividend", "Investment: ACMEX", "$12.00", "$6.00", "0.500", "7.500", "$90.00"]]  # leak-guard: allow (made up)
+AS_TEXT = [
+    [TITLE, TITLE],
+    [RANGE],
+    HEADER,
+    [
+        "01/05/2001",
+        "ACMEX",
+        "Buy",
+        "Investment: ACMEX",
+        "$10.00",  # leak-guard: allow (made up)
+        "$50.00",  # leak-guard: allow (made up)
+        "5.000",
+        "5.000",
+        "$50.00",  # leak-guard: allow (made up)
+    ],  # leak-guard: allow (made up)
+    [
+        "02/05/2001",
+        "ACMEX",
+        "Buy",
+        "Investment: ACMEX",
+        "$12.50",  # leak-guard: allow (made up)
+        "$25.00",  # leak-guard: allow (made up)
+        "2.000",
+        "7.000",
+        "$87.50",  # leak-guard: allow (made up)
+    ],  # leak-guard: allow (made up)
+    [
+        "03/16/2001",
+        "ACMEX",
+        "Dividend",
+        "Investment: ACMEX",
+        "$12.00",  # leak-guard: allow (made up)
+        "$6.00",  # leak-guard: allow (made up)
+        "0.500",
+        "7.500",
+        "$90.00",  # leak-guard: allow (made up)
+    ],  # leak-guard: allow (made up)
+]  # leak-guard: allow (made up)
 # the same rows as numbers, dates as Excel serials (a workbook may store either)
-AS_NUMBERS = [[TITLE, TITLE], [RANGE], HEADER,
-              [36896, "ACMEX", "Buy", "Investment: ACMEX", 10, 50, 5, 5, 50],
-              [36927, "ACMEX", "Buy", "Investment: ACMEX", 12.5, 25, 2, 7, 87.5],
-              [36966, "ACMEX", "Dividend", "Investment: ACMEX", 12, 6, 0.5, 7.5, 90]]
+AS_NUMBERS = [
+    [TITLE, TITLE],
+    [RANGE],
+    HEADER,
+    [36896, "ACMEX", "Buy", "Investment: ACMEX", 10, 50, 5, 5, 50],
+    [36927, "ACMEX", "Buy", "Investment: ACMEX", 12.5, 25, 2, 7, 87.5],
+    [36966, "ACMEX", "Dividend", "Investment: ACMEX", 12, 6, 0.5, 7.5, 90],
+]
 ACCOUNTS = pd.DataFrame([{"account_id": "a_hsa", "last4": ""}, {"account_id": "a_ira", "last4": ""}])
 
 
@@ -66,14 +104,30 @@ def test_the_inbox_reads_the_download_as_buys_reinvested_dividends_and_the_last_
     r = ingest.finish_investment_rows(healthequity.parse(text), "a_hsa_healthequity.xlsx", ACCOUNTS)
     a = r.tables["investment_activity"]
     assert a[["date", "kind", "shares", "value", "amount"]].values.tolist() == [
-        ["2001-01-05", "buy", 5, 50, 0], ["2001-02-05", "buy", 2, 25, 0], ["2001-03-16", "reinvest", 0.5, 6, 6]]
+        ["2001-01-05", "buy", 5, 50, 0],
+        ["2001-02-05", "buy", 2, 25, 0],
+        ["2001-03-16", "reinvest", 0.5, 6, 6],
+    ]
     assert set(a["account_id"]) == {"a_hsa"} and a["activity_id"].is_unique
     assert r.tables["holdings"][["as_of", "account_id", "symbol", "shares", "value"]].values.tolist() == [
-        ["2001-03-16", "a_hsa", "ACMEX", 7.5, 90]]
+        ["2001-03-16", "a_hsa", "ACMEX", 7.5, 90]
+    ]
     assert r.tables["prices"]["close"].tolist() == [10, 12.5, 12]
 
 
 def test_a_row_that_breaks_the_running_share_count_refuses_the_file():
-    rows = AS_TEXT[:4] + [["02/05/2001", "ACMEX", "Buy", "Investment: ACMEX", "$12.50", "$25.00", "2.000", "9.000", "$87.50"]]  # leak-guard: allow (made up)
+    rows = AS_TEXT[:4] + [
+        [
+            "02/05/2001",
+            "ACMEX",
+            "Buy",
+            "Investment: ACMEX",
+            "$12.50",  # leak-guard: allow (made up)
+            "$25.00",  # leak-guard: allow (made up)
+            "2.000",
+            "9.000",
+            "$87.50",  # leak-guard: allow (made up)
+        ]  # leak-guard: allow (made up)
+    ]  # leak-guard: allow (made up)
     with pytest.raises(ParseError, match="ACMEX on 2001-02-05"):
         healthequity.parse(inbox.to_text("a.xlsx", "", workbook(rows)))

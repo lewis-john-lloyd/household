@@ -34,10 +34,30 @@ from .common import ParseError, Result
 NAME = "amazon"
 KIND = "amazon_orders"
 SERVICE = "amazon"
-COLUMNS = ["item_id", "service", "order_id", "kind", "order_date", "date", "amount", "card", "department",
-           "item", "website"]
-ORDERS = {"Order ID", "Order Date", "Ship Date", "Total Amount", "Payment Method Type", "Product Name",
-          "Website", "Order Status", "Department"}
+COLUMNS = [
+    "item_id",
+    "service",
+    "order_id",
+    "kind",
+    "order_date",
+    "date",
+    "amount",
+    "card",
+    "department",
+    "item",
+    "website",
+]
+ORDERS = {
+    "Order ID",
+    "Order Date",
+    "Ship Date",
+    "Total Amount",
+    "Payment Method Type",
+    "Product Name",
+    "Website",
+    "Order Status",
+    "Department",
+}
 REFUNDS = {"Order ID", "Refund Amount", "Refund Date", "Reversal Status"}
 DIGITAL = {"Digital Order Item ID", "Order ID", "Product Name"}  # digital orders and returns: not used
 CARD = re.compile(r"(\d{4})\s*$")
@@ -85,7 +105,17 @@ def _card(method):
 
 
 def _ids(df):
-    key = df["order_id"] + "|" + df["kind"] + "|" + df["date"] + "|" + df["item"] + "|" + df["amount"].map("{:.2f}".format)
+    key = (
+        df["order_id"]
+        + "|"
+        + df["kind"]
+        + "|"
+        + df["date"]
+        + "|"
+        + df["item"]
+        + "|"
+        + df["amount"].map("{:.2f}".format)
+    )
     n = key.groupby(key).cumcount().astype(str)
     return [hashlib.sha256(f"{k}|{i}".encode()).hexdigest()[:16] for k, i in zip(key, n)]
 
@@ -94,27 +124,39 @@ def _orders(raw):
     raw = raw[raw["Order Status"].str.strip().str.lower() != "cancelled"]
     ship = raw["Ship Date"].str[:10]
     order_date = raw["Order Date"].str[:10]
-    df = pd.DataFrame({
-        "service": SERVICE, "order_id": raw["Order ID"].str.strip(), "kind": "item",
-        "order_date": order_date,
-        "date": ship.where(ship.str.match(r"\d{4}-\d{2}-\d{2}"), order_date),
-        "amount": _money(raw["Total Amount"], "Total Amount"),
-        "card": raw["Payment Method Type"].map(_card),
-        "department": raw["Department"].str.strip().replace({"Not Available": ""}),
-        "item": raw["Product Name"].str.strip(), "website": raw["Website"].str.strip(),
-    })
+    df = pd.DataFrame(
+        {
+            "service": SERVICE,
+            "order_id": raw["Order ID"].str.strip(),
+            "kind": "item",
+            "order_date": order_date,
+            "date": ship.where(ship.str.match(r"\d{4}-\d{2}-\d{2}"), order_date),
+            "amount": _money(raw["Total Amount"], "Total Amount"),
+            "card": raw["Payment Method Type"].map(_card),
+            "department": raw["Department"].str.strip().replace({"Not Available": ""}),
+            "item": raw["Product Name"].str.strip(),
+            "website": raw["Website"].str.strip(),
+        }
+    )
     return df
 
 
 def _refunds(raw):
     raw = raw[raw["Reversal Status"].str.strip().str.lower().isin(["completed", ""])]
-    return pd.DataFrame({
-        "service": SERVICE, "order_id": raw["Order ID"].str.strip(), "kind": "refund",
-        "order_date": "", "date": raw["Refund Date"].str[:10],
-        "amount": _money(raw["Refund Amount"], "Refund Amount"), "card": "", "department": "",
-        "item": raw.get("Reversal Reason", pd.Series("", index=raw.index)).str.strip(),
-        "website": raw.get("Website", pd.Series("", index=raw.index)).str.strip(),
-    })
+    return pd.DataFrame(
+        {
+            "service": SERVICE,
+            "order_id": raw["Order ID"].str.strip(),
+            "kind": "refund",
+            "order_date": "",
+            "date": raw["Refund Date"].str[:10],
+            "amount": _money(raw["Refund Amount"], "Refund Amount"),
+            "card": "",
+            "department": "",
+            "item": raw.get("Reversal Reason", pd.Series("", index=raw.index)).str.strip(),
+            "website": raw.get("Website", pd.Series("", index=raw.index)).str.strip(),
+        }
+    )
 
 
 def parse(text):
@@ -136,12 +178,23 @@ def parse(text):
         raise ParseError(f"{NAME}: repeated item id")
     dates = sorted(d for d in df["date"] if d)
     record = "" if df.empty else df.to_csv(index=False)
-    what = {"orders": "order items", "refunds": "refunds", "trimmed": "order rows",
-            "digital": "digital orders (not used)"}[shape]
-    return Result(kind=KIND, parser=NAME, label=f"amazon_{shape}_{dates[-1] if dates else 'none'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]},
-                  record=record, notes=[f"Amazon: {len(df)} {what}"])
+    what = {
+        "orders": "order items",
+        "refunds": "refunds",
+        "trimmed": "order rows",
+        "digital": "digital orders (not used)",
+    }[shape]
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"amazon_{shape}_{dates[-1] if dates else 'none'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"order_items": df} if len(df) else {},
+        keys={"order_items": ["item_id"]},
+        record=record,
+        notes=[f"Amazon: {len(df)} {what}"],
+    )
 
 
 def combine(results):
@@ -149,8 +202,14 @@ def combine(results):
     frames = [r.tables["order_items"] for r in results if "order_items" in r.tables]
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLUMNS)
     dates = sorted(d for d in df["date"] if d)
-    return Result(kind=KIND, parser=NAME, label=f"amazon_export_{dates[-1] if dates else 'none'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]},
-                  record="" if df.empty else df.to_csv(index=False),
-                  notes=[n for r in results for n in r.notes])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"amazon_export_{dates[-1] if dates else 'none'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"order_items": df} if len(df) else {},
+        keys={"order_items": ["item_id"]},
+        record="" if df.empty else df.to_csv(index=False),
+        notes=[n for r in results for n in r.notes],
+    )

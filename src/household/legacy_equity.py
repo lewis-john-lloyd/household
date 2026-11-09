@@ -22,8 +22,18 @@ from .legacy import parse_date, parse_money
 
 LEGACY_DOC = "legacy:equity"
 VEST_COLUMNS = ["vest_date", "grant_id", "award_date", "net_shares", "fmv", "deposit_date", "doc_id"]
-SALE_COLUMNS = ["sale_date", "grant_id", "vest_date", "shares", "sale_price", "proceeds", "basis", "gain", "term",
-                "doc_id"]
+SALE_COLUMNS = [
+    "sale_date",
+    "grant_id",
+    "vest_date",
+    "shares",
+    "sale_price",
+    "proceeds",
+    "basis",
+    "gain",
+    "term",
+    "doc_id",
+]
 
 
 def _text(v):
@@ -80,8 +90,17 @@ def vests(rows, grant_columns):
             continue
         for g, n in parts.items():
             if n > 0:
-                out.append({"vest_date": d, "grant_id": g, "award_date": "", "net_shares": round(shares * n / total, 3),
-                            "fmv": price, "deposit_date": "", "doc_id": LEGACY_DOC})
+                out.append(
+                    {
+                        "vest_date": d,
+                        "grant_id": g,
+                        "award_date": "",
+                        "net_shares": round(shares * n / total, 3),
+                        "fmv": price,
+                        "deposit_date": "",
+                        "doc_id": LEGACY_DOC,
+                    }
+                )
     return pd.DataFrame(out, columns=VEST_COLUMNS), notes
 
 
@@ -99,7 +118,9 @@ def sales(rows, vested):
         a, s, n = _date(_cell(row, acq)), _date(_cell(row, sold)), _money(_cell(row, shares_at))
         if not (a and s and n):
             continue
-        p = parts.setdefault((s, a), {"shares": 0.0, "proceeds": 0.0, "basis": 0.0, "price": _money(_cell(row, price_at))})
+        p = parts.setdefault(
+            (s, a), {"shares": 0.0, "proceeds": 0.0, "basis": 0.0, "price": _money(_cell(row, price_at))}
+        )
         p["shares"] += n
         p["proceeds"] += _money(_cell(row, proceeds_at)) or 0.0
         p["basis"] += _money(_cell(row, basis_at)) or 0.0
@@ -117,10 +138,20 @@ def sales(rows, vested):
             share = n / total
             proceeds, basis = p["proceeds"] * share, p["basis"] * share
             long = s > a.replace(a[:4], str(int(a[:4]) + 1), 1)
-            out.append({"sale_date": s, "grant_id": g, "vest_date": a, "shares": round(p["shares"] * share, 3),
-                        "sale_price": p["price"] if p["price"] is not None else "", "proceeds": round(proceeds, 2),
-                        "basis": round(basis, 2), "gain": round(proceeds - basis, 2),
-                        "term": "long_term" if long else "short_term", "doc_id": LEGACY_DOC})
+            out.append(
+                {
+                    "sale_date": s,
+                    "grant_id": g,
+                    "vest_date": a,
+                    "shares": round(p["shares"] * share, 3),
+                    "sale_price": p["price"] if p["price"] is not None else "",
+                    "proceeds": round(proceeds, 2),
+                    "basis": round(basis, 2),
+                    "gain": round(proceeds - basis, 2),
+                    "term": "long_term" if long else "short_term",
+                    "doc_id": LEGACY_DOC,
+                }
+            )
     return pd.DataFrame(out, columns=SALE_COLUMNS), notes
 
 

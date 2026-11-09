@@ -60,7 +60,9 @@ def quotes(securities):
 def wanted_dates(holdings, activity, today):
     """The dates prices are wanted on: the legacy readings' dates, then month-ends after the last of them."""
     holdings = holdings if holdings is not None else pd.DataFrame(columns=["as_of", "doc_id"])
-    legacy = sorted({str(d) for d in holdings.loc[holdings["doc_id"].astype(str) == LEGACY_DOC, "as_of"] if str(d).strip()})
+    legacy = sorted(
+        {str(d) for d in holdings.loc[holdings["doc_id"].astype(str) == LEGACY_DOC, "as_of"] if str(d).strip()}
+    )
     if legacy:
         start = date.fromisoformat(legacy[-1])
     else:
@@ -100,10 +102,17 @@ def requests(securities, holdings, activity, prices, today, limit=MAX_REQUESTS, 
     else:
         tried = set()
     latest = (today - timedelta(days=1)).isoformat()
-    rows = [{"symbol": s, "quote": q, "date": d} for d in sorted(dates, reverse=True) for s, q in sorted(usable.items())
-            if (s, d) not in have]
-    rows = [{"symbol": s, "quote": q, "date": latest} for s, q in sorted(usable.items())
-            if (s, latest) not in have and latest not in dates and (s in priced or s not in tried)] + rows
+    rows = [
+        {"symbol": s, "quote": q, "date": d}
+        for d in sorted(dates, reverse=True)
+        for s, q in sorted(usable.items())
+        if (s, d) not in have
+    ]
+    rows = [
+        {"symbol": s, "quote": q, "date": latest}
+        for s, q in sorted(usable.items())
+        if (s, latest) not in have and latest not in dates and (s in priced or s not in tried)
+    ] + rows
     return pd.DataFrame(rows[:limit], columns=["symbol", "quote", "date"]), len(rows)
 
 
@@ -121,8 +130,9 @@ def harvest(typed):
         m = ANSWER.match(result)
         symbol, day = str(r["symbol"]).strip(), str(r["date"]).strip()
         if m and m.group(1) <= day:
-            done.append({"symbol": symbol, "date": day, "priced_date": m.group(1), "close": float(m.group(2)),
-                         "source": SOURCE})
+            done.append(
+                {"symbol": symbol, "date": day, "priced_date": m.group(1), "close": float(m.group(2)), "source": SOURCE}
+            )
         elif result.lower() == "none" or result.startswith("Date "):  # no rows in the week, or only a header
             done.append({"symbol": symbol, "date": day, "priced_date": "", "close": "", "source": SOURCE})
         else:

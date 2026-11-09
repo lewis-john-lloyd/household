@@ -30,8 +30,12 @@ def test_each_tranche_is_a_vesting_date_of_the_option_with_its_price_and_expiry(
     r = stock_options.parse(PAGE)
     df = r.tables["vest_schedule"]
     assert df[["vest_date", "shares"]].values.tolist() == [["2002-01-15", 20], ["2002-02-15", 10], ["2002-03-15", 10]]
-    assert set(df["award_type"]) == {"OPTION"} and set(df["grant_price"]) == {2.5} and set(df["expires"]) == {"2011-01-15"}
-    assert r.notes == ["OPT1 (options at 2.50, granted 2001-01-15, expire 2011-01-15): 40 granted, 20 unvested, 3 tranches to 2002-03-15"]
+    assert (
+        set(df["award_type"]) == {"OPTION"} and set(df["grant_price"]) == {2.5} and set(df["expires"]) == {"2011-01-15"}
+    )
+    assert r.notes == [
+        "OPT1 (options at 2.50, granted 2001-01-15, expire 2011-01-15): 40 granted, 20 unvested, 3 tranches to 2002-03-15"
+    ]
 
 
 def test_tranches_that_dont_add_up_to_the_grant_refuse_the_page():

@@ -56,32 +56,50 @@ def _date(text):
 
 def parse(text):
     lines = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
-    start = next((i for i, r in enumerate(lines) if [c.strip() for c in r[:len(HEADER)]] == HEADER), None)
+    start = next((i for i, r in enumerate(lines) if [c.strip() for c in r[: len(HEADER)]] == HEADER), None)
     if start is None:
         raise ParseError(f"{NAME}: no transaction header")
     acts, prices, last, running = [], [], {}, {}
-    for r in lines[start + 1:]:
+    for r in lines[start + 1 :]:
         if not any(c.strip() for c in r):
             continue
-        r = (r + [""] * len(HEADER))[:len(HEADER)]
+        r = (r + [""] * len(HEADER))[: len(HEADER)]
         day, fund, category = _date(r[0]), r[1].strip(), r[2].strip()
         price, amount, shares = _num(r[4], "Price"), _num(r[5], "Amount"), _num(r[6], "Shares")
         kind = KINDS.get(category.lower(), "other")
         sign = -1 if kind in ("sell", "fee") else 1
-        acts.append({"date": day, "kind": kind, "action": f"{category} {r[3].strip()}".strip(), "symbol": fund,
-                     "description": r[3].strip(), "shares": round(sign * abs(shares), 6), "price": round(price, 6),
-                     "value": round(sign * abs(amount), 2),
-                     "amount": {"reinvest": round(abs(amount), 2), "fee": -round(abs(amount), 2)}.get(kind, 0.0),
-                     "cash_balance": "", "source": ""})
+        acts.append(
+            {
+                "date": day,
+                "kind": kind,
+                "action": f"{category} {r[3].strip()}".strip(),
+                "symbol": fund,
+                "description": r[3].strip(),
+                "shares": round(sign * abs(shares), 6),
+                "price": round(price, 6),
+                "value": round(sign * abs(amount), 2),
+                "amount": {"reinvest": round(abs(amount), 2), "fee": -round(abs(amount), 2)}.get(kind, 0.0),
+                "cash_balance": "",
+                "source": "",
+            }
+        )
         if price:
             prices.append({"symbol": fund, "date": day, "priced_date": day, "close": round(price, 6), "source": NAME})
         if r[7].strip():
             total = _num(r[7], "Total Shares")
             if fund in running and abs(running[fund] + sign * abs(shares) - total) > 0.01:
-                raise ParseError(f"{NAME}: {fund} on {day}: {running[fund]} shares and {shares} more is not the {total} it says")
+                raise ParseError(
+                    f"{NAME}: {fund} on {day}: {running[fund]} shares and {shares} more is not the {total} it says"
+                )
             running[fund] = total
-            last[fund] = {"as_of": day, "account_id": "", "symbol": fund, "source": "",
-                          "shares": round(total, 6), "value": round(_num(r[8], "Total Value"), 2)}
+            last[fund] = {
+                "as_of": day,
+                "account_id": "",
+                "symbol": fund,
+                "source": "",
+                "shares": round(total, 6),
+                "value": round(_num(r[8], "Total Value"), 2),
+            }
     if not acts:
         raise ParseError(f"{NAME}: no transactions in the file")
     df = pd.DataFrame(acts, columns=COLUMNS[2:])
@@ -91,10 +109,26 @@ def parse(text):
     dates = sorted(df["date"])
     counts = df["kind"].value_counts()
     held = pd.DataFrame(list(last.values()), columns=["as_of", "account_id", "symbol", "source", "shares", "value"])
-    return Result(kind=KIND, parser=NAME, label=f"healthequity_{dates[-1]}", covers_from=dates[0], covers_to=dates[-1],
-                  tables={KIND: df, "holdings": held,
-                          "prices": pd.DataFrame(prices).drop_duplicates(["symbol", "date"], keep="last")},
-                  keys={KIND: ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"], "prices": ["symbol", "date"]},
-                  notes=[f"HealthEquity investments {dates[0]} to {dates[-1]}: "
-                         + ", ".join(f"{n} {k}" for k, n in counts.items())
-                         + "; " + ", ".join(f"{f} {h['shares']} shares on {h['as_of']}" for f, h in last.items())])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"healthequity_{dates[-1]}",
+        covers_from=dates[0],
+        covers_to=dates[-1],
+        tables={
+            KIND: df,
+            "holdings": held,
+            "prices": pd.DataFrame(prices).drop_duplicates(["symbol", "date"], keep="last"),
+        },
+        keys={
+            KIND: ["activity_id"],
+            "holdings": ["as_of", "account_id", "source", "symbol"],
+            "prices": ["symbol", "date"],
+        },
+        notes=[
+            f"HealthEquity investments {dates[0]} to {dates[-1]}: "
+            + ", ".join(f"{n} {k}" for k, n in counts.items())
+            + "; "
+            + ", ".join(f"{f} {h['shares']} shares on {h['as_of']}" for f, h in last.items())
+        ],
+    )

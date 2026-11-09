@@ -14,10 +14,16 @@ def text(name):
     return (FIXTURES / name).read_text()
 
 
-@pytest.mark.parametrize("name, parser", [
-    ("pay_statement.txt", pay_statement), ("earnings_statement.txt", earnings_statement),
-    ("schwab_equity.csv", schwab_equity), ("schwab_equity.json", schwab_equity), ("accounts_seed.csv", seed),
-])
+@pytest.mark.parametrize(
+    "name, parser",
+    [
+        ("pay_statement.txt", pay_statement),
+        ("earnings_statement.txt", earnings_statement),
+        ("schwab_equity.csv", schwab_equity),
+        ("schwab_equity.json", schwab_equity),
+        ("accounts_seed.csv", seed),
+    ],
+)
 def test_each_fixture_is_identified_by_its_parser(name, parser):
     assert identify(text(name)) is parser
 
@@ -40,7 +46,11 @@ def test_pay_statement_lines_and_kinds():
 
 
 def test_pay_statement_rejects_a_misread_number():
-    broken = text("pay_statement.txt").replace("$4,000.00", "$4,100.00", 1)  # Regular Pay current; leak-guard: allow (synthetic)
+    broken = text("pay_statement.txt").replace(
+        "$4,000.00",  # leak-guard: allow (made up)
+        "$4,100.00",  # leak-guard: allow (made up)
+        1,  # leak-guard: allow (made up)
+    )  # Regular Pay current; leak-guard: allow (synthetic)
     with pytest.raises(ParseError, match="self-checks"):
         pay_statement.parse(broken)
 
@@ -118,13 +128,15 @@ def test_earnings_statement_accepts_an_unlabeled_deductions_total():
     lines = text("earnings_statement.txt").splitlines()
     i = next(k for k, l in enumerate(lines) if "GROUP TE" in l)
     at = lines[i].index("Deductions", 30)
-    lines[i] = lines[i][:at] + " " * len("Deductions") + lines[i][at + len("Deductions"):]
+    lines[i] = lines[i][:at] + " " * len("Deductions") + lines[i][at + len("Deductions") :]
     r = earnings_statement.parse("\n".join(lines))
     assert r.tables["paystubs"].set_index("line_item").loc["Deductions", "amount"] == 90
 
 
 def test_pay_statement_ytd_mismatch_is_a_note_not_a_failure():
-    r = pay_statement.parse(text("pay_statement.txt").replace("$40,000.00", "$40,100.00", 1))  # leak-guard: allow (synthetic)
+    r = pay_statement.parse(
+        text("pay_statement.txt").replace("$40,000.00", "$40,100.00", 1)  # leak-guard: allow (made up)
+    )  # leak-guard: allow (synthetic)
     assert any("YTD" in n for n in r.notes)
 
 
@@ -135,8 +147,10 @@ def test_check_history_parses_every_stub_and_ids_unnumbered_ones():
     stubs = r.tables["paystubs"].groupby(["pay_date", "stub_id"]).size()
     assert len(stubs) == 2 and r.label == "paystubs_alex_2001-01-19_2001-01-20"
     unnumbered = [s for _, s in stubs.index if s != "4242"]
-    assert unnumbered[0].startswith("s") and pay_statement.parse(second).tables[
-        "paystubs"]["stub_id"].iloc[0] == unnumbered[0]  # stable across documents
+    assert (
+        unnumbered[0].startswith("s")
+        and pay_statement.parse(second).tables["paystubs"]["stub_id"].iloc[0] == unnumbered[0]
+    )  # stable across documents
 
 
 def test_unparsed_stub_format_is_filed_for_the_record():
@@ -145,32 +159,69 @@ def test_unparsed_stub_format_is_filed_for_the_record():
     assert identify(text_) is documents and (r.kind, r.label) == ("paystub_unparsed", "paystub_unparsed_2001-01-19")
 
 
-@pytest.mark.parametrize("text_, label, year", [
-    ("Employers must use Form W-4, Employee's Withholding Certificate.\n"
-     "Publication 15-T (2001)   Catalog Number 32112B\n", "publication-15-t-2001", "2001"),
-    ("Form 1040 U.S. Individual Income Tax Return\n Instructions for Form 1040 (2001)  Catalog Number 24811V",
-     "instructions-for-form-1040-2001", "2001"),
-    ("2001 Instructions for Schedule A\nInstructions for Schedule A (Form 1040) (2001) Catalog Number 1",
-     "instructions-for-schedule-a-2001", "2001"),
-    ("Part III\nAd min is tra tiv e , Pr oc ed ur al, a nd M is c ell an eo us\nRev. Proc. 2001- 7\n",
-     "rev-proc-2001-7", ""),
-    ("2002 Amounts Relating to Retirement Plans\n N otice 2001- 80\n Section 415 of the Internal Revenue "
-     "Code provides", "notice-2001-80", ""),
-    ("PUBLIC LAW 101\u201321\u2014JULY 4, 2001\n An Act", "public-law-101-21", ""),
-    ("revenue.wi.gov\nWisconsin Income Tax   1\nForm 1 Instructions   2001\nNew in 2001",
-     "wi-form-1-instructions-2001", "2001"),
-    ("Wisconsin Income Tax\nForm 1NPR Instructions 2001", "wi-form-1npr-instructions-2001", "2001"),
-    ("Withholding Tax\nGuide\nPublication W-166 (1/01)", "wi-publication-w-166-2001-01", "2001"),
-    ("Wisconsin  2001  1  income tax\nYour legal last name   Legal first name\n .00  .00\n"
-     "according to sec. 157.06, Wis. Stats.", "wi-form-1-2001", "2001"),
-    ("2001 INSTRUCTIONS BOOKLET NO FORMS INCLUDED PA-40 IN 04-01\nTAX RATE The state income tax rate "
-     "for 2001 is 3.07 percent", "pa-40-instructions-2001", "2001"),
-    ("PA-40\nPennsylvania Income Tax Return PA-40 (EX) MOD 04-01 (FI)\nPA Department of "
-     "Revenue 2001", "pa-40-2001", "2001"),
-    ("(EX) MOD 03-01 (FI) PA SCHEDULE G-L PA-40/PA-41 G-L", "pa-schedule-g-l-2001-03", ""),
-    ("EMPLOYER WITHHOLDING INFORMATION GUIDE\nPENNSYLVANIA PERSONAL INCOME TAX\nREV-415 (SU) 01-01",
-     "pa-rev-415-2001-01", ""),
-])
+@pytest.mark.parametrize(
+    "text_, label, year",
+    [
+        (
+            "Employers must use Form W-4, Employee's Withholding Certificate.\n"
+            "Publication 15-T (2001)   Catalog Number 32112B\n",
+            "publication-15-t-2001",
+            "2001",
+        ),
+        (
+            "Form 1040 U.S. Individual Income Tax Return\n Instructions for Form 1040 (2001)  Catalog Number 24811V",
+            "instructions-for-form-1040-2001",
+            "2001",
+        ),
+        (
+            "2001 Instructions for Schedule A\nInstructions for Schedule A (Form 1040) (2001) Catalog Number 1",
+            "instructions-for-schedule-a-2001",
+            "2001",
+        ),
+        (
+            "Part III\nAd min is tra tiv e , Pr oc ed ur al, a nd M is c ell an eo us\nRev. Proc. 2001- 7\n",
+            "rev-proc-2001-7",
+            "",
+        ),
+        (
+            "2002 Amounts Relating to Retirement Plans\n N otice 2001- 80\n Section 415 of the Internal Revenue "
+            "Code provides",
+            "notice-2001-80",
+            "",
+        ),
+        ("PUBLIC LAW 101\u201321\u2014JULY 4, 2001\n An Act", "public-law-101-21", ""),
+        (
+            "revenue.wi.gov\nWisconsin Income Tax   1\nForm 1 Instructions   2001\nNew in 2001",
+            "wi-form-1-instructions-2001",
+            "2001",
+        ),
+        ("Wisconsin Income Tax\nForm 1NPR Instructions 2001", "wi-form-1npr-instructions-2001", "2001"),
+        ("Withholding Tax\nGuide\nPublication W-166 (1/01)", "wi-publication-w-166-2001-01", "2001"),
+        (
+            "Wisconsin  2001  1  income tax\nYour legal last name   Legal first name\n .00  .00\n"
+            "according to sec. 157.06, Wis. Stats.",
+            "wi-form-1-2001",
+            "2001",
+        ),
+        (
+            "2001 INSTRUCTIONS BOOKLET NO FORMS INCLUDED PA-40 IN 04-01\nTAX RATE The state income tax rate "
+            "for 2001 is 3.07 percent",
+            "pa-40-instructions-2001",
+            "2001",
+        ),
+        (
+            "PA-40\nPennsylvania Income Tax Return PA-40 (EX) MOD 04-01 (FI)\nPA Department of Revenue 2001",
+            "pa-40-2001",
+            "2001",
+        ),
+        ("(EX) MOD 03-01 (FI) PA SCHEDULE G-L PA-40/PA-41 G-L", "pa-schedule-g-l-2001-03", ""),
+        (
+            "EMPLOYER WITHHOLDING INFORMATION GUIDE\nPENNSYLVANIA PERSONAL INCOME TAX\nREV-415 (SU) 01-01",
+            "pa-rev-415-2001-01",
+            "",
+        ),
+    ],
+)
 def test_tax_law_sources_are_identified_before_other_recognizers(text_, label, year):
     assert identify(text_) is tax_law
     r = tax_law.parse(text_)
@@ -179,8 +230,10 @@ def test_tax_law_sources_are_identified_before_other_recognizers(text_, label, y
 
 
 def test_household_documents_that_mention_the_law_are_not_tax_law():
-    return_text = ("Form 1040 U.S. Individual Income Tax Return 2001\n"
-                   "See Notice 2001-80 and Rev. Proc. 2001-7 for limits under the Internal Revenue Code.")
+    return_text = (
+        "Form 1040 U.S. Individual Income Tax Return 2001\n"
+        "See Notice 2001-80 and Rev. Proc. 2001-7 for limits under the Internal Revenue Code."
+    )
     assert identify(return_text) is documents
     assert identify("Form W-4  Employee's Withholding Certificate  2001\nPublication 15-T") is documents
     wi_return = "Wisconsin income tax  2001 1NPR  Nonresident & part-year resident  Form 1NPR"
@@ -205,9 +258,11 @@ def test_seeds_for_categories_and_aliases():
 
 
 def test_pay_history_can_be_seeded():
-    text = ("effective,person,employer,salary,band,rating,fte,note\n"
-            "2020-04-01,alex,Acme,90000,B3,meets,1,annual raise\n"
-            "2021-01-01,alex,Acme,95000,B4,,0.6,promotion; part time\n")
+    text = (
+        "effective,person,employer,salary,band,rating,fte,note\n"
+        "2020-04-01,alex,Acme,90000,B3,meets,1,annual raise\n"
+        "2021-01-01,alex,Acme,95000,B4,,0.6,promotion; part time\n"
+    )
     result = seed.parse(text)
     assert result.keys == {"comp_events": ["effective", "person", "employer"]}
     assert result.tables["comp_events"]["fte"].tolist() == ["1", "0.6"]

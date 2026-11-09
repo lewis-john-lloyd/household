@@ -90,6 +90,7 @@ def _is(*words, unless=()):
     def match(name):
         n = name.lower()
         return any(w in n for w in words) and not any(u in n for u in unless)
+
     return match
 
 
@@ -131,25 +132,30 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     (job_ends), so no paycheck or vest on or after it is projected."""
     rows = rows[rows["pay_date"].astype(str).str[:4] == str(year)]
     bt = backtest[backtest["pay_date"].str[:4] == str(year)]
-    wi_bt = (wi_backtest if wi_backtest is not None else wisconsin.backtest(rows))
+    wi_bt = wi_backtest if wi_backtest is not None else wisconsin.backtest(rows)
     wi_bt = wi_bt[wi_bt["pay_date"].str[:4] == str(year)]
     wi_regular = wi_bt[(wi_bt["kind"] == "regular") & wi_bt["settings"].notna()].sort_values("pay_date")
     wi_settings = wi_regular.iloc[-1]["settings"] if len(wi_regular) else None
     regular = bt[bt["kind"] == "regular"].sort_values("pay_date")
     # Taxable wages to date = gross to date less pre-tax deductions to date (not every stub
     # prints a year-to-date taxable figure).
-    out = {"wages": _ytd(rows, "memo", ["Gross"]) - _ytd(rows, "pre_tax"),
-           "federal_withheld": _ytd(rows, "tax", list(withholding.FIT_LINES)),
-           "medicare_withheld": _ytd(rows, "tax", contains=MEDICARE),
-           "state_withheld": _ytd(rows, "tax", contains=_is("state income", "wi")),
-           "wi_withheld": _ytd(rows, "tax", list(wisconsin.WI_LINES)),
-           "elective": _ytd(rows, "pre_tax", contains=ELECTIVE),
-           "after_tax": _ytd(rows, "post_tax", contains=AFTER_TAX),
-           "employer_401k": _ytd(rows, "employer", contains=_is("401k")),
-           "hsa": _ytd(rows, "pre_tax", contains=HSA_EMPLOYEE) + _ytd(rows, "pre_tax", contains=HSA_EMPLOYER),
-           "dependent_care": _ytd(rows, "pre_tax", contains=DEPENDENT_CARE),
-           "health_fsa": _ytd(rows, "pre_tax", contains=HEALTH_FSA),
-           "paychecks_left": 0, "vests_left": 0, "extra_withholding": 0.0, "notes": []}
+    out = {
+        "wages": _ytd(rows, "memo", ["Gross"]) - _ytd(rows, "pre_tax"),
+        "federal_withheld": _ytd(rows, "tax", list(withholding.FIT_LINES)),
+        "medicare_withheld": _ytd(rows, "tax", contains=MEDICARE),
+        "state_withheld": _ytd(rows, "tax", contains=_is("state income", "wi")),
+        "wi_withheld": _ytd(rows, "tax", list(wisconsin.WI_LINES)),
+        "elective": _ytd(rows, "pre_tax", contains=ELECTIVE),
+        "after_tax": _ytd(rows, "post_tax", contains=AFTER_TAX),
+        "employer_401k": _ytd(rows, "employer", contains=_is("401k")),
+        "hsa": _ytd(rows, "pre_tax", contains=HSA_EMPLOYEE) + _ytd(rows, "pre_tax", contains=HSA_EMPLOYER),
+        "dependent_care": _ytd(rows, "pre_tax", contains=DEPENDENT_CARE),
+        "health_fsa": _ytd(rows, "pre_tax", contains=HEALTH_FSA),
+        "paychecks_left": 0,
+        "vests_left": 0,
+        "extra_withholding": 0.0,
+        "notes": [],
+    }
     out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care", "health_fsa")}
     out["wi_settings"] = wi_settings
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
@@ -190,8 +196,9 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
         out["notes"].append(f"{len(dates) + done} paychecks this year; the 27th carries no deductions")
 
     supplemental = bt[(bt["kind"] == "supplemental")].copy()
-    recent = supplemental[pd.to_datetime(supplemental["pay_date"])
-                          > pd.Timestamp(last["pay_date"]) - pd.Timedelta(days=90)]
+    recent = supplemental[
+        pd.to_datetime(supplemental["pay_date"]) > pd.Timestamp(last["pay_date"]) - pd.Timedelta(days=90)
+    ]
     by_day = recent.groupby("pay_date")["base"].sum()
     vest_days = by_day[by_day > 1_000]
     scheduled = overrides.get("vests") or {}
@@ -204,8 +211,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
             d = date.fromisoformat(str(day)[:10])
             if d > latest_vest and d.year == year and (ends is None or d < ends):
                 by_date[d] = by_date.get(d, 0.0) + float(shares)
-        rate = overrides.get("supplemental_rate",
-                             float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
+        rate = overrides.get("supplemental_rate", float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
         for _day, shares in sorted(by_date.items()):
             amount = shares * price
             out["wages"] += amount
@@ -217,16 +223,20 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
             _add_medicare(out, amount, year)
         out["vests_left"] = len(by_date)
         out["vest_rate"] = rate
-        out["notes"].append(f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
-                            f"{price:,.2f}, withheld at {rate:.0%}")
+        out["notes"].append(
+            f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
+            f"{price:,.2f}, withheld at {rate:.0%}"
+        )
     elif len(vest_days) >= 2:
         latest_vest = date.fromisoformat(vest_days.index.max()[:10])
         # a vest on the same day of each month after the latest, before the job ends
-        months_left = sum(1 for m in range(latest_vest.month + 1, 13)
-                          if ends is None or date(year, m, min(latest_vest.day, 28)) < ends)
+        months_left = sum(
+            1
+            for m in range(latest_vest.month + 1, 13)
+            if ends is None or date(year, m, min(latest_vest.day, 28)) < ends
+        )
         amount = float(vest_days.mean()) * overrides.get("stock_price", 1.0)
-        rate = overrides.get("supplemental_rate",
-                             float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
+        rate = overrides.get("supplemental_rate", float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
         out["wages"] += amount * months_left
         out["federal_withheld"] += amount * months_left * rate
         if wi_settings is not None:
@@ -306,11 +316,13 @@ def positions(paystubs, year, overrides=None, comp_events=None):
         paid = rows["pay_date"].astype(str).str[:10]
         first, last = date.fromisoformat(paid.min()), date.fromisoformat(paid.max())
         ends = job_ends(comp_events, person, employer, first, last)
-        out[(person, employer)] = employer_position(rows, mine(backtest), year, overrides or {},
-                                                    mine(wi_backtest), ended=year < latest.year, ends=ends)
+        out[(person, employer)] = employer_position(
+            rows, mine(backtest), year, overrides or {}, mine(wi_backtest), ended=year < latest.year, ends=ends
+        )
         if ends is not None and year == latest.year:
-            out[(person, employer)]["notes"].append(f"ends {ends.isoformat()} (a new job in comp_events): "
-                                                    "nothing projected from then")
+            out[(person, employer)]["notes"].append(
+                f"ends {ends.isoformat()} (a new job in comp_events): nothing projected from then"
+            )
     return out
 
 
@@ -321,6 +333,7 @@ def scheduled_vests(schedule, vested=None, prices=None):
     month in the year to the latest price averaged, so a month's swing doesn't move the projection; None with
     no schedule or no price."""
     from .parsers import schwab_awards
+
     s = schwab_awards.in_force(schedule)
     s = s[s["award_type"].astype(str).str.upper().isin(schwab_awards.SHARE_AWARDS)]  # an option's vest is not pay
     if s.empty:
@@ -331,7 +344,9 @@ def scheduled_vests(schedule, vested=None, prices=None):
         v = v[v["fmv"] > 0]
         seen += list(zip(v["vest_date"].astype(str), v["fmv"]))
     if prices is not None and len(prices):
-        p = prices[prices["symbol"].isin(set(s["symbol"]))].assign(close=lambda d: pd.to_numeric(d["close"], errors="coerce"))
+        p = prices[prices["symbol"].isin(set(s["symbol"]))].assign(
+            close=lambda d: pd.to_numeric(d["close"], errors="coerce")
+        )
         p = p.dropna(subset=["close"])  # a date GOOGLEFINANCE had no close for is no price
         seen += list(zip(p["date"].astype(str), p["close"]))
     if not seen:
@@ -344,9 +359,13 @@ def scheduled_vests(schedule, vested=None, prices=None):
     for day, price in sorted(seen):
         if str(day)[:7] > start:
             by_month[str(day)[:7]] = float(price)
-    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))),
-            "price": round(sum(by_month.values()) / len(by_month), 2), "months": len(by_month),
-            "latest": float(latest), "price_date": str(latest_day)}
+    return {
+        "schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))),
+        "price": round(sum(by_month.values()) / len(by_month), 2),
+        "months": len(by_month),
+        "latest": float(latest),
+        "price_date": str(latest_day),
+    }
 
 
 def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, vests=None):
@@ -364,14 +383,16 @@ def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, v
         earned[person] = earned.get(person, 0.0) + p["wages"]
     i["wi_earned_income_by_person"] = sorted(earned.items())
     i["wi_withheld"] = sum(p["wi_withheld"] for p in pos.values())
-    i.update({
-        "wages": sum(p["wages"] for p in pos.values()),
-        "federal_withheld": sum(p["federal_withheld"] for p in pos.values()),
-        "medicare_wages": sum(p["medicare_wages"] for p in pos.values()),
-        "medicare_withheld": sum(p["medicare_withheld"] for p in pos.values()),
-        "capital_gain_short": float(gain[term != "long_term"].sum()),
-        "capital_gain_long": float(gain[term == "long_term"].sum()),
-    })
+    i.update(
+        {
+            "wages": sum(p["wages"] for p in pos.values()),
+            "federal_withheld": sum(p["federal_withheld"] for p in pos.values()),
+            "medicare_wages": sum(p["medicare_wages"] for p in pos.values()),
+            "medicare_withheld": sum(p["medicare_withheld"] for p in pos.values()),
+            "capital_gain_short": float(gain[term != "long_term"].sum()),
+            "capital_gain_long": float(gain[term == "long_term"].sum()),
+        }
+    )
     i["state_income_tax"] = i.get("state_income_tax", 0) or sum(p["state_withheld"] for p in pos.values())
     return i, pos
 
@@ -386,11 +407,11 @@ def project(year, paystubs, sales, facts, comp_events=None, vests=None):
     rows, detail = [], []
     filed = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "filed")] if not facts.empty else facts
     filed = dict(zip(filed["key"], _num(filed["value"]))) if len(filed) else {}
-    prior = facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] \
-        if not facts.empty else facts
+    prior = (
+        facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] if not facts.empty else facts
+    )
     prior_lines = dict(zip(prior["key"], _num(prior["value"]))) if len(prior) else {}
-    harbor = (tax.safe_harbor(prior_lines["24"], prior_lines.get("11a", 0))
-              if "24" in prior_lines else None)
+    harbor = tax.safe_harbor(prior_lines["24"], prior_lines.get("11a", 0)) if "24" in prior_lines else None
     notes = []
     for name, overrides in SCENARIOS.items():
         i, pos = inputs_for(year, paystubs, sales, facts, overrides, comp_events, vests)
@@ -402,13 +423,24 @@ def project(year, paystubs, sales, facts, comp_events=None, vests=None):
         if name == "as is":  # the forms show the year as it stands; scenarios differ only in their totals
             for order, row in enumerate(return_lines(i, r, w, year)):
                 detail.append({"scenario": name, "order": order, **row, "filed": filed.get(row["key"])})
-        rows.append({"scenario": name, "agi": r["11a"], "deduction": r["12e"], "taxable": r["15"],
-                     "total_tax": r["24"], "withheld": r["33"], "owe_or_refund": r["37"],
-                     "safe_harbor": harbor,
-                     "safe_harbor_met": None if harbor is None else r["25a"] + r["25c"] >= harbor,
-                     "extra_to_break_even": break_even_extra(pos, r["37"]),
-                     "wi_taxable": w["wi_taxable"], "wi_tax": w["wi_net_tax"],
-                     "wi_withheld": w["wi_withheld"], "wi_owe_or_refund": w["wi_owe_or_refund"]})
+        rows.append(
+            {
+                "scenario": name,
+                "agi": r["11a"],
+                "deduction": r["12e"],
+                "taxable": r["15"],
+                "total_tax": r["24"],
+                "withheld": r["33"],
+                "owe_or_refund": r["37"],
+                "safe_harbor": harbor,
+                "safe_harbor_met": None if harbor is None else r["25a"] + r["25c"] >= harbor,
+                "extra_to_break_even": break_even_extra(pos, r["37"]),
+                "wi_taxable": w["wi_taxable"],
+                "wi_tax": w["wi_net_tax"],
+                "wi_withheld": w["wi_withheld"],
+                "wi_owe_or_refund": w["wi_owe_or_refund"],
+            }
+        )
     return pd.DataFrame(rows), notes, pd.DataFrame(detail, columns=DETAIL_COLUMNS)
 
 
@@ -420,7 +452,16 @@ DETAIL_COLUMNS = ["scenario", "order", "form", "line", "key", "label", "value", 
 def _adder(out):
     def add(form, line, key, label, value, always=True):
         if always or value:
-            out.append({"form": form, "line": line, "key": key, "label": label, "value": round(float(value), 4 if key in RATIO_KEYS else 2)})
+            out.append(
+                {
+                    "form": form,
+                    "line": line,
+                    "key": key,
+                    "label": label,
+                    "value": round(float(value), 4 if key in RATIO_KEYS else 2),
+                }
+            )
+
     return add
 
 
@@ -470,29 +511,55 @@ def wisconsin_lines(w, year):
     """Wisconsin Form 1 (a full-year resident's) line by line."""
     out = []
     add = _adder(out)
-    for key, label in (("wi_income", "Wisconsin income"), ("wi_standard_deduction", "Standard deduction"),
-                       ("wi_exemptions", "Exemptions"), ("wi_taxable", "Taxable income"), ("wi_tax", "Tax"),
-                       ("wi_itemized_credit", "Itemized deduction credit"),
-                       ("wi_school_property_credit", "School property tax credit"),
-                       ("wi_married_couple_credit", "Married couple credit"), ("wi_net_tax", "Net tax"),
-                       ("wi_withheld", "Wisconsin tax withheld")):
+    for key, label in (
+        ("wi_income", "Wisconsin income"),
+        ("wi_standard_deduction", "Standard deduction"),
+        ("wi_exemptions", "Exemptions"),
+        ("wi_taxable", "Taxable income"),
+        ("wi_tax", "Tax"),
+        ("wi_itemized_credit", "Itemized deduction credit"),
+        ("wi_school_property_credit", "School property tax credit"),
+        ("wi_married_couple_credit", "Married couple credit"),
+        ("wi_net_tax", "Net tax"),
+        ("wi_withheld", "Wisconsin tax withheld"),
+    ):
         add(WISCONSIN, taxdata.form_line(year, key)[0], key, label, w.get(key, 0))
     refund = w["wi_owe_or_refund"] < 0
-    add(WISCONSIN, taxdata.form_line(year, "wi_overpaid" if refund else "wi_owe")[0], "wi_owe_or_refund",
-        "Refund" if refund else "Amount owed", abs(w["wi_owe_or_refund"]))
+    add(
+        WISCONSIN,
+        taxdata.form_line(year, "wi_overpaid" if refund else "wi_owe")[0],
+        "wi_owe_or_refund",
+        "Refund" if refund else "Amount owed",
+        abs(w["wi_owe_or_refund"]),
+    )
     return out
 
 
 # Form 1NPR (a part-year resident's) and PA-40: the keys are the line numbers, as in return_facts
 WISCONSIN_NPR = "Wisconsin Form 1NPR"
-NPR_LINES = (("32", "Wisconsin share of income"), ("34c", "Standard deduction"), ("36c", "Exemptions"),
-             ("37", "Taxable income"), ("38", "Tax on all income"), ("39", "Tax on the Wisconsin share"),
-             ("40", "Itemized deduction credit"), ("43c", "School property tax credit"),
-             ("45", "Tax after those credits"), ("48", "Married couple credit"), ("52", "Net tax"),
-             ("58", "Wisconsin tax withheld"))
+NPR_LINES = (
+    ("32", "Wisconsin share of income"),
+    ("34c", "Standard deduction"),
+    ("36c", "Exemptions"),
+    ("37", "Taxable income"),
+    ("38", "Tax on all income"),
+    ("39", "Tax on the Wisconsin share"),
+    ("40", "Itemized deduction credit"),
+    ("43c", "School property tax credit"),
+    ("45", "Tax after those credits"),
+    ("48", "Married couple credit"),
+    ("52", "Net tax"),
+    ("58", "Wisconsin tax withheld"),
+)
 PENNSYLVANIA = "Pennsylvania PA-40"
-PA_LINES = (("9", "Total PA taxable income"), ("11", "Adjusted PA taxable income"), ("12", "Tax"),
-            ("13", "PA tax withheld"), ("22", "Resident credit"), ("24", "Total payments and credits"))
+PA_LINES = (
+    ("9", "Total PA taxable income"),
+    ("11", "Adjusted PA taxable income"),
+    ("12", "Tax"),
+    ("13", "PA tax withheld"),
+    ("22", "Resident credit"),
+    ("24", "Total payments and credits"),
+)
 RATIO_KEYS = ("wi1npr_32",)  # a share, not dollars
 
 
@@ -535,6 +602,7 @@ def as_filed(year, facts):
     W-2s and the other figures on it), each beside the filed line: Form 1040, then Wisconsin Form 1 or
     Form 1NPR and PA-40 when the inputs have them. The same computation tax_check compares."""
     from . import pennsylvania
+
     i = tax.inputs_from_facts(facts, year)
     r = tax.federal_return(i, year)
     lines = federal_lines(i, r, year)
@@ -545,23 +613,38 @@ def as_filed(year, facts):
         lines += pennsylvania_lines(pennsylvania.pa_return(i, year))
     filed = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "filed")]
     filed = dict(zip(filed["key"], _num(filed["value"])))
-    return pd.DataFrame([{"scenario": "as is", "order": n, **row, "filed": filed.get(row["key"])}
-                         for n, row in enumerate(lines)], columns=DETAIL_COLUMNS)
+    return pd.DataFrame(
+        [{"scenario": "as is", "order": n, **row, "filed": filed.get(row["key"])} for n, row in enumerate(lines)],
+        columns=DETAIL_COLUMNS,
+    )
 
 
-PLAN_COLUMNS = ["return", "person", "employer", "paychecks_left", "vest_rate", "projected", "target", "current_extra",
-                "suggested_extra", "lands_at", "penalty_free", "note"]
+PLAN_COLUMNS = [
+    "return",
+    "person",
+    "employer",
+    "paychecks_left",
+    "vest_rate",
+    "projected",
+    "target",
+    "current_extra",
+    "suggested_extra",
+    "lands_at",
+    "penalty_free",
+    "note",
+]
 
 
 def _harbor(year, facts):
     """The prior-year safe harbor from last year's filed return, or None when it isn't in return_facts."""
-    prior = facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] if not facts.empty else facts
+    prior = (
+        facts[(facts["year"].astype(str) == str(year - 1)) & (facts["kind"] == "filed")] if not facts.empty else facts
+    )
     lines = dict(zip(prior["key"], _num(prior["value"]))) if len(prior) else {}
     return tax.safe_harbor(lines["24"], lines.get("11a", 0)) if "24" in lines else None
 
 
-def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35, comp_events=None,
-                     vests=None):
+def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_rate=0.35, comp_events=None, vests=None):
     """For each return, the extra per paycheck that lands the year on a refund of target, on no balance, and
     on owing target, from the year so far plus the projection with future vests withheld at
     supplemental_rate. projected and lands_at: refund positive, owed negative. The change goes on the
@@ -573,23 +656,51 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
     left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]
     vest = next((v.get("vest_rate") for v in pos.values() if v.get("vest_rate") is not None), None)
     if not left:
-        return pd.DataFrame([{"return": "federal", "projected": -r["37"], "target": target, "vest_rate": vest,
-                              "note": "no paychecks left this year to change"}], columns=PLAN_COLUMNS)
+        return pd.DataFrame(
+            [
+                {
+                    "return": "federal",
+                    "projected": -r["37"],
+                    "target": target,
+                    "vest_rate": vest,
+                    "note": "no paychecks left this year to change",
+                }
+            ],
+            columns=PLAN_COLUMNS,
+        )
     (person, employer), v = max(left, key=lambda kv: kv[1]["paychecks_left"])
     n = v["paychecks_left"]
     harbor = _harbor(year, facts)
-    returns = (("federal", -r["37"], v["extra_withholding"], "W-4 Step 4(c): extra withholding per paycheck"),
-               ("wisconsin", -w["wi_owe_or_refund"], float(v["wi_settings"][2]) if v.get("wi_settings") else 0.0,
-                "WT-4: additional amount per paycheck" if v.get("wi_settings") else
-                "no Wisconsin settings decoded from the stubs; additional amount assumed zero"))
+    returns = (
+        ("federal", -r["37"], v["extra_withholding"], "W-4 Step 4(c): extra withholding per paycheck"),
+        (
+            "wisconsin",
+            -w["wi_owe_or_refund"],
+            float(v["wi_settings"][2]) if v.get("wi_settings") else 0.0,
+            "WT-4: additional amount per paycheck"
+            if v.get("wi_settings")
+            else "no Wisconsin settings decoded from the stubs; additional amount assumed zero",
+        ),
+    )
     rows = []
     for name, projected, now, note in returns:
         for goal in (target, 0.0, -target):  # a refund of target, no balance, owing target
             extra = round(max(now + (goal - projected) / n, 0.0), 2)  # withholding can't go below none
             lands = round(projected + (extra - now) * n, 2)
-            row = {"return": name, "person": person, "employer": employer, "paychecks_left": n, "vest_rate": vest,
-                   "projected": projected, "target": goal, "current_extra": round(now, 2), "suggested_extra": extra,
-                   "lands_at": lands, "penalty_free": None, "note": note}
+            row = {
+                "return": name,
+                "person": person,
+                "employer": employer,
+                "paychecks_left": n,
+                "vest_rate": vest,
+                "projected": projected,
+                "target": goal,
+                "current_extra": round(now, 2),
+                "suggested_extra": extra,
+                "lands_at": lands,
+                "penalty_free": None,
+                "note": note,
+            }
             if name == "federal":
                 row["penalty_free"] = tax.penalty_free(-lands, r["25a"] + r["25c"] + (extra - now) * n, r["24"], harbor)
             rows.append(row)
@@ -597,8 +708,9 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
 
 
 def _wisconsin_notes(year):
-    stale = sorted(key[1] for key in taxdata.UNCITED
-                   if isinstance(key, tuple) and key[0] == year and key[1].startswith("wi_"))
+    stale = sorted(
+        key[1] for key in taxdata.UNCITED if isinstance(key, tuple) and key[0] == year and key[1].startswith("wi_")
+    )
     out = [f"Wisconsin {year}: {len(stale)} amounts are the prior year's until {year}'s are published"] if stale else []
     _, form_year = taxdata.form_line(year, "wi_net_tax")
     if form_year is not None and form_year != year:
@@ -628,35 +740,79 @@ def elections(year, paystubs, after_tax_converts=False, comp_events=None):
         people.append(person)
         y = v["ytd"]
         if v["elective"]:
-            out.append(_election(year, person, employer, "401(k) elective deferral", y["elective"], v["elective"],
-                                 p["elective_deferral_402g"]))
+            out.append(
+                _election(
+                    year,
+                    person,
+                    employer,
+                    "401(k) elective deferral",
+                    y["elective"],
+                    v["elective"],
+                    p["elective_deferral_402g"],
+                )
+            )
         if v["health_fsa"]:  # the limit is per employee, per employer's plan
-            out.append(_election(year, person, employer, HEALTH_FSA_PLAN, y["health_fsa"], v["health_fsa"],
-                                 p["health_fsa"]))
+            out.append(
+                _election(year, person, employer, HEALTH_FSA_PLAN, y["health_fsa"], v["health_fsa"], p["health_fsa"])
+            )
         if v["after_tax"]:
             room = p["annual_additions_415c"] - v["elective"] - v["employer_401k"]
             mega = _election(year, person, employer, MEGA_BACKDOOR, y["after_tax"], v["after_tax"], room)
-            mega["status"] += ("; the plan converts it to Roth automatically" if after_tax_converts
-                               else "; Roth conversion not tracked")
+            mega["status"] += (
+                "; the plan converts it to Roth automatically"
+                if after_tax_converts
+                else "; Roth conversion not tracked"
+            )
             out.append(mega)
-            out.append(_election(year, person, employer, "401(k) total additions (415(c))",
-                                 y["elective"] + y["after_tax"] + y["employer_401k"],
-                                 v["elective"] + v["after_tax"] + v["employer_401k"], p["annual_additions_415c"]))
-    household = {"HSA, family (employee + employer)": ("hsa", p["hsa_family"]),
-                 "dependent-care FSA": ("dependent_care", p["dependent_care_fsa_mfj"])}
+            out.append(
+                _election(
+                    year,
+                    person,
+                    employer,
+                    "401(k) total additions (415(c))",
+                    y["elective"] + y["after_tax"] + y["employer_401k"],
+                    v["elective"] + v["after_tax"] + v["employer_401k"],
+                    p["annual_additions_415c"],
+                )
+            )
+    household = {
+        "HSA, family (employee + employer)": ("hsa", p["hsa_family"]),
+        "dependent-care FSA": ("dependent_care", p["dependent_care_fsa_mfj"]),
+    }
     for plan, (key, limit) in household.items():
         projected = sum(v[key] for v in pos.values())
         if projected:
-            out.append(_election(year, "household", "", plan, sum(v["ytd"][key] for v in pos.values()), projected, limit))
+            out.append(
+                _election(year, "household", "", plan, sum(v["ytd"][key] for v in pos.values()), projected, limit)
+            )
     for person in sorted(set(people)):
-        out.append({"year": year, "person": person, "employer": "", "plan": BACKDOOR_ROTH, "ytd": None,
-                    "projected": None, "limit": None, "gap": None,
-                    "status": "not tracked: no IRA contributions or conversions in the ledger"})
+        out.append(
+            {
+                "year": year,
+                "person": person,
+                "employer": "",
+                "plan": BACKDOOR_ROTH,
+                "ytd": None,
+                "projected": None,
+                "limit": None,
+                "gap": None,
+                "status": "not tracked: no IRA contributions or conversions in the ledger",
+            }
+        )
     return pd.DataFrame(out, columns=ELECTION_COLUMNS)
 
 
 def _election(year, person, employer, plan, ytd, projected, limit):
     gap = round(limit - projected, 2)
     status = "at limit" if abs(gap) < 1 else ("room left" if gap > 0 else "over limit")
-    return {"year": year, "person": person, "employer": employer, "plan": plan, "ytd": round(ytd, 2),
-            "projected": round(projected, 2), "limit": limit, "gap": gap, "status": status}
+    return {
+        "year": year,
+        "person": person,
+        "employer": employer,
+        "plan": plan,
+        "ytd": round(ytd, 2),
+        "projected": round(projected, 2),
+        "limit": limit,
+        "gap": gap,
+        "status": status,
+    }

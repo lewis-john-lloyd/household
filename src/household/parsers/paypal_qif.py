@@ -26,11 +26,25 @@ from .common import ParseError, Result
 
 NAME = "paypal_qif"
 KIND = "payment_details"
-KEPT = ("Express Checkout Payment", "PreApproved Payment Bill User Payment", "Website Payment",
-        "BillPay transaction", "Mobile Payment", "General Payment", "Payment Refund")
-KNOWN = KEPT + ("General Card Deposit", "General Card Withdrawal", "General Authorization",
-                "Void of Authorization", "User Initiated Withdrawal", "General Withdrawal",
-                "General Currency Conversion", "Other")
+KEPT = (
+    "Express Checkout Payment",
+    "PreApproved Payment Bill User Payment",
+    "Website Payment",
+    "BillPay transaction",
+    "Mobile Payment",
+    "General Payment",
+    "Payment Refund",
+)
+KNOWN = KEPT + (
+    "General Card Deposit",
+    "General Card Withdrawal",
+    "General Authorization",
+    "Void of Authorization",
+    "User Initiated Withdrawal",
+    "General Withdrawal",
+    "General Currency Conversion",
+    "Other",
+)
 COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
@@ -64,14 +78,28 @@ def parse(text):
             amount = round(float(r["T"].replace(",", "")), 2)
         except ValueError as e:
             raise ParseError(f"{NAME}: bad record {r['D']} {r['T']!r}") from e
-        rows.append({"date": date, "amount": amount, "service": "paypal", "kind": kind,
-                     "counterparty": " ".join(r["P"].split()), "memo": " ".join(r.get("M", "").split())})
+        rows.append(
+            {
+                "date": date,
+                "amount": amount,
+                "service": "paypal",
+                "kind": kind,
+                "counterparty": " ".join(r["P"].split()),
+                "memo": " ".join(r.get("M", "").split()),
+            }
+        )
     df = pd.DataFrame(rows, columns=COLUMNS[1:])
     key = df.astype(str).agg("|".join, axis=1) if not df.empty else pd.Series(dtype=str)
     n = key.groupby(key).cumcount() if not df.empty else []
     df.insert(0, "detail_id", [hashlib.sha256(f"{k}|{i}".encode()).hexdigest()[:16] for k, i in zip(key, n)])
     dates = sorted(df["date"])
-    return Result(kind=KIND, parser=NAME, label=f"paypal_{dates[-1] if dates else 'empty'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"payment_details": df}, keys={"payment_details": ["detail_id"]},
-                  notes=[f"PayPal: {len(df)} payments with a counterparty"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"paypal_{dates[-1] if dates else 'empty'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"payment_details": df},
+        keys={"payment_details": ["detail_id"]},
+        notes=[f"PayPal: {len(df)} payments with a counterparty"],
+    )

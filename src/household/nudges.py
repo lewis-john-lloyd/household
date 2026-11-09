@@ -31,10 +31,20 @@ COLUMNS = ["group", "item", "detail", "show_from", "show_until", "link"]
 FSA_COLUMNS = ["year", "account", "elected", "reimbursed", "left", "claim_deadline"]
 ACCOUNTS = {  # account: (its name, the pay stub line matcher, its categories setting, its deadline setting, its
     # plan in the elections report)
-    "lpfsa": ("Limited-purpose FSA", projection.HEALTH_FSA, "lpfsa_categories", "lpfsa_claim_deadline",
-              projection.HEALTH_FSA_PLAN),
-    "dcfsa": ("Dependent care FSA", projection.DEPENDENT_CARE, "dcfsa_categories", "dcfsa_claim_deadline",
-              "dependent-care FSA"),
+    "lpfsa": (
+        "Limited-purpose FSA",
+        projection.HEALTH_FSA,
+        "lpfsa_categories",
+        "lpfsa_claim_deadline",
+        projection.HEALTH_FSA_PLAN,
+    ),
+    "dcfsa": (
+        "Dependent care FSA",
+        projection.DEPENDENT_CARE,
+        "dcfsa_categories",
+        "dcfsa_claim_deadline",
+        "dependent-care FSA",
+    ),
 }
 GROUPS = {  # the email's sections, in order
     "settings": "Fix a setting",
@@ -85,8 +95,11 @@ def elected(stubs, matcher, year, today):
     projection for this year, which knows the paychecks that carry no deductions)."""
     if stubs is None or stubs.empty:
         return 0.0
-    rows = stubs[(stubs["kind"] == "pre_tax") & stubs["line_item"].astype(str).map(matcher)
-                 & (stubs["pay_date"].astype(str).str[:4] == str(year))].copy()
+    rows = stubs[
+        (stubs["kind"] == "pre_tax")
+        & stubs["line_item"].astype(str).map(matcher)
+        & (stubs["pay_date"].astype(str).str[:4] == str(year))
+    ].copy()
     if rows.empty:
         return 0.0
     rows["ytd"] = pd.to_numeric(rows["ytd_amount"], errors="coerce").fillna(0.0)
@@ -119,9 +132,11 @@ def fsa_balances(stubs, categorized, params, today, elections=None):
         categories = settings.names(params, categories_key)
         if pattern and categories and categorized is not None and len(categorized):
             c = categorized
-            deposits = c[c["payee_raw"].astype(str).str.contains(pattern, case=False, regex=True)
-                         & (pd.to_numeric(c["amount"], errors="coerce") > 0)
-                         & c["category"].astype(str).str.lower().isin(categories)].sort_values("date", kind="stable")
+            deposits = c[
+                c["payee_raw"].astype(str).str.contains(pattern, case=False, regex=True)
+                & (pd.to_numeric(c["amount"], errors="coerce") > 0)
+                & c["category"].astype(str).str.lower().isin(categories)
+            ].sort_values("date", kind="stable")
             for d in deposits.to_dict("records"):
                 amount, day = float(d["amount"]), _day(d["date"])
                 said = NOTE_YEAR.search(str(d.get("note", "")))
@@ -139,9 +154,16 @@ def fsa_balances(stubs, categorized, params, today, elections=None):
                     paid[prior] += amount
         for y in chosen:
             deadline, _ = _deadline(params, deadline_key, y)
-            out.append({"year": y, "account": account, "elected": chosen[y], "reimbursed": round(paid[y], 2),
-                        "left": round(chosen[y] - paid[y], 2),
-                        "claim_deadline": _iso(settings.claim_deadline(params, deadline_key, y))})
+            out.append(
+                {
+                    "year": y,
+                    "account": account,
+                    "elected": chosen[y],
+                    "reimbursed": round(paid[y], 2),
+                    "left": round(chosen[y] - paid[y], 2),
+                    "claim_deadline": _iso(settings.claim_deadline(params, deadline_key, y)),
+                }
+            )
     return pd.DataFrame(out, columns=FSA_COLUMNS)
 
 
@@ -158,12 +180,25 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
     rows = []
 
     def add(group, item, detail, show_from, show_until=None, link=""):
-        rows.append({"group": GROUPS[group], "item": item, "detail": detail, "show_from": _iso(show_from),
-                     "show_until": _iso(show_until), "link": link})
+        rows.append(
+            {
+                "group": GROUPS[group],
+                "item": item,
+                "detail": detail,
+                "show_from": _iso(show_from),
+                "show_until": _iso(show_until),
+                "link": link,
+            }
+        )
 
     for key, v, problem in settings.check(params):
-        add("settings", key, f"{v!r} {problem}; the weekly email leaves it out until it is fixed", today,
-            link=_view(params, "edit", "settings"))
+        add(
+            "settings",
+            key,
+            f"{v!r} {problem}; the weekly email leaves it out until it is fixed",
+            today,
+            link=_view(params, "edit", "settings"),
+        )
 
     if fsa is not None and len(fsa):
         for r in fsa[(fsa["year"] < today.year) & (fsa["left"] > 0.005)].to_dict("records"):
@@ -171,14 +206,30 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
             deadline, known = _deadline(params, deadline_key, int(r["year"]))
             if deadline < today:
                 continue
-            due = (f"claims due {deadline:%B} {deadline.day}" if known else
-                   f"set {deadline_key} for the real deadline; until then March 31 is assumed")
-            add("fsa", f"{name} {r['year']}", f"{_money(r['left'])} of {_money(r['elected'])} not reimbursed yet; {due}",
-                date(int(r["year"]) + 1, 1, 1), deadline, settings.link(params, "fsa_claims_url"))
-        unset = [k for k in ("fsa_payee_pattern", "lpfsa_categories", "dcfsa_categories") if not settings.value(params, k)]
+            due = (
+                f"claims due {deadline:%B} {deadline.day}"
+                if known
+                else f"set {deadline_key} for the real deadline; until then March 31 is assumed"
+            )
+            add(
+                "fsa",
+                f"{name} {r['year']}",
+                f"{_money(r['left'])} of {_money(r['elected'])} not reimbursed yet; {due}",
+                date(int(r["year"]) + 1, 1, 1),
+                deadline,
+                settings.link(params, "fsa_claims_url"),
+            )
+        unset = [
+            k for k in ("fsa_payee_pattern", "lpfsa_categories", "dcfsa_categories") if not settings.value(params, k)
+        ]
         if unset and (fsa["year"] < today.year).any():
-            add("settings", ", ".join(unset), "not set, so no FSA reimbursement is counted and every balance looks "
-                "unclaimed", date(today.year, 1, 1), link=_view(params, "edit", "settings"))
+            add(
+                "settings",
+                ", ".join(unset),
+                "not set, so no FSA reimbursement is counted and every balance looks unclaimed",
+                date(today.year, 1, 1),
+                link=_view(params, "edit", "settings"),
+            )
 
     tolerance = settings.number(params, "withholding_tolerance", 500)
     target = settings.number(params, "target_refund", 2000)
@@ -197,20 +248,36 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
             supplemental = federal and vest is not None and abs(lands - target) > tolerance
             if abs(extra - now) < 0.01 and not supplemental:
                 continue  # nothing the household can change gets closer
-            verdict = (f"a refund of {_money(r['projected'])}" if float(r["projected"]) >= 0
-                       else f"owing {_money(r['projected'])}")
+            verdict = (
+                f"a refund of {_money(r['projected'])}"
+                if float(r["projected"]) >= 0
+                else f"owing {_money(r['projected'])}"
+            )
             steps = []
             if abs(extra - now) >= 0.01:
-                steps.append(f"set the extra withholding to {extra:,.2f} a paycheck (now {now:,.2f}) for the last "
-                             f"{int(r['paychecks_left'])} paychecks"
-                             + ("" if abs(lands - target) <= 1 else
-                                f", which gets to {'a refund of ' if lands >= 0 else 'owing '}{_money(lands)}"))
+                steps.append(
+                    f"set the extra withholding to {extra:,.2f} a paycheck (now {now:,.2f}) for the last "
+                    f"{int(r['paychecks_left'])} paychecks"
+                    + (
+                        ""
+                        if abs(lands - target) <= 1
+                        else f", which gets to {'a refund of ' if lands >= 0 else 'owing '}{_money(lands)}"
+                    )
+                )
             if supplemental:
-                steps.append(f"{'then ' if steps else ''}{'lower' if lands > target else 'raise'} the supplemental "
-                             f"rate for vests and bonuses (now {vest:.0%}) to close the rest")
+                steps.append(
+                    f"{'then ' if steps else ''}{'lower' if lands > target else 'raise'} the supplemental "
+                    f"rate for vests and bonuses (now {vest:.0%}) to close the rest"
+                )
             which = "Federal (W-4 Step 4(c))" if federal else "Wisconsin (WT-4 additional amount)"
-            add("tax", f"{which} withholding", f"projected {verdict} against a target refund of {_money(target)}: "
-                + "; ".join(steps), last - timedelta(days=LEAD_DAYS), last, settings.link(params, "payroll_url"))
+            add(
+                "tax",
+                f"{which} withholding",
+                f"projected {verdict} against a target refund of {_money(target)}: " + "; ".join(steps),
+                last - timedelta(days=LEAD_DAYS),
+                last,
+                settings.link(params, "payroll_url"),
+            )
     if elections is not None and len(elections) and stubs is not None:
         mine = elections[elections["plan"].isin(["401(k) elective deferral", projection.MEGA_BACKDOOR])]
         for r in mine.to_dict("records"):
@@ -219,37 +286,65 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
             last = _last_paycheck(stubs, r["person"], r["employer"], today.year)
             if not last:
                 continue
-            off = (f"{_money(r['gap'])} short of" if float(r["gap"]) > 0 else f"{_money(r['gap'])} over")
-            add("tax", f"{r['person']} {r['plan']}", f"on pace for {_money(r['projected'])}, {off} the "
+            off = f"{_money(r['gap'])} short of" if float(r["gap"]) > 0 else f"{_money(r['gap'])} over"
+            add(
+                "tax",
+                f"{r['person']} {r['plan']}",
+                f"on pace for {_money(r['projected'])}, {off} the "
                 f"{_money(r['limit'])} limit; change the contribution before the last paycheck on {last:%B} {last.day}",
-                last - timedelta(days=LEAD_DAYS), last,
-                settings.link(params, "benefits_url") or settings.link(params, "payroll_url"))
+                last - timedelta(days=LEAD_DAYS),
+                last,
+                settings.link(params, "benefits_url") or settings.link(params, "payroll_url"),
+            )
 
     if coverage is not None and len(coverage):
         for r in coverage[coverage["status"].isin(["due", "never downloaded"])].to_dict("records"):
             newest = _day(r.get("newest", ""))
             waiting = int(float(r.get("waiting_lines") or 0))
             if newest:
-                add("download", r["source"], f"has everything through {newest:%B} {newest.day}, {newest.year}"
+                add(
+                    "download",
+                    r["source"],
+                    f"has everything through {newest:%B} {newest.day}, {newest.year}"
                     + (f"; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it" if waiting else ""),
-                    newest + timedelta(days=STALE_DAYS), link=_view(params, "status"))
+                    newest + timedelta(days=STALE_DAYS),
+                    link=_view(params, "status"),
+                )
             elif waiting:
-                add("download", r["source"], f"never downloaded; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it", today,
-                    link=_view(params, "status"))
+                add(
+                    "download",
+                    r["source"],
+                    f"never downloaded; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it",
+                    today,
+                    link=_view(params, "status"),
+                )
 
     if review is not None and len(review):
         firsts = [d for d in (_day(x) for x in review["first"]) if d]
         if firsts:
             oldest = min(firsts)
             lines = int(pd.to_numeric(review["lines"], errors="coerce").fillna(0).sum())
-            add("review", f"{len(review)} question{'' if len(review) == 1 else 's'}",
-                f"covering {_lines(lines)}, the oldest from {oldest:%B} {oldest.day}, "
-                f"{oldest.year}", oldest + timedelta(days=STALE_DAYS), link=_view(params, "edit", "review"))
+            add(
+                "review",
+                f"{len(review)} question{'' if len(review) == 1 else 's'}",
+                f"covering {_lines(lines)}, the oldest from {oldest:%B} {oldest.day}, {oldest.year}",
+                oldest + timedelta(days=STALE_DAYS),
+                link=_view(params, "edit", "review"),
+            )
     if changed is not None and len(changed):
         for r in changed.to_dict("records"):  # in the email for the weeks after the charge
             charged = _day(r["last"])
-            add("subscriptions", r["key"], f"{r['cadence']} charge now {r['change']}", charged,
-                charged + timedelta(days=recurring.FRESH_DAYS), link=_view(params, "budget", "recurring"))
+            add(
+                "subscriptions",
+                r["key"],
+                f"{r['cadence']} charge now {r['change']}",
+                charged,
+                charged + timedelta(days=recurring.FRESH_DAYS),
+                link=_view(params, "budget", "recurring"),
+            )
     order = list(GROUPS.values())
-    return pd.DataFrame(rows, columns=COLUMNS).sort_values(
-        "group", key=lambda g: g.map(order.index), kind="stable").reset_index(drop=True)
+    return (
+        pd.DataFrame(rows, columns=COLUMNS)
+        .sort_values("group", key=lambda g: g.map(order.index), kind="stable")
+        .reset_index(drop=True)
+    )

@@ -38,10 +38,41 @@ WINDOW_DAYS = 30
 SHARE_EPS = 1e-6
 SHELTERED = ("401k", "ira", "hsa", "529")
 
-FORM_8949 = ["year", "sale_date", "account_id", "symbol", "shares", "acquired", "holding_from", "term", "proceeds",
-             "basis", "wash_carried", "code", "adjustment", "gain", "lot_id", "piece", "replaced_by", "reported_basis", "note"]
-OPEN_LOTS = ["lot_id", "piece", "account_id", "symbol", "acquired", "holding_from", "shares", "cost_per_share",
-             "basis", "wash_added", "kind", "grant_id"]
+FORM_8949 = [
+    "year",
+    "sale_date",
+    "account_id",
+    "symbol",
+    "shares",
+    "acquired",
+    "holding_from",
+    "term",
+    "proceeds",
+    "basis",
+    "wash_carried",
+    "code",
+    "adjustment",
+    "gain",
+    "lot_id",
+    "piece",
+    "replaced_by",
+    "reported_basis",
+    "note",
+]
+OPEN_LOTS = [
+    "lot_id",
+    "piece",
+    "account_id",
+    "symbol",
+    "acquired",
+    "holding_from",
+    "shares",
+    "cost_per_share",
+    "basis",
+    "wash_added",
+    "kind",
+    "grant_id",
+]
 ACQUIRED = ["lot_id", "account_id", "sheltered", "symbol", "group", "acquired", "shares", "cost", "kind", "grant_id"]
 SOLD = ["sale_date", "account_id", "symbol", "group", "shares", "proceeds", "lot_id", "reported_basis", "order"]
 
@@ -102,7 +133,7 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
     and each sale naming its lot. accounts: {symbol: the taxable account its shares are held in} (holders)."""
     symbols, group_of, accounts = grant_symbols(schedule), group_of or {}, accounts or {}
     acq, sold, notes = [], [], []
-    for r in (vests.to_dict("records") if vests is not None and len(vests) else []):
+    for r in vests.to_dict("records") if vests is not None and len(vests) else []:
         grant, day = str(r["grant_id"]).strip(), _day(r["vest_date"])
         shares, fmv = _num(r["net_shares"]), _num(r["fmv"])
         symbol = symbols.get(grant, "")
@@ -111,10 +142,20 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
         if not symbol:
             notes.append(logs.warn(f"lots: grant {grant} has no symbol in vest_schedule; its vests are left out"))
             continue
-        acq.append({"lot_id": f"vest:{grant}:{day}", "account_id": accounts.get(symbol, ""), "sheltered": False,
-                    "symbol": symbol,
-                    "group": group_of.get(symbol, symbol), "acquired": day, "shares": shares, "cost": fmv,
-                    "kind": "vest", "grant_id": grant})
+        acq.append(
+            {
+                "lot_id": f"vest:{grant}:{day}",
+                "account_id": accounts.get(symbol, ""),
+                "sheltered": False,
+                "symbol": symbol,
+                "group": group_of.get(symbol, symbol),
+                "acquired": day,
+                "shares": shares,
+                "cost": fmv,
+                "kind": "vest",
+                "grant_id": grant,
+            }
+        )
     for n, r in enumerate(sales.to_dict("records") if sales is not None and len(sales) else []):
         grant, day, vested = str(r["grant_id"]).strip(), _day(r["sale_date"]), _day(r["vest_date"])
         shares = _num(r["shares"])
@@ -124,10 +165,19 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
         symbol = symbols.get(grant, "")
         if not (day and shares and proceeds is not None and symbol):
             continue
-        sold.append({"sale_date": day, "account_id": accounts.get(symbol, ""), "symbol": symbol,
-                     "group": group_of.get(symbol, symbol),
-                     "shares": shares, "proceeds": proceeds, "lot_id": f"vest:{grant}:{vested}" if vested else "",
-                     "reported_basis": _num(r["basis"]), "order": n})
+        sold.append(
+            {
+                "sale_date": day,
+                "account_id": accounts.get(symbol, ""),
+                "symbol": symbol,
+                "group": group_of.get(symbol, symbol),
+                "shares": shares,
+                "proceeds": proceeds,
+                "lot_id": f"vest:{grant}:{vested}" if vested else "",
+                "reported_basis": _num(r["basis"]),
+                "order": n,
+            }
+        )
     return pd.DataFrame(acq, columns=ACQUIRED), pd.DataFrame(sold, columns=SOLD), sorted(set(notes))
 
 
@@ -137,11 +187,14 @@ def holders(holdings, accounts, symbols):
     if holdings is None or holdings.empty or not symbols:
         return {}
     taxable = set()
-    for a in (accounts.to_dict("records") if accounts is not None and len(accounts) else []):
+    for a in accounts.to_dict("records") if accounts is not None and len(accounts) else []:
         if valuation.wrapper({k: str(v).strip() for k, v in a.items()}) == "taxable":
             taxable.add(str(a["account_id"]).strip())
-    h = holdings.assign(symbol=holdings["symbol"].astype(str).str.strip(),
-                        account_id=holdings["account_id"].astype(str).str.strip(), as_of=holdings["as_of"].astype(str))
+    h = holdings.assign(
+        symbol=holdings["symbol"].astype(str).str.strip(),
+        account_id=holdings["account_id"].astype(str).str.strip(),
+        as_of=holdings["as_of"].astype(str),
+    )
     h = h[h["symbol"].isin(symbols) & h["account_id"].isin(taxable)].sort_values("as_of")
     return {s: g["account_id"].iloc[-1] for s, g in h.groupby("symbol")}
 
@@ -154,7 +207,7 @@ def activity_lots(activity, accounts, group_of=None, leave_out=()):
     if activity is None or activity.empty:
         return pd.DataFrame(columns=ACQUIRED), pd.DataFrame(columns=SOLD)
     wraps = {}
-    for a in (accounts.to_dict("records") if accounts is not None and len(accounts) else []):
+    for a in accounts.to_dict("records") if accounts is not None and len(accounts) else []:
         wraps[str(a["account_id"]).strip()] = valuation.wrapper({k: str(v).strip() for k, v in a.items()})
     acq, sold = [], []
     for n, r in enumerate(activity.to_dict("records")):
@@ -172,13 +225,34 @@ def activity_lots(activity, accounts, group_of=None, leave_out=()):
         buying = kind in ("buy", "reinvest") or (kind == "exchange" and shares > 0)
         selling = kind == "sell" or (kind == "exchange" and shares < 0)
         if buying and shares > 0 and each is not None:
-            acq.append({"lot_id": f"{kind}:{account}:{symbol}:{day}:{n}", "account_id": account,
-                        "sheltered": wrap in SHELTERED, "symbol": symbol, "group": group_of.get(symbol, symbol),
-                        "acquired": day, "shares": shares, "cost": each, "kind": kind, "grant_id": ""})
+            acq.append(
+                {
+                    "lot_id": f"{kind}:{account}:{symbol}:{day}:{n}",
+                    "account_id": account,
+                    "sheltered": wrap in SHELTERED,
+                    "symbol": symbol,
+                    "group": group_of.get(symbol, symbol),
+                    "acquired": day,
+                    "shares": shares,
+                    "cost": each,
+                    "kind": kind,
+                    "grant_id": "",
+                }
+            )
         elif selling and wrap == "taxable" and each is not None:
-            sold.append({"sale_date": day, "account_id": account, "symbol": symbol,
-                         "group": group_of.get(symbol, symbol), "shares": abs(shares), "proceeds": abs(shares) * each,
-                         "lot_id": "", "reported_basis": None, "order": n})
+            sold.append(
+                {
+                    "sale_date": day,
+                    "account_id": account,
+                    "symbol": symbol,
+                    "group": group_of.get(symbol, symbol),
+                    "shares": abs(shares),
+                    "proceeds": abs(shares) * each,
+                    "lot_id": "",
+                    "reported_basis": None,
+                    "order": n,
+                }
+            )
     return pd.DataFrame(acq, columns=ACQUIRED), pd.DataFrame(sold, columns=SOLD)
 
 
@@ -203,10 +277,24 @@ def build(acquired, sold, splits=None, wash_symbols=None):
     pieces, notes = [], []
     for r in acquired.sort_values(["acquired", "lot_id"], kind="stable").to_dict("records"):
         f = factor(splits, r["symbol"], r["acquired"])
-        pieces.append({"lot_id": r["lot_id"], "piece": 1, "account_id": r["account_id"], "sheltered": bool(r["sheltered"]),
-                       "symbol": r["symbol"], "group": r["group"], "acquired": r["acquired"],
-                       "holding_from": r["acquired"], "open": r["shares"] * f, "cost": r["cost"] / f, "added": 0.0,
-                       "used": False, "kind": r["kind"], "grant_id": r["grant_id"]})
+        pieces.append(
+            {
+                "lot_id": r["lot_id"],
+                "piece": 1,
+                "account_id": r["account_id"],
+                "sheltered": bool(r["sheltered"]),
+                "symbol": r["symbol"],
+                "group": r["group"],
+                "acquired": r["acquired"],
+                "holding_from": r["acquired"],
+                "open": r["shares"] * f,
+                "cost": r["cost"] / f,
+                "added": 0.0,
+                "used": False,
+                "kind": r["kind"],
+                "grant_id": r["grant_id"],
+            }
+        )
     count = {}
     for p in pieces:
         count[p["lot_id"]] = 1
@@ -223,8 +311,13 @@ def build(acquired, sold, splits=None, wash_symbols=None):
 
     acquired_on = {p["lot_id"]: p["acquired"] for p in pieces}
     rows, unmatched = [], 0
-    order = sold.assign(_acq=[acquired_on.get(x, "") for x in sold["lot_id"]]).sort_values(
-        ["sale_date", "_acq", "order"], kind="stable") if len(sold) else sold
+    order = (
+        sold.assign(_acq=[acquired_on.get(x, "") for x in sold["lot_id"]]).sort_values(
+            ["sale_date", "_acq", "order"], kind="stable"
+        )
+        if len(sold)
+        else sold
+    )
     for s in order.to_dict("records"):
         day, f = s["sale_date"], factor(splits, s["symbol"], s["sale_date"])
         need = total = s["shares"] * f
@@ -233,9 +326,18 @@ def build(acquired, sold, splits=None, wash_symbols=None):
         if s["lot_id"]:
             mine = [p for p in pieces if p["lot_id"] == s["lot_id"] and p["open"] > SHARE_EPS]
         else:
-            mine = sorted((p for p in pieces if p["symbol"] == s["symbol"] and p["account_id"] == s["account_id"]
-                           and p["acquired"] <= day and p["open"] > SHARE_EPS and not p["sheltered"]),
-                          key=lambda p: (p["acquired"], pieces.index(p)))
+            mine = sorted(
+                (
+                    p
+                    for p in pieces
+                    if p["symbol"] == s["symbol"]
+                    and p["account_id"] == s["account_id"]
+                    and p["acquired"] <= day
+                    and p["open"] > SHARE_EPS
+                    and not p["sheltered"]
+                ),
+                key=lambda p: (p["acquired"], pieces.index(p)),
+            )
         for p in mine:
             if need <= SHARE_EPS:
                 break
@@ -252,9 +354,18 @@ def build(acquired, sold, splits=None, wash_symbols=None):
                 lo = (date.fromisoformat(day) - timedelta(days=WINDOW_DAYS)).isoformat()
                 hi = (date.fromisoformat(day) + timedelta(days=WINDOW_DAYS)).isoformat()
                 want = shares
-                for c in sorted((c for c in pieces if c["group"] == p["group"] and c["lot_id"] != p["lot_id"]
-                                 and not c["used"] and c["open"] > SHARE_EPS and lo <= c["acquired"] <= hi),
-                                key=lambda c: (c["acquired"], pieces.index(c))):
+                for c in sorted(
+                    (
+                        c
+                        for c in pieces
+                        if c["group"] == p["group"]
+                        and c["lot_id"] != p["lot_id"]
+                        and not c["used"]
+                        and c["open"] > SHARE_EPS
+                        and lo <= c["acquired"] <= hi
+                    ),
+                    key=lambda c: (c["acquired"], pieces.index(c)),
+                ):
                     if want <= SHARE_EPS:
                         break
                     take = min(c["open"], want)
@@ -273,37 +384,74 @@ def build(acquired, sold, splits=None, wash_symbols=None):
                     replaced.append(f"{c['lot_id']}#{c['piece']}")
                     want -= take
             note = "the replacement is in a tax-advantaged account: the disallowed loss is lost" if lost else ""
-            rows.append({"year": day[:4], "sale_date": day, "account_id": s["account_id"], "symbol": s["symbol"],
-                         "shares": round(shares / f, 6), "acquired": p["acquired"], "holding_from": p["holding_from"],
-                         "term": term(p["holding_from"], day), "proceeds": round(proceeds, 2), "basis": round(basis, 2),
-                         "wash_carried": round(carried, 2),
-                         "code": "W" if adjustment > 0.005 else "", "adjustment": round(adjustment, 2),
-                         "gain": round(gain + adjustment, 2), "lot_id": p["lot_id"], "piece": p["piece"],
-                         "replaced_by": " ".join(replaced),
-                         "reported_basis": "" if reported is None else round(reported * shares / total, 2),
-                         "note": note})
+            rows.append(
+                {
+                    "year": day[:4],
+                    "sale_date": day,
+                    "account_id": s["account_id"],
+                    "symbol": s["symbol"],
+                    "shares": round(shares / f, 6),
+                    "acquired": p["acquired"],
+                    "holding_from": p["holding_from"],
+                    "term": term(p["holding_from"], day),
+                    "proceeds": round(proceeds, 2),
+                    "basis": round(basis, 2),
+                    "wash_carried": round(carried, 2),
+                    "code": "W" if adjustment > 0.005 else "",
+                    "adjustment": round(adjustment, 2),
+                    "gain": round(gain + adjustment, 2),
+                    "lot_id": p["lot_id"],
+                    "piece": p["piece"],
+                    "replaced_by": " ".join(replaced),
+                    "reported_basis": "" if reported is None else round(reported * shares / total, 2),
+                    "note": note,
+                }
+            )
         if need > 1e-4:
             unmatched += 1
             short = need / f
-            notes.append(logs.warn(f"lots: {day} sale of {s['symbol']}: {short:,.4f} shares with no lot to sell"
-                                   + (f" ({s['lot_id']})" if s["lot_id"] else "")))
+            notes.append(
+                logs.warn(
+                    f"lots: {day} sale of {s['symbol']}: {short:,.4f} shares with no lot to sell"
+                    + (f" ({s['lot_id']})" if s["lot_id"] else "")
+                )
+            )
     form = pd.DataFrame(rows, columns=FORM_8949)
     still = []
     for p in pieces:  # parts of a lot with the same basis and dates read as one
         if p["open"] <= SHARE_EPS or p["sheltered"]:
             continue
         last = still[-1] if still else None
-        if (last and last["lot_id"] == p["lot_id"] and last["holding_from"] == p["holding_from"]
-                and abs(last["cost"] - p["cost"]) < 1e-4):
+        if (
+            last
+            and last["lot_id"] == p["lot_id"]
+            and last["holding_from"] == p["holding_from"]
+            and abs(last["cost"] - p["cost"]) < 1e-4
+        ):
             last["open"] += p["open"]
             last["added"] += p["added"]
         else:
             still.append(dict(p))
-    lots = pd.DataFrame([{"lot_id": p["lot_id"], "piece": p["piece"], "account_id": p["account_id"],
-                          "symbol": p["symbol"], "acquired": p["acquired"], "holding_from": p["holding_from"],
-                          "shares": round(p["open"], 6), "cost_per_share": round(p["cost"], 6),
-                          "basis": round(p["open"] * p["cost"], 2), "wash_added": round(p["added"], 2),
-                          "kind": p["kind"], "grant_id": p["grant_id"]} for p in still], columns=OPEN_LOTS)
+    lots = pd.DataFrame(
+        [
+            {
+                "lot_id": p["lot_id"],
+                "piece": p["piece"],
+                "account_id": p["account_id"],
+                "symbol": p["symbol"],
+                "acquired": p["acquired"],
+                "holding_from": p["holding_from"],
+                "shares": round(p["open"], 6),
+                "cost_per_share": round(p["cost"], 6),
+                "basis": round(p["open"] * p["cost"], 2),
+                "wash_added": round(p["added"], 2),
+                "kind": p["kind"],
+                "grant_id": p["grant_id"],
+            }
+            for p in still
+        ],
+        columns=OPEN_LOTS,
+    )
     return form, lots, notes
 
 
@@ -327,8 +475,10 @@ def year_lines(form, facts=None):
                 filed[(y, k)] = _num(v)
     lines = []
     for y, t in sorted(by_year(form).items()):
-        line = (f"lots {y}: short-term gain {t['short_term']:,.2f}, long-term {t['long_term']:,.2f}; "
-                f"wash sales disallowed {t['disallowed']:,.2f}")
+        line = (
+            f"lots {y}: short-term gain {t['short_term']:,.2f}, long-term {t['long_term']:,.2f}; "
+            f"wash sales disallowed {t['disallowed']:,.2f}"
+        )
         short, long = filed.get((y, "capital_gain_short")), filed.get((y, "capital_gain_long"))
         if short is not None or long is not None:
             line += f" (filed: short {short or 0:,.0f}, long {long or 0:,.0f})"
@@ -349,11 +499,18 @@ def holding_check(open_lots, holdings, symbols):
         latest = mine[mine["as_of"] == mine["as_of"].max()]
         read = pd.to_numeric(latest["shares"], errors="coerce").sum()
         on = latest["as_of"].iloc[0][:10]
-        have = open_lots.loc[(open_lots["symbol"] == sym) & (open_lots["acquired"] <= on), "shares"].sum() \
-            if len(open_lots) else 0.0
+        have = (
+            open_lots.loc[(open_lots["symbol"] == sym) & (open_lots["acquired"] <= on), "shares"].sum()
+            if len(open_lots)
+            else 0.0
+        )
         if abs(read - have) > 0.01:
-            lines.append(logs.warn(f"lots: {sym} open lots hold {have:,.3f} shares but the {on} reading "
-                                   f"has {read:,.3f}: a vest or sale is missing"))
+            lines.append(
+                logs.warn(
+                    f"lots: {sym} open lots hold {have:,.3f} shares but the {on} reading "
+                    f"has {read:,.3f}: a vest or sale is missing"
+                )
+            )
     return lines
 
 

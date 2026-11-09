@@ -31,8 +31,11 @@ NAME = "target"
 KIND = "target_purchases"
 SERVICE = "target"
 HEADER = ["target_order_id", "date", "store", "order_total", "item", "price", "qty", "returned"]
-CLOTHES = re.compile(r"\b(jeans|pants|shorts|skort|shirt|t-shirt|tee|top|dress|pajama|socks|sports bra|hipster|"
-                     r"boxer briefs|underwear|jacket|hoodie|sweater|hat|earmuff|rash guard|leggings|swim)\b", re.I)
+CLOTHES = re.compile(
+    r"\b(jeans|pants|shorts|skort|shirt|t-shirt|tee|top|dress|pajama|socks|sports bra|hipster|"
+    r"boxer briefs|underwear|jacket|hoodie|sweater|hat|earmuff|rash guard|leggings|swim)\b",
+    re.I,
+)
 SHOES = re.compile(r"\b(boots|sneakers|shoes|clogs|sandals|slippers)\b", re.I)
 
 
@@ -70,13 +73,30 @@ def parse(text):
             item = " ".join(r["item"].split())
             if int(r["qty"]) > 1:
                 item = f"{item} (x{r['qty']})"
-            rows.append({"item_id": hashlib.sha256(f"{SERVICE}|{order_id}|{n}".encode()).hexdigest()[:16],
-                         "service": SERVICE, "order_id": order_id, "kind": "item", "order_date": r["date"],
-                         "date": r["date"], "amount": cents / 100, "card": "", "department": _department(item),
-                         "item": item, "website": r["store"] or "target.com"})
+            rows.append(
+                {
+                    "item_id": hashlib.sha256(f"{SERVICE}|{order_id}|{n}".encode()).hexdigest()[:16],
+                    "service": SERVICE,
+                    "order_id": order_id,
+                    "kind": "item",
+                    "order_date": r["date"],
+                    "date": r["date"],
+                    "amount": cents / 100,
+                    "card": "",
+                    "department": _department(item),
+                    "item": item,
+                    "website": r["store"] or "target.com",
+                }
+            )
     df = pd.DataFrame(rows, columns=COLUMNS)
     dates = sorted(d for d in df["date"] if d)
-    return Result(kind=KIND, parser=NAME, label=f"target_purchases_{dates[-1] if dates else 'none'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"order_items": df} if len(df) else {}, keys={"order_items": ["item_id"]},
-                  notes=[f"Target: {df['order_id'].nunique()} purchases, {len(df)} items"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"target_purchases_{dates[-1] if dates else 'none'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"order_items": df} if len(df) else {},
+        keys={"order_items": ["item_id"]},
+        notes=[f"Target: {df['order_id'].nunique()} purchases, {len(df)} items"],
+    )

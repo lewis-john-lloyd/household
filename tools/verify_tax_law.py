@@ -57,14 +57,15 @@ def main(argv):
     for r in result.to_dict("records"):
         year = r["year"] if r["year"] != "" else "rule"
         mark = "ok  " if r["ok"] else "FAIL"
-        print(f"{mark} {year} {r['item']}: {r['document']} p{r['page']}"
-              + ("" if r["ok"] else f"  ({r['detail']})"))
+        print(f"{mark} {year} {r['item']}: {r['document']} p{r['page']}" + ("" if r["ok"] else f"  ({r['detail']})"))
     gaps = taxsources.uncovered()
     for year, item in gaps:
         print(f"FAIL {year} {item}: no citation and no reason in UNCITED")
     failed = int((~result["ok"]).sum()) + len(gaps) + len(missing)
-    print(f"\n{len(result) - int((~result['ok']).sum())}/{len(result)} citations hold; "
-          f"{len(missing)} documents missing; {len(gaps)} values uncovered")
+    print(
+        f"\n{len(result) - int((~result['ok']).sum())}/{len(result)} citations hold; "
+        f"{len(missing)} documents missing; {len(gaps)} values uncovered"
+    )
     return 1 if failed else 0
 
 

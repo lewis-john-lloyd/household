@@ -16,8 +16,7 @@ RETRIES = 5  # Google's client retries timeouts, dropped connections and 5xx wit
 
 
 def find_or_create_folder(drive, name, parent_id):
-    query = (f"name = '{name}' and '{parent_id}' in parents and mimeType = '{FOLDER_MIME}' "
-             "and trashed = false")
+    query = f"name = '{name}' and '{parent_id}' in parents and mimeType = '{FOLDER_MIME}' and trashed = false"
     found = drive.files().list(q=query, fields="files(id)").execute(num_retries=RETRIES).get("files", [])
     if found:
         return found[0]["id"]
@@ -51,8 +50,7 @@ def snapshot_ledger(ledger, drive, root_folder_id, run_id):
     backups = find_or_create_folder(drive, "backups", root_folder_id)
     manifest = {"run_id": run_id, "tables": {}}
     titles = [ws.title for ws in ledger.worksheets()]
-    result = ledger.values_batch_get([f"'{t}'" for t in titles],
-                                     params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    result = ledger.values_batch_get([f"'{t}'" for t in titles], params={"valueRenderOption": "UNFORMATTED_VALUE"})
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         for title, value_range in zip(titles, result.get("valueRanges", [])):

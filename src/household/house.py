@@ -132,9 +132,19 @@ def improvements(rows):
         cost, credit = _num(r["cost"]) or 0.0, _num(r.get("credit")) or 0.0
         kind = str(r["kind"]).strip()
         added = cost if kind == "capital" else cost - credit if kind == "energy_credit" else 0.0
-        out.append({"property_id": r["property_id"], "date": r["date"], "description": r["description"], "kind": kind,
-                    "cost": round(cost, 2), "credit": round(credit, 2) if credit else "",
-                    "basis_added": round(added, 2), "receipt": r.get("receipt", ""), "note": r.get("note", "")})
+        out.append(
+            {
+                "property_id": r["property_id"],
+                "date": r["date"],
+                "description": r["description"],
+                "kind": kind,
+                "cost": round(cost, 2),
+                "credit": round(credit, 2) if credit else "",
+                "basis_added": round(added, 2),
+                "receipt": r.get("receipt", ""),
+                "note": r.get("note", ""),
+            }
+        )
     return pd.DataFrame(out, columns=IMPROVEMENT_COLUMNS).sort_values(["property_id", "date"]).reset_index(drop=True)
 
 
@@ -148,8 +158,18 @@ def summary(properties, values, improved, loans, schedule, balances, params, tod
         out = []
 
         def add(key, label, value, as_of="", note="", out=out, pid=pid):
-            out.append({"property_id": pid, "order": len(out) + 1, "key": key, "label": label,
-                        "value": round(value, 2) if isinstance(value, float) else value, "as_of": as_of, "note": note})
+            out.append(
+                {
+                    "property_id": pid,
+                    "order": len(out) + 1,
+                    "key": key,
+                    "label": label,
+                    "value": round(value, 2) if isinstance(value, float) else value,
+                    "as_of": as_of,
+                    "note": note,
+                }
+            )
+
         price, costs = _num(prop.get("purchase_price")) or 0.0, _num(prop.get("basis_costs")) or 0.0
         mine = improved[improved["property_id"] == pid] if len(improved) else improved
         capital = float(mine.loc[mine["kind"] == "capital", "basis_added"].sum()) if len(mine) else 0.0
@@ -162,17 +182,27 @@ def summary(properties, values, improved, loans, schedule, balances, params, tod
         add("purchase_price", "Purchase price", price, str(prop.get("purchased", ""))[:10])
         add("basis_costs", "Closing costs in basis", costs)
         count = int((mine["kind"] == "capital").sum()) if len(mine) else 0
-        add("capital_improvements", "Capital improvements", capital,
-            note=f"{count} item{'s' if count != 1 else ''}" if count else "")
+        add(
+            "capital_improvements",
+            "Capital improvements",
+            capital,
+            note=f"{count} item{'s' if count != 1 else ''}" if count else "",
+        )
         add("energy_improvements", "Energy improvements, less credits", energy)
         add("repairs", "Repairs (not in basis)", repairs)
         add("basis", "Adjusted basis", basis)
         latest = _latest_by_source(values, pid, on)
         for r in latest.sort_values("source").to_dict("records"):
-            add(f"estimate:{r['source']}", f"Estimate: {r['source'].replace('_', ' ')}", float(r["value"]), r["as_of"],
-                r.get("note", ""))
-        estimates = [float(v) for v in latest.loc[latest["source"] != "legacy", "value"]] or \
-                    [float(v) for v in latest["value"]]
+            add(
+                f"estimate:{r['source']}",
+                f"Estimate: {r['source'].replace('_', ' ')}",
+                float(r["value"]),
+                r["as_of"],
+                r.get("note", ""),
+            )
+        estimates = [float(v) for v in latest.loc[latest["source"] != "legacy", "value"]] or [
+            float(v) for v in latest["value"]
+        ]
         middle = float(np.median(estimates)) if estimates else None
         if middle is not None:
             add("estimate_median", "Median estimate", middle, on)
@@ -191,10 +221,20 @@ def summary(properties, values, improved, loans, schedule, balances, params, tod
         if middle is not None:
             add("equity_at_estimate", "Equity at the median estimate", middle - owed, on)
             net = middle * (1 - rate) - owed
-            add("sale_net", "A sale at the median estimate would net", net, on,
-                f"after {rate:.0%} sale costs and the loans")
-            add("sale_gain", "Gain over basis at the median estimate", middle * (1 - rate) - basis, on,
-                "before any main-home exclusion")
+            add(
+                "sale_net",
+                "A sale at the median estimate would net",
+                net,
+                on,
+                f"after {rate:.0%} sale costs and the loans",
+            )
+            add(
+                "sale_gain",
+                "Gain over basis at the median estimate",
+                middle * (1 - rate) - basis,
+                on,
+                "before any main-home exclusion",
+            )
         rows += out
     return pd.DataFrame(rows, columns=SUMMARY_COLUMNS), notes
 
@@ -222,8 +262,17 @@ def frames(ledger_tables):
     return props, vals, _clean(t.get("improvements"), ["date", "property_id", "kind", "cost"]), loans, bal
 
 
-TAX_COLUMNS = ["property_id", "tax_year", "assessed", "mill_rate", "total_taxes", "credits", "specials", "amount_due",
-               "basis"]
+TAX_COLUMNS = [
+    "property_id",
+    "tax_year",
+    "assessed",
+    "mill_rate",
+    "total_taxes",
+    "credits",
+    "specials",
+    "amount_due",
+    "basis",
+]
 
 
 def taxes(properties, values, bills, today):
@@ -241,10 +290,19 @@ def taxes(properties, values, bills, today):
         mine = mine.sort_values("tax_year").drop_duplicates("tax_year", keep="last")
         for r in mine.to_dict("records"):
             credits = sum(_num(r.get(k)) or 0.0 for k in ("lottery_credit", "first_dollar_credit"))
-            rows.append({"property_id": pid, "tax_year": r["tax_year"], "assessed": _num(r.get("assessed")),
-                         "mill_rate": _num(r.get("mill_rate")), "total_taxes": _num(r.get("total_taxes")),
-                         "credits": round(credits, 2), "specials": _num(r.get("specials")) or 0.0,
-                         "amount_due": _num(r.get("amount_due")), "basis": "billed"})
+            rows.append(
+                {
+                    "property_id": pid,
+                    "tax_year": r["tax_year"],
+                    "assessed": _num(r.get("assessed")),
+                    "mill_rate": _num(r.get("mill_rate")),
+                    "total_taxes": _num(r.get("total_taxes")),
+                    "credits": round(credits, 2),
+                    "specials": _num(r.get("specials")) or 0.0,
+                    "amount_due": _num(r.get("amount_due")),
+                    "basis": "billed",
+                }
+            )
         if mine.empty or not owned(prop, values, today):
             continue
         last = rows[-1]
@@ -257,9 +315,19 @@ def taxes(properties, values, bills, today):
                 continue
             value = float(g["value"].iloc[-1])
             total = round(value * last["mill_rate"], 2)
-            rows.append({"property_id": pid, "tax_year": year, "assessed": value, "mill_rate": last["mill_rate"],
-                         "total_taxes": total, "credits": last["credits"], "specials": last["specials"],
-                         "amount_due": round(total - last["credits"] + last["specials"], 2), "basis": "estimated"})
+            rows.append(
+                {
+                    "property_id": pid,
+                    "tax_year": year,
+                    "assessed": value,
+                    "mill_rate": last["mill_rate"],
+                    "total_taxes": total,
+                    "credits": last["credits"],
+                    "specials": last["specials"],
+                    "amount_due": round(total - last["credits"] + last["specials"], 2),
+                    "basis": "estimated",
+                }
+            )
     return pd.DataFrame(rows, columns=TAX_COLUMNS)
 
 
@@ -272,6 +340,11 @@ def parcels(properties, values, today):
     for prop in properties.to_dict("records"):
         parcel = str(prop.get("parcel", "")).strip()
         if parcel and owned(prop, values, today):
-            out.append({"property_id": prop["property_id"], "parcel": parcel,
-                        "since": str(prop.get("purchased", ""))[:4] or today[:4]})
+            out.append(
+                {
+                    "property_id": prop["property_id"],
+                    "parcel": parcel,
+                    "since": str(prop.get("purchased", ""))[:4] or today[:4],
+                }
+            )
     return out

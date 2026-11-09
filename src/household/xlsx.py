@@ -33,6 +33,7 @@ def unescape(text):
         if name.startswith("#"):
             return chr(int(name[1:]))
         return ENTITIES.get(name, m.group(0))
+
     return ENTITY.sub(one, text)
 
 
@@ -64,8 +65,10 @@ def rows(data):
         raise NotAWorkbook("not a zip") from e
     with z:
         names = set(z.namelist())
-        sheets = sorted((n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$", n)),
-                        key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)))
+        sheets = sorted(
+            (n for n in names if re.match(r"xl/worksheets/sheet\d+\.xml$", n)),
+            key=lambda n: int(re.search(r"(\d+)\.xml$", n).group(1)),
+        )
         if not sheets:
             raise NotAWorkbook("no worksheet in the workbook")
         shared = []

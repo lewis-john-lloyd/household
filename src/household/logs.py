@@ -52,7 +52,7 @@ def topic_of(text):
     m = TOPIC.match(text)
     if not m:
         return "", text
-    return m.group(1).strip(), text[len(m.group(1).rstrip()):].lstrip(" :")
+    return m.group(1).strip(), text[len(m.group(1).rstrip()) :].lstrip(" :")
 
 
 def structured(text, stage, topic, level, elapsed=""):

@@ -96,14 +96,18 @@ def _check_flows(period, person, g, rows):
     by_kind = {k: g[g["kind"] == k] for k in ("income", "tax", "pre_tax", "post_tax")}
     gross = float(by_kind["income"]["amount"].sum())
     out = 0.0
-    for kind, group, name in (("tax", TAXES, tax_node), ("pre_tax", PRE_TAX, lambda n: f"pre-tax: {n}"),
-                              ("post_tax", POST_TAX, lambda n: f"post-tax: {n}")):
+    for kind, group, name in (
+        ("tax", TAXES, tax_node),
+        ("pre_tax", PRE_TAX, lambda n: f"pre-tax: {n}"),
+        ("post_tax", POST_TAX, lambda n: f"post-tax: {n}"),
+    ):
         items = by_kind[kind].groupby(by_kind[kind]["line_item"].map(name))["amount"].sum()
         for node, amount in items.items():
             vested = kind == "post_tax" and "offset" in node.lower()  # shares kept, sent to the brokerage
             if amount > 0:
-                rows.append((period, gross_node, VESTED if vested else node, amount, gross_node,
-                             SAVINGS if vested else group))
+                rows.append(
+                    (period, gross_node, VESTED if vested else node, amount, gross_node, SAVINGS if vested else group)
+                )
                 out += amount
             elif amount < 0:  # a reimbursement paid with the check adds to it
                 gross -= amount
@@ -201,12 +205,16 @@ def _gain_flows(equity_sales, months):
     """Net realized gain or loss on share sales: (month rows, year rows), for the periods the ledger has."""
     if equity_sales is None or equity_sales.empty or "gain" not in equity_sales:
         return [], []
-    sales = equity_sales.assign(gain=pd.to_numeric(equity_sales["gain"], errors="coerce").fillna(0.0),
-                                month=equity_sales["sale_date"].astype(str).str[:7])
+    sales = equity_sales.assign(
+        gain=pd.to_numeric(equity_sales["gain"], errors="coerce").fillna(0.0),
+        month=equity_sales["sale_date"].astype(str).str[:7],
+    )
     years = {m[:4] for m in months}
     out = []
-    for kept, key in ((sales[sales["month"].isin(months)], sales["month"]),
-                      (sales[sales["month"].str[:4].isin(years)], sales["month"].str[:4])):
+    for kept, key in (
+        (sales[sales["month"].isin(months)], sales["month"]),
+        (sales[sales["month"].str[:4].isin(years)], sales["month"].str[:4]),
+    ):
         rows = []
         for period, net in kept.groupby(key.loc[kept.index])["gain"].sum().items():
             net = round(float(net), 2)
@@ -248,8 +256,11 @@ def build(paystubs, categorized, categories, equity_sales=None):
     txns["amount"] = pd.to_numeric(txns["amount"], errors="coerce").fillna(0.0)
     txns["month"] = txns["date"].astype(str).str[:7]
     months = sorted(set(txns["month"]) - {""})
-    groups = dict(zip(categories["category"].astype(str).str.strip(), categories["group"].astype(str).str.strip())) \
-        if categories is not None and not categories.empty else {}
+    groups = (
+        dict(zip(categories["category"].astype(str).str.strip(), categories["group"].astype(str).str.strip()))
+        if categories is not None and not categories.empty
+        else {}
+    )
 
     if not months:
         return pd.DataFrame(columns=COLUMNS)
@@ -276,8 +287,11 @@ def build(paystubs, categorized, categories, equity_sales=None):
             by_period = by_period.groupby(["period", "category"], as_index=False)["amount"].sum()
             detail = pd.DataFrame(_category_flows(by_period, groups), columns=cols)
             d = pd.concat([detail, pay_detail[min(period_kind, 1)]], ignore_index=True)
-            d = d.assign(period=d["month"].map(lambda m, k=period_kind: _periods(m)[k] if len(m) == 7 else
-                                               [m, m, f"{m} {AVERAGE}"][k]))
+            d = d.assign(
+                period=d["month"].map(
+                    lambda m, k=period_kind: _periods(m)[k] if len(m) == 7 else [m, m, f"{m} {AVERAGE}"][k]
+                )
+            )
             sums = d.groupby(["period", src, dst], as_index=False)["amount"].sum()
             sums.columns = ["period", "source", "target", "amount"]
             if period_kind == 2:  # the year's total spread over the months it has data for
@@ -286,10 +300,16 @@ def build(paystubs, categorized, categories, equity_sales=None):
                 into = p.loc[p["target"] == ACCOUNTS, "amount"].sum()
                 out_of = p.loc[p["source"] == ACCOUNTS, "amount"].sum()
                 gap = round(out_of - into, 2)
-                extra = ([(period, FROM_BALANCES, ACCOUNTS, gap)] if gap > 0 else
-                         [(period, ACCOUNTS, UNSPENT, -gap)] if gap < 0 else [])
-                p = pd.concat([p, pd.DataFrame(extra, columns=["period", "source", "target", "amount"])],
-                              ignore_index=True)
+                extra = (
+                    [(period, FROM_BALANCES, ACCOUNTS, gap)]
+                    if gap > 0
+                    else [(period, ACCOUNTS, UNSPENT, -gap)]
+                    if gap < 0
+                    else []
+                )
+                p = pd.concat(
+                    [p, pd.DataFrame(extra, columns=["period", "source", "target", "amount"])], ignore_index=True
+                )
                 out.append(p.assign(level=level))
     if not out:
         return pd.DataFrame(columns=COLUMNS)

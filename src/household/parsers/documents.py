@@ -20,8 +20,7 @@ def sniff(text):
 
 
 def _kind(text):
-    if "Form 1040" in text and ("Individual Income Tax Return" in text
-                                or "Federal Tax Return" in text):
+    if "Form 1040" in text and ("Individual Income Tax Return" in text or "Federal Tax Return" in text):
         return "tax_return"
     if "W-4" in text and "Withholding Certificate" in text:
         return "w4"
@@ -48,9 +47,12 @@ def parse(text):
     kind = _kind(text)
     if kind == "paystub_unparsed":
         day = _pay_date(text)
-        return Result(kind=kind, parser=NAME, label=f"{kind}_{day}" if day else kind,
-                      covers_from=day, covers_to=day)
+        return Result(kind=kind, parser=NAME, label=f"{kind}_{day}" if day else kind, covers_from=day, covers_to=day)
     year = _year(kind, text)
-    return Result(kind=kind, parser=NAME, label=f"{kind}_{year}" if year else kind,
-                  covers_from=f"{year}-01-01" if year else "",
-                  covers_to=f"{year}-12-31" if year else "")
+    return Result(
+        kind=kind,
+        parser=NAME,
+        label=f"{kind}_{year}" if year else kind,
+        covers_from=f"{year}-01-01" if year else "",
+        covers_to=f"{year}-12-31" if year else "",
+    )

@@ -34,8 +34,10 @@ def build(vals, people, properties, values, loans, schedule, balances, rule):
     for day in dates:
         homes = house.equity_on(properties, values, loans, schedule, balances, day, rule) if len(properties) else []
         debts = [("joint", -(house.loan_balance(i, day, loans, schedule, balances) or 0.0)) for i in loose]
-        for part, items in (("home_equity", [(owner, equity) for _, owner, _, _, equity in homes]),
-                            ("other_debt", debts)):
+        for part, items in (
+            ("home_equity", [(owner, equity) for _, owner, _, _, equity in homes]),
+            ("other_debt", debts),
+        ):
             for owner, amount in items:
                 if abs(amount) < 0.005:
                     continue

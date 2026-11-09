@@ -67,8 +67,15 @@ def federal_return(i, year):
     capital = g("capital_gain_short") + g("capital_gain_long")
     lines["1z"] = g("wages")
     lines["7a"] = max(capital, -3000)
-    lines["9"] = (lines["1z"] + g("taxable_interest") + g("ordinary_dividends") + g("ira_taxable")
-                  + g("pension_taxable") + lines["7a"] + g("other_income"))
+    lines["9"] = (
+        lines["1z"]
+        + g("taxable_interest")
+        + g("ordinary_dividends")
+        + g("ira_taxable")
+        + g("pension_taxable")
+        + lines["7a"]
+        + g("other_income")
+    )
     agi = lines["11a"] = lines["9"] - g("adjustments")
 
     salt = salt_deduction(g("state_income_tax"), g("real_estate_tax"), agi, year)
@@ -80,14 +87,12 @@ def federal_return(i, year):
     lines["schA_5e"] = salt
     lines["12e"] = whole(max(itemized, p["standard_deduction_mfj"]))
     lines["15"] = max(agi - lines["12e"], 0)
-    lines["16"] = qdcg_tax(lines["15"], g("qualified_dividends"), min(g("capital_gain_long"), capital),
-                           year)
+    lines["16"] = qdcg_tax(lines["15"], g("qualified_dividends"), min(g("capital_gain_long"), capital), year)
 
     lines["20"] = g("nonrefundable_credits")
     lines["22"] = max(lines["16"] - lines["20"], 0)
 
-    addl_medicare = whole(p["addl_medicare_rate"]
-                          * max(g("medicare_wages") - p["addl_medicare_threshold_mfj"], 0))
+    addl_medicare = whole(p["addl_medicare_rate"] * max(g("medicare_wages") - p["addl_medicare_threshold_mfj"], 0))
     nii_gross = g("taxable_interest") + g("ordinary_dividends") + max(capital, 0)
     share = round(nii_gross / agi, 4) if agi else 0.0
     nii = max(nii_gross - whole(g("state_income_tax") * share), 0)
@@ -100,8 +105,11 @@ def federal_return(i, year):
     lines["25c"] = max(whole(g("medicare_withheld")) - medicare_withheld_regular, 0)
     lines["25a"] = g("federal_withheld")
     ss_max = whole(p["ss_wage_base"] * p["ss_rate"])
-    lines["31"] = sum(max(whole(withheld) - ss_max, 0)  # only with two or more employers
-                      for withheld, employers in i.get("ss_withheld_by_person", ()) if employers > 1)
+    lines["31"] = sum(
+        max(whole(withheld) - ss_max, 0)  # only with two or more employers
+        for withheld, employers in i.get("ss_withheld_by_person", ())
+        if employers > 1
+    )
     lines["33"] = lines["25a"] + lines["25c"] + g("estimated_payments") + lines["31"]
     lines["37"] = lines["24"] - lines["33"]  # positive: owed; negative: refund
     return {k: (whole(v) if isinstance(v, float) else v) for k, v in lines.items()}
@@ -113,7 +121,7 @@ def safe_harbor(prior_year_total_tax, prior_agi):
 
 
 PENALTY_FREE_BALANCE = 1000  # owing less than this after withholding brings no underpayment penalty
-CURRENT_YEAR_SHARE = 0.90    # nor does withholding at least this share of this year's tax
+CURRENT_YEAR_SHARE = 0.90  # nor does withholding at least this share of this year's tax
 
 
 def penalty_free(owe, withheld, total_tax, harbor=None):
@@ -141,8 +149,9 @@ def inputs_from_facts(facts, year, kinds=("input",)):
             by_person.setdefault(r["person"], {})[r["key"]] = value
         else:
             inputs[r["key"]] = inputs.get(r["key"], 0.0) + value  # per-person inputs add up
-    inputs["ss_withheld_by_person"] = [(p.get("ss_withheld", 0), p.get("employers", 1))
-                                       for p in by_person.values() if "ss_withheld" in p]
+    inputs["ss_withheld_by_person"] = [
+        (p.get("ss_withheld", 0), p.get("employers", 1)) for p in by_person.values() if "ss_withheld" in p
+    ]
     earned = [(person, p["wi_earned_income"]) for person, p in by_person.items() if "wi_earned_income" in p]
     if earned:
         inputs["wi_earned_income_by_person"] = earned
@@ -173,6 +182,14 @@ def check_against_return(facts):
             got = computed.get(r["key"])
             diff = None if got is None else round(got - value, 4)
             tolerance = 0.00005 if r["key"] in wisconsin.RATIO_LINES else 1
-            out.append({"year": year, "line": r["key"], "filed": value, "computed": got,
-                        "diff": diff, "match": diff is not None and abs(diff) <= tolerance})
+            out.append(
+                {
+                    "year": year,
+                    "line": r["key"],
+                    "filed": value,
+                    "computed": got,
+                    "diff": diff,
+                    "match": diff is not None and abs(diff) <= tolerance,
+                }
+            )
     return pd.DataFrame(out, columns=["year", "line", "filed", "computed", "diff", "match"])

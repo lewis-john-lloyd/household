@@ -36,15 +36,22 @@ def test_each_source_with_money_is_a_reading_on_the_quarters_last_day():
     r = ingest.finish_investment_rows(vanguard_plan.parse(STATEMENT), "document.pdf", ACCOUNTS)
     held = r.tables["holdings"]
     assert held[["as_of", "account_id", "symbol", "source", "value"]].values.tolist() == [
-        ["2001-03-31", "a_401k", "", "pre_tax_401k", 55.0], ["2001-03-31", "a_401k", "", "2001_roth_in_plan_conversion", 45.0]]
-    assert r.notes == ["a_401k: plan statement 2001-01-01 to 2001-03-31, 2 sources worth 100.00 (45.00 Roth) in 2 funds"]
+        ["2001-03-31", "a_401k", "", "pre_tax_401k", 55.0],
+        ["2001-03-31", "a_401k", "", "2001_roth_in_plan_conversion", 45.0],
+    ]
+    assert r.notes == [
+        "a_401k: plan statement 2001-01-01 to 2001-03-31, 2 sources worth 100.00 (45.00 Roth) in 2 funds"
+    ]
     assert r.tables["investment_activity"].empty and (r.covers_from, r.covers_to) == ("2001-01-01", "2001-03-31")
 
 
-@pytest.mark.parametrize("change, says", [
-    ("¤55.00\n".replace("¤", "$"), "Pre-Tax 401(K): 55.00 is not the 56.00 it shows"),
-    ("¤30.00\n                Ix".replace("¤", "$"), "Acme Bond Index Ix Institl: 30.00 is not the 31.00 it shows"),
-])
+@pytest.mark.parametrize(
+    "change, says",
+    [
+        ("¤55.00\n".replace("¤", "$"), "Pre-Tax 401(K): 55.00 is not the 56.00 it shows"),
+        ("¤30.00\n                Ix".replace("¤", "$"), "Acme Bond Index Ix Institl: 30.00 is not the 31.00 it shows"),
+    ],
+)
 def test_a_row_that_doesnt_add_up_refuses_the_statement(change, says):
     wrong = STATEMENT.replace(change, change.replace(change[1:3], "56" if "55" in change else "31"), 1)
     with pytest.raises(ParseError, match=says.replace("(", r"\(").replace(")", r"\)")):
@@ -52,6 +59,9 @@ def test_a_row_that_doesnt_add_up_refuses_the_statement(change, says):
 
 
 def test_sources_that_dont_add_up_to_the_total_value_refuse_the_statement():
-    wrong = STATEMENT.replace("Total Value" + GAP + "$100.00", "Total Value" + GAP + "$90.00")  # leak-guard: allow (made up)
+    wrong = STATEMENT.replace(
+        "Total Value" + GAP + "$100.00",  # leak-guard: allow (made up)
+        "Total Value" + GAP + "$90.00",  # leak-guard: allow (made up)
+    )  # leak-guard: allow (made up)
     with pytest.raises(ParseError, match="the sources: 100.00 is not the 90.00 it shows"):
         vanguard_plan.parse(wrong)

@@ -108,19 +108,39 @@ START = "===== RECEIPT "
 MESSAGE = re.compile(r"^===== RECEIPT (\S+) =====$", re.M)
 ITEM = re.compile(r"^(?P<name>.*?)\s*(?P<minus>-?)\$(?P<price>\d+\.\d\d)\s*(?P<flags>[A-Z0-9]*)\s*$")
 SKIP = re.compile(r"^(\d+(\.\d+)? lb @|\d+ @ \$|\s*Ref:|CPN:|-Vendor coupon|[^$]*contribution: \$)")
-ALCOHOL = re.compile(r"\b(beers?|ale|ipa|lager|stout|porter|pils(ner)?|quadrupel|tripel|dubbel|saison|kolsch|"
-                     r"wine|sauvignon|cabernet|merlot|pinot|chardonnay|riesling|ros[eé]|prosecco|champagne|cava|"
-                     r"malbec|zinfandel|syrah|shiraz|grenache|tempranillo|sangiovese|chianti|rioja|moscato|"
-                     r"vermouth|cider|mead|sake|vodka|gin|whiske?y|bourbon|rum|tequila|mezcal|brandy|liqueur|"
-                     r"hard seltzer|red blend|white blend)\b", re.I)
-TOYS = re.compile(r"\b(puzzles?|stickers?|games?|toys?|lego|crayons?|coloring|playing cards|cards?|kite|"
-                  r"books?|activity)\b", re.I)
-TOY_NAMES = re.compile(r"\b(puzzles?|jigsaw|stickers?|games?|toys?|lego|playmobil|plush|crayons?|coloring|"
-                       r"playing cards|kite|figures?|building set)\b", re.I)
+ALCOHOL = re.compile(
+    r"\b(beers?|ale|ipa|lager|stout|porter|pils(ner)?|quadrupel|tripel|dubbel|saison|kolsch|"
+    r"wine|sauvignon|cabernet|merlot|pinot|chardonnay|riesling|ros[eé]|prosecco|champagne|cava|"
+    r"malbec|zinfandel|syrah|shiraz|grenache|tempranillo|sangiovese|chianti|rioja|moscato|"
+    r"vermouth|cider|mead|sake|vodka|gin|whiske?y|bourbon|rum|tequila|mezcal|brandy|liqueur|"
+    r"hard seltzer|red blend|white blend)\b",
+    re.I,
+)
+TOYS = re.compile(
+    r"\b(puzzles?|stickers?|games?|toys?|lego|crayons?|coloring|playing cards|cards?|kite|"
+    r"books?|activity)\b",
+    re.I,
+)
+TOY_NAMES = re.compile(
+    r"\b(puzzles?|jigsaw|stickers?|games?|toys?|lego|playmobil|plush|crayons?|coloring|"
+    r"playing cards|kite|figures?|building set)\b",
+    re.I,
+)
 MEMBERSHIP = re.compile(r"\bmembership\b", re.I)
 HTML = re.compile(r"<(table|td|tr|div|br|pre)\b", re.I)
-ENTITIES = {"nbsp": " ", "amp": "&", "quot": '"', "apos": "'", "rsquo": "'", "lsquo": "'", "lt": "<", "gt": ">",
-            "zwnj": "", "shy": "", "copy": ""}
+ENTITIES = {
+    "nbsp": " ",
+    "amp": "&",
+    "quot": '"',
+    "apos": "'",
+    "rsquo": "'",
+    "lsquo": "'",
+    "lt": "<",
+    "gt": ">",
+    "zwnj": "",
+    "shy": "",
+    "copy": "",
+}
 
 
 def sniff(text):
@@ -132,7 +152,7 @@ def _messages(text):
     out = []
     marks = list(MESSAGE.finditer(text))
     for n, m in enumerate(marks):
-        chunk = text[m.end():marks[n + 1].start() if n + 1 < len(marks) else len(text)].lstrip("\n")
+        chunk = text[m.end() : marks[n + 1].start() if n + 1 < len(marks) else len(text)].lstrip("\n")
         head, _, body = chunk.partition("\n\n")
         headers = {}
         for line in head.splitlines():
@@ -167,6 +187,7 @@ class Unread(Exception):
 def _soft(service):
     """An app store reader whose surprises (a line missing, a number that won't read) leave the one receipt
     out with a note, as Unread, rather than refusing the file: those layouts change without notice."""
+
     def wrap(reader):
         def read(message_id, headers, body):
             try:
@@ -175,8 +196,10 @@ def _soft(service):
                 raise
             except (StopIteration, IndexError, ValueError) as e:
                 raise Unread(f"{service} {message_id}: {type(e).__name__} {e}".strip()) from e
+
         read.__name__ = reader.__name__
         return read
+
     return wrap
 
 
@@ -244,19 +267,25 @@ def co_op(message_id, headers, body):
     totals = "\n".join(sections[2:])
     net = _money(totals, r"Net Sales \$(-?[\d,]+\.\d\d)", "Net Sales")
     charged = _money(totals, r"SUB TOTAL \$(-?[\d,]+\.\d\d)", "SUB TOTAL")
-    taxes = [(round(float(b) * 100), round(float(t) * 100))
-             for b, t in re.findall(r"Tax \d+ \[\$(-?[\d.]+)\] \$(-?[\d.]+)", totals)]
+    taxes = [
+        (round(float(b) * 100), round(float(t) * 100))
+        for b, t in re.findall(r"Tax \d+ \[\$(-?[\d.]+)\] \$(-?[\d.]+)", totals)
+    ]
     coupons = sum(_cents(c) for c in re.findall(COUPONS, totals, re.M))
     if not items or charged <= 0:
         return []
     over = sum(c for _, c, _ in items) - net
     if not 0 <= over <= coupons:  # a coupon in the totals can take its amount off Net Sales, never more
-        raise ParseError(f"{NAME}: co-op receipt {message_id}: items add to {sum(c for _, c, _ in items) / 100:.2f}, "
-                         f"Net Sales is {net / 100:.2f}" + (f" (coupons {coupons / 100:.2f})" if coupons else ""))
+        raise ParseError(
+            f"{NAME}: co-op receipt {message_id}: items add to {sum(c for _, c, _ in items) / 100:.2f}, "
+            f"Net Sales is {net / 100:.2f}" + (f" (coupons {coupons / 100:.2f})" if coupons else "")
+        )
     base = sum(c for _, c, f in items if "T" in f)
     if taxes and not 0 <= base - sum(b for b, _ in taxes) <= coupons:
-        raise ParseError(f"{NAME}: co-op receipt {message_id}: taxed items add to {base / 100:.2f}, "
-                         f"the tax base is {sum(b for b, _ in taxes) / 100:.2f}")
+        raise ParseError(
+            f"{NAME}: co-op receipt {message_id}: taxed items add to {base / 100:.2f}, "
+            f"the tax base is {sum(b for b, _ in taxes) / 100:.2f}"
+        )
     tax = sum(t for _, t in taxes)
     with_tax = [c + (round(tax * c / base) if base and "T" in f else 0) for _, c, f in items]
     lines = items + charity
@@ -267,10 +296,21 @@ def co_op(message_id, headers, body):
     rows = []
     for n, ((name, _, flags), amount) in enumerate(zip(lines, amounts)):
         department = "charity" if (name, _, flags) in charity else _department(name, flags)
-        rows.append({"item_id": hashlib.sha256(f"{CO_OP}|{message_id}|{n}".encode()).hexdigest()[:16],
-                     "service": CO_OP, "order_id": message_id, "kind": "item", "order_date": day,
-                     "date": day, "amount": amount / 100, "card": "", "department": department,
-                     "item": name, "website": store.group(1).strip() if store else CO_OP})
+        rows.append(
+            {
+                "item_id": hashlib.sha256(f"{CO_OP}|{message_id}|{n}".encode()).hexdigest()[:16],
+                "service": CO_OP,
+                "order_id": message_id,
+                "kind": "item",
+                "order_date": day,
+                "date": day,
+                "amount": amount / 100,
+                "card": "",
+                "department": department,
+                "item": name,
+                "website": store.group(1).strip() if store else CO_OP,
+            }
+        )
     return rows
 
 
@@ -289,9 +329,19 @@ POSTED = re.compile(r"(\d{2})/(\d{2})/(\d{4})\s+\d{1,2}:\d{2}\s?[AP]M")
 
 
 def _row(service, message_id, n, day, amount, department, name, website):
-    return {"item_id": hashlib.sha256(f"{service}|{message_id}|{n}".encode()).hexdigest()[:16],
-            "service": service, "order_id": message_id, "kind": "item", "order_date": day, "date": day,
-            "amount": amount / 100, "card": "", "department": department, "item": name, "website": website}
+    return {
+        "item_id": hashlib.sha256(f"{service}|{message_id}|{n}".encode()).hexdigest()[:16],
+        "service": service,
+        "order_id": message_id,
+        "kind": "item",
+        "order_date": day,
+        "date": day,
+        "amount": amount / 100,
+        "card": "",
+        "department": department,
+        "item": name,
+        "website": website,
+    }
 
 
 def _book_department(name):
@@ -308,7 +358,7 @@ def bookseller(message_id, headers, body):
     if end is None:
         raise ParseError(f"{NAME}: bookseller receipt {message_id}: no Subtotal")
     items, text, current = [], "", None
-    for line in lines[start + 1:end]:
+    for line in lines[start + 1 : end]:
         if not line or line.startswith("#"):
             continue
         code = BARCODE.match(line)
@@ -333,11 +383,15 @@ def bookseller(message_id, headers, body):
     if not items or total <= 0:
         return []
     if sum(c for _, c, _, _ in items) != subtotal:
-        raise ParseError(f"{NAME}: bookseller receipt {message_id}: items add to "
-                         f"{sum(c for _, c, _, _ in items) / 100:.2f}, Subtotal is {subtotal / 100:.2f}")
+        raise ParseError(
+            f"{NAME}: bookseller receipt {message_id}: items add to "
+            f"{sum(c for _, c, _, _ in items) / 100:.2f}, Subtotal is {subtotal / 100:.2f}"
+        )
     if subtotal + sum(taxes.values()) != total:
-        raise ParseError(f"{NAME}: bookseller receipt {message_id}: Subtotal and tax add to "
-                         f"{(subtotal + sum(taxes.values())) / 100:.2f}, TOTAL is {total / 100:.2f}")
+        raise ParseError(
+            f"{NAME}: bookseller receipt {message_id}: Subtotal and tax add to "
+            f"{(subtotal + sum(taxes.values())) / 100:.2f}, TOTAL is {total / 100:.2f}"
+        )
     bases = {code: sum(c for _, c, _, t in items if t == code) for code in taxes}
     with_tax = [c + (round(taxes[t] * c / bases[t]) if bases.get(t) else 0) for _, c, _, t in items]
     amounts = _scale(with_tax, total)
@@ -360,7 +414,7 @@ def bookseller_online(message_id, headers, body):
     if end is None:
         raise ParseError(f"{NAME}: bookseller billing summary {message_id}: no Order Subtotal")
     items, name = [], ""
-    for line in lines[start + 1:end]:  # a name and its quantity, on one line or two
+    for line in lines[start + 1 : end]:  # a name and its quantity, on one line or two
         if not line or line == "Qty":
             continue
         if line.isdigit() and name:
@@ -386,8 +440,19 @@ APPLE = "apple"
 GOOGLE = "google"
 PRICE = re.compile(r"^(-?)\$([\d,]+\.\d\d)$")
 CARD_LAST4 = re.compile(r"(?:Visa|Mastercard|MasterCard|Amex|American Express|Discover)\D{0,12}?(\d{4})")
-APPLE_SECTIONS = {"Apple TV", "iTunes Store", "App Store", "Apple Books", "Apple Music", "Apple Arcade",
-                  "Apple Podcasts", "Apple Fitness+", "Apple News+", "Apple One", "iCloud"}
+APPLE_SECTIONS = {
+    "Apple TV",
+    "iTunes Store",
+    "App Store",
+    "Apple Books",
+    "Apple Music",
+    "Apple Arcade",
+    "Apple Podcasts",
+    "Apple Fitness+",
+    "Apple News+",
+    "Apple One",
+    "iCloud",
+}
 APPLE_NOISE = {"Report a Problem", "Write a Review"}
 APPLE_PROMO = re.compile(r"^Save \d+% on all your Apple purchases|Apple Card")
 
@@ -427,8 +492,10 @@ def _apple_rows(order, message_id, day, card, items, total):
     if total <= 0:
         return []
     amounts = _scale([c for _, c in items], total)
-    return [{**_row(APPLE, order or message_id, n, day, amount, "", name, "apple.com"), "card": card}
-            for n, ((name, _), amount) in enumerate(zip(items, amounts))]
+    return [
+        {**_row(APPLE, order or message_id, n, day, amount, "", name, "apple.com"), "card": card}
+        for n, ((name, _), amount) in enumerate(zip(items, amounts))
+    ]
 
 
 @_soft(APPLE)
@@ -440,24 +507,33 @@ def apple_itunes(message_id, headers, body):
     if end is None:
         raise Unread(f"{APPLE} {message_id}: no Subtotal")
     items, section = [], ""
-    for block, cents in _blocks(lines[doc + 2:end]):
+    for block, cents in _blocks(lines[doc + 2 : end]):
         if block and block[0] in APPLE_SECTIONS:
             section, block = block[0], block[1:]
         if not block:
             raise Unread(f"{APPLE} {message_id}: a price with no item")
         items.append(((f"{section}: " if section else "") + block[0], cents))
-    totals = lines[end:end + 8]
+    totals = lines[end : end + 8]
     subtotal = _cents(_after(totals, "Subtotal").lstrip("$")) if _after(totals, "Subtotal").startswith("$") else None
     tax = _after(totals, "Tax")
     total = _after(totals, "TOTAL")
     if subtotal is None or not total.startswith("$"):
         raise Unread(f"{APPLE} {message_id}: no Subtotal or TOTAL")
     total = _cents(total.lstrip("$"))
-    if sum(c for _, c in items) != subtotal or subtotal + (_cents(tax.lstrip("$")) if tax.startswith("$") else 0) != total:
+    if (
+        sum(c for _, c in items) != subtotal
+        or subtotal + (_cents(tax.lstrip("$")) if tax.startswith("$") else 0) != total
+    ):
         raise Unread(f"{APPLE} {message_id}: the items, tax and TOTAL don't add up")
     billed = CARD_LAST4.search(" ".join(lines[:doc]))
-    return _apple_rows(_after(lines, "ORDER ID"), message_id, _day(_after(lines, "DATE")) or headers.get("date", "")[:10],
-                       billed.group(1) if billed else "", items, total)
+    return _apple_rows(
+        _after(lines, "ORDER ID"),
+        message_id,
+        _day(_after(lines, "DATE")) or headers.get("date", "")[:10],
+        billed.group(1) if billed else "",
+        items,
+        total,
+    )
 
 
 @_soft(APPLE)
@@ -489,8 +565,14 @@ def apple_receipt(message_id, headers, body):
         raise Unread(f"{APPLE} {message_id}: the items don't add to the Subtotal")
     billed = CARD_LAST4.search(" ".join(totals))
     day = _day(lines[lines.index("Receipt") + 1]) if "Receipt" in lines[:start] else ""
-    return _apple_rows(_after(lines, "Order ID:"), message_id, day or headers.get("date", "")[:10],
-                       billed.group(1) if billed else "", items, total)
+    return _apple_rows(
+        _after(lines, "Order ID:"),
+        message_id,
+        day or headers.get("date", "")[:10],
+        billed.group(1) if billed else "",
+        items,
+        total,
+    )
 
 
 GOOGLE_ITEM = re.compile(r"^(?P<name>.*\S)\s+\$(?P<price>[\d,]+\.\d\d)(?:/\w+)?$")
@@ -510,7 +592,7 @@ def google_play(message_id, headers, body):
     if head is None or total_at is None:
         raise Unread(f"{GOOGLE} {message_id}: no items or no Total")
     items, taxes, text = [], 0, ""
-    for line in lines[head + 1:total_at]:
+    for line in lines[head + 1 : total_at]:
         tax = GOOGLE_TAX.match(line)
         if tax:
             taxes += _cents(tax.group(1))
@@ -531,9 +613,21 @@ def google_play(message_id, headers, body):
     paid = _after(lines, "Payment method:")
     card = re.search(r"(\d{4})\s*$", paid)
     name = "; ".join(_app_item(n, "") for n, _ in items)
-    return [{"item_id": hashlib.sha256(f"{GOOGLE}|{number}|item".encode()).hexdigest()[:16], "service": GOOGLE,
-             "order_id": number, "kind": "item", "order_date": day, "date": day, "amount": total / 100,
-             "card": card.group(1) if card else "", "department": "Google Play", "item": name, "website": ""}]
+    return [
+        {
+            "item_id": hashlib.sha256(f"{GOOGLE}|{number}|item".encode()).hexdigest()[:16],
+            "service": GOOGLE,
+            "order_id": number,
+            "kind": "item",
+            "order_date": day,
+            "date": day,
+            "amount": total / 100,
+            "card": card.group(1) if card else "",
+            "department": "Google Play",
+            "item": name,
+            "website": "",
+        }
+    ]
 
 
 FARM_STORE = "farm_store"
@@ -551,7 +645,7 @@ def farm_store(message_id, headers, body):
     rules = [i for i, line in enumerate(lines) if re.fullmatch(r"_{20,}", line)]
     if len(rules) < 2:
         raise Unread(f"{FARM_STORE} {message_id}: no item list")
-    if "SALE" not in lines[rules[0]:rules[1]]:
+    if "SALE" not in lines[rules[0] : rules[1]]:
         return []
     end = next((i for i in range(rules[1], len(lines)) if lines[i].startswith("Subtotal ")), None)
     if end is None:
@@ -573,9 +667,9 @@ def farm_store(message_id, headers, body):
     base = sum(c for _, c, t in items if t == "T")
     with_tax = [c + (round(tax * c / base) if base and t == "T" else 0) for _, c, t in items]
     amounts = _scale(with_tax, charged)  # a reward or gift card that paid part comes off every item alike
-    when = next((FARM_DAY.match(line) for line in lines[rules[0]:rules[1]] if FARM_DAY.match(line)), None)
+    when = next((FARM_DAY.match(line) for line in lines[rules[0] : rules[1]] if FARM_DAY.match(line)), None)
     day = f"20{when[3]}-{int(when[1]):02d}-{int(when[2]):02d}" if when else headers.get("date", "")[:10]
-    store = lines[lines.index("YOUR RECEIPT") + 1] if "YOUR RECEIPT" in lines[:rules[0]] else FARM_STORE
+    store = lines[lines.index("YOUR RECEIPT") + 1] if "YOUR RECEIPT" in lines[: rules[0]] else FARM_STORE
     rows = []
     for n, ((name, _, tax_code), amount) in enumerate(zip(items, amounts)):
         department = "charity" if DONATION.search(name) else "grocery" if tax_code == "N" else ""
@@ -586,15 +680,20 @@ def farm_store(message_id, headers, body):
 OUTFITTER = "outfitter"
 DOLLARS = re.compile(r"^(-?)\$([\d,]+\.\d\d)$")
 PAID_WITH = re.compile(r"\(ending in \d{4}\)")
-SHIP_NOISE = re.compile(r"^(Estimated arrival|Standard shipping|Expedited|Ship to|Items to ship|"
-                        r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \w{3} \d{1,2}$)")
+SHIP_NOISE = re.compile(
+    r"^(Estimated arrival|Standard shipping|Expedited|Ship to|Items to ship|"
+    r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \w{3} \d{1,2}$)"
+)
 
 
 def _priced_lines(section):
     """{label: cents} for a totals section printed label then value, or all the labels then all the values."""
     labels = [line for line in section if not DOLLARS.match(line) and line != "FREE"]
-    values = [0 if line == "FREE" else (-1 if DOLLARS.match(line)[1] else 1) * _cents(DOLLARS.match(line)[2])
-              for line in section if DOLLARS.match(line) or line == "FREE"]
+    values = [
+        0 if line == "FREE" else (-1 if DOLLARS.match(line)[1] else 1) * _cents(DOLLARS.match(line)[2])
+        for line in section
+        if DOLLARS.match(line) or line == "FREE"
+    ]
     if len(labels) != len(values):
         raise ValueError("the totals' labels and values don't pair up")
     return dict(zip(labels, values))
@@ -609,8 +708,11 @@ def outfitter(message_id, headers, body):
     kind = next((line.split(":", 1)[1].strip() for line in lines if line.lower().startswith("transaction type:")), "")
     if not online and kind.lower() != "sale":
         return []
-    start = lines.index("Items purchased") + 1 if not online else next(
-        i for i, line in enumerate(lines) if line.startswith("Estimated arrival")) + 1
+    start = (
+        lines.index("Items purchased") + 1
+        if not online
+        else next(i for i, line in enumerate(lines) if line.startswith("Estimated arrival")) + 1
+    )
     end = lines.index("Payment details")
     items, text, n = [], [], start
     while n < end:
@@ -625,15 +727,16 @@ def outfitter(message_id, headers, body):
             if not name:
                 raise ValueError("an item with no name")
             m = DOLLARS.match(lines[last])
-            items.append((name[0] + (f" ({', '.join(name[1:])})" if len(name) > 1 else ""),
-                          (-1 if m[1] else 1) * _cents(m[2])))
+            items.append(
+                (name[0] + (f" ({', '.join(name[1:])})" if len(name) > 1 else ""), (-1 if m[1] else 1) * _cents(m[2]))
+            )
             text, n = [], last + 1
             continue
         text.append(line)
         n += 1
-    totals = lines[end + 1:]
+    totals = lines[end + 1 :]
     upto = next(i for i, line in enumerate(totals) if line in ("Total", "Order total"))
-    priced = _priced_lines(totals[:upto + 2])
+    priced = _priced_lines(totals[: upto + 2])
     subtotal, total = priced["Subtotal"], priced.get("Total", priced.get("Order total"))
     if not items or sum(c for _, c in items) != subtotal or sum(priced.values()) - total != total:
         raise Unread(f"{OUTFITTER} {message_id}: the items, tax and total don't add up")
@@ -659,10 +762,16 @@ def outfitter(message_id, headers, body):
         order = message_id
         when = re.search(r"Date:\s*(\d{2})/(\d{2})/(\d{2})\s", body)
         day = f"20{when[3]}-{when[1]}-{when[2]}" if when else headers.get("date", "")[:10]
-    website = "online" if online else next((lines[i + 1] for i, line in enumerate(lines[:-1])
-                                            if line == "Purchased at:"), OUTFITTER)
-    return [_row(OUTFITTER, order, n, day, amount, "", name, website)
-            for n, ((name, _), amount) in enumerate(zip(items, amounts)) if amount > 0]
+    website = (
+        "online"
+        if online
+        else next((lines[i + 1] for i, line in enumerate(lines[:-1]) if line == "Purchased at:"), OUTFITTER)
+    )
+    return [
+        _row(OUTFITTER, order, n, day, amount, "", name, website)
+        for n, ((name, _), amount) in enumerate(zip(items, amounts))
+        if amount > 0
+    ]
 
 
 PAYPAL = "paypal"
@@ -711,9 +820,17 @@ def paypal(message_id, headers, body):
     when = _after(lines, "Transaction date") or _after(lines, "Date")
     day = _day(when) or headers.get("date", "")[:10]
     key = txn.group(1) if txn and not refund else message_id
-    return [{"detail_id": hashlib.sha256(f"{PAYPAL}|{key}".encode()).hexdigest()[:16], "date": day,
-             "amount": cents / 100, "service": PAYPAL, "kind": kind, "counterparty": " ".join(who.split()),
-             "memo": " ".join(memo.split())}]
+    return [
+        {
+            "detail_id": hashlib.sha256(f"{PAYPAL}|{key}".encode()).hexdigest()[:16],
+            "date": day,
+            "amount": cents / 100,
+            "service": PAYPAL,
+            "kind": kind,
+            "counterparty": " ".join(who.split()),
+            "memo": " ".join(memo.split()),
+        }
+    ]
 
 
 VENMO = "venmo"
@@ -734,9 +851,17 @@ def venmo(message_id, headers, body):
         if not amount or not txn:
             raise Unread(f"{VENMO} {message_id}: a transfer with no amount or id")
         day = _day(_after(lines, "Initiated on"), ("%A, %B %d, %Y",)) or headers.get("date", "")[:10]
-        return [{"detail_id": hashlib.sha256(f"{VENMO}|transfer|{txn}".encode()).hexdigest()[:16], "date": day,
-                 "amount": _cents(amount[1]) / 100, "service": VENMO, "kind": "Transfer", "counterparty": "",
-                 "memo": ""}]
+        return [
+            {
+                "detail_id": hashlib.sha256(f"{VENMO}|transfer|{txn}".encode()).hexdigest()[:16],
+                "date": day,
+                "amount": _cents(amount[1]) / 100,
+                "service": VENMO,
+                "kind": "Transfer",
+                "counterparty": "",
+                "memo": "",
+            }
+        ]
     at = next((i for i, line in enumerate(lines) if VENMO_PAID.match(line) or VENMO_RECEIVED.match(line)), None)
     if at is None:
         raise Unread(f"{VENMO} {message_id}: no payment sent or received")
@@ -748,13 +873,19 @@ def venmo(message_id, headers, body):
         raise Unread(f"{VENMO} {message_id}: no amount or transaction id")
     # the amount is printed as "$", "12", ". 50" after the sentence; the note follows it, up to "See transaction"
     end = next((i for i in range(at, len(lines)) if lines[i].startswith("See transaction")), at)
-    note = [line for line in lines[at + 1:end] if not re.fullmatch(r"\$|[\d,]+|\.\s?\d\d", line)]
+    note = [line for line in lines[at + 1 : end] if not re.fullmatch(r"\$|[\d,]+|\.\s?\d\d", line)]
     cents = _cents(amount[1])
-    return [{"detail_id": hashlib.sha256(f"{VENMO}|{txn}".encode()).hexdigest()[:16],
-             "date": _day(_after(lines, "Date")) or headers.get("date", "")[:10],
-             "amount": (-cents if paid else cents) / 100, "service": VENMO,
-             "kind": "Payment" if paid else "Payment Received", "counterparty": " ".join(who.split()),
-             "memo": " ".join(" ".join(note).split())}]
+    return [
+        {
+            "detail_id": hashlib.sha256(f"{VENMO}|{txn}".encode()).hexdigest()[:16],
+            "date": _day(_after(lines, "Date")) or headers.get("date", "")[:10],
+            "amount": (-cents if paid else cents) / 100,
+            "service": VENMO,
+            "kind": "Payment" if paid else "Payment Received",
+            "counterparty": " ".join(who.split()),
+            "memo": " ".join(" ".join(note).split()),
+        }
+    ]
 
 
 def _is_venmo(body):
@@ -763,17 +894,30 @@ def _is_venmo(body):
 
 def _is_farm_store(body):
     return all(s in body for s in ("Cashier #:", "Total Sales Tax", "Subtotal")) and bool(
-        re.search(r"^\s*(?:\d{6,14}|NOT ON FILE) x \d+\b", body, re.M))
+        re.search(r"^\s*(?:\d{6,14}|NOT ON FILE) x \d+\b", body, re.M)
+    )
 
 
 def _is_outfitter(body):
-    return "Payment details" in body and "Item #" in body and "Qty:" in body and (
-        "Items purchased" in body or "Order number:" in body)
+    return (
+        "Payment details" in body
+        and "Item #" in body
+        and "Qty:" in body
+        and ("Items purchased" in body or "Order number:" in body)
+    )
 
 
 def _is_paypal(body):
-    return "PayPal, Inc." in body and any(s in body for s in (
-        "You paid $", "You authorized $", " sent you $", "Your Refund of $", "Receipt for your PayPal payment"))
+    return "PayPal, Inc." in body and any(
+        s in body
+        for s in (
+            "You paid $",
+            "You authorized $",
+            " sent you $",
+            "Your Refund of $",
+            "Receipt for your PayPal payment",
+        )
+    )
 
 
 def _is_apple_itunes(body):
@@ -800,10 +944,18 @@ def _is_bookseller_online(body):
     return "Item(s) Shipped/Billed" in body and "Order Subtotal:" in body
 
 
-READERS = ((_is_co_op, co_op), (_is_bookseller, bookseller), (_is_bookseller_online, bookseller_online),
-           (_is_apple_itunes, apple_itunes), (_is_apple_receipt, apple_receipt), (_is_google_play, google_play),
-           (_is_farm_store, farm_store), (_is_outfitter, outfitter), (_is_venmo, venmo),
-           (_is_paypal, paypal))
+READERS = (
+    (_is_co_op, co_op),
+    (_is_bookseller, bookseller),
+    (_is_bookseller_online, bookseller_online),
+    (_is_apple_itunes, apple_itunes),
+    (_is_apple_receipt, apple_receipt),
+    (_is_google_play, google_play),
+    (_is_farm_store, farm_store),
+    (_is_outfitter, outfitter),
+    (_is_venmo, venmo),
+    (_is_paypal, paypal),
+)
 DETAIL_COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
@@ -839,16 +991,26 @@ def parse(text):
         for service, n in paid["service"].value_counts().sort_index().items():
             notes.append(f"{'PayPal' if service == PAYPAL else 'Venmo'}: {n} payments and transfers")
     notes += [f"receipts: {n} from {k} left for a reader not written yet" for k, n in sorted(skipped.items())]
-    notes += [f"receipts: {n} {k} charges for several items without prices left as one charge"
-              for k, n in sorted(unpriced.items())]
+    notes += [
+        f"receipts: {n} {k} charges for several items without prices left as one charge"
+        for k, n in sorted(unpriced.items())
+    ]
     if empty:
         notes.append(f"receipts: {empty} that charged nothing (a return, a free order) left out")
     if unread:
         notes.append(f"receipts: {len(unread)} in a known layout that didn't add up, left out: " + "; ".join(unread))
     if unreadable:
-        notes.append(f"receipts: {len(unreadable)} the exporter could not read, tried again on its every run "
-                     "(look in Gmail by id): " + "; ".join(unreadable))
-    return Result(kind=KIND, parser=NAME, label=f"receipts_{dates[-1] if dates else 'none'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={k: v for k, v in (("order_items", df), ("payment_details", paid)) if len(v)},
-                  keys={"order_items": ["item_id"], "payment_details": ["detail_id"]}, notes=notes)
+        notes.append(
+            f"receipts: {len(unreadable)} the exporter could not read, tried again on its every run "
+            "(look in Gmail by id): " + "; ".join(unreadable)
+        )
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"receipts_{dates[-1] if dates else 'none'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={k: v for k, v in (("order_items", df), ("payment_details", paid)) if len(v)},
+        keys={"order_items": ["item_id"], "payment_details": ["detail_id"]},
+        notes=notes,
+    )

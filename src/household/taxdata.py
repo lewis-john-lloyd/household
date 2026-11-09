@@ -209,8 +209,10 @@ DOCUMENTS = {
     "instructions-for-form-8959-2025": ("Instructions for Form 8959 (2025)", "1d223be73b4bac95"),
     "instructions-for-form-8960-2025": ("Instructions for Form 8960 (2025)", "b10fbb23ff4a053d"),
     "wi-form-1-instructions-2025": ("Wisconsin Form 1 Instructions (2025)", "dd7e88901ac4ec56"),
-    "wi-form-1npr-instructions-2025": ("Wisconsin Form 1NPR Instructions (2025)",
-                                       "ec79685479ed59e7"),  # leak-guard: allow (hash of a public PDF)
+    "wi-form-1npr-instructions-2025": (
+        "Wisconsin Form 1NPR Instructions (2025)",
+        "ec79685479ed59e7",  # leak-guard: allow (hash of a public PDF)
+    ),  # leak-guard: allow (hash of a public PDF)
     "wi-publication-w-166-2026-01": ("Wisconsin Publication W-166 (1/26)", "c400ce62d7a945f1"),
     "wi-form-1-2025": ("Wisconsin Form 1 (2025, blank)", "428a8c3bab9cdfc8"),
     "pa-40-instructions-2025": ("Pennsylvania PA-40 Instructions (2025)", "e8996504a4302a65"),
@@ -236,8 +238,7 @@ _BOTH = {  # cited the same way for 2025 and 2026
     "niit_threshold_mfj": ("instructions-for-form-8960-2025", 2, "Qualifying surviving spouse is 250,000"),
     "niit_rate": ("instructions-for-form-8960-2025", 2, "must pay 3.8%"),
     "ss_rate": ("publication-15-2026", 1, "6.2% each"),
-    "medicare_rate": ("publication-15-2026", 2,
-                      "1.45% each for the employee and employer, unchanged from 2025"),
+    "medicare_rate": ("publication-15-2026", 2, "1.45% each for the employee and employer, unchanged from 2025"),
     "supplemental_flat_rate": ("publication-15-2026", 2, "remains 22%"),
     "supplemental_mandatory_rate": ("publication-15-2026", 2, "(37% if"),
     "supplemental_mandatory_over": ("publication-15-2026", 2, "exceed 1 million"),
@@ -265,8 +266,7 @@ CITATIONS = {
     (2025, "itemized_cap_applies"): (_LAW, 95, "beginning after December 31, 2025. SEC. 70112"),
     (2025, "elective_deferral_402g"): ("notice-2024-80", 1, "from 23,000 to 23,500"),
     (2025, "annual_additions_415c"): ("notice-2024-80", 1, "from 69,000 to 70,000"),
-    (2025, "hsa_family"): ("rev-proc-2024-25", 2,
-                           "family coverage under a high deductible health plan is 8,550"),
+    (2025, "hsa_family"): ("rev-proc-2024-25", 2, "family coverage under a high deductible health plan is 8,550"),
     (2025, "dependent_care_fsa_mfj"): (_LAW, 144, "striking \u2018\u20185,000"),
     (2025, "health_fsa"): ("rev-proc-2024-40", 12, "health flexible spending arrangements is 3,300"),
     (2025, "withholding_line_1g_mfj"): ("publication-15-t-2025", 5, "12,900 if the employee"),
@@ -282,8 +282,7 @@ CITATIONS = {
     (2026, "ss_wage_base"): ("publication-15-2026", 2, "wage base limit is 184,500"),
     (2026, "elective_deferral_402g"): ("notice-2025-67", 1, "from 23,500 to 24,500"),
     (2026, "annual_additions_415c"): ("notice-2025-67", 1, "from 70,000 to 72,000"),
-    (2026, "hsa_family"): ("rev-proc-2025-19", 2,
-                           "family coverage under a high deductible health plan is 8,750"),
+    (2026, "hsa_family"): ("rev-proc-2025-19", 2, "family coverage under a high deductible health plan is 8,750"),
     (2026, "dependent_care_fsa_mfj"): (_LAW, 144, "inserting \u2018\u20187,500"),
     (2026, "health_fsa"): ("rev-proc-2025-32", 19, "spending arrangements is 3,400"),
     (2026, "withholding_line_1g_mfj"): ("publication-15-t-2026", 6, "12,900 if the employee"),
@@ -295,8 +294,7 @@ CITATIONS = {
     (2025, "wi_standard_deduction_phase_rate_mfj"): (_WI1, 35, "2025 Standard Deduction Table"),
     (2025, "wi_school_property_credit_rate"): (_WI1, 20, "Homeowner\u2019s School Property Tax Credit Table"),
     (2025, "wi_school_property_credit_max"): (_WI1, 20, "can\u2019t be more than 300"),
-    (2025, "pa_rate"): ("pa-40-instructions-2025", 1,
-                        "The state income tax rate for 2025 is 3.07 percent (0.0307)"),
+    (2025, "pa_rate"): ("pa-40-instructions-2025", 1, "The state income tax rate for 2025 is 3.07 percent (0.0307)"),
     (2026, "pa_rate"): ("pa-rev-415-2023-01", 13, "by the current per - centage rate, 3.07%"),
     (2025, "wi_itemized_credit_rate"): ("wi-form-1-2025", 4, "Rate of credit is .05 (5%)"),
     (2025, "wi_married_couple_rate"): ("wi-form-1-2025", 4, "Rate of credit is .03 (3%)"),
@@ -305,8 +303,12 @@ CITATIONS = {
 
 # Items whose value is not printed as such but is proved by reproducing a printed table.
 TABLE_CHECKED = {
-    "brackets", "withholding_mfj_table_floor", "wi_brackets", "wi_withholding_brackets",
-    "wi_standard_deduction_phase_start_mfj", "wi_standard_deduction_phase_rate_mfj",
+    "brackets",
+    "withholding_mfj_table_floor",
+    "wi_brackets",
+    "wi_withholding_brackets",
+    "wi_standard_deduction_phase_start_mfj",
+    "wi_standard_deduction_phase_rate_mfj",
     "wi_school_property_credit_rate",
 }
 
@@ -314,37 +316,71 @@ TABLE_CHECKED = {
 METHODS = {
     "withholding: annual percentage method (Worksheet 1A)": ("publication-15-t-2026", 10, "Worksheet 1A"),
     "withholding: no income tax withheld on group-term life": (
-        "publication-15-b-2026", 15, "withhold federal income tax or pay FUTA tax on any group-term"),
+        "publication-15-b-2026",
+        15,
+        "withhold federal income tax or pay FUTA tax on any group-term",
+    ),
     "tax: qualified dividends and capital gain tax worksheet": (
-        "instructions-for-form-1040-2025", 37, "Qualified Dividends and Capital Gain Tax Worksheet"),
+        "instructions-for-form-1040-2025",
+        37,
+        "Qualified Dividends and Capital Gain Tax Worksheet",
+    ),
     "safe harbor: 110% of prior-year tax above 150,000 AGI": ("publication-505-2026", 21, "110%"),
-    "no underpayment penalty owing under 1,000": ("publication-505-2026", 21,
-                                                   "1,000 in tax for 2026 after subtracting your withholding"),
-    "no underpayment penalty withholding 90% of this year's tax": ("publication-505-2026", 21,
-                                                                    "90% of the tax to be shown on your 2026 tax return"),
+    "no underpayment penalty owing under 1,000": (
+        "publication-505-2026",
+        21,
+        "1,000 in tax for 2026 after subtracting your withholding",
+    ),
+    "no underpayment penalty withholding 90% of this year's tax": (
+        "publication-505-2026",
+        21,
+        "90% of the tax to be shown on your 2026 tax return",
+    ),
     "wi withholding: flat percentages on supplemental pay": (_W166, 25, "Approved Flat Percentages"),
     "pa: tax is the flat rate on adjusted taxable income (PA-40 line 12)": (
-        "pa-40-2025", 2, "PA Tax Liability. Multiply Line 11 by 3.07 percent (0.0307)"),
+        "pa-40-2025",
+        2,
+        "PA Tax Liability. Multiply Line 11 by 3.07 percent (0.0307)",
+    ),
     "pa: 401(k) deferrals are compensation": (
-        "pa-rev-415-2023-01", 8, "Payments by employers into pension plans, 401(k) plans"),
+        "pa-rev-415-2023-01",
+        8,
+        "Payments by employers into pension plans, 401(k) plans",
+    ),
     "pa: health benefit plans and group-term life are not compensation": (
-        "pa-rev-415-2023-01", 7, "most group-term life insurance"),
+        "pa-rev-415-2023-01",
+        7,
+        "most group-term life insurance",
+    ),
     "pa: Schedule G-L resident credit, ratio to six decimal places": (
-        "pa-schedule-g-l-2024-03", 1, "Enter the result here (calculate to six decimal places)"),
+        "pa-schedule-g-l-2024-03",
+        1,
+        "Enter the result here (calculate to six decimal places)",
+    ),
 }
 
 # Values with no source document on file, and why they are trusted anyway.
 UNCITED = {
     2024: "Rev. Proc. 2023-34, Notice 2023-75, Rev. Proc. 2023-23 and Pub 15-T (2024) are not on file; "
-          "every 2024 pay stub reproduces under these values in the withholding backtest",
+    "every 2024 pay stub reproduces under these values in the withholding backtest",
     (2025, "ss_wage_base"): "SSA's 2025 announcement (not on file); the filed 2025 return's excess Social "
-                            "Security credit reproduces only with this wage base",
-    **{(2026, k): "Wisconsin publishes 2026 indexed amounts with the 2026 Form 1 instructions (about "
-                  "December 2026); the 2025 amount is used until then"
-       for k in ("wi_brackets", "wi_exemption", "wi_standard_deduction_mfj",
-                 "wi_standard_deduction_phase_start_mfj", "wi_standard_deduction_phase_rate_mfj",
-                 "wi_itemized_credit_rate", "wi_married_couple_rate", "wi_married_couple_max_earned",
-                 "wi_school_property_credit_rate", "wi_school_property_credit_max")},
+    "Security credit reproduces only with this wage base",
+    **{
+        (2026, k): "Wisconsin publishes 2026 indexed amounts with the 2026 Form 1 instructions (about "
+        "December 2026); the 2025 amount is used until then"
+        for k in (
+            "wi_brackets",
+            "wi_exemption",
+            "wi_standard_deduction_mfj",
+            "wi_standard_deduction_phase_start_mfj",
+            "wi_standard_deduction_phase_rate_mfj",
+            "wi_itemized_credit_rate",
+            "wi_married_couple_rate",
+            "wi_married_couple_max_earned",
+            "wi_school_property_credit_rate",
+            "wi_school_property_credit_max",
+        )
+    },
 }
 
 
@@ -365,7 +401,7 @@ FORM_LINES = {
         "wi_withheld": ("28", _WI1, 2, "Wisconsin tax withheld. Include withholding statements"),
         "wi_overpaid": ("40", _WI1, 3, "This is the AMOUNT YOU OVERPAID"),
         "wi_owe": ("45", _WI1, 3, "This is the AMOUNT YOU OWE"),
-    },
+    }
 }
 
 
@@ -376,6 +412,7 @@ def form_line(year, key):
     if not years:
         return "", None
     return FORM_LINES[max(years)][key][0], max(years)
+
 
 def citation(year, item):
     """(document, page, quote) for one value, or None."""

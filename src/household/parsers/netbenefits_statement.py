@@ -35,8 +35,11 @@ PERIOD = re.compile(r"Statement Period:\s*(\d\d/\d\d/\d{4})\s+to\s+(\d\d/\d\d/\d
 def sniff(text):
     # a page printed from the browser may carry its title ("Fidelity NetBenefits - Statement Details") first
     head = text.lstrip()[:3000]
-    return ("Statement Details" in head[:200] and "Retirement Savings Statement" in head
-            and "Market Value of Your Account" in text)
+    return (
+        "Statement Details" in head[:200]
+        and "Retirement Savings Statement" in head
+        and "Market Value of Your Account" in text
+    )
 
 
 def _money(text):
@@ -96,20 +99,29 @@ def parse(text):
             if abs(shares * price - value) > 0.01 * shares + 0.02:
                 raise ParseError(f"{NAME}: {name}: {shares} shares at {price} is not {value}")
         if shares0 or value0:
-            held.append({"as_of": before, "account_id": "", "symbol": name, "source": "", "shares": shares0,
-                         "value": value0})
+            held.append(
+                {"as_of": before, "account_id": "", "symbol": name, "source": "", "shares": shares0, "value": value0}
+            )
         if shares1 or value1:
-            held.append({"as_of": after, "account_id": "", "symbol": name, "source": "", "shares": shares1,
-                         "value": value1})
+            held.append(
+                {"as_of": after, "account_id": "", "symbol": name, "source": "", "shares": shares1, "value": value1}
+            )
     for day, total in ((before, total_then), (after, total_now)):
         got = sum(r["value"] for r in held if r["as_of"] == day)
         if abs(got - total) > 0.05:
             raise ParseError(f"{NAME}: the funds come to {got:.2f} on {day}, not the Account Totals' {total:.2f}")
     plan = re.search(r"^\s*(\S.*?)\s{2,}Retirement Savings Statement", text, re.M)
     name = plan.group(1).strip() if plan else "plan"
-    return Result(kind=KIND, parser=NAME, label=f"netbenefits_{after}", covers_from=before, covers_to=after,
-                  tables={"investment_activity": pd.DataFrame(columns=COLUMNS),
-                          "holdings": pd.DataFrame(held, columns=HOLDINGS)},
-                  keys={"investment_activity": ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
-                  notes=[f"{name}: statement {first.isoformat()} to {after}, {len(rows)} funds, "
-                         f"{total_then:,.2f} then and {total_now:,.2f} at the end"])
+    return Result(
+        kind=KIND,
+        parser=NAME,
+        label=f"netbenefits_{after}",
+        covers_from=before,
+        covers_to=after,
+        tables={"investment_activity": pd.DataFrame(columns=COLUMNS), "holdings": pd.DataFrame(held, columns=HOLDINGS)},
+        keys={"investment_activity": ["activity_id"], "holdings": ["as_of", "account_id", "source", "symbol"]},
+        notes=[
+            f"{name}: statement {first.isoformat()} to {after}, {len(rows)} funds, "
+            f"{total_then:,.2f} then and {total_now:,.2f} at the end"
+        ],
+    )

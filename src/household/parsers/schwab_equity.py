@@ -21,8 +21,18 @@ from .common import ParseError, Result, us_date
 from ..legacy import parse_money
 
 NAME = "schwab_equity"
-REQUIRED = {"Date", "Action", "Quantity", "AwardId", "VestDate", "VestFairMarketValue",
-            "TotalCostBasis", "RealizedGainLoss", "HoldingPeriod", "GrantId"}
+REQUIRED = {
+    "Date",
+    "Action",
+    "Quantity",
+    "AwardId",
+    "VestDate",
+    "VestFairMarketValue",
+    "TotalCostBasis",
+    "RealizedGainLoss",
+    "HoldingPeriod",
+    "GrantId",
+}
 
 
 def sniff(text):
@@ -43,8 +53,13 @@ def json_rows(text):
         raise ParseError(f"{NAME}: not JSON: {e}") from e
     blank = dict.fromkeys(REQUIRED | {"AwardDate", "Shares", "SalePrice", "Amount", "FeesAndCommissions"}, "")
     for t in data.get("Transactions") or []:
-        yield {**blank, **{k: ("" if t.get(k) is None else str(t.get(k)))
-                           for k in ("Date", "Action", "Quantity", "Amount", "FeesAndCommissions")}}
+        yield {
+            **blank,
+            **{
+                k: ("" if t.get(k) is None else str(t.get(k)))
+                for k in ("Date", "Action", "Quantity", "Amount", "FeesAndCommissions")
+            },
+        }
         for d in t.get("TransactionDetails") or []:
             details = d.get("Details") or {}
             yield {**blank, **{k: ("" if v is None else str(v)) for k, v in details.items()}, "Date": ""}
@@ -81,36 +96,46 @@ def parse(text):
         if current is None:
             raise ParseError(f"{NAME}: detail row before any action")
         if current["Action"] == "Deposit" and row["VestDate"]:
-            vests.append({
-                "vest_date": us_date(row["VestDate"]),
-                "grant_id": row["AwardId"],
-                "award_date": us_date(row["AwardDate"]) if row.get("AwardDate") else "",
-                "net_shares": _num(current["Quantity"]),
-                "fmv": _num(row["VestFairMarketValue"]),
-                "deposit_date": us_date(current["Date"]),
-            })
+            vests.append(
+                {
+                    "vest_date": us_date(row["VestDate"]),
+                    "grant_id": row["AwardId"],
+                    "award_date": us_date(row["AwardDate"]) if row.get("AwardDate") else "",
+                    "net_shares": _num(current["Quantity"]),
+                    "fmv": _num(row["VestFairMarketValue"]),
+                    "deposit_date": us_date(current["Date"]),
+                }
+            )
         elif current["Action"] == "Sale" and row["GrantId"]:
             shares = _num(row["Shares"])
-            lots.append({
-                "sale_date": us_date(current["Date"]),
-                "grant_id": row["GrantId"],
-                "vest_date": us_date(row["VestDate"]),
-                "shares": shares,
-                "sale_price": _num(row["SalePrice"]),
-                "basis": round(_num(row["TotalCostBasis"]), 4),
-                "gain": round(_num(row["RealizedGainLoss"]), 4),
-                "term": row["HoldingPeriod"].strip().lower().replace(" ", "_"),
-            })
+            lots.append(
+                {
+                    "sale_date": us_date(current["Date"]),
+                    "grant_id": row["GrantId"],
+                    "vest_date": us_date(row["VestDate"]),
+                    "shares": shares,
+                    "sale_price": _num(row["SalePrice"]),
+                    "basis": round(_num(row["TotalCostBasis"]), 4),
+                    "gain": round(_num(row["RealizedGainLoss"]), 4),
+                    "term": row["HoldingPeriod"].strip().lower().replace(" ", "_"),
+                }
+            )
     close_sale()
 
     v, s = pd.DataFrame(vests), pd.DataFrame(sales)
     if not s.empty:
         s["proceeds"] = (s["basis"] + s["gain"]).round(4)
     dates = sorted(list(v.get("vest_date", [])) + list(s.get("sale_date", [])))
-    return Result(kind="equity_export", parser=NAME,
-                  label=f"schwab_equity_{dates[-1] if dates else 'empty'}",
-                  covers_from=dates[0] if dates else "", covers_to=dates[-1] if dates else "",
-                  tables={"equity_vests": v, "equity_sales": s},
-                  keys={"equity_vests": ["vest_date", "grant_id"],
-                        "equity_sales": ["sale_date", "grant_id", "vest_date", "shares", "basis"]},
-                  notes=[f"{dividends} dividend rows not ingested"] if dividends else [])
+    return Result(
+        kind="equity_export",
+        parser=NAME,
+        label=f"schwab_equity_{dates[-1] if dates else 'empty'}",
+        covers_from=dates[0] if dates else "",
+        covers_to=dates[-1] if dates else "",
+        tables={"equity_vests": v, "equity_sales": s},
+        keys={
+            "equity_vests": ["vest_date", "grant_id"],
+            "equity_sales": ["sale_date", "grant_id", "vest_date", "shares", "basis"],
+        },
+        notes=[f"{dividends} dividend rows not ingested"] if dividends else [],
+    )

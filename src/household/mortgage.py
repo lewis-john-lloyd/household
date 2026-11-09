@@ -32,8 +32,17 @@ from datetime import date
 
 import pandas as pd
 
-COLUMNS = ["month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal", "balance",
-           "paid_from_ledger"]
+COLUMNS = [
+    "month",
+    "loan_id",
+    "payment",
+    "interest",
+    "principal",
+    "escrow",
+    "extra_principal",
+    "balance",
+    "paid_from_ledger",
+]
 
 
 def _rate(value):
@@ -74,8 +83,9 @@ def amortize(loan, events=None, through_month=None):
         term = int(float(loan["term_months"]))
         start = _next_month(_next_month(_month(loan["originated"])))
     except (KeyError, TypeError, ValueError):
-        return pd.DataFrame(columns=COLUMNS), [f"{loan_id or 'a loan'}: needs principal, rate, term_months and "
-                                               "originated to be amortized; skipped"]
+        return pd.DataFrame(columns=COLUMNS), [
+            f"{loan_id or 'a loan'}: needs principal, rate, term_months and originated to be amortized; skipped"
+        ]
     if principal <= 0 or term <= 0:
         return pd.DataFrame(columns=COLUMNS), [f"{loan_id}: principal and term_months must be positive; skipped"]
     escrow = _money(loan.get("escrow", ""))
@@ -114,9 +124,19 @@ def amortize(loan, events=None, through_month=None):
         n += 1
         if len(recast):
             scheduled = payment(balance, rate, term - n)
-        rows.append({"month": month, "loan_id": loan_id, "payment": total, "interest": interest,
-                     "principal": principal_part, "escrow": to_escrow, "extra_principal": extra,
-                     "balance": max(balance, 0.0), "paid_from_ledger": ""})
+        rows.append(
+            {
+                "month": month,
+                "loan_id": loan_id,
+                "payment": total,
+                "interest": interest,
+                "principal": principal_part,
+                "escrow": to_escrow,
+                "extra_principal": extra,
+                "balance": max(balance, 0.0),
+                "paid_from_ledger": "",
+            }
+        )
         month = _next_month(month)
     return pd.DataFrame(rows, columns=COLUMNS), []
 
@@ -139,13 +159,15 @@ def schedule(loans, events=None, categorized=None, through_month=None):
         rows, more = amortize(loan, events, through_month)
         frames.append(rows)
         notes += more
-    out = pd.concat([f for f in frames if not f.empty], ignore_index=True) if any(
-        not f.empty for f in frames) else pd.DataFrame(columns=COLUMNS)
+    out = (
+        pd.concat([f for f in frames if not f.empty], ignore_index=True)
+        if any(not f.empty for f in frames)
+        else pd.DataFrame(columns=COLUMNS)
+    )
     paid = ledger_payments(categorized)
     if not out.empty and paid:
         running = out.groupby("month")["loan_id"].transform("nunique")
-        out["paid_from_ledger"] = [paid.get(m, 0.0) if k == 1 else ""
-                                   for m, k in zip(out["month"], running)]
+        out["paid_from_ledger"] = [paid.get(m, 0.0) if k == 1 else "" for m, k in zip(out["month"], running)]
     return out.reset_index(drop=True), notes
 
 
@@ -154,8 +176,10 @@ def summary(sched):
     lines = []
     for loan_id, g in sched.groupby("loan_id"):
         last = g.iloc[-1]
-        lines.append(f"mortgage: {loan_id} balance {float(last['balance']):,.2f} after {len(g)} payments "
-                     f"(through {last['month']})")
+        lines.append(
+            f"mortgage: {loan_id} balance {float(last['balance']):,.2f} after {len(g)} payments "
+            f"(through {last['month']})"
+        )
     return lines
 
 
@@ -163,19 +187,35 @@ def summary(sched):
 # money, percent (an annual rate in percent), date, month, months, or text. Keys not listed here show after
 # these, under their own name, as text.
 DETAILS = [
-    ("lender", "Lender", "text"), ("servicer", "Servicer", "text"), ("loan_type", "Loan type", "text"),
-    ("purpose", "Purpose", "text"), ("product", "Product", "text"), ("originated", "Closed", "date"),
-    ("first_payment", "First payment", "month"), ("maturity", "Last payment as scheduled", "month"),
-    ("term_months", "Term", "months"), ("principal", "Loan amount", "money"), ("rate", "Interest rate", "percent"),
-    ("apr", "APR", "percent"), ("monthly_pi", "Principal and interest a month", "money"),
+    ("lender", "Lender", "text"),
+    ("servicer", "Servicer", "text"),
+    ("loan_type", "Loan type", "text"),
+    ("purpose", "Purpose", "text"),
+    ("product", "Product", "text"),
+    ("originated", "Closed", "date"),
+    ("first_payment", "First payment", "month"),
+    ("maturity", "Last payment as scheduled", "month"),
+    ("term_months", "Term", "months"),
+    ("principal", "Loan amount", "money"),
+    ("rate", "Interest rate", "percent"),
+    ("apr", "APR", "percent"),
+    ("monthly_pi", "Principal and interest a month", "money"),
     ("mortgage_insurance", "Mortgage insurance a month", "money"),
-    ("mortgage_insurance_ends", "Mortgage insurance ends", "text"), ("escrow", "Escrow a month", "money"),
-    ("points", "Points paid", "money"), ("closing_costs", "Closing costs", "money"),
-    ("cash_to_close", "Cash to close", "money"), ("prepayment_penalty", "Prepayment penalty", "text"),
-    ("balloon", "Balloon payment", "text"), ("assumable", "Assumable", "text"), ("late_fee", "Late fee", "text"),
-    ("tip", "Total interest percentage", "percent"), ("lender_nmls", "Lender NMLS ID", "text"),
-    ("balance", "Balance now", "money"), ("paid_principal", "Principal paid so far", "money"),
-    ("paid_interest", "Interest paid so far", "money"), ("interest_left", "Interest still to pay", "money"),
+    ("mortgage_insurance_ends", "Mortgage insurance ends", "text"),
+    ("escrow", "Escrow a month", "money"),
+    ("points", "Points paid", "money"),
+    ("closing_costs", "Closing costs", "money"),
+    ("cash_to_close", "Cash to close", "money"),
+    ("prepayment_penalty", "Prepayment penalty", "text"),
+    ("balloon", "Balloon payment", "text"),
+    ("assumable", "Assumable", "text"),
+    ("late_fee", "Late fee", "text"),
+    ("tip", "Total interest percentage", "percent"),
+    ("lender_nmls", "Lender NMLS ID", "text"),
+    ("balance", "Balance now", "money"),
+    ("paid_principal", "Principal paid so far", "money"),
+    ("paid_interest", "Interest paid so far", "money"),
+    ("interest_left", "Interest still to pay", "money"),
 ]
 DETAIL_COLUMNS = ["loan_id", "order", "key", "label", "value", "kind", "as_of", "note"]
 
@@ -186,7 +226,7 @@ def details(loans, facts, sched, month):
     still to be paid."""
     known = {k: (i, label, kind) for i, (k, label, kind) in enumerate(DETAILS)}
     rows = []
-    for loan in (loans.to_dict("records") if loans is not None and len(loans) else []):
+    for loan in loans.to_dict("records") if loans is not None and len(loans) else []:
         lid = str(loan["loan_id"]).strip()
         got = {}
         for k in ("lender", "originated", "principal", "rate", "term_months", "escrow"):
@@ -206,13 +246,28 @@ def details(loans, facts, sched, month):
             got["maturity"] = (g["month"].iloc[-1], "", "the schedule as it stands")
             if len(paid):
                 got["balance"] = (round(float(paid["balance"].iloc[-1]), 2), paid["month"].iloc[-1], "")
-                got["paid_principal"] = (round(float(pd.to_numeric(paid["principal"]).sum()
-                                                   + pd.to_numeric(paid["extra_principal"]).sum()), 2), "", "")
+                got["paid_principal"] = (
+                    round(
+                        float(pd.to_numeric(paid["principal"]).sum() + pd.to_numeric(paid["extra_principal"]).sum()), 2
+                    ),
+                    "",
+                    "",
+                )
                 got["paid_interest"] = (round(float(pd.to_numeric(paid["interest"]).sum()), 2), "", "")
             got["interest_left"] = (round(float(pd.to_numeric(ahead["interest"]).sum()), 2), "", "")
         for k, (value, at, note) in got.items():
             order, label, kind = known.get(k, (len(DETAILS), k.replace("_", " ").capitalize(), "text"))
-            rows.append({"loan_id": lid, "order": order, "key": k, "label": label, "value": value, "kind": kind,
-                         "as_of": at, "note": note})
+            rows.append(
+                {
+                    "loan_id": lid,
+                    "order": order,
+                    "key": k,
+                    "label": label,
+                    "value": value,
+                    "kind": kind,
+                    "as_of": at,
+                    "note": note,
+                }
+            )
     out = pd.DataFrame(rows, columns=DETAIL_COLUMNS)
     return out.sort_values(["loan_id", "order", "key"], kind="stable").reset_index(drop=True)

@@ -20,14 +20,29 @@ from pathlib import Path
 
 ALLOWED = {
     # standard library, pure computation and in-memory I/O
-    "csv", "dataclasses", "datetime", "hashlib", "io", "json", "logging", "re", "time", "warnings",
+    "csv",
+    "dataclasses",
+    "datetime",
+    "hashlib",
+    "io",
+    "json",
+    "logging",
+    "re",
+    "time",
+    "warnings",
     "zipfile",
     # data handling and the categorization model
-    "numpy", "pandas", "pypdf", "sklearn",
+    "numpy",
+    "pandas",
+    "pypdf",
+    "sklearn",
     # the rebalance's linear program (scipy comes with scikit-learn)
     "scipy.optimize",
     # Google: Sheets, Drive and Colab sign-in
-    "gspread", "googleapiclient", "google.auth", "google.colab",
+    "gspread",
+    "googleapiclient",
+    "google.auth",
+    "google.colab",
 }
 FORBIDDEN_CALLS = {"eval", "exec", "compile", "__import__", "breakpoint"}
 
@@ -51,8 +66,7 @@ def check(path):
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             if node.func.id in FORBIDDEN_CALLS:
                 found.append((node.lineno, f"call to {node.func.id}"))
-            elif node.func.id == "getattr" and len(node.args) > 1 and not isinstance(
-                    node.args[1], ast.Constant):
+            elif node.func.id == "getattr" and len(node.args) > 1 and not isinstance(node.args[1], ast.Constant):
                 found.append((node.lineno, "getattr with a computed name"))
     return found
 

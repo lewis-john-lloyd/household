@@ -7,8 +7,12 @@ Working on the code.
 ```
 pip install -e ".[dev]"
 pytest
+python -m ruff check src tests tools
+python -m ruff format src tests tools
 python tools/leak_guard.py
 ```
+
+Ruff checks for real errors and likely bugs (pyflakes and bugbear) and keeps every file in one format (120 columns); CI and the push guard run both. A formatting-only commit goes in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs` once per clone). `tests/test_golden.py` pins whole outputs on made-up data (digests in `tests/golden.json`): a refactor must leave them alone, and a change meant to change an output re-pins them with `HOUSEHOLD_GOLDEN=update pytest tests/test_golden.py`.
 
 Optional local hooks: `pip install pre-commit && pre-commit install`, and `git config core.hooksPath .githooks` for the push guard.
 

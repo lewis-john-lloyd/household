@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "freezegun>=1.5"]
+dev = ["pytest>=8", "freezegun>=1.5", "ruff>=0.17,<0.18"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

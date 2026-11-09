@@ -19,6 +19,8 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python tools/leak_guard.py
       - run: python tools/import_guard.py
+      - run: python -m ruff check src tests tools
+      - run: python -m ruff format --check src tests tools
       - run: pytest -q
 
   web:

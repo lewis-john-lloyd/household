@@ -187,18 +187,26 @@ test("after a save that did not land, Save saves what is staged as a new request
   await page.close();
 });
 
-test("a past year shows its forms as they were, with no scenario to choose", async () => {
+test("a past year opens from the history with its forms as they were, and a second click closes it", async () => {
   const line = (key, label, value, filed) => ({ form: "Form 1040", line: key, key, label, value, filed });
   const year = (y, filed) => ({ year: y, filed: !!filed, forms: { "Form 1040": [line("24", "Total tax", 90, filed ? 90 : null)] } });
+  const part = (y, projected) => ({ year: y, jurisdiction: "federal", split: "went", part: "Federal income tax", order: 0,
+                                    value: 90, total: 900, projected });
   const page = await open("window.__answers.getTaxes = " + JSON.stringify({
-    years: [year("2002"), year("2001", true)], plan: [], accounts: [], notes: [],
+    years: [year("2002"), year("2001", true)], plan: [], accounts: [], notes: [], filed: {},
+    history: [part("2001", false), part("2002", true)],
     totals: [{ scenario: "as is", federal: 10, wisconsin: 5 }, { scenario: "stock 20% lower", federal: 0, wisconsin: 0 }] }) + ";");
   await page.click("#view-taxes");
   await page.waitForSelector("#taxes-body .panel");
-  await page.click("#taxes-body [aria-label=Year] button:has-text('2001')");
-  assert.equal(await page.$("#taxes-body [aria-label=Scenario]"), null);
+  assert.match(await page.textContent("#taxes-body"), /Taxes for 2002/);
+  await page.click("#taxes-body .subtabs button:has-text('History')");
+  assert.match(await page.textContent("#taxes-body"), /2002 \(projected\)/);
+  await page.click("#taxes-body .history-column:not(.projected) rect[fill=transparent]");
+  await page.waitForSelector("#tax-year-detail");
   assert.doesNotMatch(await page.textContent("#taxes-body"), /Scenarios for this year|stock 20%/i);
-  assert.match(await page.textContent("#taxes-body"), /Total tax/);
+  assert.match(await page.textContent("#taxes-body"), /2001 return.*Total tax/s);
+  await page.click("#taxes-body .history-column:not(.projected) rect[fill=transparent]");
+  assert.equal(await page.$("#tax-year-detail"), null);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -464,7 +472,12 @@ test("the budget compares any period with another, and a line's target can come 
   const food = await page.$$eval("table.bv tr.line:has-text('food') td", (tds) => tds.map((td) => td.textContent));
   assert.deepEqual([food[0], food[1], food[3], food[5], food[6]], ["food", "60.00 a month", "$12", "$8", "+$4"]);  // leak-guard: allow (made up)
   assert.match(await page.textContent("table.bv thead"), /same weeks/);
-  assert.match(await page.textContent(".bv-summary"), /\$17spent of/);  // leak-guard: allow (made up)
+  assert.match(await page.textContent(".bv-summary"), /\$60budgeted for .*\$17spent, 28% of the budget/);  // leak-guard: allow (made up)
+  await page.click("table.bv th button.sort:has-text('Spent')");  // sorts by spent, largest first; again reverses
+  assert.equal(await page.getAttribute("table.bv th:nth-child(4)", "aria-sort"), "descending");
+  await page.click("table.bv th button.sort:has-text('Spent')");
+  assert.equal(await page.getAttribute("table.bv th:nth-child(4)", "aria-sort"), "ascending");
+  assert.equal(await page.locator(".bv-gauge").count() >= 2, true);  // the whole budget and each group
   assert.equal(await page.$$eval("table.bv tr.group", (rows) => rows.length), 2);  // living, then fun
   await page.click(".bv-controls button:has-text('Year')");
   const year = String(new Date().getFullYear());

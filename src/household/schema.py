@@ -222,7 +222,10 @@ REPORTS = (
     Table("subscriptions", ("key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
                             "next_expected", "status", "change", "example", "note", "includes", "merged", "run_id")),
     # each filed year's income split three ways, for the Taxes page's history (taxhistory.py)
-    Table("tax_history", ("year", "jurisdiction", "split", "part", "order", "value", "total", "run_id")),
+    Table("tax_history", ("year", "jurisdiction", "split", "part", "order", "value", "total", "basis", "run_id"),
+          {"basis": ("filed", "projected")}),
+    # every filed year's return as filed (return_facts), line by line, for the Taxes page's years (taxhistory.py)
+    Table("filed_lines", ("year", "form", "order", "line", "key", "label", "value", "run_id")),
     Table("subscription_months", ("month", "key", "category", "group", "expected", "actual", "run_id")),
     Table("editor_subscriptions", ("key", "marked", "status", "cadence", "charges", "last", "latest", "yearly",
                                    "category", "example", "note", "includes", "merged", "run_id")),

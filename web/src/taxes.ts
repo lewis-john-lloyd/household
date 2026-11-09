@@ -39,10 +39,12 @@ interface HistoryPart {
   order: number;
   value: number;
   total: number;  // the whole the split's parts add up to
+  projected: boolean;  // this year's, from the projection, until its return is filed
 }
 
 interface TaxPage {
   history: HistoryPart[];
+  filed: Record<string, Record<string, TaxLine[]>>;  // year -> form -> its lines as filed, for any filed year
   years: TaxYear[];
   totals: ScenarioTotals[];  // the current year's scenarios
   plan: Record<string, string>[];
@@ -90,10 +92,16 @@ function taxPage(tabs: Record<string, unknown[][]>): TaxPage {
     .sort((a, b) => Number(a.n) - Number(b.n)).map((r) => r.message.replace(/^projection \d{4}: /, ""));
   const history = rowsOf(tabs.tax_history || []).filter((r) => r.year && r.part).map((r) => ({
     year: r.year, jurisdiction: r.jurisdiction, split: r.split, part: r.part, order: Number(r.order) || 0,
-    value: Number(r.value) || 0, total: Number(r.total) || 0 }))
+    value: Number(r.value) || 0, total: Number(r.total) || 0, projected: r.basis === "projected" }))
     .sort((a, b) => a.year.localeCompare(b.year) || a.order - b.order);
+  const filed: Record<string, Record<string, TaxLine[]>> = {};
+  for (const r of rowsOf(tabs.filed_lines || []).sort((a, b) => Number(a.order) - Number(b.order))) {
+    const forms = filed[r.year] || (filed[r.year] = {});
+    (forms[r.form] || (forms[r.form] = [])).push({ form: r.form, line: r.line, key: r.key, label: r.label,
+                                                   value: Number(r.value) || 0, filed: Number(r.value) || 0 });
+  }
   return {
-    history,
+    history, filed,
     years: Array.from(years.values()).sort((a, b) => b.year.localeCompare(a.year)),
     totals, plan: latest(rowsOf(tabs.withholding_plan || [])), accounts: latest(rowsOf(tabs.elections || [])), notes,
   };

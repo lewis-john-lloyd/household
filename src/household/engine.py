@@ -629,9 +629,11 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         if unchecked:
             _say(log, f"tax_check: {', '.join(map(str, unchecked))} shown as filed; their tax law is not on file, "
                       "so their lines are not recomputed")
-        past = taxhistory.history(facts)
+        past = taxhistory.history(facts).assign(basis="filed")
         sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_history"), past.assign(run_id=run_id))
         _say(log, f"tax_history: {past['year'].nunique()} filed years")
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "filed_lines"),
+                             taxhistory.filed_lines(facts).assign(run_id=run_id))
 
     documents = sheets.read_table(ledger, schema.table(schema.LEDGER, "source_documents"))
     sources = taxsources.report(documents)
@@ -696,6 +698,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)
             # last year too: as filed once its return is in return_facts, until then the year its stubs show
             details = [detail.assign(year=year)]
+            filed_years = set(facts.loc[facts["kind"] == "filed", "year"].astype(str)) if not facts.empty else set()
+            if str(year) not in filed_years:  # this year joins the history as projected, until its return is in
+                now = taxhistory.projected(year, detail[detail["scenario"] == "as is"]).assign(basis="projected")
+                before = taxhistory.history(facts).assign(basis="filed") if not facts.empty else now.iloc[0:0]
+                sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_history"),
+                                     pd.concat([before, now], ignore_index=True).assign(run_id=run_id))
             last = year - 1
             if last in tax.taxdata.PARAMS and projection.has_return(facts, last):
                 details.append(projection.as_filed(last, facts).assign(year=last))

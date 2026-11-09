@@ -60,3 +60,15 @@ test("the tax history comes oldest year first, each split's parts in order", () 
                     ["2001", "Kept after income tax", 81000], ["2001", "Federal income tax", 9000]]);
   assert.equal(taxes.taxPage({ tax_lines: LINES }).history.length, 0);
 });
+
+test("any filed year's lines come form by form in order, and a projected year in the history says so", () => {
+  const page = taxes.taxPage({
+    filed_lines: [["year", "form", "order", "line", "key", "label", "value", "run_id"],
+                  [2019, "Form 1040", 24, "24", "24", "Total tax", 16000, "r"], [2019, "Form 1040", 0, "1z", "1z", "Wages", 150000, "r"]],
+    tax_history: [["year", "jurisdiction", "split", "part", "order", "value", "total", "basis", "run_id"],
+                  [2019, "federal", "went", "Federal income tax", 4, 16000, 150000, "filed", "r"],
+                  [2020, "federal", "went", "Federal income tax", 4, 17000, 160000, "projected", "r"]],
+  });
+  assert.deepEqual(page.filed["2019"]["Form 1040"].map((l) => l.line), ["1z", "24"]);
+  assert.deepEqual(page.history.map((h) => [h.year, h.projected]), [["2019", false], ["2020", true]]);
+});

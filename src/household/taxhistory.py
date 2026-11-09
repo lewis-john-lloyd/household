@@ -104,3 +104,80 @@ def history(facts):
             add("wi", "went", [(KEPT, total - tax - credits), (CREDITS, credits), ("State income tax", tax)],
                 total)
     return pd.DataFrame(rows, columns=COLUMNS)
+
+
+INPUT_KEYS = ("taxable_interest", "ordinary_dividends", "capital_gain_short", "capital_gain_long", "adjustments",
+              "wi_income")
+
+
+def projected(year, lines):
+    """The history rows for a year not yet filed, from its projected return lines (projection.project's detail
+    as things stand): each line's key read as the filed line, and the projection's inputs among them (interest,
+    dividends, gains, adjustments, Wisconsin income) as the return's inputs."""
+    if lines is None or lines.empty:
+        return pd.DataFrame(columns=COLUMNS)
+    rows = []
+    for key, value in zip(lines["key"], lines["value"]):
+        rows.append({"year": str(year), "kind": "filed", "key": key, "person": "", "value": value})
+        if key in INPUT_KEYS:
+            rows.append({"year": str(year), "kind": "input", "key": key, "person": "", "value": value})
+    return history(pd.DataFrame(rows))
+
+
+# A filed return's lines as the forms number them: (form, line, key, label), in the order they read. A key a year
+# filed that isn't here is listed after its form's lines under its own name.
+FEDERAL = "Form 1040"
+FILED_LINES = [(FEDERAL, line, key, label) for line, key, label in (
+    ("1z", "1z", "Wages (W-2 box 1)"), ("2b", "2b", "Taxable interest"), ("3a", "3a", "Qualified dividends"),
+    ("3b", "3b", "Ordinary dividends"), ("4b", "4b", "IRA distributions, taxable"), ("5b", "5b", "Pensions, taxable"),
+    ("7", "7", "Capital gain or loss"), ("7", "7a", "Capital gain or loss"), ("8", "8", "Other income"),
+    ("9", "9", "Total income"), ("10", "10", "Adjustments to income"), ("11", "11", "Adjusted gross income"),
+    ("11", "11a", "Adjusted gross income"), ("12", "12", "Deductions"), ("12", "12e", "Deductions"),
+    ("13", "13", "Qualified business income deduction"), ("14", "14", "Total deductions"),
+    ("15", "15", "Taxable income"), ("16", "16", "Tax"), ("17", "17", "Additional taxes (Schedule 2)"),
+    ("18", "18", "Tax and additional taxes"), ("19", "19", "Child tax credit"), ("20", "20", "Other credits"),
+    ("21", "21", "Total credits"), ("22", "22", "Tax after credits"), ("23", "23", "Other taxes"),
+    ("24", "24", "Total tax"), ("25a", "25a", "Withheld, W-2s"), ("25b", "25b", "Withheld, 1099s"),
+    ("25c", "25c", "Withheld, other"), ("25d", "25d", "Withheld, total"), ("26", "26", "Estimated payments"),
+    ("", "refundable_credits", "Refundable credits"), ("31", "31", "Excess Social Security withheld"),
+    ("32", "32", "Other payments and refundable credits"), ("33", "33", "Total payments"),
+    ("34", "34", "Overpaid"), ("35a", "35a", "Refund"), ("36", "36", "Applied to next year's estimated tax"),
+    ("37", "37", "Amount owed"))]
+FILED_LINES += [("Wisconsin Form 1", "", key, label) for key, label in (
+    ("wi_income", "Wisconsin income"), ("wi_standard_deduction", "Standard deduction"), ("wi_exemptions", "Exemptions"),
+    ("wi_taxable", "Taxable income"), ("wi_tax", "Tax"), ("wi_itemized_credit", "Itemized deduction credit"),
+    ("wi_school_property_credit", "School property tax credit"), ("wi_married_couple_credit", "Married couple credit"),
+    ("wi_net_tax", "Net tax"), ("wi_withheld", "Wisconsin tax withheld"), ("wi_owe_or_refund", "Refund or amount owed"))]
+FILED_LINES += [("Wisconsin Form 1NPR", line, "wi1npr_" + line, label) for line, label in (
+    ("32", "Wisconsin share of income"), ("34c", "Standard deduction"), ("36c", "Exemptions"), ("37", "Taxable income"),
+    ("38", "Tax on all income"), ("39", "Tax on the Wisconsin share"), ("40", "Itemized deduction credit"),
+    ("43c", "School property tax credit"), ("45", "Tax after those credits"), ("48", "Married couple credit"),
+    ("52", "Net tax"), ("58", "Wisconsin tax withheld"))]
+FILED_LINES += [("Pennsylvania PA-40", line, "pa40_" + line, label) for line, label in (
+    ("9", "Total PA taxable income"), ("11", "Adjusted PA taxable income"), ("12", "Tax"), ("13", "PA tax withheld"),
+    ("22", "Resident credit"), ("23", "Other credits"), ("24", "Total payments and credits"))]
+FILED_COLUMNS = ["year", "form", "order", "line", "key", "label", "value"]
+PREFIXES = (("wi1npr_", "Wisconsin Form 1NPR"), ("wi_", "Wisconsin Form 1"), ("pa40_", "Pennsylvania PA-40"))
+
+
+def filed_lines(facts):
+    """FILED_COLUMNS: every filed year's lines as filed (return_facts), form by form, for the Taxes page."""
+    if facts is None or facts.empty:
+        return pd.DataFrame(columns=FILED_COLUMNS)
+    filed = facts[facts["kind"] == "filed"]
+    known = {key: (n, form, line, label) for n, (form, line, key, label) in enumerate(FILED_LINES)}
+    rows = []
+    for year, g in filed.groupby(filed["year"].astype(str)):
+        values = dict(zip(g["key"].astype(str), pd.to_numeric(g["value"], errors="coerce")))
+        for key, value in values.items():
+            if pd.isna(value):
+                continue
+            if key in known:
+                n, form, line, label = known[key]
+            else:
+                form = next((f for p, f in PREFIXES if key.startswith(p)), FEDERAL)
+                n, line, label = len(FILED_LINES), "", key
+            rows.append({"year": year, "form": form, "order": n, "line": line, "key": key, "label": label,
+                         "value": round(float(value), 4)})
+    out = pd.DataFrame(rows, columns=FILED_COLUMNS)
+    return out.sort_values(["year", "form", "order", "key"]).reset_index(drop=True)

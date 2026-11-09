@@ -52,3 +52,21 @@ def test_refundable_credits_lower_the_income_tax_paid_and_count_as_kept():
     assert (fed[("went", "Federal income tax")], fed[("went", taxhistory.CREDITS)]) == (13_000, 7_000)
     assert fed[("went", taxhistory.KEPT)] == 147_020 - 13_000 - 4_545 - 7_000
     assert abs(fed.loc["went"].sum() - 147_020) < 0.01
+
+
+def test_a_year_not_yet_filed_joins_the_history_from_its_projected_lines():
+    lines = pd.DataFrame([{"key": k, "value": v} for k, v in [
+        ("1z", 100_000), ("taxable_interest", 50), ("9", 100_050), ("11a", 100_050), ("12e", 30_000), ("15", 70_050),
+        ("16", 8_000), ("20", 0), ("23", 0), ("24", 8_000), ("wi_income", 100_050), ("wi_net_tax", 4_000)]])
+    h = taxhistory.projected(2001, lines).set_index(["jurisdiction", "split", "part"])["value"]
+    assert h[("federal", "came", "Interest & dividends")] == 50 and h[("federal", "went", "Federal income tax")] == 8_000
+    assert h[("federal", "went", "State income tax")] == 4_000 and h[("wi", "came", "Wisconsin income")] == 100_050
+
+
+def test_filed_lines_list_each_years_forms_in_the_order_they_read():
+    out = taxhistory.filed_lines(facts(ROWS))
+    fed = out[out["form"] == "Form 1040"]
+    assert fed["key"].tolist() == ["1z", "11a", "12e", "15", "16", "20", "23", "24"]
+    assert fed.set_index("key").at["11a", "label"] == "Adjusted gross income"
+    pa = out[out["form"] == "Pennsylvania PA-40"]
+    assert pa["line"].tolist() == ["9", "11", "12", "23"] and set(out["year"]) == {"2019"}

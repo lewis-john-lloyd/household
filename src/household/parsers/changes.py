@@ -100,7 +100,7 @@ WAS_FIELDS = {
 
 BUDGET = schema.table(schema.LEDGER, "budget_rules")
 RULES = schema.table(schema.LEDGER, "payee_rules")
-AMOUNT_RULES = ("fixed", "sinking_fund", "scheduled")  # rules that need an amount (the others fall back to one)
+AMOUNT_RULES = ("fixed", "billed", "sinking_fund", "scheduled")  # rules that need an amount (the others fall back to one)
 
 
 def sniff(text):

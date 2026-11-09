@@ -55,7 +55,8 @@ LEDGER = (
     # one row per budget line per change (see budget.py); scheduled rows are one-off amounts in their month
     Table("budget_rules", ("line", "effective", "category", "account", "priority", "rule", "amount", "per",
                            "note"),
-          {"rule": ("fixed", "seasonal", "trailing", "lookback", "sinking_fund", "recurring", "scheduled", "end"),
+          {"rule": ("fixed", "billed", "seasonal", "trailing", "lookback", "sinking_fund", "recurring", "scheduled",
+                    "end"),
            "priority": ("high", "medium", "low"),
            "per": ("monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually")}),
     Table("allocation_targets", ("effective", "node", "parent", "weight")),
@@ -106,6 +107,11 @@ LEDGER = (
     Table("property_values", ("as_of", "property_id", "source", "value", "note", "doc_id"),
           {"source": ("zillow", "redfin", "trulia", "county_assessed", "county_fair_market", "appraisal", "hand",
                       "legacy")}),
+    # a home's property tax bill for a tax year (the county's parcel page): its assessment, the mill rate, the
+    # taxes, the credits, the specials (charges on the bill that are not tax) and what was due
+    Table("property_taxes", ("tax_year", "property_id", "assessed", "mill_rate", "total_taxes", "lottery_credit",
+                             "first_dollar_credit", "school_levy_credit", "specials", "net_taxes", "amount_due",
+                             "doc_id")),
     # work done on a home: capital adds to basis, a repair doesn't, an energy_credit improvement adds its cost
     # less the credit claimed for it
     Table("improvements", ("date", "property_id", "description", "kind", "cost", "credit", "receipt", "note",
@@ -193,6 +199,10 @@ REPORTS = (
     # each home's numbers (house.py): basis, value, loans, equity and what a sale would net
     Table("property_summary", ("property_id", "order", "key", "label", "value", "as_of", "note", "run_id")),
     Table("home_values", ("property_id", "as_of", "source", "value", "note", "run_id")),
+    # each home's tax by year: as billed, and estimated for a year assessed but not yet billed (house.py)
+    Table("home_taxes", ("property_id", "tax_year", "assessed", "mill_rate", "total_taxes", "credits", "specials",
+                         "amount_due", "basis", "run_id"),
+          {"basis": ("billed", "estimated")}),
     Table("home_improvements", ("property_id", "date", "description", "kind", "cost", "credit", "basis_added",
                                 "receipt", "note", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",

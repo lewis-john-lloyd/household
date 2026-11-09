@@ -19,6 +19,9 @@ priority, and a rule:
                 October 2026: June to September 2026), for spending that
                 follows recent habits more than the season; amount per `per`
                 is the fallback while there is no recent history
+  billed        amount per `per` (quarterly, semi_annually, annually) in the months a bill comes: the month of
+                `effective` (a bill's month) and every period after it, nothing between, so a quarterly
+                bill's month, quarter and year all compare with what was paid
   sinking_fund  amount per `per` (usually annually) set aside each month, with a
                 balance: what was set aside since the line began less what the
                 category spent
@@ -124,8 +127,29 @@ def targets(rules, actuals, through, recurring=None):
     return pd.DataFrame(out, columns=TARGET_COLUMNS).sort_values(["month", "category", "line"]).reset_index(drop=True)
 
 
+BILL_MONTHS = {"monthly": 1, "quarterly": 3, "semi_annually": 6, "annually": 12}
+
+
+def _billed(state, month):
+    """A billed line's target in month: the whole amount in a bill's month, else nothing."""
+    per = str(state.get("per", "")).strip()
+    amount = _amount(state)
+    if np.isnan(amount):
+        return None, "billed: no amount"
+    if per not in BILL_MONTHS:
+        value, why = _per_month(state)
+        return value, f"billed: {why} (a {per or 'blank'} bill has no month of its own, so it is spread)"
+    start = str(state.get("effective", ""))[:7]
+    gap = (pd.Period(month, freq="M") - pd.Period(start, freq="M")).n
+    if gap % BILL_MONTHS[per] == 0:
+        return amount, f"billed: {amount:.2f} {per}, due this month"
+    return 0.0, f"billed: {amount:.2f} {per}, not due this month"
+
+
 def _rule_target(state, month, spend, recurring=None):
     rule = state["rule"]
+    if rule == "billed":
+        return _billed(state, month)
     if rule == "recurring":
         expected, n = (recurring or {}).get((str(state["category"]).strip(), month), (0.0, 0))
         allowance, _ = _per_month(state) if str(state.get("amount", "")).strip() else (0.0, "")

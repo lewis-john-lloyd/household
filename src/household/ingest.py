@@ -96,6 +96,19 @@ def _named(word, file_name):
                                     file_name.lower()) is not None
 
 
+def named_accounts(accounts, parameters):
+    """The accounts table with each account's new name (the account_renamed:<id> setting) as renamed_to, so a
+    file named with either name finds it. The ledger keeps writing the id the account has always had."""
+    from . import settings
+    renamed = {}
+    if parameters is not None and len(parameters):
+        p = parameters[parameters["jurisdiction"].astype(str) == "household"]
+        for key in set(p["key"].astype(str)):
+            if key.startswith(settings.RENAME_PREFIX):
+                renamed[key[len(settings.RENAME_PREFIX):]] = settings.value(parameters, key).strip()
+    return accounts.assign(renamed_to=accounts["account_id"].astype(str).map(lambda a: renamed.get(a, "")))
+
+
 def resolve_account(hint, file_name, accounts):
     """The accounts row a bank download belongs to.
 
@@ -110,6 +123,7 @@ def resolve_account(hint, file_name, accounts):
     hint = hint or (number.group(1)[-4:] if number else "")
     by_hint = [a for a in rows if hint and _last4(a.get("last4", "")) == _last4(hint)]
     by_name = [a for a in rows if _named(str(a["account_id"]), file_name)
+               or _named(str(a.get("renamed_to", "") or ""), file_name)
                or _named(_last4(a.get("last4", "")), file_name)]
     if len(by_hint) == 1:
         return by_hint[0]

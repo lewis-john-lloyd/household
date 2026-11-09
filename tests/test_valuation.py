@@ -148,3 +148,51 @@ def test_an_account_the_legacy_workbook_stops_listing_holds_nothing_until_its_ne
     assert on(out, "2001-02-28", "s_ira").empty and on(out, "2001-03-31", "s_ira").empty
     assert on(out, "2001-04-10", "s_ira")[["symbol", "value"]].values.tolist() == [["cash", 3]]  # its funds stay ended
     assert len(on(out, "2001-03-31", "j_tax"))  # listed in the snapshot's second date
+
+
+GAP_ACCOUNTS = pd.DataFrame([{"account_id": "a_plan", "owner": "alex", "type": "workplace_plan",
+                              "tax_treatment": "pre_tax", "closed": ""}])
+GAP_SECURITIES = pd.DataFrame([{"symbol": "S&P 500 Index", "asset_class": "SDT"}, {"symbol": "cash", "asset_class": "BA"}])
+
+
+def proxy_prices(*closes):
+    return pd.DataFrame([{"symbol": "ACMEX", "date": d, "priced_date": d, "close": c} for d, c in closes])
+
+
+def gap(holdings, prices, today="2001-06-15", proxies=None):
+    out, notes = v.values(GAP_ACCOUNTS, pd.DataFrame(holdings), pd.DataFrame(), prices, GAP_SECURITIES, today,
+                          proxies=proxies)
+    return out.set_index("date")["value"].groupby(level=0).sum().round(2).to_dict(), out, notes
+
+
+def test_a_plan_fund_follows_its_stand_in_between_statements_and_a_stale_account_is_warned():
+    held = [row("2001-01-31", "a_plan", "S&P 500 Index", 10, 100), row("2001-01-31", "a_plan", "cash", "", 5)]
+    prices = proxy_prices(("2001-01-31", 10), ("2001-02-28", 11), ("2001-03-31", 12))
+    total, out, notes = gap(held, prices, proxies={"s_p_500_index": "ACMEX"})
+    assert total["2001-02-28"] == 115 and total["2001-03-31"] == 125  # cash stays as read
+    assert set(out.loc[out["symbol"] == "S&P 500 Index", "basis"]) == {"read", "tracked"}
+    assert not any("last read" in n for n in notes)
+    _, _, notes = gap(held, prices, today="2001-09-15", proxies={"s_p_500_index": "ACMEX"})
+    assert any("a_plan was last read 2001-01-31" in n and "moved with its funds' prices" in n for n in notes)
+    # without the setting it stays as read
+    total, _, _ = gap(held, prices)
+    assert total["2001-03-31"] == 105
+
+
+def test_between_two_readings_the_values_climb_to_the_next_one_instead_of_jumping():
+    held = [row("2001-01-31", "a_plan", "S&P 500 Index", 10, 100), row("2001-04-30", "a_plan", "S&P 500 Index", 12, 150)]
+    total, out, _ = gap(held, proxy_prices())  # no closes at all: a steady rate between them
+    steps = [total[d] for d in ("2001-01-31", "2001-02-28", "2001-03-31", "2001-04-30")]
+    assert steps[0] == 100 and steps[-1] == 150 and steps[0] < steps[1] < steps[2] < steps[3]
+    assert steps[1] == round(100 * 1.5 ** (28 / 89), 2)
+    assert set(out.loc[out["date"].isin(["2001-02-28", "2001-03-31"]), "basis"]) == {"bridged"}
+    # with the stand-in's closes, the market's path and then the rest spread over the gap
+    prices = proxy_prices(("2001-01-31", 10), ("2001-02-28", 8), ("2001-03-31", 11), ("2001-04-30", 12))
+    total, _, _ = gap(held, prices, proxies={"s_p_500_index": "ACMEX"})
+    assert total["2001-02-28"] == round(100 * 0.8 * 1.25 ** (28 / 89), 2) and total["2001-04-30"] == 150
+
+
+def test_a_reading_far_off_the_markets_path_stays_a_jump():
+    held = [row("2001-01-31", "a_plan", "S&P 500 Index", 10, 100), row("2001-04-30", "a_plan", "S&P 500 Index", 40, 400)]
+    total, _, _ = gap(held, proxy_prices())
+    assert total["2001-03-31"] == 100 and total["2001-04-30"] == 400  # a rollover in, not growth

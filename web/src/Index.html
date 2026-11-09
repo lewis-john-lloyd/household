@@ -3588,6 +3588,7 @@
         d.accounts.forEach(function (a) {
           var name = el("span", a.account);
           if (a.carried) name.appendChild(el("span", "carried", "tag"));
+          if (a.tracked) name.appendChild(el("span", "estimated from prices", "tag"));
           ac.row([name, ownerName(a.owner || "joint"), PART_NAMES[a.bucket] || a.bucket, money.format(a.value)], "",
                  [a.account.toLowerCase(), ownerName(a.owner || "joint").toLowerCase(), (PART_NAMES[a.bucket] || a.bucket).toLowerCase(), a.value]);
         });

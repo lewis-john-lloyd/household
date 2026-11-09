@@ -21,7 +21,14 @@ a date:
      mix; either way it splits the funds between pre-tax and Roth in proportion to its sources.
 
 An account closed on or before the date holds nothing. Each row says how its value was found (basis): read,
-priced, rolled (activity since the reading), carried (the value as read), scaled (to a newer statement).
+priced, rolled (activity since the reading), carried (the value as read), scaled (to a newer statement),
+tracked (moved with prices since the reading), bridged (and toward the next reading).
+
+Between readings, a value carried as read moves with the market (fill_gaps): a fund with closes of its own, or
+of the public fund the price_proxy:<symbol> setting names for it, follows them from its reading (tracked); and
+when a later reading of the account exists, the account's values also close the gap to it a little each month
+(bridged), so the history climbs to the next reading rather than sitting flat and jumping. An account whose
+value today rests on a reading more than six months old is warned about.
 
 Every row carries the account's wrapper (401k, ira, hsa, 529, ibonds, taxable), its tax bucket and its owner.
 """
@@ -231,7 +238,7 @@ def _positions(positions, activity, prices, klass, day, base, partial=frozenset(
             shares = value
         out.append({**base, "symbol": symbol, "source": r["source"], "asset_class": cls,
                     "shares": round(shares, 6) if shares is not None else "", "price": price,
-                    "value": round(value, 2), "basis": basis})
+                    "value": round(value, 2), "basis": basis, READ: r["as_of"]})
     funds = held[held["kind"] == "fund"] if len(held) else held
     fund_at = funds["as_of"].max() if len(funds) else ""
     if fund_at:  # funds bought since the fund reading join in from activity alone
@@ -287,7 +294,7 @@ def _with_statement(out, totals, fund_at, day, base, positions_on):
         then = sum(r["value"] for r in positions_on(stated_on))
         if not out or then <= 0:  # no funds known: the statement's sources are the account, as stated
             return [{**base, "symbol": "", "source": src, "asset_class": "", "shares": "", "price": "",
-                     "value": round(float(v), 2), "basis": "read" if stated_on == day else "carried"}
+                     "value": round(float(v), 2), "basis": "read" if stated_on == day else "carried", READ: stated_on}
                     for src, v in zip(stated["source"], amounts) if v]
         # the funds give only the mix: one row per fund (an older reading's sources aside), scaled to the statement
         merged = {}
@@ -319,9 +326,9 @@ def partial_docs(documents):
     return frozenset(documents.loc[parser.isin(PARTIAL_PARSERS), "doc_id"].astype(str).str.strip())
 
 
-def values(accounts, holdings, activity, prices, securities, today, dates=None, partial=frozenset()):
+def values(accounts, holdings, activity, prices, securities, today, dates=None, partial=frozenset(), proxies=None):
     """COLUMNS for every investment account on each valuation date, and notes. partial: the ids of partial
-    documents (partial_docs)."""
+    documents (partial_docs); proxies: {symbol key: ticker} from the price_proxy settings (fill_gaps)."""
     notes = []
     if holdings is None or holdings.empty or accounts is None or accounts.empty:
         return pd.DataFrame(columns=COLUMNS), ["valuation: no holdings yet"]
@@ -348,6 +355,10 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
         acts = a[a["account_id"] == acct["account_id"]]
         for day in dates:
             rows += account_on(acct, mine, acts, priced, klass, day, partial, gone.get(acct["account_id"], ()))
+    out = fill_gaps(pd.DataFrame(rows, columns=COLUMNS + [READ]).fillna({READ: ""}), h, priced, klass, proxies or {},
+                    partial)
+    notes += stale(out, today)
+    rows = out.drop(columns=[READ]).to_dict("records")
     unknown = sorted(set(h["account_id"]) - set(accounts["account_id"].astype(str).str.strip()))
     if unknown:
         notes.append(logs.warn("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown)))
@@ -358,6 +369,101 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
     if blank:
         notes.append(logs.warn(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank)))
     return out, notes
+
+
+READ = "_read"  # each row's reading date, while values() works; not a column of investment_values
+TRACKED, BRIDGED = "tracked", "bridged"
+BRIDGE_LIMITS = (0.5, 2.0)  # a next reading this far from the market's path is a different account, not a gap
+STALE_DAYS = 183
+
+
+def _factor(symbol, since, day, prices, proxies):
+    """How much the market moved a fund from since to day: its own closes, else its stand-in's (price_proxy),
+    or None when neither has a close on or before both dates."""
+    for s in (symbol, proxies.get(settings.symbol_key(symbol), "") if symbol else ""):
+        if not s:
+            continue
+        a, b = prices.on(s, since), prices.on(s, day)
+        if a and b:
+            return b / a
+    return None
+
+
+def proxies(params):
+    """{symbol key: ticker} from the price_proxy:<symbol key> settings."""
+    if params is None or not len(params):
+        return {}
+    p = params[params["jurisdiction"].astype(str) == "household"]
+    return {k[len(settings.PROXY_PREFIX):]: settings.value(params, k).strip()
+            for k in set(p["key"].astype(str)) if k.startswith(settings.PROXY_PREFIX) and settings.value(params, k).strip()}
+
+
+def fill_gaps(out, holdings, prices, klass, proxies, partial=frozenset()):
+    """Values carried from an old reading, moved over the gap to the next one (basis tracked or bridged).
+
+    A carried row's value is what a reading said weeks or years before. A fund (not cash) with month-end
+    closes of its own or of its stand-in moves with them from the reading's date (tracked). When everything an
+    account holds on a date is carried from one reading and a later reading of the account exists, its rows
+    also take a steady share of the difference between that reading and where the market alone would have
+    taken them (contributions, fees, a fund without closes), so the values arrive at the next reading
+    instead of jumping to it (bridged). A next reading more than twice or under half the market's path is
+    left as a jump: money moved in or out at once."""
+    if out.empty:
+        return out
+    h = holdings[~holdings["doc_id"].isin(partial)] if len(holdings) else holdings
+    read = (h.assign(v=pd.to_numeric(h["value"], errors="coerce").fillna(0.0))
+            .groupby(["account_id", "as_of"])["v"].sum()) if len(h) else pd.Series(dtype=float)
+    next_reading = {}
+    for (account, day), total in read.items():
+        next_reading.setdefault(account, []).append((day, total))
+    out = out.copy()
+    for (account, day), idx in out.groupby(["account_id", "date"]).groups.items():
+        g = out.loc[idx]
+        carried = g["basis"] == "carried"
+        if not carried.any():
+            continue
+        whole = bool(carried.all()) and g[READ].nunique() == 1
+        since = str(g[READ].iloc[0])
+        later = [(d, t) for d, t in sorted(next_reading.get(account, [])) if d > since] if whole else []
+        factors = {}
+        for i in g.index[carried.values]:
+            sym = str(out.at[i, "symbol"])
+            cash = is_cash(sym, klass.get(sym, "")) or not sym
+            factors[i] = None if cash else _factor(sym, str(out.at[i, READ]), day, prices, proxies)
+        bridge = 1.0
+        if later and since:
+            then, total = later[0]
+            path = 0.0
+            for i in g.index:
+                sym = str(out.at[i, "symbol"])
+                f = None if is_cash(sym, klass.get(sym, "")) or not sym else _factor(sym, since, then, prices, proxies)
+                path += float(out.at[i, "value"]) * (f or 1.0)
+            ratio = total / path if path > 0 else 0.0
+            if BRIDGE_LIMITS[0] <= ratio <= BRIDGE_LIMITS[1]:
+                span = (date.fromisoformat(then) - date.fromisoformat(since)).days
+                gone = (date.fromisoformat(day) - date.fromisoformat(since)).days
+                bridge = ratio ** (gone / span) if span > 0 else 1.0
+        for i, f in factors.items():
+            if f is None and bridge == 1.0:
+                continue
+            out.at[i, "value"] = round(float(out.at[i, "value"]) * (f or 1.0) * bridge, 2)
+            out.at[i, "basis"] = BRIDGED if bridge != 1.0 else TRACKED
+    return out
+
+
+def stale(out, today):
+    """A warning for each account whose value today rests on a reading over STALE_DAYS old."""
+    if out.empty:
+        return []
+    now = out[out["date"] == today]
+    lines = []
+    for account, g in now.groupby("account_id"):
+        newest = max(str(r) for r in g[READ] if str(r)) if any(str(r) for r in g[READ]) else ""
+        if newest and (date.fromisoformat(today) - date.fromisoformat(newest)).days > STALE_DAYS:
+            how = "moved with its funds' prices since" if (g["basis"] == TRACKED).any() else "carried as read"
+            lines.append(logs.warn(f"valuation: {account} was last read {newest}; its value is {how}: add a statement "
+                                   "or download to update it"))
+    return lines
 
 
 def split_by_owner(df, people, value="value"):

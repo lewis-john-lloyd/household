@@ -348,8 +348,42 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     return result
 
 
+# accounts renamed by the account_renamed:<old id> setting: the ledger keeps the id each row was written with
+# (so a document read again matches what it wrote before), and compute reads every account column under the new
+# name. Set by compute_all from the parameters before anything else is read.
+_RENAMED = {}
+ACCOUNT_COLUMNS = ("account_id", "account")
+
+
+def renamed_accounts(parameters):
+    """{old id: new id} from the account_renamed:<old> settings, and a note for each one that can't be used."""
+    out, notes = {}, []
+    if parameters is None or not len(parameters):
+        return out, notes
+    p = parameters[parameters["jurisdiction"].astype(str) == "household"]
+    for key in sorted(set(p["key"].astype(str))):
+        if not key.startswith(settings.RENAME_PREFIX):
+            continue
+        old, new = key[len(settings.RENAME_PREFIX):], settings.value(parameters, key).strip()
+        if not new:
+            continue
+        if not settings.ACCOUNT_ID.fullmatch(new):
+            notes.append(f"accounts: {key} = {new!r} isn't an account id (lower case, digits and _)")
+            continue
+        out[old] = new
+    if len(set(out.values())) < len(out):
+        notes.append("accounts: two account_renamed settings give the same new name: neither is used")
+        return {}, notes
+    return out, notes
+
+
 def _read(ledger, name):
-    return sheets.read_table(ledger, schema.table(schema.LEDGER, name))
+    df = sheets.read_table(ledger, schema.table(schema.LEDGER, name))
+    if _RENAMED and len(df):
+        for column in ACCOUNT_COLUMNS:
+            if column in df.columns:
+                df[column] = df[column].map(lambda a: _RENAMED.get(str(a), a))
+    return df
 
 
 def _books(ledger):
@@ -466,7 +500,8 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
     securities = _read(ledger, "securities")
     vals, notes = valuation.values(accounts, holdings, activity, _read(ledger, "prices"), securities, today,
-                                   partial=valuation.partial_docs(_read(ledger, "source_documents")))
+                                   partial=valuation.partial_docs(_read(ledger, "source_documents")),
+                                   proxies=valuation.proxies(params))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "investment_values"), vals.assign(run_id=run_id))
     now = vals[vals["date"] == today] if len(vals) else vals
     _say(log, f"investments: {len(now)} positions in {now['account_id'].nunique() if len(now) else 0} accounts worth "
@@ -619,6 +654,21 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger, reports, _ = bootstrap(session, folder_id)
+    _RENAMED.clear()
+    renames, problems = renamed_accounts(sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters")))
+    accounts_now = set(sheets.read_table(ledger, schema.table(schema.LEDGER, "accounts"))["account_id"].astype(str))
+    for old, new in list(renames.items()):
+        if old not in accounts_now:
+            problems.append(f"accounts: account_renamed:{old} names no account")
+            del renames[old]
+        elif new in accounts_now:
+            problems.append(f"accounts: account_renamed:{old} = {new}, but {new} is already an account")
+            del renames[old]
+    _RENAMED.update(renames)
+    for line in problems:
+        _say(log, line, "WARN")
+    if renames:
+        _say(log, "accounts: read as renamed: " + ", ".join(f"{o} as {n}" for o, n in sorted(renames.items())))
 
     books = _books(ledger)
     txns, effective, paired, lonely = books["txns"], books["effective"], books["paired"], books["lonely"]
@@ -779,7 +829,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, "filed_lines"),
                              taxhistory.filed_lines(facts).assign(run_id=run_id))
 
-    documents = sheets.read_table(ledger, schema.table(schema.LEDGER, "source_documents"))
+    documents = _read(ledger, "source_documents")
     sources = taxsources.report(documents)
     sources["run_id"] = run_id
     sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_sources"), sources)

@@ -43,6 +43,10 @@ SETTINGS = {
                            "for what a sale would net (default 0.06)",
     "wash_sale_symbols": "The symbols whose losses are checked for wash sales, separated by commas (default: the "
                          "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
+    "account_renamed": "An account's new name (account_renamed:<its id> = the new id): the views and reports show "
+                       "the new one, and a file named with either one finds the account",
+    "price_proxy": "A public fund a plan's fund tracks (price_proxy:<the fund's symbol, lower case, other characters "
+                   "as _> = its ticker, such as VFIAX), so the fund's value between statements moves with it",
     "birth_date": "A person's birth date, YYYY-MM-DD (birth_date:<person>), for the retirement plan; their Social "
                   "Security statement gives it too",
     "social_security_claim_age": "The age a person claims Social Security at, 62 to 70 "
@@ -89,6 +93,16 @@ SETTINGS = {
 }
 
 LINKS = ("views_url", "payroll_url", "benefits_url", "fsa_claims_url")
+RENAME_PREFIX = "account_renamed:"
+ACCOUNT_ID = re.compile(r"[a-z][a-z0-9_]{0,40}")
+PROXY_PREFIX = "price_proxy:"
+
+
+def symbol_key(symbol):
+    """A symbol as a setting can name it: lower case, every other character _ ("S&P 500 Index" is s_p_500_index)."""
+    return re.sub(r"[^a-z0-9]+", "_", str(symbol).lower()).strip("_")
+
+
 NUMBERS = ("target_refund", "planned_supplemental_rate", "withholding_tolerance", "social_security_claim_age",
            "social_security_monthly", "social_security_cut", "social_security_cut_from", "retirement_year",
            "retirement_success_target", "retirement_plan_to_age", "retirement_stock_share", "retirement_inflation",
@@ -226,6 +240,10 @@ def check(params):
             out.append((key, v, sender_problem(v)))
         elif base == "receipt_subject" and subject_problem(v):
             out.append((key, v, subject_problem(v)))
+        elif base == "account_renamed" and not ACCOUNT_ID.fullmatch(v):
+            out.append((key, v, "is not an account id (lower case letters, digits and _)"))
+        elif base == "price_proxy" and not re.fullmatch(r"[A-Z0-9.:^-]{1,20}", v):
+            out.append((key, v, "is not a ticker (VFIAX, NYSEARCA:BND)"))
         elif base == "birth_date":
             try:
                 date.fromisoformat(v)

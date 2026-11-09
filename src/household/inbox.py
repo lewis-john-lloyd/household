@@ -458,9 +458,11 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
                 text = to_text(f["name"], f.get("mimeType", ""), data, all_pages=True)
             result = parser.parse(text)
         if "transactions" in result.tables:  # a bank download: find its account
-            ingest.finish_bank_rows(result, f["name"], ledger_tables.read("accounts"), received_at)
+            ingest.finish_bank_rows(result, f["name"], ingest.named_accounts(
+                ledger_tables.read("accounts"), ledger_tables.read("parameters")), received_at)
         if "investment_activity" in result.tables:  # an investment account's history: find its account
-            ingest.finish_investment_rows(result, f["name"], ledger_tables.read("accounts"))
+            ingest.finish_investment_rows(result, f["name"], ingest.named_accounts(
+                ledger_tables.read("accounts"), ledger_tables.read("parameters")))
         if result.check is not None:  # rows that must fit the ledger as it stands (a change set)
             result.check(ledger_tables.read)
     except ParseError as e:

@@ -8,7 +8,7 @@
 interface Amount { key: string; label: string; value: number }
 
 interface AccountValue {
-  account: string; owner: string; wrapper: string; bucket: string; value: number; carried: boolean;
+  account: string; owner: string; wrapper: string; bucket: string; value: number; carried: boolean; tracked: boolean;
 }
 
 interface FundValue { symbol: string; assetClass: string; value: number; accounts: string[] }
@@ -159,9 +159,10 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
     const v = num(r.value);
     byBucket[r.bucket] = (byBucket[r.bucket] || 0) + v;
     const key = r.account_id + "\u0000" + r.bucket;
-    const a = byAccount.get(key) || { account: r.account_id, owner: r.owner, wrapper: r.wrapper, bucket: r.bucket, value: 0, carried: false };
+    const a = byAccount.get(key) || { account: r.account_id, owner: r.owner, wrapper: r.wrapper, bucket: r.bucket, value: 0, carried: false, tracked: false };
     a.value += v;
     a.carried = a.carried || r.basis === "carried";
+    a.tracked = a.tracked || r.basis === "tracked";  // an old reading moved with prices since
     byAccount.set(key, a);
     const symbol = r.symbol || "(" + r.account_id + " total)";
     const f = byFund.get(symbol) || { symbol, assetClass: r.asset_class, value: 0, accounts: [] };

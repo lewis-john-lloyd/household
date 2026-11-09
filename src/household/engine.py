@@ -420,7 +420,8 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     accounts, params = books["accounts"], books["parameters"]
     holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
     securities = _read(ledger, "securities")
-    vals, notes = valuation.values(accounts, holdings, activity, _read(ledger, "prices"), securities, today)
+    vals, notes = valuation.values(accounts, holdings, activity, _read(ledger, "prices"), securities, today,
+                                   partial=valuation.partial_docs(_read(ledger, "source_documents")))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "investment_values"), vals.assign(run_id=run_id))
     now = vals[vals["date"] == today] if len(vals) else vals
     _say(log, f"investments: {len(now)} positions in {now['account_id'].nunique() if len(now) else 0} accounts worth "

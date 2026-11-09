@@ -3,10 +3,15 @@
 Readings (holdings) are anchors; activity (investment_activity) and prices fill in between them. For an account on
 a date:
 
-  1. Positions come from its latest reading on or before the date, cash and funds apart: a reading that lists
-     only cash (a cash history) updates the cash and leaves the funds, and one that lists only funds leaves the
-     cash. Within one document, a fund's latest row counts even when another fund's is later (a history that
-     ends each fund on its own last trade). A legacy reading is a complete picture on its date.
+  1. Positions come from its latest reading on or before the date. A reading is complete (what it doesn't
+     list, the account no longer holds) unless it comes from a partial document: a history that gives only the
+     cash or only the funds (PARTIAL_PARSERS). Past the latest complete reading, partial ones count cash and funds
+     apart: a cash history updates the cash and leaves the funds, a fund history leaves the cash, and within one
+     such document a fund's latest row counts even when another fund's is later (a history that ends each fund
+     on its own last trade).
+     The legacy workbook's readings are complete across the whole household: an account it stops listing held
+     nothing from then until its next reading. Its readings within LEGACY_SNAPSHOT_DAYS of each other are one
+     snapshot (the workbook was sometimes updated an account at a time).
   2. Fund shares roll forward with the activity after the reading (buys, sales, reinvested dividends,
      exchanges), and a fund bought since the reading joins in. Cash is carried as read.
   3. Shares are priced at the last close on or before the date. A fund with no close since its reading keeps
@@ -40,6 +45,9 @@ BUCKETS = ("401k_pretax", "401k_roth", "ira_pretax", "ira_roth", "hsa", "529", "
 BUCKET_NAMES = {"401k_pretax": "401(k) pre-tax", "401k_roth": "401(k) Roth", "ira_pretax": "IRA pre-tax",
                 "ira_roth": "IRA Roth", "hsa": "HSA", "529": "529", "ibonds": "I-Bonds", "taxable": "Taxable",
                 "other": "Other"}
+# parsers whose readings give only part of an account: HealthEquity's cash history and its fund history
+PARTIAL_PARSERS = ("healthequity_cash", "healthequity")
+LEGACY_SNAPSHOT_DAYS = 30
 ROTH_WORDS = ("roth", "aftertax", "after_tax", "after-tax", "posttax", "post_tax")
 
 
@@ -143,12 +151,21 @@ def valuation_dates(holdings, today):
     return ends + ([today] if today not in ends else [])
 
 
-def _readings(rows, day, klass):
-    """The position rows in force on day: per kind (cash, fund), the latest reading, plus same-document rows of
-    funds that document last saw earlier (not for the legacy workbook, whose readings are each complete)."""
+def _readings(rows, day, klass, partial=frozenset(), gone=()):
+    """The position rows in force on day: those from the latest complete reading on (a date the legacy
+    workbook left the account out, in gone, is a complete reading of nothing), and of those, per kind (cash,
+    fund), the latest reading, plus a partial document's rows of funds it last saw earlier."""
     rows = rows[rows["as_of"] <= day]
     if rows.empty:
         return rows
+    ended = [g for g in gone if g <= day]
+    if ended:  # a legacy snapshot that left the account out is an empty reading
+        rows = rows[rows["as_of"] >= max(ended)]
+        if rows.empty:
+            return rows
+    complete = rows[~rows["doc_id"].isin(partial)]
+    if len(complete):
+        rows = rows[rows["as_of"] >= complete["as_of"].max()]
     kind = ["cash" if is_cash(s, klass.get(s, "")) else "fund" for s in rows["symbol"]]
     rows = rows.assign(kind=kind)
     keep = []
@@ -156,7 +173,7 @@ def _readings(rows, day, klass):
         latest = g["as_of"].max()
         now = g[g["as_of"] == latest]
         keep.append(now)
-        docs = set(now["doc_id"]) - {LEGACY_DOC}
+        docs = set(now["doc_id"]) & set(partial)
         if docs:
             more = g[g["doc_id"].isin(docs) & (g["as_of"] < latest)
                      & ~g["symbol"].isin(set(now["symbol"]))]
@@ -165,10 +182,34 @@ def _readings(rows, day, klass):
     return pd.concat(keep, ignore_index=True)
 
 
-def _positions(positions, activity, prices, klass, day, base):
+def legacy_gone(holdings):
+    """{account_id: [dates]}: each legacy snapshot's first date for an account the snapshot leaves out after
+    listing it before (holdings with as_of and doc_id cleaned)."""
+    legacy = holdings[holdings["doc_id"] == LEGACY_DOC]
+    if legacy.empty:
+        return {}
+    snapshots, last = [], None
+    for d in sorted(set(legacy["as_of"])):
+        if last is None or (date.fromisoformat(d) - date.fromisoformat(last)).days > LEGACY_SNAPSHOT_DAYS:
+            snapshots.append([d])
+        else:
+            snapshots[-1].append(d)
+        last = d
+    listed = legacy.groupby("as_of")["account_id"].agg(set).to_dict()
+    first = holdings.groupby("account_id")["as_of"].min().to_dict()
+    out = {}
+    for snap in snapshots:
+        there = set().union(*(listed[d] for d in snap))
+        for account, since in first.items():
+            if account not in there and since < snap[0]:
+                out.setdefault(account, []).append(snap[0])
+    return out
+
+
+def _positions(positions, activity, prices, klass, day, base, partial=frozenset(), gone=()):
     """The fund and cash rows on day from readings and activity (no statement applied), and the fund reading's
     date ("" when no fund has been read by then)."""
-    held = _readings(positions, day, klass)
+    held = _readings(positions, day, klass, partial, gone)
     out = []
     for r in held.to_dict("records"):
         symbol, cls = r["symbol"], klass.get(r["symbol"], "")
@@ -209,8 +250,9 @@ def _positions(positions, activity, prices, klass, day, base):
     return out, fund_at
 
 
-def account_on(account, holdings, activity, prices, klass, day):
-    """The rows for one account (an accounts record) on day. holdings and activity are that account's rows."""
+def account_on(account, holdings, activity, prices, klass, day, partial=frozenset(), gone=()):
+    """The rows for one account (an accounts record) on day. holdings and activity are that account's rows;
+    partial is the ids of partial documents and gone the dates the legacy workbook stopped listing it."""
     wrap, treatment = wrapper(account), account.get("tax_treatment", "")
     base = {"date": day, "account_id": account["account_id"], "owner": str(account.get("owner", "")).strip(),
             "wrapper": wrap}
@@ -219,10 +261,10 @@ def account_on(account, holdings, activity, prices, klass, day):
         return []
     totals = holdings[(holdings["symbol"] == "") & (holdings["source"] != "")]
     positions = holdings.drop(totals.index)
-    out, fund_at = _positions(positions, activity, prices, klass, day, base)
+    out, fund_at = _positions(positions, activity, prices, klass, day, base, partial, gone)
     if len(totals):
         out = _with_statement(out, totals, fund_at, day, base,
-                              lambda then: _positions(positions, activity, prices, klass, then, base)[0])
+                              lambda then: _positions(positions, activity, prices, klass, then, base, partial, gone)[0])
     for r in out:
         r["bucket"] = bucket(wrap, treatment, r["source"])
     return [r for r in out if abs(r["value"]) >= 0.005]
@@ -269,8 +311,17 @@ def _with_statement(out, totals, fund_at, day, base, positions_on):
     return split
 
 
-def values(accounts, holdings, activity, prices, securities, today, dates=None):
-    """COLUMNS for every investment account on each valuation date, and notes."""
+def partial_docs(documents):
+    """The ids of documents whose readings give only part of an account, from source_documents."""
+    if documents is None or documents.empty:
+        return frozenset()
+    parser = documents["parser"].astype(str).str.strip()
+    return frozenset(documents.loc[parser.isin(PARTIAL_PARSERS), "doc_id"].astype(str).str.strip())
+
+
+def values(accounts, holdings, activity, prices, securities, today, dates=None, partial=frozenset()):
+    """COLUMNS for every investment account on each valuation date, and notes. partial: the ids of partial
+    documents (partial_docs)."""
     notes = []
     if holdings is None or holdings.empty or accounts is None or accounts.empty:
         return pd.DataFrame(columns=COLUMNS), ["valuation: no holdings yet"]
@@ -285,6 +336,7 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None):
     a["date"] = a["date"].str[:10]
     klass, priced = classes(securities), Prices(prices)
     dates = dates or valuation_dates(h, today)
+    gone = legacy_gone(h)
     rows = []
     for acct in accounts.to_dict("records"):
         acct = {k: str(v).strip() for k, v in acct.items()}
@@ -295,14 +347,14 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None):
             continue
         acts = a[a["account_id"] == acct["account_id"]]
         for day in dates:
-            rows += account_on(acct, mine, acts, priced, klass, day)
+            rows += account_on(acct, mine, acts, priced, klass, day, partial, gone.get(acct["account_id"], ()))
     unknown = sorted(set(h["account_id"]) - set(accounts["account_id"].astype(str).str.strip()))
     if unknown:
         notes.append("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown))
     out = pd.DataFrame(rows, columns=COLUMNS)
     latest = out[out["date"] == out["date"].max()] if len(out) else out
     blank = sorted(set(latest.loc[(latest["asset_class"] == "") & (latest["symbol"] != "")
-                                  & (latest["wrapper"] != "529"), "symbol"]))
+                                  & ~latest["wrapper"].isin(("529", "ibonds")), "symbol"]))
     if blank:
         notes.append(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank))
     return out, notes

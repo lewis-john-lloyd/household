@@ -40,7 +40,7 @@ SECURITIES = pd.DataFrame([{"symbol": "ACMEX", "asset_class": "SDT"}, {"symbol":
 
 
 def values():
-    out, notes = v.values(ACCOUNTS, HOLDINGS, ACTIVITY, PRICES, SECURITIES, "2001-04-10")
+    out, notes = v.values(ACCOUNTS, HOLDINGS, ACTIVITY, PRICES, SECURITIES, "2001-04-10", partial={"c1"})  # a cash history
     return out, notes
 
 
@@ -122,3 +122,29 @@ def test_a_statement_newer_than_an_older_reading_by_source_sets_the_total_and_th
     assert jan[["bucket", "value"]].values.tolist() == [["401k_pretax", 66], ["401k_roth", 22]]
     apr = on(out, "2001-04-10", "a_plan").set_index("bucket")["value"]
     assert (apr["401k_pretax"], apr["401k_roth"]) == (round(75 * 14 / 13, 2), round(25 * 14 / 13, 2))
+
+
+def test_a_complete_reading_ends_what_it_doesnt_list_and_a_partial_one_leaves_the_other_kind():
+    held = pd.DataFrame([row("2001-01-12", "s_ira", "WILLX", 5, 50, "d1"), row("2001-01-12", "s_ira", "cash", "", 7, "d1"),
+                         row("2001-03-03", "s_ira", "cash", "", 9, "c1")])
+    complete, _ = v.values(ACCOUNTS, held, ACTIVITY, PRICES, SECURITIES, "2001-04-10")
+    assert on(complete, "2001-03-31", "s_ira")[["symbol", "value"]].values.tolist() == [["cash", 9]]
+    partial, _ = v.values(ACCOUNTS, held, ACTIVITY, PRICES, SECURITIES, "2001-04-10", partial={"c1"})
+    assert on(partial, "2001-03-31", "s_ira")[["symbol", "value"]].values.tolist() == [["cash", 9], ["WILLX", 52.5]]
+    docs = pd.DataFrame([{"doc_id": "c1", "parser": "healthequity_cash"}, {"doc_id": "d1", "parser": "ofx_invest"}])
+    assert v.partial_docs(docs) == {"c1"}
+
+
+def test_an_account_the_legacy_workbook_stops_listing_holds_nothing_until_its_next_reading():
+    legacy = "legacy:investments"
+    held = pd.DataFrame([
+        row("2001-01-12", "s_ira", "WILLX", 5, 50, legacy), row("2001-01-12", "s_ira", "cash", "", 7, legacy),
+        row("2001-01-12", "j_tax", "ACMEX", 2, 20, legacy),
+        row("2001-02-20", "a_plan", "ACMEX", 1, 10, legacy),  # one snapshot updated an account at a time:
+        row("2001-03-05", "j_tax", "ACMEX", 2, 20, legacy),   # s_ira is left out of both its dates
+        row("2001-04-02", "s_ira", "cash", "", 3, "c1")])
+    assert v.legacy_gone(held) == {"s_ira": ["2001-02-20"]}
+    out, _ = v.values(ACCOUNTS, held, ACTIVITY, PRICES, SECURITIES, "2001-04-10", partial={"c1"})
+    assert on(out, "2001-02-28", "s_ira").empty and on(out, "2001-03-31", "s_ira").empty
+    assert on(out, "2001-04-10", "s_ira")[["symbol", "value"]].values.tolist() == [["cash", 3]]  # its funds stay ended
+    assert len(on(out, "2001-03-31", "j_tax"))  # listed in the snapshot's second date

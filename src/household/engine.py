@@ -542,8 +542,13 @@ def _lots(ledger, reports, books, today, run_id, log):
     eq_acq, eq_sold, notes = lots.equity_lots(_read(ledger, "equity_vests"), _read(ledger, "equity_sales"), schedule,
                                               held, group_of)
     act_acq, act_sold = lots.activity_lots(activity, accounts, group_of, leave_out=plan)
+    named = [x.strip() for x in str(settings.value(books["parameters"], "wash_sale_symbols")).split(",") if x.strip()]
+    watched = named or sorted(plan)
     form, still, more = lots.build(pd.concat([eq_acq, act_acq], ignore_index=True),
-                                   pd.concat([eq_sold, act_sold], ignore_index=True), _read(ledger, "stock_splits"))
+                                   pd.concat([eq_sold, act_sold], ignore_index=True), _read(ledger, "stock_splits"),
+                                   wash_symbols=watched)
+    _say(log, f"lots: wash sales checked for {', '.join(watched) or 'no symbol'}"
+              + ("" if named else " (the stock plan's; the wash_sale_symbols setting names others)"))
     still = lots.priced(still, valuation.Prices(_read(ledger, "prices")), today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "form_8949"), form.assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "open_lots"), still.assign(run_id=run_id))

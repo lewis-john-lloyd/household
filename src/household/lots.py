@@ -6,7 +6,8 @@ its lot by grant and vest date, as the plan's records do; any other sale takes t
 Stock splits (stock_splits) restate every share count and price in today's shares, so a lot bought before a
 split and its replacement bought after it compare share for share; Form 8949 shows shares as of each sale.
 
-Wash sales (IRC 1091, IRS Publication 550). A sale at a loss is a wash to the extent that substantially
+Wash sales (IRC 1091, IRS Publication 550), for the symbols they are checked for (the stock plan's, unless
+the wash_sale_symbols setting names others). A sale at a loss is a wash to the extent that substantially
 identical shares (the same symbol, or the same `securities.wash_group`) were acquired within 30 days before or
 after it. For each lot sold at a loss, in the order the shares are sold:
 
@@ -194,8 +195,11 @@ def term(holding_from, sale_date):
     return "long_term" if end > _plus_year(start) else "short_term"
 
 
-def build(acquired, sold, splits=None):
-    """(form_8949, open_lots, notes) from acquired and sold frames (equity_lots, activity_lots)."""
+def build(acquired, sold, splits=None, wash_symbols=None):
+    """(form_8949, open_lots, notes) from acquired and sold frames (equity_lots, activity_lots). wash_symbols:
+    the symbols whose losses are checked for wash sales (their wash groups, that is); None checks every
+    symbol. A loss in any other symbol is taken as it is."""
+    watched = None if wash_symbols is None else set(wash_symbols)
     pieces, notes = [], []
     for r in acquired.sort_values(["acquired", "lot_id"], kind="stable").to_dict("records"):
         f = factor(splits, r["symbol"], r["acquired"])
@@ -243,7 +247,7 @@ def build(acquired, sold, splits=None):
             proceeds, basis = shares * each, shares * p["cost"]
             gain = proceeds - basis
             adjustment, replaced, lost = 0.0, [], False
-            if gain < -0.005:
+            if gain < -0.005 and (watched is None or p["symbol"] in watched or p["group"] in watched):
                 held = (date.fromisoformat(day) - date.fromisoformat(p["holding_from"])).days
                 lo = (date.fromisoformat(day) - timedelta(days=WINDOW_DAYS)).isoformat()
                 hi = (date.fromisoformat(day) + timedelta(days=WINDOW_DAYS)).isoformat()

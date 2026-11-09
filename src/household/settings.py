@@ -41,6 +41,8 @@ SETTINGS = {
                         "(default purchase_price)",
     "home_sale_cost_rate": "What selling a home would cost, as a fraction of the price (commission and closing), "
                            "for what a sale would net (default 0.06)",
+    "wash_sale_symbols": "The symbols whose losses are checked for wash sales, separated by commas (default: the "
+                         "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
     "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
                       "(receipt_sender:<store>); the receipt exporter reads only mail from these",
     "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "

@@ -177,3 +177,18 @@ def test_compute_writes_form_8949_and_the_open_lots(session):  # noqa: F811
     assert written[["lot_id", "account_id", "shares", "basis", "wash_added"]].values.tolist() == [
         ["vest:G1:2001-02-05", "brk", 1, 60, 20]]
     assert "lots 2001: short-term gain -20.00, long-term 0.00; wash sales disallowed 20.00" in said
+
+
+def test_wash_sales_are_checked_only_for_the_symbols_named():
+    accounts = pd.DataFrame([{"account_id": "brk", "owner": "alex", "type": "brokerage", "tax_treatment": "taxable"}])
+    activity = [{"account_id": "brk", "date": "2001-01-02", "kind": "buy", "symbol": "WILLX", "shares": 1, "price": 50,
+                 "value": 50, "amount": -50},
+                {"account_id": "brk", "date": "2001-02-01", "kind": "sell", "symbol": "WILLX", "shares": -1, "price": 40,
+                 "value": -40, "amount": 40},
+                {"account_id": "brk", "date": "2001-02-10", "kind": "buy", "symbol": "WILLX", "shares": 1, "price": 30,
+                 "value": 30, "amount": -30}]
+    acq, sold = lots.activity_lots(pd.DataFrame(activity), accounts)
+    form, _, _ = lots.build(acq, sold, wash_symbols=["ACME"])
+    assert (form.iloc[0]["code"], form.iloc[0]["gain"]) == ("", -10)  # WILLX isn't checked: the loss is taken
+    form, _, _ = lots.build(acq, sold)
+    assert (form.iloc[0]["code"], form.iloc[0]["gain"]) == ("W", 0)

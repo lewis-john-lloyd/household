@@ -18,6 +18,8 @@ BOUNDARIES = [
     engine.ingest_legacy_equity,
     engine.ingest_legacy_net_worth,
     ledgerio.read_ledger,
+    ledgerio.LedgerReading.of,
+    ledgerio.LedgerReading.apply,
     ledgerio.renamed_accounts,
     ledgerio.legacy_moves,
     ledgerio.activity_fixes,
@@ -39,7 +41,9 @@ BOUNDARIES = [
 
 def unannotated(fn):
     sig = inspect.signature(fn)
-    missing = [p for p, v in sig.parameters.items() if v.annotation is inspect.Parameter.empty]
+    missing = [
+        p for p, v in sig.parameters.items() if v.annotation is inspect.Parameter.empty and p not in ("self", "cls")
+    ]
     if sig.return_annotation is inspect.Signature.empty:
         missing.append("return")
     return missing

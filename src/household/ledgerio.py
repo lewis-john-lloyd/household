@@ -1,12 +1,13 @@
 """The ledger and Reports as every stage opens them, and the ledger as compute reads it.
 
-Each stage opens the two spreadsheets with bootstrap, which also forgets whatever an earlier compute in the
-same session read as renamed or moved, so ingest and the legacy imports always see the ledger as written.
-Compute then reads accounts under their new names (account_renamed), the old investments workbook's readings
-under the account they belong to (legacy_account), and investment activity as corrected
-(activity_corrections), all through read_ledger.
+read_ledger(ledger, name) reads a table as written. Compute reads it through a LedgerView instead: the same
+spreadsheet with a LedgerReading attached, which reads accounts under their new names (account_renamed), the
+old investments workbook's readings under the account they belong to (legacy_account), and investment
+activity as corrected (activity_corrections). The reading is worked out once from the ledger
+(LedgerReading.of) and travels with the view, so what a read returns depends only on what it is given.
 """
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,11 +43,6 @@ def new_run_id(now: datetime | None = None) -> str:
 
 def bootstrap(session: Session, folder_id: str) -> tuple[Spreadsheet, Spreadsheet, dict[str, Any]]:
     """Open or create the ledger and Reports spreadsheets and their declared tables."""
-    # every stage reads the ledger as written; compute alone reads accounts renamed or moved (compute_all sets
-    # them after this), so a stage run after compute in the same session doesn't see stale names
-    _RENAMED.clear()
-    _LEGACY_MOVED.clear()
-    _ACTIVITY_FIXES.clear()
     ledger, _ = sheets.open_or_create(session.sheets, sheets.LEDGER_TITLE, folder_id)
     reports, _ = sheets.open_or_create(session.sheets, sheets.REPORTS_TITLE, folder_id)
     created = {
@@ -56,13 +52,6 @@ def bootstrap(session: Session, folder_id: str) -> tuple[Spreadsheet, Spreadshee
     return ledger, reports, created
 
 
-_RENAMED: dict[str, str] = {}
-_LEGACY_MOVED: dict[
-    str, str
-] = {}  # {id the old investments workbook's readings were read under: the account they belong to}
-_ACTIVITY_FIXES: dict[
-    str, dict[str, str]
-] = {}  # {activity_id: {field: value}} from activity_corrections, the last row in force
 ACCOUNT_COLUMNS = ("account_id", "account")
 
 
@@ -131,17 +120,90 @@ def activity_fixes(corrections: Frame, activity: Frame) -> tuple[dict[str, dict[
     return out, notes
 
 
-def read_ledger(ledger: Spreadsheet, name: str) -> Frame:
-    df = sheets.read_table(ledger, schema.table(schema.LEDGER, name))
-    if _ACTIVITY_FIXES and name == "investment_activity" and len(df):
-        for i in df.index[df["activity_id"].astype(str).isin(_ACTIVITY_FIXES)]:
-            for f, v in _ACTIVITY_FIXES[str(df.at[i, "activity_id"])].items():
-                df.at[i, f] = v
-    if _LEGACY_MOVED and name == "holdings" and len(df):
-        legacy = df["doc_id"].astype(str) == legacy_investments.LEGACY_DOC
-        df.loc[legacy, "account_id"] = df.loc[legacy, "account_id"].map(lambda a: _LEGACY_MOVED.get(str(a), a))
-    if _RENAMED and len(df):
-        for column in ACCOUNT_COLUMNS:
-            if column in df.columns:
-                df[column] = df[column].map(lambda a: _RENAMED.get(str(a), a))
-    return df
+@dataclass(frozen=True)
+class LedgerReading:
+    """How compute reads the ledger: accounts renamed, old readings moved, activity corrected. Empty, it reads
+    the ledger as written."""
+
+    renamed: dict[str, str] = field(default_factory=dict)  # {old account id: new id}
+    legacy_moved: dict[str, str] = field(
+        default_factory=dict
+    )  # {id the old workbook's readings were read under: the account}
+    activity_fixes: dict[str, dict[str, str]] = field(default_factory=dict)  # {activity_id: {field: value}}
+
+    @classmethod
+    def of(cls, ledger: Spreadsheet) -> tuple["LedgerReading", list[str]]:
+        """The reading the ledger's settings and corrections ask for, and a note for each one that can't be used."""
+        parameters = read_ledger(ledger, "parameters")
+        accounts = set(read_ledger(ledger, "accounts")["account_id"].astype(str))
+        renames, problems = renamed_accounts(parameters)
+        moves, more = legacy_moves(parameters, accounts)
+        problems += more
+        fixes, more = activity_fixes(
+            read_ledger(ledger, "activity_corrections"), read_ledger(ledger, "investment_activity")
+        )
+        problems += more
+        for old, new in list(renames.items()):
+            if old not in accounts:
+                problems.append(f"accounts: account_renamed:{old} names no account")
+                del renames[old]
+            elif new in accounts:
+                problems.append(f"accounts: account_renamed:{old} = {new}, but {new} is already an account")
+                del renames[old]
+        return cls(renames, moves, fixes), problems
+
+    def notes(self) -> list[str]:
+        """What this reading changes, for the run log."""
+        out = []
+        if self.renamed:
+            out.append(
+                "accounts: read as renamed: " + ", ".join(f"{o} as {n}" for o, n in sorted(self.renamed.items()))
+            )
+        if self.activity_fixes:
+            out.append(f"investment activity: {len(self.activity_fixes)} rows read as corrected (activity_corrections)")
+        if self.legacy_moved:
+            out.append(
+                "accounts: the old investments workbook's readings of "
+                + ", ".join(f"{o} read as {n}'s" for o, n in sorted(self.legacy_moved.items()))
+            )
+        return out
+
+    def apply(self, name: str, df: Frame) -> Frame:
+        """A table as read, changed the way this reading asks."""
+        if not len(df):
+            return df
+        if self.activity_fixes and name == "investment_activity":
+            for i in df.index[df["activity_id"].astype(str).isin(self.activity_fixes)]:
+                for f, v in self.activity_fixes[str(df.at[i, "activity_id"])].items():
+                    df.at[i, f] = v
+        if self.legacy_moved and name == "holdings":
+            legacy = df["doc_id"].astype(str) == legacy_investments.LEGACY_DOC
+            df.loc[legacy, "account_id"] = df.loc[legacy, "account_id"].map(lambda a: self.legacy_moved.get(str(a), a))
+        if self.renamed:
+            for column in ACCOUNT_COLUMNS:
+                if column in df.columns:
+                    df[column] = df[column].map(lambda a: self.renamed.get(str(a), a))
+        return df
+
+
+class LedgerView:
+    """The ledger spreadsheet with a LedgerReading attached: read_ledger on it reads the way the reading asks.
+    Compute only reads the ledger, so a view offers what reading needs (its title and its worksheets); a table
+    read with sheets.read_table directly comes back as written."""
+
+    def __init__(self, ledger: Spreadsheet, reading: LedgerReading):
+        self.ledger, self.reading = ledger, reading
+
+    @property
+    def title(self) -> str:
+        return self.ledger.title
+
+    def worksheet(self, name: str) -> Any:
+        return self.ledger.worksheet(name)
+
+
+def read_ledger(ledger: "Spreadsheet | LedgerView", name: str) -> Frame:
+    """A ledger table: as written, or, read through a LedgerView, the way its reading asks."""
+    if isinstance(ledger, LedgerView):
+        return ledger.reading.apply(name, sheets.read_table(ledger.ledger, schema.table(schema.LEDGER, name)))
+    return sheets.read_table(ledger, schema.table(schema.LEDGER, name))

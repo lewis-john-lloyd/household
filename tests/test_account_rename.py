@@ -6,6 +6,7 @@ import pytest
 
 from household import engine, ingest, ledgerio, settings
 from household.parsers.common import ParseError
+from test_engine import session  # noqa: F401  (the fixture)
 
 
 def params(**rows):
@@ -35,8 +36,9 @@ def test_compute_reads_every_account_column_under_the_new_name(monkeypatch):
         ]
     )
     monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: holdings.copy())
-    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_plan_old": "a_plan_acme"})
-    assert list(engine.read_ledger(None, "holdings")["account_id"]) == ["a_plan_acme", "acme_brokerage"]
+    view = ledgerio.LedgerView(None, ledgerio.LedgerReading(renamed={"a_plan_old": "a_plan_acme"}))
+    assert list(engine.read_ledger(view, "holdings")["account_id"]) == ["a_plan_acme", "acme_brokerage"]
+    assert list(engine.read_ledger(None, "holdings")["account_id"]) == ["a_plan_old", "acme_brokerage"]  # as written
 
 
 def test_a_file_named_with_the_new_name_finds_the_account_under_its_old_id():
@@ -70,20 +72,38 @@ def test_only_the_old_workbooks_readings_move_and_the_rest_take_the_accounts_new
         ]
     )
     monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: holdings.copy())
-    monkeypatch.setattr(ledgerio, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
-    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_ira": "a_ira_now"})
-    assert list(engine.read_ledger(None, "holdings")["account_id"]) == ["a_ira_rollover", "a_ira_now"]
-    assert list(engine.read_ledger(None, "accounts")["account_id"]) == ["a_ira_now", "a_ira_now"]  # only holdings move
+    reading = ledgerio.LedgerReading(renamed={"a_ira": "a_ira_now"}, legacy_moved={"a_ira": "a_ira_rollover"})
+    view = ledgerio.LedgerView(None, reading)
+    assert list(engine.read_ledger(view, "holdings")["account_id"]) == ["a_ira_rollover", "a_ira_now"]
+    assert list(engine.read_ledger(view, "accounts")["account_id"]) == ["a_ira_now", "a_ira_now"]  # only holdings move
 
 
-def test_every_stage_starts_from_the_ledger_as_written(monkeypatch):
-    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_ira": "a_ira_now"})
-    monkeypatch.setattr(ledgerio, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
-    monkeypatch.setattr(ledgerio.sheets, "open_or_create", lambda *a: (None, False))
-    monkeypatch.setattr(ledgerio.sheets, "ensure_tables", lambda *a: [])
-    session = type("S", (), {"sheets": None})()
-    engine.bootstrap(session, "folder")
-    assert ledgerio._RENAMED == {} and ledgerio._LEGACY_MOVED == {}
+def test_the_reading_is_worked_out_from_the_ledger_and_a_bad_setting_is_noted(monkeypatch):
+    tables = {
+        "parameters": params(
+            **{
+                "account_renamed:a_ira": "a_ira_now",
+                "account_renamed:gone": "x",
+                "account_renamed:a_plan": "a_ira_rollover",
+                "legacy_account:a_ira": "a_ira_rollover",
+            }
+        ),
+        "accounts": pd.DataFrame({"account_id": ["a_ira", "a_ira_rollover", "a_plan"]}),
+        "activity_corrections": pd.DataFrame(columns=["activity_id", "field", "value"]),
+        "investment_activity": pd.DataFrame(columns=["activity_id"]),
+    }
+    monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: tables[t.name].copy())
+    reading, problems = ledgerio.LedgerReading.of(None)
+    assert reading.renamed == {"a_ira": "a_ira_now"} and reading.legacy_moved == {"a_ira": "a_ira_rollover"}
+    assert any("account_renamed:gone names no account" in p for p in problems)
+    assert any("a_ira_rollover is already an account" in p for p in problems)
+    assert reading.notes()[0] == "accounts: read as renamed: a_ira as a_ira_now"
+
+
+def test_a_view_reads_its_spreadsheet():
+    sheet = type("Sheet", (), {"title": "ledger", "worksheet": lambda self, name: f"tab {name}"})()
+    view = ledgerio.LedgerView(sheet, ledgerio.LedgerReading())
+    assert view.title == "ledger" and view.worksheet("holdings") == "tab holdings"
 
 
 def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypatch):
@@ -105,5 +125,31 @@ def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypa
     assert got == {"a1": {"kind": "transfer_in"}}
     assert "zz, which the ledger doesn't have" in notes[0] and "'gift' isn't a kind" in notes[1]
     monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: activity.copy())
-    monkeypatch.setattr(ledgerio, "_ACTIVITY_FIXES", got)
-    assert list(engine.read_ledger(None, "investment_activity")["kind"]) == ["transfer_in", "contribution"]
+    view = ledgerio.LedgerView(None, ledgerio.LedgerReading(activity_fixes=got))
+    assert list(engine.read_ledger(view, "investment_activity")["kind"]) == ["transfer_in", "contribution"]
+
+
+def test_compute_reads_through_the_reading_and_ingest_as_written(session):  # noqa: F811
+    from freezegun import freeze_time
+    from test_fidelity_positions import FILE as POSITIONS
+    from test_golden import GOLDEN_FILES
+
+    for name in ("accounts_seed_golden.csv", "securities_seed_golden.csv"):
+        session._drive.add(name, session.box, "text/csv", GOLDEN_FILES[name].encode())
+    session._drive.add(
+        "parameters_seed_renamed.csv",
+        session.box,
+        "text/csv",
+        b"year,jurisdiction,key,value,source\n,household,account_renamed:a_roth,a_roth_new,seed\n",
+    )
+    session._drive.add("portfolio_positions.csv", session.box, "text/csv", POSITIONS.encode())
+    with freeze_time("2026-11-09 12:00:00"):
+        engine.ingest_inbox(session, session.root, run_id="r1")
+        engine.compute_all(session, session.root, run_id="r2")
+    files = session.sheets.files
+    reports = {n: t.rows for n, t in files["reports"].tabs.items()}
+    values = reports["investment_values"]
+    accounts = {r[values[0].index("account_id")] for r in values[1:]}
+    assert "a_roth_new" in accounts and "a_roth" not in accounts
+    holdings = files["ledger"].tabs["holdings"].rows
+    assert "a_roth" in {r[holdings[0].index("account_id")] for r in holdings[1:]}  # the ledger keeps the old id

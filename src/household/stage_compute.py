@@ -39,18 +39,7 @@ from . import (
 )
 from .books import categorize_books, read_books
 from .kinds import Log, Session, StageResult
-from .ledgerio import (
-    _ACTIVITY_FIXES,
-    _LEGACY_MOVED,
-    _RENAMED,
-    activity_fixes,
-    bootstrap,
-    legacy_moves,
-    new_run_id,
-    read_ledger,
-    renamed_accounts,
-    versions,
-)
+from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
 
 
@@ -308,39 +297,13 @@ def compute_all(
     say(log, f"run {run_id}: reading the ledger")
     say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    ledger, reports, _ = bootstrap(session, folder_id)
-    raw_parameters = sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters"))
-    renames, problems = renamed_accounts(raw_parameters)
-    accounts_now = set(sheets.read_table(ledger, schema.table(schema.LEDGER, "accounts"))["account_id"].astype(str))
-    moves, more = legacy_moves(raw_parameters, accounts_now)
-    problems += more
-    _LEGACY_MOVED.update(moves)
-    fixes, more = activity_fixes(
-        sheets.read_table(ledger, schema.table(schema.LEDGER, "activity_corrections")),
-        sheets.read_table(ledger, schema.table(schema.LEDGER, "investment_activity")),
-    )
-    problems += more
-    _ACTIVITY_FIXES.update(fixes)
-    for old, new in list(renames.items()):
-        if old not in accounts_now:
-            problems.append(f"accounts: account_renamed:{old} names no account")
-            del renames[old]
-        elif new in accounts_now:
-            problems.append(f"accounts: account_renamed:{old} = {new}, but {new} is already an account")
-            del renames[old]
-    _RENAMED.update(renames)
+    raw, reports, _ = bootstrap(session, folder_id)
+    reading, problems = LedgerReading.of(raw)
     for line in problems:
         say(log, line, "WARN")
-    if renames:
-        say(log, "accounts: read as renamed: " + ", ".join(f"{o} as {n}" for o, n in sorted(renames.items())))
-    if fixes:
-        say(log, f"investment activity: {len(fixes)} rows read as corrected (activity_corrections)")
-    if moves:
-        say(
-            log,
-            "accounts: the old investments workbook's readings of "
-            + ", ".join(f"{o} read as {n}'s" for o, n in sorted(moves.items())),
-        )
+    for line in reading.notes():
+        say(log, line)
+    ledger = LedgerView(raw, reading)  # every read below sees accounts renamed, readings moved, activity corrected
 
     books = read_books(ledger)
     txns, effective, paired, lonely = books["txns"], books["effective"], books["paired"], books["lonely"]

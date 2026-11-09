@@ -414,7 +414,7 @@ def _review(ledger, log=print, now=None):
             "open_lines": open_lines}
 
 
-def _investments_and_homes(ledger, reports, books, sched, today, run_id, log):
+def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, drive=None):
     """Investment values, the allocation and a rebalance, homes, and net worth (valuation.py, allocation.py,
     house.py, networth.py) into Reports. Returns figures for the run's result."""
     accounts, params = books["accounts"], books["parameters"]
@@ -454,6 +454,18 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log):
     sheets.replace_table(reports, schema.table(schema.REPORTS, "home_values"),
                          house.values_report(pvals).assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "home_improvements"), improved.assign(run_id=run_id))
+    taxed = house.taxes(props, pvals, _read(ledger, "property_taxes"), today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "home_taxes"), taxed.assign(run_id=run_id))
+    for r in taxed[taxed["basis"] == "estimated"].to_dict("records"):
+        _say(log, f"house: {r['property_id']} {r['tax_year']} property tax estimated at {r['amount_due']:,.0f} due "
+                  f"({r['assessed']:,.0f} assessed at the {r['mill_rate']:.6f} mill rate of the last bill)")
+    homes = house.parcels(props, pvals, today)
+    if homes and drive is not None:
+        try:
+            if not inbox.write_parcels(drive, homes):
+                _say(log, "house: the county check has no parcels file yet; run its monthly function once, then compute")
+        except Exception as e:  # the county check keeps the parcels it was last given
+            _say(log, f"house: could not write the county check's parcels file: {e}")
     for line in more:
         _say(log, line)
     for r in summary[summary["key"].isin(["value_used", "equity"])].to_dict("records"):
@@ -576,7 +588,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         for loan_id, g in ahead.groupby("loan_id"):
             _say(log, f"mortgage: {loan_id} paid off {g['month'].iloc[-1]} as scheduled, "
                       f"{g['interest'].sum():,.0f} interest still to pay")
-    worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log)
+    worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log, session.drive())
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "

@@ -123,3 +123,21 @@ def test_the_legacy_net_worth_import_adds_values_and_loans_once_and_waits_for_it
     first = engine.ingest_legacy_net_worth(session, session.root, "workbook", columns, log=None)
     again = engine.ingest_legacy_net_worth(session, session.root, "workbook", columns, log=None)
     assert (first["property_values"], first["loan_balances"], again["property_values"]) == (2, 2, 0)
+
+
+def test_taxes_list_each_bill_then_estimate_an_assessed_year_at_the_last_mill_rate():
+    bills = pd.DataFrame([{"tax_year": "2001", "property_id": "willow", "assessed": "250", "mill_rate": "0.02",
+                           "total_taxes": "5", "lottery_credit": "0.5", "first_dollar_credit": "0.25",
+                           "school_levy_credit": "1", "specials": "2", "net_taxes": "4.25", "amount_due": "6.25",
+                           "doc_id": ""}])
+    values = pd.concat([VALUES, pd.DataFrame([
+        {"as_of": "2002-01-01", "property_id": "willow", "source": "county_assessed", "value": "300", "note": "", "doc_id": ""}])])
+    out = house.taxes(PROPS, values, bills, "2002-06-01")
+    assert out[["tax_year", "basis", "assessed", "total_taxes", "credits", "amount_due"]].values.tolist() == [
+        ["2001", "billed", 250, 5, 0.75, 6.25], ["2002", "estimated", 300, 6, 0.75, 7.25]]
+
+
+def test_the_county_check_looks_up_each_home_owned_today_that_has_a_parcel():
+    props = PROPS.assign(parcel=["066/0101-011-0101-0", ""])
+    assert house.parcels(props, VALUES, "2001-09-15") == [{"property_id": "willow", "parcel": "066/0101-011-0101-0",
+                                                             "since": "2001"}]

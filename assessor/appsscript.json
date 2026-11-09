@@ -1,0 +1,18 @@
+{
+  "timeZone": "America/Chicago",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "STACKDRIVER",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp"
+  ],
+  "urlFetchWhitelist": [
+    "https://accessdane.danecounty.gov/"
+  ],
+  "dependencies": {
+    "enabledAdvancedServices": [
+      { "userSymbol": "Drive", "serviceId": "drive", "version": "v3" }
+    ]
+  }
+}

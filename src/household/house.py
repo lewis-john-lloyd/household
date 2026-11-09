@@ -220,3 +220,58 @@ def frames(ledger_tables):
     if len(bal):
         bal["as_of"] = bal["as_of"].str[:10]
     return props, vals, _clean(t.get("improvements"), ["date", "property_id", "kind", "cost"]), loans, bal
+
+
+TAX_COLUMNS = ["property_id", "tax_year", "assessed", "mill_rate", "total_taxes", "credits", "specials", "amount_due",
+               "basis"]
+
+
+def taxes(properties, values, bills, today):
+    """TAX_COLUMNS for each home: each tax year billed (property_taxes), then each year the county has assessed
+    but not yet billed, estimated at the latest bill's mill rate, credits and specials. Property taxes are
+    billed in December for the year's January assessment, so the year's estimate stands until then."""
+    rows = []
+    if properties is None or properties.empty:
+        return pd.DataFrame(columns=TAX_COLUMNS)
+    b = bills.copy() if bills is not None and len(bills) else pd.DataFrame(columns=["tax_year", "property_id"])
+    for prop in properties.to_dict("records"):
+        pid = prop["property_id"]
+        mine = b[b["property_id"].astype(str).str.strip() == pid].copy()
+        mine["tax_year"] = mine["tax_year"].astype(str).str[:4]
+        mine = mine.sort_values("tax_year").drop_duplicates("tax_year", keep="last")
+        for r in mine.to_dict("records"):
+            credits = sum(_num(r.get(k)) or 0.0 for k in ("lottery_credit", "first_dollar_credit"))
+            rows.append({"property_id": pid, "tax_year": r["tax_year"], "assessed": _num(r.get("assessed")),
+                         "mill_rate": _num(r.get("mill_rate")), "total_taxes": _num(r.get("total_taxes")),
+                         "credits": round(credits, 2), "specials": _num(r.get("specials")) or 0.0,
+                         "amount_due": _num(r.get("amount_due")), "basis": "billed"})
+        if mine.empty or not owned(prop, values, today):
+            continue
+        last = rows[-1]
+        if not last["mill_rate"]:
+            continue
+        assessed = values[(values["property_id"] == pid) & (values["source"] == "county_assessed")].copy()
+        assessed["year"] = assessed["as_of"].str[:4]
+        for year, g in assessed.sort_values("as_of").groupby("year"):
+            if year <= last["tax_year"]:
+                continue
+            value = float(g["value"].iloc[-1])
+            total = round(value * last["mill_rate"], 2)
+            rows.append({"property_id": pid, "tax_year": year, "assessed": value, "mill_rate": last["mill_rate"],
+                         "total_taxes": total, "credits": last["credits"], "specials": last["specials"],
+                         "amount_due": round(total - last["credits"] + last["specials"], 2), "basis": "estimated"})
+    return pd.DataFrame(rows, columns=TAX_COLUMNS)
+
+
+def parcels(properties, values, today):
+    """[{property_id, parcel, since}] for the homes owned today that have a parcel number: what the county
+    check (assessor/Code.js) looks up, from the year each was bought."""
+    out = []
+    if properties is None or properties.empty:
+        return out
+    for prop in properties.to_dict("records"):
+        parcel = str(prop.get("parcel", "")).strip()
+        if parcel and owned(prop, values, today):
+            out.append({"property_id": prop["property_id"], "parcel": parcel,
+                        "since": str(prop.get("purchased", ""))[:4] or today[:4]})
+    return out

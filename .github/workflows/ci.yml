@@ -48,6 +48,8 @@ jobs:
       - run: node --test exporter/test/exporter.test.js
       - run: node --check nudge/Code.js
       - run: node --test nudge/test/nudge.test.js
+      - run: node --check assessor/Code.js
+      - run: node --test assessor/test/assessor.test.js
 
   browser:
     runs-on: ubuntu-24.04  # Playwright 1.56 has no Chromium for ubuntu-latest (26.04)

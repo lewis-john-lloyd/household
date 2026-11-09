@@ -779,7 +779,8 @@
       var LENS_NAMES = { month: "Month", quarter: "Quarter", year: "Year" };
       var RULE_NAMES = { fixed: "A fixed amount", recurring: "Its recurring charges, plus an allowance",
                          trailing: "What the last 4 months spent", lookback: "What the last 12 months spent",
-                         seasonal: "What the same months last year spent", sinking_fund: "Set aside, spent from a balance" };
+                         seasonal: "What the same months last year spent", sinking_fund: "Set aside, spent from a balance",
+                         billed: "A bill in the months it comes (quarterly, say)" };
       var PER_MONTH = { monthly: 1, biweekly: 26 / 12, weekly: 52 / 12, semi_monthly: 2, quarterly: 1 / 3, semi_annually: 1 / 6,
                         annually: 1 / 12, "": 1 };
       var MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -1487,7 +1488,7 @@
       // shown in the pending bar. Save sends them to saveChanges, which writes one change set for ingest.
       var editor = null, editTab = "review";
       var staged = {}, stagedOrder = [];
-      var RULES = ["fixed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund"];
+      var RULES = ["fixed", "billed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund"];
       var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
       var PRIORITIES = ["", "high", "medium", "low"];
 
@@ -1847,6 +1848,7 @@
         var showCharges = function () {
           var recurring = rule.value === "recurring";
           amount.parentNode.firstChild.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
+          effective.parentNode.firstChild.textContent = rule.value === "billed" ? "A month the bill comes" : "From";
           charges.textContent = "";
           charges.hidden = !recurring;
           if (!recurring) return;
@@ -1888,7 +1890,7 @@
                     per: per.value, note: note.value.trim(), was: isNew ? null : budgetWas(l) };
           var wrong = !e.line ? "Name the line." : !isDate(e.effective) ? "Pick the date it starts." : !e.category ? "Pick a category." :
             e.amount && !isAmount(e.amount) ? "The amount is not a number." :
-            !e.amount && (e.rule === "fixed" || e.rule === "sinking_fund") ? "A " + e.rule + " line needs an amount." : "";
+            !e.amount && (e.rule === "fixed" || e.rule === "billed" || e.rule === "sinking_fund") ? "A " + e.rule + " line needs an amount." : "";
           if (wrong) { error.textContent = wrong; return; }
           stage(e, "budget line " + e.line + ": " + e.rule + (e.amount ? " " + e.amount + " " + e.per : "") + " for " + e.category + " from " + e.effective);
           done();
@@ -3246,13 +3248,31 @@
                  ["basis", "equity", "sale_net"].indexOf(l.key) >= 0 ? "group" : "");
         });
 
-        var es = panel(grid, "Estimates", "Online estimates and the county's assessment, newest first. A scheduled check can add them " +
-                                          "each month; any can be added with a property_values file in the inbox.");
+        var es = panel(grid, "Estimates", "The county's assessment and its estimate of fair market value, newest first. The county " +
+                                          "check adds them each month; any other can be added with a property_values file in the inbox.");
         var mine = d.estimates.filter(function (e) { return e.property === h.id && e.source !== "legacy"; });
         if (!mine.length) es.appendChild(el("p", "None yet.", "support"));
         else {
           var et = wTable(es, ["Source", "Value", "As of"], [1]);
           mine.forEach(function (e) { et.row([e.source.replace(/_/g, " "), money.format(e.value), longDate(e.asOf)]); });
+        }
+
+        var taxes = d.taxes.filter(function (t) { return t.property === h.id; });
+        if (taxes.length) {
+          var tx = el("section", null, "panel w-wide");
+          tx.appendChild(el("h3", "Property tax"));
+          var next = taxes.filter(function (t) { return t.estimated; })[0];
+          tx.appendChild(el("p", (next ? "The " + next.year + " bill, due by the end of January, is estimated at " + money.format(next.due) +
+                                  ": the " + next.year + " assessment at the last bill's mill rate, credits and specials. " : "") +
+                                 "The county sets the mill rate when it bills in December; the county check reads each bill.", "support"));
+          var tt = wTable(tx, ["Tax year", "Assessed", "Mill rate", "Taxes", "Credits", "Specials", "Due"], [1, 2, 3, 4, 5, 6]);
+          taxes.forEach(function (t) {
+            var year = el("span", t.year);
+            if (t.estimated) year.appendChild(el("span", "estimate", "tag"));
+            tt.row([year, money.format(t.assessed), (t.millRate * 1000).toFixed(3), money.format(t.totalTaxes),
+                    "\u2212" + money.format(t.credits), money.format(t.specials), money.format(t.due)], t.estimated ? "projected" : "");
+          });
+          body.appendChild(tx);
         }
 
         var ids = loans.map(function (l) { return l.key.slice(5); });

@@ -75,7 +75,20 @@ def test_the_exporter_holds_gmail_read_its_own_files_and_its_trigger_and_nothing
     assert scopes == {"gmail.readonly", "drive.file", "script.scriptapp"}
 
 
-@pytest.mark.parametrize("project", ["exporter", "nudge"])
+def test_the_county_check_reaches_only_accessdane_and_its_own_files():
+    # the one script with network: limited by the manifest to the county's parcel pages, it reads nothing of
+    # yours but its parcels file (public parcel numbers), so there is nothing private it could send
+    manifest = json.loads((ROOT / "assessor" / "appsscript.json").read_text())
+    scopes = {s[len(SCOPE):] for s in manifest["oauthScopes"]}
+    assert scopes == {"drive.file", "script.external_request", "script.scriptapp"}
+    assert manifest["urlFetchWhitelist"] == ["https://accessdane.danecounty.gov/"]
+    text = code([ROOT / "assessor" / "Code.js"])
+    assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", text)} == {"Drive"}
+    assert set(re.findall(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.", text)) == {"UrlFetchApp"}
+    assert re.findall(r"UrlFetchApp\.fetch\(([^,]+),", text) == ["pageUrl(home.parcel)"]
+
+
+@pytest.mark.parametrize("project", ["exporter", "nudge", "assessor"])
 def test_clasp_pushes_only_the_script_and_its_manifest(project):
     # without this, clasp push sends test/*.js too, and Apps Script runs the Node tests (require is not defined)
     ignore = [line for line in (ROOT / project / ".claspignore").read_text().splitlines()

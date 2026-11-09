@@ -59,9 +59,9 @@ def list_files(drive, folder_id, folders=False):
     query = f"'{folder_id}' in parents and trashed = false and mimeType {op} '{backup.FOLDER_MIME}'"
     response = drive.files().list(q=query, fields="files(id,name,mimeType,size,properties)",
                                   pageSize=1000).execute(num_retries=RETRIES)
-    key, value = SEARCHES_PROPERTY
+    key, _ = SEARCHES_PROPERTY  # any file a script marks as its own (searches, parcels) is not an export
     return [{k: v for k, v in f.items() if k != "properties"} for f in response.get("files", [])
-            if (f.get("properties") or {}).get(key) != value]
+            if not (f.get("properties") or {}).get(key)]
 
 
 def write_receipt_searches(drive, searches):
@@ -76,6 +76,24 @@ def write_receipt_searches(drive, searches):
     if len(payload) > SEARCHES_MAX:
         raise ValueError(f"the receipt searches come to {len(payload)} characters, over {SEARCHES_MAX}")
     key, value = SEARCHES_PROPERTY
+    found = drive.files().list(q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
+                               fields="files(id)", pageSize=10).execute(num_retries=RETRIES).get("files", [])
+    for f in found:
+        drive.files().update(fileId=f["id"], body={"description": payload}, fields="id").execute(num_retries=RETRIES)
+    return len(found)
+
+
+PARCELS_PROPERTY = ("household", "parcels")  # the county check's parcels file (assessor/Code.js makes it)
+
+
+def write_parcels(drive, homes):
+    """Write the county check's parcels ([{property_id, parcel, since}], house.parcels) into its parcels file's
+    description, the only thing of yours it reads. The number of files written: 0 before it has first run."""
+    import json
+    payload = json.dumps({"version": 1, "parcels": homes}, separators=(",", ":"))
+    if len(payload) > SEARCHES_MAX:
+        raise ValueError(f"the parcels come to {len(payload)} characters, over {SEARCHES_MAX}")
+    key, value = PARCELS_PROPERTY
     found = drive.files().list(q=f"properties has {{ key='{key}' and value='{value}' }} and trashed = false",
                                fields="files(id)", pageSize=10).execute(num_retries=RETRIES).get("files", [])
     for f in found:

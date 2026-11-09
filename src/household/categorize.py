@@ -261,7 +261,8 @@ class Model:
             make_union(TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True,
                                        min_df=2 if len(labeled) > 100 else 1),
                        TfidfVectorizer(token_pattern=r"\S+")),
-            LogisticRegression(C=3, solver="saga", max_iter=200, tol=1e-3))
+            # saga visits the rows in a random order: a fixed seed makes the same ledger give the same guesses
+            LogisticRegression(C=3, solver="saga", max_iter=200, tol=1e-3, random_state=0))
         with warnings.catch_warnings():  # saga stops at max_iter on some runs; the fit is still good
             warnings.simplefilter("ignore")
             self.pipe.fit(_features(labeled), labeled["category"],

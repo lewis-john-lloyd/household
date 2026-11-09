@@ -141,3 +141,22 @@ def test_the_county_check_looks_up_each_home_owned_today_that_has_a_parcel():
     props = PROPS.assign(parcel=["066/0101-011-0101-0", ""])
     assert house.parcels(props, VALUES, "2001-09-15") == [{"property_id": "willow", "parcel": "066/0101-011-0101-0",
                                                              "since": "2001"}]
+
+
+def test_a_loans_details_come_from_its_row_its_facts_and_its_schedule():
+    facts = pd.DataFrame([
+        {"loan_id": "acme_loan", "key": "servicer", "value": "Acme Widgets", "as_of": "2001-05-01", "note": ""},
+        {"loan_id": "acme_loan", "key": "servicer", "value": "Willow St", "as_of": "2001-08-15", "note": "transferred"},
+        {"loan_id": "acme_loan", "key": "servicer", "value": "Quill & Ink", "as_of": "2002-01-01", "note": "not yet"},
+        {"loan_id": "acme_loan", "key": "apr", "value": "6.2", "as_of": "", "note": ""},
+        {"loan_id": "acme_loan", "key": "loan_officer", "value": "alex", "as_of": "", "note": ""}])
+    full, _ = mortgage.schedule(LOANS, through_month="9999-12")
+    out = mortgage.details(LOANS, facts, full, "2001-09").set_index("key")
+    assert list(out.index[:4]) == ["lender", "servicer", "originated", "first_payment"]  # in the page's order
+    assert (out.at["servicer", "value"], out.at["servicer", "note"]) == ("Willow St", "transferred")
+    assert (out.at["apr", "kind"], out.at["principal", "kind"], out.at["first_payment", "value"]) == ("percent", "money", "2001-07")
+    assert out.at["maturity", "value"] == "2031-06" and out.at["balance", "as_of"] == "2001-09"
+    assert out.at["paid_principal", "value"] + out.at["balance", "value"] == pytest.approx(240)
+    assert (out.index[-1], out.at["loan_officer", "label"]) == ("loan_officer", "Loan officer")  # unknown keys last
+    text = "loan_id,key,value,as_of,note\nacme_loan,servicer,Acme Widgets,2001-05-01,\n"
+    assert seed.parse(text).keys["loan_facts"] == ["loan_id", "key", "as_of"]

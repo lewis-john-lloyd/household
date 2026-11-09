@@ -400,7 +400,8 @@ function getInvestments(): WealthPage {
 
 function getHome(): HomePage {
   const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["property_summary", "home_values", "home_improvements", "home_taxes", "mortgage", "run_log", "run_notes"]) {
+  for (const name of ["property_summary", "home_values", "home_improvements", "home_taxes", "mortgage", "loan_details", "run_log",
+                      "run_notes"]) {
     tabs[name] = readTabIfAny_(name);
   }
   return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));

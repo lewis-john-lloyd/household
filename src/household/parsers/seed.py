@@ -22,13 +22,13 @@ from .. import schema
 NAME = "seed"
 SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules",
             "loans", "comp_events", "loan_balances", "properties", "property_values", "improvements",
-            "allocation_targets", "securities", "property_taxes", "stock_splits")
+            "allocation_targets", "securities", "property_taxes", "stock_splits", "loan_facts")
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
 KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],
         "budget_rules": ["line", "effective"], "comp_events": ["effective", "person", "employer"],
         "loan_balances": ["as_of", "loan_id"], "property_values": ["as_of", "property_id", "source"],
-        "improvements": ["date", "property_id", "description"], "property_taxes": ["tax_year", "property_id"], "stock_splits": ["symbol", "date"], "allocation_targets": ["effective", "node"],
+        "improvements": ["date", "property_id", "description"], "property_taxes": ["tax_year", "property_id"], "stock_splits": ["symbol", "date"], "loan_facts": ["loan_id", "key", "as_of"], "allocation_targets": ["effective", "node"],
         # a security's later row with another class or quote is its new description (the last row wins)
         "securities": ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"]}
 

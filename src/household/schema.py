@@ -98,6 +98,9 @@ LEDGER = (
     # a work surface like review: GOOGLEFINANCE formulas for the prices still wanted, rewritten by ingest
     Table("price_requests", ("symbol", "quote", "date", "result")),
     Table("loans", ("loan_id", "lender", "originated", "principal", "rate", "term_months", "escrow")),
+    # what a loan's documents say beyond loans' columns (the closing disclosure's terms, who services it), one
+    # fact per row; a later row for the same key (a servicer that changed) is in force from its as_of
+    Table("loan_facts", ("loan_id", "key", "value", "as_of", "note")),
     # a loan's balance on a date, for loans with no amortization in loans (the legacy workbook's mortgages)
     Table("loan_balances", ("as_of", "loan_id", "balance", "doc_id")),
     # each home: when and for what it was bought (basis_costs: closing costs that add to basis), its loans
@@ -215,6 +218,8 @@ REPORTS = (
           {"basis": ("billed", "estimated")}),
     Table("home_improvements", ("property_id", "date", "description", "kind", "cost", "credit", "basis_added",
                                 "receipt", "note", "run_id")),
+    # each loan's details for the Home page's Mortgage tab: its terms, its facts and its schedule's milestones
+    Table("loan_details", ("loan_id", "order", "key", "label", "value", "kind", "as_of", "note", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),
     Table("flows", ("period", "level", "source", "target", "amount", "run_id"),

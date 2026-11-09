@@ -665,6 +665,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
         for line in notes + mortgage.summary(sched[sched["month"] <= today[:7]]):
             _say(log, line)
+        detail = mortgage.details(loans, _read(ledger, "loan_facts"), sched, today[:7])
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "loan_details"), detail.assign(run_id=run_id))
         ahead = sched[sched["month"] > today[:7]]
         for loan_id, g in ahead.groupby("loan_id"):
             _say(log, f"mortgage: {loan_id} paid off {g['month'].iloc[-1]} as scheduled, "

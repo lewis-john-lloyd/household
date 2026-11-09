@@ -157,3 +157,62 @@ def summary(sched):
         lines.append(f"mortgage: {loan_id} balance {float(last['balance']):,.2f} after {len(g)} payments "
                      f"(through {last['month']})")
     return lines
+
+
+# a loan's details, in the order the Home page lists them: (key, label, kind). kind says how to show a value:
+# money, percent (an annual rate in percent), date, month, months, or text. Keys not listed here show after
+# these, under their own name, as text.
+DETAILS = [
+    ("lender", "Lender", "text"), ("servicer", "Servicer", "text"), ("loan_type", "Loan type", "text"),
+    ("purpose", "Purpose", "text"), ("product", "Product", "text"), ("originated", "Closed", "date"),
+    ("first_payment", "First payment", "month"), ("maturity", "Last payment as scheduled", "month"),
+    ("term_months", "Term", "months"), ("principal", "Loan amount", "money"), ("rate", "Interest rate", "percent"),
+    ("apr", "APR", "percent"), ("monthly_pi", "Principal and interest a month", "money"),
+    ("mortgage_insurance", "Mortgage insurance a month", "money"),
+    ("mortgage_insurance_ends", "Mortgage insurance ends", "text"), ("escrow", "Escrow a month", "money"),
+    ("points", "Points paid", "money"), ("closing_costs", "Closing costs", "money"),
+    ("cash_to_close", "Cash to close", "money"), ("prepayment_penalty", "Prepayment penalty", "text"),
+    ("balloon", "Balloon payment", "text"), ("assumable", "Assumable", "text"), ("late_fee", "Late fee", "text"),
+    ("tip", "Total interest percentage", "percent"), ("lender_nmls", "Lender NMLS ID", "text"),
+    ("balance", "Balance now", "money"), ("paid_principal", "Principal paid so far", "money"),
+    ("paid_interest", "Interest paid so far", "money"), ("interest_left", "Interest still to pay", "money"),
+]
+DETAIL_COLUMNS = ["loan_id", "order", "key", "label", "value", "kind", "as_of", "note"]
+
+
+def details(loans, facts, sched, month):
+    """Each loan's details (DETAIL_COLUMNS): its loans row, its facts (the latest row per key on or before
+    month wins), and from its schedule the first and last payments, the balance now and what has been and is
+    still to be paid."""
+    known = {k: (i, label, kind) for i, (k, label, kind) in enumerate(DETAILS)}
+    rows = []
+    for loan in (loans.to_dict("records") if loans is not None and len(loans) else []):
+        lid = str(loan["loan_id"]).strip()
+        got = {}
+        for k in ("lender", "originated", "principal", "rate", "term_months", "escrow"):
+            if str(loan.get(k, "")).strip():
+                got[k] = (str(loan[k]).strip(), "", "")
+        mine = facts[facts["loan_id"].astype(str).str.strip() == lid] if facts is not None and len(facts) else None
+        if mine is not None and len(mine):
+            mine = mine.assign(_at=mine["as_of"].astype(str).str.strip()).sort_values("_at", kind="stable")
+            for r in mine.to_dict("records"):
+                if r["_at"] and r["_at"][:7] > month:
+                    continue
+                got[str(r["key"]).strip()] = (str(r["value"]).strip(), r["_at"], str(r.get("note", "") or "").strip())
+        g = sched[sched["loan_id"] == lid] if sched is not None and len(sched) else None
+        if g is not None and len(g):
+            paid, ahead = g[g["month"] <= month], g[g["month"] > month]
+            got.setdefault("first_payment", (g["month"].iloc[0], "", "from the schedule"))
+            got["maturity"] = (g["month"].iloc[-1], "", "the schedule as it stands")
+            if len(paid):
+                got["balance"] = (round(float(paid["balance"].iloc[-1]), 2), paid["month"].iloc[-1], "")
+                got["paid_principal"] = (round(float(pd.to_numeric(paid["principal"]).sum()
+                                                   + pd.to_numeric(paid["extra_principal"]).sum()), 2), "", "")
+                got["paid_interest"] = (round(float(pd.to_numeric(paid["interest"]).sum()), 2), "", "")
+            got["interest_left"] = (round(float(pd.to_numeric(ahead["interest"]).sum()), 2), "", "")
+        for k, (value, at, note) in got.items():
+            order, label, kind = known.get(k, (len(DETAILS), k.replace("_", " ").capitalize(), "text"))
+            rows.append({"loan_id": lid, "order": order, "key": k, "label": label, "value": value, "kind": kind,
+                         "as_of": at, "note": note})
+    out = pd.DataFrame(rows, columns=DETAIL_COLUMNS)
+    return out.sort_values(["loan_id", "order", "key"], kind="stable").reset_index(drop=True)

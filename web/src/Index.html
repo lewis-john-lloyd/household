@@ -421,6 +421,10 @@
       .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
         background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
       .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }
+      dl.loan-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px 24px; margin: 12px 0 0; }
+      dl.loan-facts dt { font-size: 12px; color: var(--on-surface-variant); }
+      dl.loan-facts dd { margin: 2px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; }
+      dl.loan-facts dd .support { display: block; font-size: 12px; }
       .charge-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
       .charge-name .icon-button { min-height: 0; width: 26px; height: 26px; padding: 0; border: 0; background: transparent;
         color: var(--on-surface-variant); display: inline-grid; place-items: center; border-radius: 50%; }
@@ -3553,8 +3557,41 @@
         }
       }
 
+      // A loan's value as its kind says: money, a rate in percent, a date, a month, a term in months, or text.
+      function loanValue(x) {
+        var n = Number(String(x.value).replace(/,/g, ""));
+        if (x.kind === "money" && x.value !== "" && !isNaN(n)) return cents.format(n);
+        if (x.kind === "percent" && x.value !== "" && !isNaN(n)) return n + "%";
+        if (x.kind === "date" && /^\d{4}-\d{2}-\d{2}$/.test(x.value)) return longDate(x.value);
+        if (x.kind === "month" && /^\d{4}-\d{2}$/.test(x.value)) return MONTH_SHORT[Number(x.value.slice(5)) - 1] + " " + x.value.slice(0, 4);
+        if (x.kind === "months" && !isNaN(n) && n) return n + " months" + (n % 12 === 0 ? " (" + n / 12 + " years)" : "");
+        return x.value;
+      }
+
       function drawMortgage(body, d, loans) {
         var ids = loans.map(function (l) { return l.key.slice(5); });
+        ids.forEach(function (id) {
+          var facts = (d.loans || []).filter(function (x) { return x.loan === id; });
+          if (!facts.length) return;
+          var box = el("section", null, "panel w-wide");
+          box.appendChild(el("h3", "The loan" + (ids.length > 1 ? ": " + id : "")));
+          box.appendChild(el("p", "Its terms from the ledger's loans row and its facts (the closing disclosure's, a servicer's " +
+                                  "letters: add more with a loan_facts file in the inbox), and where the schedule stands.", "support"));
+          var grid = el("dl", null, "loan-facts");
+          facts.forEach(function (x) {
+            var pair = el("div");
+            pair.appendChild(el("dt", x.label));
+            var dd = el("dd", loanValue(x));
+            var more = [x.note, x.asOf && x.kind !== "date" && x.key !== "balance" ? "since " + (x.asOf.length === 7 ? x.asOf : longDate(x.asOf)) : ""]
+              .filter(Boolean).join(", ");
+            if (x.key === "balance" && x.asOf) more = "after the " + MONTH_SHORT[Number(x.asOf.slice(5)) - 1] + " " + x.asOf.slice(0, 4) + " payment";
+            if (more) dd.appendChild(el("span", more, "support"));
+            pair.appendChild(dd);
+            grid.appendChild(pair);
+          });
+          box.appendChild(grid);
+          body.appendChild(box);
+        });
         var sched = d.schedule.filter(function (p) { return ids.indexOf(p.loan) >= 0; });
         if (sched.length) {
           var am = el("section", null, "panel w-wide");

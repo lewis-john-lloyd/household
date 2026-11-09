@@ -63,7 +63,9 @@ interface LoanYear { year: string; loan: string; payments: number; interest: num
 
 interface HomeTax { property: string; year: string; assessed: number; millRate: number; totalTaxes: number; credits: number; specials: number; due: number; estimated: boolean }
 
-interface HomePage { homes: Home[]; estimates: Estimate[]; improvements: Improvement[]; schedule: Payment[]; years: LoanYear[]; taxes: HomeTax[]; month: string; notes: string[] }
+interface LoanDetail { loan: string; key: string; label: string; value: string; kind: string; asOf: string; note: string }
+
+interface HomePage { loans: LoanDetail[]; homes: Home[]; estimates: Estimate[]; improvements: Improvement[]; schedule: Payment[]; years: LoanYear[]; taxes: HomeTax[]; month: string; notes: string[] }
 
 const BUCKET_ORDER = ["401k_pretax", "401k_roth", "ira_pretax", "ira_roth", "hsa", "taxable", "ibonds", "529", "other"];
 const BUCKET_LABELS: Record<string, string> = {
@@ -211,6 +213,9 @@ function homePage(tabs: Record<string, unknown[][]>, month: string): HomePage {
     property: r.property_id, year: r.tax_year, assessed: num(r.assessed), millRate: num(r.mill_rate), totalTaxes: num(r.total_taxes),
     credits: num(r.credits), specials: num(r.specials), due: num(r.amount_due), estimated: r.basis === "estimated" }))
     .sort((a, b) => b.year.localeCompare(a.year));
-  return { homes: Array.from(homes.values()), estimates, improvements, schedule, years: Array.from(years.values()), taxes, month,
+  const loans = wealthRows(tabs.loan_details || []).sort((a, b) => a.loan_id.localeCompare(b.loan_id) || num(a.order) - num(b.order))
+    .map((r) => ({ loan: r.loan_id, key: r.key, label: r.label || r.key, value: r.value, kind: r.kind || "text", asOf: r.as_of,
+                   note: r.note }));
+  return { loans, homes: Array.from(homes.values()), estimates, improvements, schedule, years: Array.from(years.values()), taxes, month,
            notes: latestNotes(tabs, /^(house|mortgage):/) };
 }

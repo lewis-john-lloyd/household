@@ -137,3 +137,13 @@ def test_a_tab_that_skipped_a_date_another_tab_of_its_account_recorded_carries_i
     totals = df.groupby("as_of")["value"].sum().to_dict()
     assert totals == {"2001-01-12": 70, "2001-02-09": 75, "2001-03-03": 90}  # 2001-02-09 carries the old tab's 20
 
+
+
+def test_with_nothing_new_the_migration_writes_nothing_and_backs_nothing_up(session, monkeypatch):  # noqa: F811
+    session.sheets.legacy = _workbook()
+    _ledger_with_accounts(session, ["a_ira"])
+    engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira"}, log=None)
+    snapshots = []
+    monkeypatch.setattr(engine.backup, "snapshot_ledger", lambda *a, **k: snapshots.append(a))
+    again = engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira"}, log=None)
+    assert (again["holdings"], again["securities"], snapshots) == (0, 0, [])

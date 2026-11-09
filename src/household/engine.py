@@ -57,8 +57,9 @@ def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
 
 
 def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="Equities", run_id=None, log=print):
-    """Stage 1 for the migration: back up the ledger, then add the legacy investments workbook's funds to
-    `securities` and its account tabs' readings to `holdings` (legacy_investments.py).
+    """Add the legacy investments workbook's funds to `securities` and its account tabs' readings to `holdings`
+    (legacy_investments.py), backing up the ledger first. Safe to run every time: with nothing new it reads,
+    says so, and writes nothing (no backup either).
 
     tabs maps each account tab's name to the ledger account_id it belongs to ({"tab": "account_id"}), or to an
     account_id and the plan money source the tab holds ({"tab": "account_id:roth"}); several tabs can name one
@@ -72,7 +73,6 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
     unknown = sorted({a for a, _ in where.values() if a not in known})
     if unknown:
         raise ValueError(f"no such accounts in the ledger: {', '.join(unknown)} (add them first)")
-    backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
     workbook = session.sheets.open_by_key(workbook_id)
     names = [funds_tab] + list(tabs)
     got = workbook.values_batch_get([f"'{n}'" for n in names], params={"valueRenderOption": sheets.UNFORMATTED})
@@ -91,14 +91,35 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
         return zip(*(df[c].astype(str) for c in ("as_of", "account_id", "symbol", "source")))
     keys = set(key(have))
     new = held[[k not in keys for k in key(held)]]
-    counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "securities"), funds),
-                                           (schema.table(schema.LEDGER, "holdings"), new)])
     for note in notes:
         _say(log, note)
+    if funds.empty and new.empty:  # the usual case once it has run: nothing to back up or write
+        _say(log, f"legacy investments: nothing new ({len(held)} readings already held)")
+        return {"run_id": run_id, "securities": 0, "holdings": 0, "already_held": len(held),
+                "dates": int(held["as_of"].nunique()), "notes": notes}
+    backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
+    counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "securities"), funds),
+                                           (schema.table(schema.LEDGER, "holdings"), new)])
     _say(log, f"legacy investments: {counts['securities']} funds and {counts['holdings']} readings added "
               f"({len(held) - len(new)} already held), {held['as_of'].nunique()} dates")
     return {"run_id": run_id, "securities": counts["securities"], "holdings": counts["holdings"],
             "already_held": len(held) - len(new), "dates": int(held["as_of"].nunique()), "notes": notes}
+
+
+def fetch_prices(session, folder_id, rounds=8, log=print):
+    """Ask GOOGLEFINANCE for the prices still wanted, round after round (each as ingest asks, prices.py), until
+    none is wanted, a round adds nothing, or rounds run out: a backfill in one call. Safe to run every time."""
+    ledger, _, _ = bootstrap(session, folder_id)
+    out = {"added": 0, "wanted": None, "rounds": 0}
+    for _ in range(rounds):
+        got = _price_requests(ledger, log)
+        out["rounds"] += 1
+        out["added"] += got["added"]
+        out["wanted"] = got["wanted"]
+        if not got["wanted"] or (out["rounds"] > 1 and not got["added"]):
+            break
+    _say(log, f"prices: {out['added']} added in {out['rounds']} rounds, {out['wanted']} still wanted")
+    return out
 
 
 PRICE_POLL_SECONDS = 60  # how long ingest waits for Sheets to answer the price requests it just wrote
@@ -563,7 +584,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             vests = projection.scheduled_vests(*(sheets.read_table(ledger, schema.table(schema.LEDGER, t))
                                                   for t in ("vest_schedule", "equity_vests", "prices")))
             if vests:
-                _say(log, f"projection: vests from the vesting schedule at {vests['price']:,.2f} a share")
+                _say(log, f"projection: vests from the vesting schedule at {vests['price']:,.2f} a share, the latest "
+                          f"price on file ({vests['price_date']}); a month-old date means prices need fetching")
             lines, notes, detail = projection.project(year, stubs, sales, facts, jobs, vests)
             lines["year"], lines["run_id"] = year, run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)

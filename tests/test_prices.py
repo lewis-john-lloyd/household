@@ -81,19 +81,20 @@ def test_ingest_asks_then_reads_the_answers_into_the_ledger_and_asks_for_the_res
         (table("securities"), SECURITIES.iloc[:3].reindex(columns=table("securities").columns, fill_value="")),
         (table("holdings"), HOLDINGS.reindex(columns=table("holdings").columns, fill_value=""))])
     first = engine._price_requests(ledger, log=None, today=TODAY, wait=0)
-    assert (first["added"], first["wanted"], first["asked"]) == (0, 10, 10)
+    assert (first["added"], first["wanted"], first["asked"]) == (0, 12, 12)  # 10 dates and each one's latest close
     tab = ledger.worksheet("price_requests").rows
     assert tab[0] == list(table("price_requests").columns) and tab[1][3].startswith("=IFERROR(LET(r,GOOGLEFINANCE(")
     # Sheets evaluates two of the formulas before the next ingest; the rest are still loading
-    tab[1][3], tab[2][3] = "2001-05-31 12.5", "none"
+    assert [r[2] for r in tab[1:3]] == ["2001-06-14", "2001-06-14"]  # the latest closes are asked first
+    tab[1][3], tab[2][3] = "2001-06-14 12.5", "none"
     for row in tab[3:]:
         row[3] = "Loading..."
     second = engine._price_requests(ledger, log=None, today=TODAY, wait=0)
-    assert (second["added"], second["wanted"]) == (2, 8)
+    assert (second["added"], second["wanted"]) == (2, 10)
     held = sheets.read_table(ledger, table("prices"))
     assert held[["symbol", "date", "priced_date", "close"]].values.tolist() == [
-        ["ACMEX", "2001-05-31", "2001-05-31", 12.5], ["WILLX", "2001-05-31", "", ""]]
-    assert len(ledger.worksheet("price_requests").rows) == 9  # header and the eight still wanted
+        ["ACMEX", "2001-06-14", "2001-06-14", 12.5], ["WILLX", "2001-06-14", "", ""]]
+    assert len(ledger.worksheet("price_requests").rows) == 11  # header and the ten still wanted
 
 
 def test_ingest_waits_for_answers_while_sheets_works_them_out(session):  # noqa: F811
@@ -109,4 +110,24 @@ def test_ingest_waits_for_answers_while_sheets_works_them_out(session):  # noqa:
         for row in ledger.worksheet("price_requests").rows[1:]:
             row[3] = f"{row[2]} 10"
     out = engine._price_requests(ledger, log=None, today=TODAY, wait=60, sleep=sleep)
-    assert naps == [engine.PRICE_POLL_EVERY] and (out["added"], out["wanted"], out["asked"]) == (6, 0, 0)
+    assert naps == [engine.PRICE_POLL_EVERY] and (out["added"], out["wanted"], out["asked"]) == (7, 0, 0)  # 6 dates, 1 latest
+
+
+def test_fetch_prices_asks_round_after_round_until_none_is_wanted(session, monkeypatch):  # noqa: F811
+    answers = iter([{"added": 0, "wanted": 10, "asked": 10}, {"added": 6, "wanted": 4, "asked": 4},
+                    {"added": 4, "wanted": 0, "asked": 0}, {"added": 9, "wanted": 0, "asked": 0}])
+    monkeypatch.setattr(engine, "_price_requests", lambda ledger, log: next(answers))
+    out = engine.fetch_prices(session, session.root, log=None)
+    assert out == {"added": 10, "wanted": 0, "rounds": 3}
+    stuck = iter([{"added": 0, "wanted": 5, "asked": 5}] * 9)
+    monkeypatch.setattr(engine, "_price_requests", lambda ledger, log: next(stuck))
+    assert engine.fetch_prices(session, session.root, log=None)["rounds"] == 2  # a round that adds nothing ends it
+
+
+def test_the_latest_close_is_asked_each_day_for_what_googlefinance_prices_and_not_for_what_it_never_has():
+    held = pd.DataFrame([{"symbol": "ACMEX", "date": "2001-05-31", "close": "12"},
+                         {"symbol": "WILLX", "date": "2001-05-31", "close": ""}])
+    ask, _ = prices.requests(SECURITIES, HOLDINGS, NO_ACTIVITY, held, TODAY)
+    latest = ask[ask["date"] == "2001-06-14"]
+    assert latest["symbol"].tolist() == ["ACMEX"]  # WILLX was tried and never priced
+

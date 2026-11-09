@@ -335,7 +335,9 @@ def scheduled_vests(schedule, vested=None, prices=None):
         seen += list(zip(p["date"].astype(str), p["close"].dropna()))
     if not seen:
         return None
-    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))), "price": float(max(seen)[1])}
+    day, price = max(seen)
+    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))), "price": float(price),
+            "price_date": str(day)}
 
 
 def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, vests=None):

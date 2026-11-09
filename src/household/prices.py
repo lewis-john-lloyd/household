@@ -6,7 +6,7 @@ ingest reads the answers back into the ledger's prices table, then rewrites the 
 
 Which prices are wanted: every security with a quote in `securities`, on every date the legacy investments
 workbook recorded holdings (so each old reading can be priced), then at each month-end after the last of
-those dates up to the last month-end that has passed. With no legacy readings, month-ends start from the
+those dates up to the last month-end that has passed, and its latest close (asked each day ingest runs). With no legacy readings, month-ends start from the
 first holdings reading or investment activity. A date is asked once: an answer of "none" (the fund did not
 exist yet, or GOOGLEFINANCE doesn't carry it) is kept as a prices row with no close, so it isn't asked
 again; delete that row to ask again.
@@ -76,14 +76,28 @@ def wanted_dates(holdings, activity, today):
 
 
 def requests(securities, holdings, activity, prices, today, limit=MAX_REQUESTS):
-    """The price_requests rows still wanted (symbol, quote, date), newest dates first, at most limit."""
+    """The price_requests rows still wanted (symbol, quote, date), newest dates first, at most limit.
+
+    Besides the wanted dates, each security is asked for its latest close (on yesterday's date, the last close
+    on or before it), so the projection and the views price with the market as it is, not a month old. A
+    security GOOGLEFINANCE has never priced is not asked for its latest close, so it adds no empty rows.
+    """
     usable, _ = quotes(securities)
     dates = wanted_dates(holdings, activity, today)
-    have = set()
+    have, priced = set(), set()
     if prices is not None and len(prices):
-        have = set(zip(prices["symbol"].astype(str).str.strip(), prices["date"].astype(str).str.strip()))
+        sym, day = prices["symbol"].astype(str).str.strip(), prices["date"].astype(str).str.strip()
+        have = set(zip(sym, day))
+        if "close" in prices:
+            priced = set(sym[pd.to_numeric(prices["close"], errors="coerce").notna()])
+        tried = set(sym)
+    else:
+        tried = set()
+    latest = (today - timedelta(days=1)).isoformat()
     rows = [{"symbol": s, "quote": q, "date": d} for d in sorted(dates, reverse=True) for s, q in sorted(usable.items())
             if (s, d) not in have]
+    rows = [{"symbol": s, "quote": q, "date": latest} for s, q in sorted(usable.items())
+            if (s, latest) not in have and latest not in dates and (s in priced or s not in tried)] + rows
     return pd.DataFrame(rows[:limit], columns=["symbol", "quote", "date"]), len(rows)
 
 

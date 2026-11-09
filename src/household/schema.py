@@ -23,8 +23,8 @@ class Table:
 LEDGER = (
     Table("accounts", ("account_id", "institution", "owner", "type", "tax_treatment",
                        "opened", "closed", "last4", "expected_docs", "max_gap_days"),
-          {"type": ("checking", "savings", "credit_card", "brokerage", "retirement",
-                    "hsa", "education", "loan", "other"),
+          {"type": ("checking", "savings", "credit_card", "brokerage", "retirement", "workplace_plan", "ira",
+                    "hsa", "education", "savings_bonds", "loan", "other"),
            "tax_treatment": ("taxable", "pre_tax", "roth", "hsa", "education", "none")}),
     Table("transactions", ("txn_id", "date", "account_id", "amount", "payee_raw", "category",
                            "one_off", "note", "source", "era", "doc_id", "recorded_at"),
@@ -95,6 +95,22 @@ LEDGER = (
     # a work surface like review: GOOGLEFINANCE formulas for the prices still wanted, rewritten by ingest
     Table("price_requests", ("symbol", "quote", "date", "result")),
     Table("loans", ("loan_id", "lender", "originated", "principal", "rate", "term_months", "escrow")),
+    # a loan's balance on a date, for loans with no amortization in loans (the legacy workbook's mortgages)
+    Table("loan_balances", ("as_of", "loan_id", "balance", "doc_id")),
+    # each home: when and for what it was bought (basis_costs: closing costs that add to basis), its loans
+    # (loan_ids, separated by commas: loans rows or loan_balances ids) and its sale
+    Table("properties", ("property_id", "address", "parcel", "owner", "purchased", "purchase_price", "basis_costs",
+                         "loan_ids", "sold", "sale_price", "note")),
+    # what a home was estimated or assessed at: an online estimate, the county's assessment and its estimate of
+    # fair market value, an appraisal, or the legacy workbook's tracked value
+    Table("property_values", ("as_of", "property_id", "source", "value", "note", "doc_id"),
+          {"source": ("zillow", "redfin", "trulia", "county_assessed", "county_fair_market", "appraisal", "hand",
+                      "legacy")}),
+    # work done on a home: capital adds to basis, a repair doesn't, an energy_credit improvement adds its cost
+    # less the credit claimed for it
+    Table("improvements", ("date", "property_id", "description", "kind", "cost", "credit", "receipt", "note",
+                           "doc_id"),
+          {"kind": ("capital", "repair", "energy_credit")}),
     Table("loan_events", ("date", "loan_id", "kind", "amount", "doc_id"),
           {"kind": ("payment", "prepayment", "recast", "rate_change")}),
     Table("source_documents", ("doc_id", "kind", "sha256", "original_name", "drive_link",
@@ -164,6 +180,21 @@ REPORTS = (
     # each investment account's money in and out each year, by kind (investments.flows)
     Table("investment_flows", ("year", "account_id", "kind", "amount", "rows", "run_id")),
     Table("sinking_funds", ("month", "line", "category", "set_aside", "spent", "balance", "run_id")),
+    # every investment account on each month-end and today: what it held and was worth (valuation.py)
+    Table("investment_values", ("date", "account_id", "owner", "wrapper", "bucket", "symbol", "source", "asset_class",
+                                "shares", "price", "value", "basis", "run_id")),
+    # the allocation tree against its targets, today and after the proposed rebalance (allocation.py)
+    Table("allocation", ("node", "parent", "depth", "order", "label", "leaf", "target_share", "target_value",
+                         "current_value", "current_share", "delta_value", "proposed_value", "proposed_share",
+                         "run_id")),
+    Table("rebalance", ("account_id", "bucket", "symbol", "asset_class", "current", "proposed", "trade", "run_id")),
+    # net worth on each valuation date, by part (a tax bucket, home equity, other debt) and owner (networth.py)
+    Table("net_worth", ("date", "part", "owner", "value", "run_id")),
+    # each home's numbers (house.py): basis, value, loans, equity and what a sale would net
+    Table("property_summary", ("property_id", "order", "key", "label", "value", "as_of", "note", "run_id")),
+    Table("home_values", ("property_id", "as_of", "source", "value", "note", "run_id")),
+    Table("home_improvements", ("property_id", "date", "description", "kind", "cost", "credit", "basis_added",
+                                "receipt", "note", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),
     Table("flows", ("period", "level", "source", "target", "amount", "run_id"),

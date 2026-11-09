@@ -24,6 +24,8 @@ ALLOWED = {
     "zipfile",
     # data handling and the categorization model
     "numpy", "pandas", "pypdf", "sklearn",
+    # the rebalance's linear program (scipy comes with scikit-learn)
+    "scipy.optimize",
     # Google: Sheets, Drive and Colab sign-in
     "gspread", "googleapiclient", "google.auth", "google.colab",
 }

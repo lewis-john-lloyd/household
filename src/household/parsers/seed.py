@@ -1,7 +1,8 @@
 """Seed files: a CSV whose header is exactly the columns of one seedable ledger table.
 
 The accounts, the category set, the aliases that map old category names onto
-it, the payee rules, household parameters, loans and the history of pay changes are short lists a person
+it, the payee rules, household parameters, loans and the history of pay changes, homes, their values and
+improvements, allocation targets and securities are short lists a person
 decides once and edits rarely, so they arrive as a file in the inbox like
 everything else. Rows are keyed on the first column (a payee rule on its
 pattern and effective date, a parameter on its year, jurisdiction and key): a
@@ -20,11 +21,16 @@ from .. import schema
 
 NAME = "seed"
 SEEDABLE = ("accounts", "categories", "category_aliases", "payee_rules", "parameters", "budget_rules",
-            "loans", "comp_events")
+            "loans", "comp_events", "loan_balances", "properties", "property_values", "improvements",
+            "allocation_targets", "securities")
 TABLES = {name: schema.table(schema.LEDGER, name) for name in SEEDABLE}
 # a payee rule changes over time: one pattern, several effective dates
 KEYS = {"payee_rules": ["pattern", "effective"], "parameters": ["year", "jurisdiction", "key"],
-        "budget_rules": ["line", "effective"], "comp_events": ["effective", "person", "employer"]}
+        "budget_rules": ["line", "effective"], "comp_events": ["effective", "person", "employer"],
+        "loan_balances": ["as_of", "loan_id"], "property_values": ["as_of", "property_id", "source"],
+        "improvements": ["date", "property_id", "description"], "allocation_targets": ["effective", "node"],
+        # a security's later row with another class or quote is its new description (the last row wins)
+        "securities": ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"]}
 
 
 def _table(text):

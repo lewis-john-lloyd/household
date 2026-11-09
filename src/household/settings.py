@@ -33,6 +33,14 @@ SETTINGS = {
                             "year (lpfsa_claim_deadline:2026 with a full date for one plan year)",
     "dcfsa_claim_deadline": "The last day to claim dependent care FSA money: MM-DD of the year after the plan "
                             "year (dcfsa_claim_deadline:2026 with a full date for one plan year)",
+    "household_adults": "The two adults' owner names in accounts, separated by commas: a joint account splits evenly "
+                        "between them, and accounts of any other owner count as the kids' (default: the people "
+                        "on pay stubs)",
+    "home_value_basis": "Which value of a home counts toward net worth: purchase_price (until sold), median, "
+                        "lowest, or a source in property_values such as zillow or county_fair_market "
+                        "(default purchase_price)",
+    "home_sale_cost_rate": "What selling a home would cost, as a fraction of the price (commission and closing), "
+                           "for what a sale would net (default 0.06)",
     "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
                       "(receipt_sender:<store>); the receipt exporter reads only mail from these",
     "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "

@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_investments, mortgage,
+from . import (allocation, backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_investments, mortgage, networth, house, valuation,
                paycheck, nudges, prices, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
@@ -104,6 +104,43 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
               f"({len(held) - len(new)} already held), {held['as_of'].nunique()} dates")
     return {"run_id": run_id, "securities": counts["securities"], "holdings": counts["holdings"],
             "already_held": len(held) - len(new), "dates": int(held["as_of"].nunique()), "notes": notes}
+
+
+def ingest_legacy_net_worth(session, folder_id, workbook_id, columns, tab="Net Worth", run_id=None, log=print):
+    """Add the legacy workbook's home values to `property_values` and its loan balances to `loan_balances`
+    (legacy_investments.net_worth), backing up the ledger first. Safe to run every time: a value or balance the
+    ledger already holds (same date and home or loan) is not added again, and with nothing new it writes nothing.
+
+    columns maps a column header of the tab to ("value", property_id) or ("loan", loan_id). The homes must be in
+    `properties` first, so their loans and dates are known.
+    """
+    run_id = run_id or new_run_id()
+    ledger, _, _ = bootstrap(session, folder_id)
+    homes = set(_read(ledger, "properties")["property_id"].astype(str).str.strip())
+    unknown = sorted({t for k, t in columns.values() if k == "value" and t not in homes})
+    if unknown:
+        raise ValueError(f"no such homes in properties: {', '.join(unknown)} (add them first)")
+    workbook = session.sheets.open_by_key(workbook_id)
+    got = workbook.values_batch_get([f"'{tab}'"], params={"valueRenderOption": sheets.UNFORMATTED})
+    rows = (got.get("valueRanges") or [{}])[0].get("values", [])
+    values, loans, notes = legacy_investments.net_worth(rows, columns)
+    for note in notes:
+        _say(log, note)
+    have_v, have_l = _read(ledger, "property_values"), _read(ledger, "loan_balances")
+    seen_v = set(zip(have_v["as_of"].astype(str).str[:10], have_v["property_id"].astype(str), have_v["source"].astype(str)))
+    seen_l = set(zip(have_l["as_of"].astype(str).str[:10], have_l["loan_id"].astype(str)))
+    new_v = values[[k not in seen_v for k in zip(values["as_of"], values["property_id"], values["source"])]]
+    new_l = loans[[k not in seen_l for k in zip(loans["as_of"], loans["loan_id"])]]
+    if new_v.empty and new_l.empty:
+        _say(log, f"legacy net worth: nothing new ({len(values)} home values and {len(loans)} loan balances held)")
+        return {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": notes}
+    backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
+    counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "property_values"), new_v),
+                                           (schema.table(schema.LEDGER, "loan_balances"), new_l)])
+    _say(log, f"legacy net worth: {counts['property_values']} home values and {counts['loan_balances']} loan "
+              "balances added")
+    return {"run_id": run_id, "property_values": counts["property_values"], "loan_balances": counts["loan_balances"],
+            "notes": notes}
 
 
 def fetch_prices(session, folder_id, rounds=8, log=print):
@@ -376,6 +413,64 @@ def _review(ledger, log=print, now=None):
             "open_lines": open_lines}
 
 
+def _investments_and_homes(ledger, reports, books, sched, today, run_id, log):
+    """Investment values, the allocation and a rebalance, homes, and net worth (valuation.py, allocation.py,
+    house.py, networth.py) into Reports. Returns figures for the run's result."""
+    accounts, params = books["accounts"], books["parameters"]
+    holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
+    securities = _read(ledger, "securities")
+    vals, notes = valuation.values(accounts, holdings, activity, _read(ledger, "prices"), securities, today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "investment_values"), vals.assign(run_id=run_id))
+    now = vals[vals["date"] == today] if len(vals) else vals
+    _say(log, f"investments: {len(now)} positions in {now['account_id'].nunique() if len(now) else 0} accounts worth "
+              f"{pd.to_numeric(now['value'], errors='coerce').sum():,.0f} today; {vals['date'].nunique() if len(vals) else 0}"
+              " dates valued")
+    for line in notes:
+        _say(log, line)
+    if len(now):
+        by = now.assign(v=pd.to_numeric(now["value"], errors="coerce")).groupby("bucket")["v"].sum()
+        _say(log, "  by tax bucket: " + ", ".join(f"{valuation.BUCKET_NAMES.get(b, b)} {v:,.0f}" for b, v in by.items()))
+        stale = now[now["basis"] == "carried"]
+        if len(stale):
+            _say(log, f"  {len(stale)} positions carried at a reading's value (no price since): "
+                      + ", ".join(sorted(set(stale["account_id"] + ":" + stale["symbol"].replace("", "(total)")))))
+    nodes = allocation.tree(_read(ledger, "allocation_targets"), today)
+    scope = allocation.in_scope(vals)
+    current = allocation.by_class(scope) if scope is not None and len(scope) else {}
+    since = (pd.Timestamp(today) - pd.DateOffset(years=2)).date().isoformat()
+    trades, proposed, more = (allocation.rebalance(scope, nodes, allocation.ever_held(holdings, activity, since))
+                              if current else (pd.DataFrame(columns=allocation.TRADE_COLUMNS), {}, []))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "allocation"),
+                         allocation.report(nodes, current, proposed).assign(run_id=run_id))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "rebalance"), trades.assign(run_id=run_id))
+    for line in more:
+        _say(log, line)
+    tables = {n: _read(ledger, n) for n in ("properties", "property_values", "improvements", "loans", "loan_balances")}
+    props, pvals, improved, loans, balances = house.frames(tables)
+    improved = house.improvements(improved)
+    summary, more = house.summary(props, pvals, improved, loans, sched, balances, params, today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "property_summary"), summary.assign(run_id=run_id))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "home_values"),
+                         house.values_report(pvals).assign(run_id=run_id))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "home_improvements"), improved.assign(run_id=run_id))
+    for line in more:
+        _say(log, line)
+    for r in summary[summary["key"].isin(["value_used", "equity"])].to_dict("records"):
+        _say(log, f"house: {r['property_id']} {r['label'].lower()} {float(r['value']):,.0f}"
+                  + (f" ({r['note']})" if r["note"] else ""))
+    people = valuation.adults(params, _read(ledger, "paystubs"))
+    rule = settings.value(params, "home_value_basis", "purchase_price").strip() or "purchase_price"
+    net = networth.build(vals, people, props, pvals, loans, sched, balances, rule)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "net_worth"), net.assign(run_id=run_id))
+    totals = networth.totals(net)
+    if totals:
+        first, last = min(totals), max(totals)
+        _say(log, f"net worth: {totals[last]:,.0f} on {last} ({len(totals)} dates from {first}); owners "
+                  + ", ".join(people or ("none set",)))
+    return {"investments_value": round(float(pd.to_numeric(now["value"], errors="coerce").sum()), 2) if len(now) else 0.0,
+            "rebalance_trades": len(trades), "net_worth": totals.get(max(totals), 0.0) if totals else 0.0}
+
+
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
@@ -468,11 +563,13 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         _say(log, f"  {row['date']} {row['person']} ({row['employer']}): net pay {row['amount']:,.2f} "
                   "never arrived in an account")
     loans = _read(ledger, "loans")
+    sched = pd.DataFrame(columns=mortgage.COLUMNS)
     if not loans.empty:
         sched, notes = mortgage.schedule(loans, _read(ledger, "loan_events"), categorized, today[:7])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
         for line in notes + mortgage.summary(sched):
             _say(log, line)
+    worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log)
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "
@@ -511,7 +608,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
               "transfers_unmatched": len(waiting), "transfers_unmatched_answered": len(lonely) - len(waiting),
               # how lines since REVIEW_FROM were categorized, for the status page's breakdown
               "categories": {"since": categorize.REVIEW_FROM, "decided": counts["decided"], "waiting": counts["waiting"],
-                             "open_lines": counts["open_lines"]}}
+                             "open_lines": counts["open_lines"]}, **worth}
 
     facts = sheets.read_table(ledger, schema.table(schema.LEDGER, "return_facts"))
     if not facts.empty:

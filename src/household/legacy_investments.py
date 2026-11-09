@@ -179,3 +179,46 @@ def merge(frames):
              .reset_index())
     out["doc_id"] = LEGACY_DOC
     return out[COLUMNS]
+
+
+NET_WORTH_DOC = "legacy:net_worth"
+
+
+def net_worth(rows, columns):
+    """(property_values rows, loan_balances rows, notes) from the legacy Net Worth tab: columns maps a column
+    header to ("value", property_id) or ("loan", loan_id). A blank or zero cell means nothing on that date (a
+    home not yet bought or already sold, a loan not yet taken or paid off). Loans are kept as amounts owed."""
+    values = pd.DataFrame(columns=["as_of", "property_id", "source", "value", "note", "doc_id"])
+    loans = pd.DataFrame(columns=["as_of", "loan_id", "balance", "doc_id"])
+    if not rows:
+        return values, loans, ["net worth: the tab is empty"]
+    header = [_text(h) for h in rows[0]]
+    at = {h: i for i, h in enumerate(header) if h}
+    missing = sorted(set(columns) - set(at))
+    notes = [f"net worth: no column {m!r}" for m in missing]
+    vals, owed = [], []
+    for n, row in enumerate(rows[1:], start=2):
+        if not row or not _text(row[0]):
+            continue
+        try:
+            as_of = parse_date(row[0]).isoformat()
+        except (TypeError, ValueError):
+            notes.append(f"net worth: row {n}: {row[0]!r} is not a date, left out")
+            continue
+        for column, (kind, target) in columns.items():
+            if column not in at or at[column] >= len(row):
+                continue
+            amount = parse_money(row[at[column]])
+            if amount is None or abs(amount) < 0.005:
+                continue
+            if kind == "value":
+                vals.append({"as_of": as_of, "property_id": target, "source": "legacy", "value": round(amount, 2),
+                             "note": "", "doc_id": NET_WORTH_DOC})
+            else:
+                owed.append({"as_of": as_of, "loan_id": target, "balance": round(abs(amount), 2),
+                             "doc_id": NET_WORTH_DOC})
+    if vals:
+        values = pd.DataFrame(vals, columns=values.columns).drop_duplicates(["as_of", "property_id"], keep="last")
+    if owed:
+        loans = pd.DataFrame(owed, columns=loans.columns).drop_duplicates(["as_of", "loan_id"], keep="last")
+    return values.reset_index(drop=True), loans.reset_index(drop=True), notes

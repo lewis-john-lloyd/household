@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (allocation, backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_investments, mortgage, networth, house, valuation,
+from . import (allocation, backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_equity, legacy_investments, lots, mortgage, networth, house, valuation,
                paycheck, nudges, prices, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
@@ -104,6 +104,45 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
               f"({len(held) - len(new)} already held), {held['as_of'].nunique()} dates")
     return {"run_id": run_id, "securities": counts["securities"], "holdings": counts["holdings"],
             "already_held": len(held) - len(new), "dates": int(held["as_of"].nunique()), "notes": notes}
+
+
+def ingest_legacy_equity(session, folder_id, workbook_id, grant_columns, grants_tab, sales_tab, run_id=None,
+                         log=print):
+    """Add the legacy tax workbook's stock-plan vests to `equity_vests` and its sales to `equity_sales`
+    (legacy_equity.py), for the dates before the plan's own records begin, backing up the ledger first. Safe to
+    run every time: what the ledger already holds is not added again, and with nothing new it writes nothing.
+
+    grant_columns maps each grant column of the grants tab (headed by the year it was awarded) to the plan's
+    grant id, as vest_schedule names it ({"<year>": "<grant id>"}).
+    """
+    run_id = run_id or new_run_id()
+    ledger, _, _ = bootstrap(session, folder_id)
+    workbook = session.sheets.open_by_key(workbook_id)
+    got = workbook.values_batch_get([f"'{grants_tab}'", f"'{sales_tab}'"], params={"valueRenderOption": sheets.UNFORMATTED})
+    grants_rows, sales_rows = (vr.get("values", []) for vr in got.get("valueRanges", []))
+    vested, notes = legacy_equity.vests(grants_rows, grant_columns)
+    sold, more = legacy_equity.sales(sales_rows, vested)
+    notes += more
+    have_vests, have_sales = _read(ledger, "equity_vests"), _read(ledger, "equity_sales")
+    new_vests = legacy_equity.before(vested, have_vests[have_vests["doc_id"] != legacy_equity.LEGACY_DOC], "vest_date")
+    new_sales = legacy_equity.before(sold, have_sales[have_sales["doc_id"] != legacy_equity.LEGACY_DOC], "sale_date")
+    def fresh(df, have, keys):
+        seen = set(zip(*(have[k].astype(str) for k in keys))) if len(have) else set()
+        return df[[k not in seen for k in zip(*(df[k].astype(str) for k in keys))]] if len(df) else df
+    new_vests = fresh(new_vests, have_vests, ["vest_date", "grant_id"])
+    new_sales = fresh(new_sales, have_sales, ["sale_date", "grant_id", "vest_date"])
+    for note in notes:
+        _say(log, note)
+    if new_vests.empty and new_sales.empty:
+        _say(log, f"legacy equity: nothing new ({len(vested)} vests and {len(sold)} sales read)")
+        return {"run_id": run_id, "equity_vests": 0, "equity_sales": 0, "notes": notes}
+    backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
+    counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "equity_vests"), new_vests),
+                                           (schema.table(schema.LEDGER, "equity_sales"), new_sales)])
+    _say(log, f"legacy equity: {counts['equity_vests']} vests and {counts['equity_sales']} sales added, from "
+              f"before the plan's own records")
+    return {"run_id": run_id, "equity_vests": counts["equity_vests"], "equity_sales": counts["equity_sales"],
+            "notes": notes}
 
 
 def ingest_legacy_net_worth(session, folder_id, workbook_id, columns, tab="Net Worth", run_id=None, log=print):
@@ -486,6 +525,35 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
             "rebalance_trades": len(trades), "net_worth": totals.get(max(totals), 0.0) if totals else 0.0}
 
 
+def _lots(ledger, reports, books, today, run_id, log):
+    """Tax lots and wash sales (lots.py) into Reports: form_8949 and open_lots. Returns form_8949 and figures for
+    the run's result."""
+    accounts, securities = books["accounts"], _read(ledger, "securities")
+    holdings, activity, schedule = _read(ledger, "holdings"), _read(ledger, "investment_activity"), _read(ledger, "vest_schedule")
+    group_of = lots.groups(securities)
+    plan = set(lots.grant_symbols(schedule).values())
+    held = lots.holders(holdings, accounts, plan)
+    eq_acq, eq_sold, notes = lots.equity_lots(_read(ledger, "equity_vests"), _read(ledger, "equity_sales"), schedule,
+                                              held, group_of)
+    act_acq, act_sold = lots.activity_lots(activity, accounts, group_of, leave_out=plan)
+    form, still, more = lots.build(pd.concat([eq_acq, act_acq], ignore_index=True),
+                                   pd.concat([eq_sold, act_sold], ignore_index=True), _read(ledger, "stock_splits"))
+    still = lots.priced(still, valuation.Prices(_read(ledger, "prices")), today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "form_8949"), form.assign(run_id=run_id))
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "open_lots"), still.assign(run_id=run_id))
+    facts = _read(ledger, "return_facts")
+    for line in notes + more + lots.year_lines(form, facts) + lots.holding_check(still, holdings, plan):
+        _say(log, line)
+    off = lots.check_reported(form)
+    if len(off):
+        _say(log, f"lots: {len(off)} sales whose basis before wash sales differs from the plan's: "
+                  + ", ".join(sorted(set(off["sale_date"] + " " + off["lot_id"])))[:400])
+    _say(log, f"lots: {len(form)} lot parts sold, {int((form['code'] == 'W').sum()) if len(form) else 0} of them wash "
+              f"sales; {len(still)} lot parts open")
+    return form, {"lot_parts_sold": len(form), "wash_sales": int((form["code"] == "W").sum()) if len(form) else 0,
+                  "open_lot_parts": len(still)}
+
+
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
@@ -591,6 +659,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             _say(log, f"mortgage: {loan_id} paid off {g['month'].iloc[-1]} as scheduled, "
                       f"{g['interest'].sum():,.0f} interest still to pay")
     worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log, session.drive())
+    form_8949, lot_result = _lots(ledger, reports, books, today, run_id, log)
+    worth.update(lot_result)
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "
@@ -700,6 +770,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
 
         year = int(stubs["pay_date"].astype(str).max()[:4])
         sales = sheets.read_table(ledger, schema.table(schema.LEDGER, "equity_sales"))
+        if len(form_8949):  # the gains as reported, wash sales worked out
+            sales = lots.adjusted_sales(form_8949)
         if year in tax.taxdata.PARAMS:
             vests = projection.scheduled_vests(*(sheets.read_table(ledger, schema.table(schema.LEDGER, t))
                                                   for t in ("vest_schedule", "equity_vests", "prices")))

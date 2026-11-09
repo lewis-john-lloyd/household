@@ -90,6 +90,8 @@ LEDGER = (
     # each fund or stock the household holds: its name, asset class and expense ratio, and the symbol
     # GOOGLEFINANCE knows it by (quote; blank for a fund with no public price, such as a plan-only trust)
     Table("securities", ("symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group")),
+    # a stock split: from date on, one share is ratio shares (lots.py restates lots and sales in today's shares)
+    Table("stock_splits", ("symbol", "date", "ratio", "note")),
     # a security's closing price on or before a date (priced_date is the trading day it came from); a row with
     # no close records that GOOGLEFINANCE had none, so the date is not asked again (prices.py)
     Table("prices", ("symbol", "date", "priced_date", "close", "source")),
@@ -194,6 +196,14 @@ REPORTS = (
                          "current_value", "current_share", "delta_value", "proposed_value", "proposed_share",
                          "run_id")),
     Table("rebalance", ("account_id", "bucket", "symbol", "asset_class", "current", "proposed", "trade", "run_id")),
+    # each part of a lot sold, as Form 8949 reports it, wash sales worked out (lots.py)
+    Table("form_8949", ("year", "sale_date", "account_id", "symbol", "shares", "acquired", "holding_from", "term",
+                        "proceeds", "basis", "wash_carried", "code", "adjustment", "gain", "lot_id", "piece",
+                        "replaced_by", "reported_basis", "note", "run_id")),
+    # what each lot in a taxable account still holds today: its basis (wash sales added) and holding period
+    Table("open_lots", ("lot_id", "piece", "account_id", "symbol", "acquired", "holding_from", "shares",
+                        "cost_per_share", "basis", "wash_added", "kind", "grant_id", "price", "value", "gain",
+                        "term_if_sold", "run_id")),
     # net worth on each valuation date, by part (a tax bucket, home equity, other debt) and owner (networth.py)
     Table("net_worth", ("date", "part", "owner", "value", "run_id")),
     # each home's numbers (house.py): basis, value, loans, equity and what a sale would net

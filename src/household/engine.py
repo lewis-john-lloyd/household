@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (allocation, backup, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_equity, legacy_investments, lots, mortgage, networth, house, valuation,
+from . import (allocation, backup, logs, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_equity, legacy_investments, lots, mortgage, networth, house, valuation,
                paycheck, nudges, prices, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
@@ -158,7 +158,7 @@ def ingest_legacy_net_worth(session, folder_id, workbook_id, columns, tab="Net W
     homes = set(_read(ledger, "properties")["property_id"].astype(str).str.strip())
     unknown = sorted({t for k, t in columns.values() if k == "value" and t not in homes})
     if unknown:  # a properties seed in the inbox adds them; until it has, there is nothing to attach these to
-        _say(log, f"legacy net worth: skipped, no such homes in properties yet: {', '.join(unknown)}")
+        _say(log, f"legacy net worth: skipped, no such homes in properties yet: {', '.join(unknown)}", "WARN")
         return {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": [], "skipped": unknown}
     workbook = session.sheets.open_by_key(workbook_id)
     got = workbook.values_batch_get([f"'{tab}'"], params={"valueRenderOption": sheets.UNFORMATTED})
@@ -214,7 +214,7 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     securities = _read(ledger, "securities")
     usable, refused = prices.quotes(securities)
     for symbol in refused:
-        _say(log, f"prices: {symbol}'s quote can't be used (capitals and digits, as VEMAX or MUTF:VEMAX)")
+        _say(log, f"prices: {symbol}'s quote can't be used (capitals and digits, as VEMAX or MUTF:VEMAX)", "WARN")
     holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
     added = 0
 
@@ -231,6 +231,9 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     held, _ = collect()
     ask, wanted = prices.requests(securities, holdings, activity, held, today)
     sheets.rewrite_price_requests(ledger, requests_table, ask)
+    if len(ask):
+        _say(log, f"prices: asked GOOGLEFINANCE for {len(ask)} prices in price_requests; waiting up to {wait}s "
+                  "for Sheets to answer")
     waited = 0
     while len(ask) and waited < wait:
         sleep(PRICE_POLL_EVERY)
@@ -246,9 +249,10 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     return {"added": added, "wanted": wanted, "asked": len(ask)}
 
 
-def _say(log, message):
+def _say(log, message, level=None):
+    """Print a line through log, with its level (logs.Line; INFO unless given or already set)."""
     if log:
-        log(message)
+        log(logs.Line(message, level or logs.level_of(message)))
 
 
 def _recording(log):
@@ -256,13 +260,14 @@ def _recording(log):
     lines = []
 
     def say(message):
-        lines.append(str(message))
+        line = message if isinstance(message, logs.Line) else logs.Line(str(message))
+        lines.append(line)
         if log:
-            log(message)
+            log(line)
     return say, lines
 
 
-STAGES = {"ingest", "compute"}
+STAGES = {"ingest", "compute", "run"}  # run: runner.run's own lines and its table of stages
 
 
 def _record(reports, stage, run_id, at, summary, lines):
@@ -271,7 +276,7 @@ def _record(reports, stage, run_id, at, summary, lines):
     for name, rows in (
             ("run_log", [{"run_id": run_id, "computed_at": at, "stage": stage,
                           "detail": json.dumps(summary, default=str, sort_keys=True)}]),
-            ("run_notes", [{"run_id": run_id, "stage": stage, "at": at, "n": n, "message": m}
+            ("run_notes", [{"run_id": run_id, "stage": stage, "at": at, "n": n, "message": str(m), "level": logs.level_of(m)}
                            for n, m in enumerate(lines)])):
         t = schema.table(schema.REPORTS, name)
         kept = sheets.read_table(reports, t)
@@ -322,6 +327,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     counts = {}
     for f in files:
         counts[f["status"]] = counts.get(f["status"], 0) + 1
+    _say(log, "review: reading the answers in the review tab, then rebuilding its questions (often a minute)")
     started = time.perf_counter()
     answered = _review(ledger, log)
     timing["review"] = round(time.perf_counter() - started, 2)
@@ -506,7 +512,7 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
             if not inbox.write_parcels(drive, homes):
                 _say(log, "house: the county check has no parcels file yet; run its monthly function once, then compute")
         except Exception as e:  # the county check keeps the parcels it was last given
-            _say(log, f"house: could not write the county check's parcels file: {e}")
+            _say(log, f"house: could not write the county check's parcels file: {e}", "WARN")
     for line in more:
         _say(log, line)
     for r in summary[summary["key"].isin(["value_used", "equity"])].to_dict("records"):
@@ -547,7 +553,7 @@ def _lots(ledger, reports, books, today, run_id, log):
     off = lots.check_reported(form)
     if len(off):
         _say(log, f"lots: {len(off)} sales whose basis before wash sales differs from the plan's: "
-                  + ", ".join(sorted(set(off["sale_date"] + " " + off["lot_id"])))[:400])
+                  + ", ".join(sorted(set(off["sale_date"] + " " + off["lot_id"])))[:400], "WARN")
     _say(log, f"lots: {len(form)} lot parts sold, {int((form['code'] == 'W').sum()) if len(form) else 0} of them wash "
               f"sales; {len(still)} lot parts open")
     return form, {"lot_parts_sold": len(form), "wash_sales": int((form["code"] == "W").sum()) if len(form) else 0,
@@ -632,7 +638,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     balanced = checks.balance_check(_read(ledger, "balances"), effective)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "balance_check"), balanced.assign(run_id=run_id))
     off = balanced[balanced["status"].str.startswith("off")]
-    _say(log, f"balance_check: {len(balanced)} balances, {len(off)} that disagree with the ledger")
+    _say(log, f"balance_check: {len(balanced)} balances, {len(off)} that disagree with the ledger", "WARN" if len(off) else "INFO")
     for row in off.to_dict("records"):
         _say(log, f"  {row['account_id']} {row['as_of']}: {row['status']}")
     unpaired = checks.paychecks(_read(ledger, "paystubs"), categorized)
@@ -641,7 +647,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     lost = unpaired[unpaired["status"] == "no deposit"]
     _say(log, f"paychecks: {len(forgot)} pay deposits with no stub, {len(lost)} stubs with no deposit")
     for who, g in forgot.groupby("person"):
-        _say(log, f"  did you forget {who}'s stubs? {len(g)} missing, the latest paid {g['date'].max()}")
+        _say(log, f"  did you forget {who}'s stubs? {len(g)} missing, the latest paid {g['date'].max()}", "WARN")
     for row in lost.to_dict("records"):
         _say(log, f"  {row['date']} {row['person']} ({row['employer']}): net pay {row['amount']:,.2f} "
                   "never arrived in an account")
@@ -736,7 +742,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
                          paycheck.jobs(jobs, pay).assign(run_id=run_id))
     wrong_pay = pay[pay["status"] != "agrees"]
     result["pay_mismatches"] = len(wrong_pay)
-    _say(log, f"pay_check: {len(pay)} runs of paychecks beside comp_events, {len(wrong_pay)} disagree")
+    _say(log, f"pay_check: {len(pay)} runs of paychecks beside comp_events, {len(wrong_pay)} disagree",
+         "WARN" if len(wrong_pay) else "INFO")
     for row in wrong_pay.to_dict("records"):
         _say(log, f"  {row['person']} at {row['employer']}: {row['finding']}")
     tax_plan = tax_elections = None  # this year's, for the weekly email
@@ -861,7 +868,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         if not written:
             _say(log, "receipt_searches: the exporter has no searches file yet; run exportReceipts once, then compute")
     except Exception as e:  # the rest of compute goes on: the exporter keeps the searches it was last given
-        _say(log, f"receipt_searches: could not write the exporter's searches file: {e}")
+        _say(log, f"receipt_searches: could not write the exporter's searches file: {e}", "WARN")
     fsa = nudges.fsa_balances(stubs, categorized, params, day, tax_elections)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "fsa_balances"), fsa.assign(run_id=run_id))
     for r in fsa.to_dict("records"):

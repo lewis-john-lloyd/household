@@ -335,3 +335,28 @@ test("a lens's periods run from the first spending to today's, newest first", ()
   assert.deepEqual(shape.lensPeriods(book(), "year", "2026-11-07"), ["2026", "2025", "2024"]);
   assert.equal(shape.lensPeriods(book(), "month", "2026-11-07").slice(-1)[0], "2024-10");
 });
+
+test("the run as a whole comes first with each line's level, and a failed stage needs you", () => {
+  const log: unknown[][] = [
+    ["run_id", "computed_at", "stage", "detail"],
+    ["r9", "2001-03-02T07:10:00Z", "run", JSON.stringify({ failed: ["legacy equity"], stages: [
+      { stage: "legacy equity", status: "failed", seconds: 1, result: "ValueError: no grants tab" },
+      { stage: "compute", status: "done", seconds: 9, result: "0 lines open in review" }] })],
+    ["r2", "2001-03-02T07:05:00Z", "compute", "{}"],
+  ];
+  const notes: unknown[][] = [
+    ["run_id", "stage", "at", "n", "message", "level"],
+    ["r9", "run", "", 0, "legacy equity: failed after 0:01: ValueError: no grants tab", "ERROR"],
+    ["r9", "run", "", 1, "summary: 1 of 2 stages done", "ERROR"],
+    ["r2", "compute", "", 0, "lots: a vest is missing", "WARN"],
+  ];
+  const status = shape.parseStatus(log, notes);
+  assert.deepEqual(status.stages.map((s) => s.stage), ["run", "compute"]);
+  assert.deepEqual(status.stages[1].levels, ["WARN"]);
+  const failed = status.attention.find((a) => a.key === "stages_failed");
+  assert.deepEqual(failed?.items, [{ title: "legacy equity", detail: "ValueError: no grants tab" }]);
+  assert.equal(failed?.flags.length, 2);
+  // Reports from before levels: every line INFO
+  const old = shape.parseStatus(log.slice(0, 1).concat([log[2]]), [notes[0].slice(0, 5), notes[3].slice(0, 5)]);
+  assert.deepEqual(old.stages[0].levels, ["INFO"]);
+});

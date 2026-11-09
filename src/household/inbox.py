@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, ingest, pdftext, schema, sheets, xlsx
+from . import backup, ingest, logs, pdftext, schema, sheets, xlsx
 from .backup import RETRIES
 from .parsers import ParseError, identify
 from .parsers import amazon, changes, google_takeout
@@ -366,8 +366,9 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
                 moves.append((f, summary, move_to))
         except Exception as e:  # keep going; the file stays in the inbox for the next run
             summary.update(status="error", reason=f"{type(e).__name__}: {e}")
-        log(f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
-            f"({time.perf_counter() - started:.1f}s)")
+        log(logs.Line(f"[{i}/{len(files)}] {f['name']}: {summary['status']} {_describe(summary)} "
+                      f"({time.perf_counter() - started:.1f}s)",
+                      "WARN" if summary["status"] in ("unrecognized", "failed", "refused") else "INFO"))
         if summary.get("parser") == changes.NAME and summary["status"] == "ingested":
             for note in summary.get("notes") or []:  # each edit a person made in the views, as it is written
                 log(f"  {note}")

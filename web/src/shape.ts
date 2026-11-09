@@ -307,6 +307,7 @@ interface StageRun {
   at: string;
   summary: Record<string, unknown>;
   lines: string[];
+  levels: string[];  // each line's level (INFO, WARN, ERROR), "INFO" where Reports kept none
 }
 
 interface AttentionItem {
@@ -434,28 +435,42 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
     const [id, at, stage, detail] = columnsAt(runLog, RUN_LOG_COLUMNS, "run_log");
     for (const v of runLog.slice(1)) {
       const name = String(v[stage] ?? "").trim();
-      if (name !== "ingest" && name !== "compute") continue;  // an older run_log row ("versions")
+      if (name !== "ingest" && name !== "compute" && name !== "run") continue;  // an older run_log row ("versions")
       let summary: Record<string, unknown> = {};
       try {
         summary = JSON.parse(String(v[detail] ?? "")) as Record<string, unknown>;
       } catch (e) {
         summary = {};  // a summary from before the status page: no counts to show
       }
-      runs.push({ stage: name, runId: String(v[id] ?? ""), at: String(v[at] ?? ""), summary, lines: [] });
+      runs.push({ stage: name, runId: String(v[id] ?? ""), at: String(v[at] ?? ""), summary, lines: [], levels: [] });
     }
   }
   if (notes.length) {
     const [id, stage, , n, message] = columnsAt(notes, RUN_NOTES_COLUMNS, "run_notes");
+    const level = notes[0].map((h) => String(h).trim()).indexOf("level");  // kept since 0.40
     const sorted = notes.slice(1).slice().sort((a, b) => Number(a[n]) - Number(b[n]));
     for (const v of sorted) {
       const run = runs.find((r) => r.stage === String(v[stage] ?? "").trim() && r.runId === String(v[id] ?? ""));
-      if (run) run.lines.push(String(v[message] ?? ""));
+      if (run) {
+        run.lines.push(String(v[message] ?? ""));
+        run.levels.push(level >= 0 && String(v[level] ?? "").trim() ? String(v[level]).trim() : "INFO");
+      }
     }
   }
-  runs.sort((a, b) => (a.stage === "ingest" ? 0 : 1) - (b.stage === "ingest" ? 0 : 1));
+  const order: Record<string, number> = { run: 0, ingest: 1, compute: 2 };
+  runs.sort((a, b) => order[a.stage] - order[b.stage]);
+  const whole = runs.find((r) => r.stage === "run");
   const ingest = runs.find((r) => r.stage === "ingest");
   const compute = runs.find((r) => r.stage === "compute");
   const attention: Attention[] = [];
+  const failed = whole ? ((whole.summary.stages as { stage?: string; status?: string; result?: string }[] | undefined) || [])
+    .filter((s) => s.status === "failed") : [];
+  if (failed.length) {
+    attention.push({ key: "stages_failed", label: failed.length === 1 ? "engine stage failed" : "engine stages failed",
+                     count: failed.length, note: "The Engine log says where.", detail: [], action: "",
+                     flags: whole ? whole.lines.filter((l, i) => whole.levels[i] === "ERROR") : [],
+                     items: failed.map((s) => ({ title: String(s.stage), detail: String(s.result || "") })) });
+  }
   if (ingest) {
     const files = (ingest.summary.files as { file?: string; status?: string; reason?: string }[] | undefined) || [];
     const unread = files.filter((f) => UNREAD.indexOf(String(f.status)) >= 0);

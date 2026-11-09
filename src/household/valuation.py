@@ -30,7 +30,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import settings
+from . import logs, settings
 from .legacy_investments import LEGACY_DOC
 from .prices import month_ends
 
@@ -350,13 +350,13 @@ def values(accounts, holdings, activity, prices, securities, today, dates=None, 
             rows += account_on(acct, mine, acts, priced, klass, day, partial, gone.get(acct["account_id"], ()))
     unknown = sorted(set(h["account_id"]) - set(accounts["account_id"].astype(str).str.strip()))
     if unknown:
-        notes.append("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown))
+        notes.append(logs.warn("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown)))
     out = pd.DataFrame(rows, columns=COLUMNS)
     latest = out[out["date"] == out["date"].max()] if len(out) else out
     blank = sorted(set(latest.loc[(latest["asset_class"] == "") & (latest["symbol"] != "")
                                   & ~latest["wrapper"].isin(("529", "ibonds")), "symbol"]))
     if blank:
-        notes.append(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank))
+        notes.append(logs.warn(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank)))
     return out, notes
 
 

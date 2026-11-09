@@ -30,7 +30,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import valuation
+from . import logs, valuation
 from .legacy import parse_date
 
 WINDOW_DAYS = 30
@@ -108,7 +108,7 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
         if not (day and shares and fmv is not None):
             continue
         if not symbol:
-            notes.append(f"lots: grant {grant} has no symbol in vest_schedule; its vests are left out")
+            notes.append(logs.warn(f"lots: grant {grant} has no symbol in vest_schedule; its vests are left out"))
             continue
         acq.append({"lot_id": f"vest:{grant}:{day}", "account_id": accounts.get(symbol, ""), "sheltered": False,
                     "symbol": symbol,
@@ -281,8 +281,8 @@ def build(acquired, sold, splits=None):
         if need > 1e-4:
             unmatched += 1
             short = need / f
-            notes.append(f"lots: {day} sale of {s['symbol']}: {short:,.4f} shares with no lot to sell"
-                         + (f" ({s['lot_id']})" if s["lot_id"] else ""))
+            notes.append(logs.warn(f"lots: {day} sale of {s['symbol']}: {short:,.4f} shares with no lot to sell"
+                                   + (f" ({s['lot_id']})" if s["lot_id"] else "")))
     form = pd.DataFrame(rows, columns=FORM_8949)
     still = []
     for p in pieces:  # parts of a lot with the same basis and dates read as one
@@ -348,8 +348,8 @@ def holding_check(open_lots, holdings, symbols):
         have = open_lots.loc[(open_lots["symbol"] == sym) & (open_lots["acquired"] <= on), "shares"].sum() \
             if len(open_lots) else 0.0
         if abs(read - have) > 0.01:
-            lines.append(f"lots: {sym} open lots hold {have:,.3f} shares but the {on} reading "
-                         f"has {read:,.3f}: a vest or sale is missing")
+            lines.append(logs.warn(f"lots: {sym} open lots hold {have:,.3f} shares but the {on} reading "
+                                   f"has {read:,.3f}: a vest or sale is missing"))
     return lines
 
 

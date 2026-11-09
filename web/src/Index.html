@@ -210,6 +210,10 @@
       .logs li { padding: 1px 20px 1px 40px; text-indent: -20px; white-space: pre-wrap; overflow-wrap: anywhere; }
       .logs li.indent { color: var(--on-surface-variant); }
       .logs li.flag { background: var(--error-container); color: var(--on-error-container); }
+      .logs li.warn { background: var(--waiting-container); color: var(--on-surface); }
+      .logs .lvl { display: inline-block; width: 5.5ch; margin-right: 1ch; text-indent: 0; color: var(--on-surface-variant); }
+      .logs .lvl.warn, .logs .lvl.error { font-weight: 700; color: inherit; }
+      .tag.error { background: var(--error-container); color: var(--on-error-container); }
 
       /* where the money went: the summary beside the chart */
       .flow-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px;
@@ -595,8 +599,9 @@
       </div>
       </div>
       <div id="status-log" hidden>
-        <p class="support">What the engine printed in its latest ingest and compute. Choose a run or a topic to open it;
-          a topic with a line that needs you opens by itself.</p>
+        <p class="support">What the engine printed in its latest run: the run as a whole (each stage, how long it took, what
+          it did), then ingest and compute line by line. Each line has its level; choose a run or a topic to open it, and a
+          topic with a warning, an error or a line that needs you opens by itself.</p>
         <div id="status-logs" class="logs"></div>
       </div>
     </section>
@@ -4083,7 +4088,7 @@
         return c;
       }
 
-      var STAGE_NAME = { ingest: "Ingest", compute: "Compute" };
+      var STAGE_NAME = { run: "Run", ingest: "Ingest", compute: "Compute" };
 
       function drawStatus(status) {
         var title = document.getElementById("status-title");
@@ -4121,21 +4126,32 @@
           var panel = el("details", null, "panel");
           var head = el("summary");
           head.appendChild(el("h2", STAGE_NAME[s.stage]));
+          var levelOf = function (i) { return (s.levels && s.levels[i]) || "INFO"; };
           var flags = s.lines.filter(function (l) { return flagged[l]; }).length;
+          var errors = s.lines.filter(function (l, i) { return levelOf(i) === "ERROR"; }).length;
+          var warns = s.lines.filter(function (l, i) { return levelOf(i) === "WARN"; }).length;
           head.appendChild(el("span", when(s.at) + ", run " + s.runId + ", " + s.lines.length + " lines", "support"));
+          if (errors) head.appendChild(el("span", errors + (errors === 1 ? " error" : " errors"), "tag error"));
+          if (warns) head.appendChild(el("span", warns + (warns === 1 ? " warning" : " warnings"), "tag warn"));
           if (flags) head.appendChild(el("span", flags === 1 ? "1 line needs you" : flags + " lines need you", "tag warn"));
           panel.appendChild(head);
           logTopics(s.lines).forEach(function (t) {
             var topic = el("details", null, "topic");
             var th = el("summary", t.name);
             th.appendChild(el("span", " " + t.lines.length, "count"));
+            var worst = t.at.map(levelOf).reduce(function (w, l) { return LEVEL_RANK[l] > LEVEL_RANK[w] ? l : w; }, "INFO");
+            if (worst !== "INFO") th.appendChild(el("span", worst, "tag " + (worst === "ERROR" ? "error" : "warn")));
             topic.appendChild(th);
             var list = el("ol");
-            t.lines.forEach(function (l) {
-              list.appendChild(el("li", l, flagged[l] ? "flag" : /^\s/.test(l) ? "indent" : ""));
+            t.lines.forEach(function (l, k) {
+              var lv = levelOf(t.at[k]);
+              var li = el("li", null, flagged[l] || lv === "ERROR" ? "flag" : lv === "WARN" ? "warn" : /^\s/.test(l) ? "indent" : "");
+              li.appendChild(el("span", lv, "lvl " + lv.toLowerCase()));
+              li.appendChild(document.createTextNode(l));
+              list.appendChild(li);
             });
             topic.appendChild(list);
-            topic.open = t.lines.some(function (l) { return flagged[l]; });
+            topic.open = worst !== "INFO" || t.lines.some(function (l) { return flagged[l]; });
             panel.appendChild(topic);
           });
           logs.appendChild(panel);
@@ -4144,16 +4160,19 @@
 
       // A run's lines by topic, in the order each topic first appears: a line's topic is the words before its first
       // colon (a year or a run id left off), and an indented line belongs to the line above it.
+      var LEVEL_RANK = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+
       function logTopics(lines) {
         var topics = [], by = {}, last = "run";
-        lines.forEach(function (l) {
+        lines.forEach(function (l, i) {
           var name = last;
           if (!/^\s/.test(l)) {
             var m = /^([A-Za-z][A-Za-z _'-]{0,40}?)(?: \d{4}\b[^:]*| [0-9A-Z]{8,}[^:]*)?:/.exec(l);
             name = m ? m[1].trim() : "run";
           }
-          if (!by[name]) { by[name] = { name: name, lines: [] }; topics.push(by[name]); }
+          if (!by[name]) { by[name] = { name: name, lines: [], at: [] }; topics.push(by[name]); }
           by[name].lines.push(l);
+          by[name].at.push(i);
           last = name;
         });
         return topics;

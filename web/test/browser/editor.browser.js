@@ -21,6 +21,7 @@ window.__answers = {
   getAppliedAnyway: [],
   discardWaiting: { remembered: true, warning: "" },
   findSave: null,
+  getPeriods: [],
   getBudgetBook: { book: { targets: [], days: [], groups: {}, recurring: [] }, tracked: [] },
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
@@ -82,11 +83,17 @@ async function changeSetting(page, key, value) {
   await page.click(".md-detail button:has-text('Keep this change')");
 }
 
+// review, payee rules and duplicates live on Cashflow
+async function openReview(page) {
+  await page.click("#view-flows");
+  await page.click("#flows-tabs button[data-tab='edit:review']");
+}
+
 const staged = (page) => page.$$eval("#pending-list li", (lis) => lis.map((li) => li.firstChild.textContent));
 
 test("a change made while Save runs stays for the next save; only what was sent is cleared", async () => {
   const page = await open("window.__hold.saveChanges = true;");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");  // the save is now in flight, held
@@ -103,7 +110,7 @@ test("a change made while Save runs stays for the next save; only what was sent 
 
 test("a setting changed again while its save runs keeps the newer value", async () => {
   const page = await open("window.__hold.saveChanges = true;");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -116,7 +123,7 @@ test("a setting changed again while its save runs keeps the newer value", async 
 
 test("a save that fails keeps every change and says so", async () => {
   const page = await open("window.__fail.saveChanges = 'Drive said no';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -138,7 +145,7 @@ test("a load that fails says so instead of showing nothing", async () => {
 
 test("a save whose bookkeeping failed reads as saved, with the warning, and clears what it sent", async () => {
   const page = await open("window.__saveWarning = 'Its list of edits for the Saved tab could not be kept (quota); the change set itself is saved.';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -153,7 +160,7 @@ test("a save whose bookkeeping failed reads as saved, with the warning, and clea
 
 test("after a save whose answer was lost, Save finds the file it wrote and writes nothing twice", async () => {
   const page = await open("window.__fail.saveChanges = 'The connection was lost';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -175,7 +182,7 @@ test("after a save whose answer was lost, Save finds the file it wrote and write
 
 test("after a save that did not land, Save saves what is staged as a new request", async () => {
   const page = await open("window.__fail.saveChanges = 'Drive said no';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -217,7 +224,7 @@ test("a past year opens from the history with its forms as they were, and a seco
 
 test("after a save whose file was discarded since, Save says so and keeps every change", async () => {
   const page = await open("window.__fail.saveChanges = 'The connection was lost';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -280,7 +287,7 @@ const leaving = (page) => page.evaluate(() => {
 
 test("while a save runs, Discard all and undo of what it sent wait for its answer", async () => {
   const page = await open("window.__hold.saveChanges = true;");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -300,7 +307,7 @@ test("while a save runs, Discard all and undo of what it sent wait for its answe
 
 test("Discard all after a save that didn't confirm finds it saved, and offers to discard its file too", async () => {
   const page = await open("window.__fail.saveChanges = 'The connection was lost';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -326,7 +333,7 @@ test("Discard all after a save that didn't confirm finds it saved, and offers to
 
 test("Discard all after a save that didn't land discards here and touches nothing in Drive", async () => {
   const page = await open("window.__fail.saveChanges = 'Drive said no';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -342,7 +349,7 @@ test("Discard all after a save that didn't land discards here and touches nothin
 
 test("a save that didn't confirm keeps Save and the leave warning even with nothing staged", async () => {
   const page = await open("window.__fail.saveChanges = 'The connection was lost';");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -377,7 +384,7 @@ test("a discarded change set an ingest applied anyway is told on the status page
 test("a discard the views couldn't remember says the status page can't tell, instead of promising it will", async () => {
   const page = await open("window.__fail.saveChanges = 'The connection was lost';" +
     "window.__answers.discardWaiting = { remembered: false, warning: 'The views could not remember this discard (quota), so check the next ingest.' };");
-  await page.click("#view-edit");
+  await openReview(page);
   await page.waitForSelector(".md-list");
   await changeSetting(page, "transfer_account", "savings");
   await page.click("#pending-save");
@@ -535,9 +542,16 @@ test("each editor part lives on the page it is about, in that page's submenu", a
   assert.equal(await page.getAttribute("#edit-tabs button[data-tab='edit:categories']", "aria-pressed"), "true");
   await page.click("#edit-tabs button[data-tab=lines]");  // back to the budget's own part
   await page.waitForSelector("#budget:not([hidden])");
-  await page.click("#view-edit");
-  assert.equal(await page.textContent("#view-edit"), "Transactions");
-  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), ["Review", "Payee rules", "Duplicates"]);
+  assert.deepEqual(await page.$$eval("nav.tabs button", (b) => b.map((x) => x.textContent)),
+                   ["Status", "Jobs", "Budget", "Cashflow", "Taxes", "Home", "Investments", "Retirement"]);
+  await openReview(page);
+  assert.equal(await page.getAttribute("#view-flows", "aria-pressed"), "true");
+  assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)),
+                   ["Sankey", "Table", "Review", "Payee rules", "Duplicates"]);
+  assert.equal(await page.getAttribute("#edit-tabs button[data-tab='edit:review']", "aria-pressed"), "true");
+  await page.click("#edit-tabs button[data-tab=table]");  // back to the flow of money
+  await page.waitForSelector("#flows:not([hidden])");
+  assert.equal(await page.getAttribute("#flows-tabs button[data-tab=table]", "aria-pressed"), "true");
   assert.deepEqual(page.errors, []);
   await page.close();
 });

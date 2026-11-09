@@ -215,7 +215,7 @@
       .logs .lvl.warn, .logs .lvl.error { font-weight: 700; color: inherit; }
       .tag.error { background: var(--error-container); color: var(--on-error-container); }
 
-      /* where the money went: the summary beside the chart */
+      /* cashflow: the summary beside the chart */
       .flow-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 12px;
         align-items: start; margin-top: 16px; }
       .flow-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
@@ -600,14 +600,13 @@
       <div class="appbar"><h1>Household</h1></div>
       <nav class="tabs" aria-label="Views">
         <button id="view-status" aria-pressed="true">Status</button>
-        <button id="view-flows" aria-pressed="false">Where the money went</button>
-        <button id="view-edit" aria-pressed="false">Transactions</button>
+        <button id="view-jobs" aria-pressed="false">Jobs</button>
         <button id="view-budget" aria-pressed="false">Budget</button>
+        <button id="view-flows" aria-pressed="false">Cashflow</button>
+        <button id="view-taxes" aria-pressed="false">Taxes</button>
+        <button id="view-home" aria-pressed="false">Home</button>
         <button id="view-investments" aria-pressed="false">Investments</button>
         <button id="view-retirement" aria-pressed="false">Retirement</button>
-        <button id="view-home" aria-pressed="false">Home</button>
-        <button id="view-taxes" aria-pressed="false">Taxes</button>
-        <button id="view-jobs" aria-pressed="false">Jobs</button>
       </nav>
     </header>
     <main>
@@ -654,9 +653,12 @@
     </section>
 
     <section id="flows" hidden>
-      <div id="flows-tabs" class="subtabs" role="group" aria-label="Where the money went">
+      <div id="flows-tabs" class="subtabs" role="group" aria-label="Cashflow">
         <button data-tab="sankey" aria-pressed="true">Sankey</button>
         <button data-tab="table" aria-pressed="false">Table</button>
+        <button data-tab="edit:review" aria-pressed="false">Review</button>
+        <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
+        <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
       </div>
       <div id="flows-sankey">
         <div id="chart">Loading…</div>
@@ -695,7 +697,7 @@
     </section>
 
     <section id="edit" hidden>
-      <div id="edit-tabs" role="group" aria-label="Transactions">
+      <div id="edit-tabs" role="group" aria-label="Cashflow">
         <button data-tab="edit:review" aria-pressed="true">Review</button>
         <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
         <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
@@ -742,7 +744,7 @@
         return td;
       }
 
-      // Where the money went: the Sankey, and beside it the same money by what it is to the household.
+      // Cashflow: the Sankey, and beside it the same money by what it is to the household.
       function drawFlowSummary(s) {
         var box = document.getElementById("flow-summary");
         box.textContent = "";
@@ -1877,13 +1879,14 @@
       function isAmount(text) { return /^-?\d+(\.\d{1,2})?$/.test(text.replace(/,/g, "")); }
 
       // Each editor part lives on the page it is about: review, payee rules and duplicates (and a transaction's
-      // own page) on Transactions, categories on Budget, withholding on Taxes, settings and saved changes on
+      // own page) on Cashflow, beside the flow of money they decide, categories on Budget, withholding on Taxes, settings and saved changes on
       // Status. Each page's submenu lists its own parts and its editor parts together; an "edit:" part opens the
       // editor under that page's name.
-      var EDIT_HOME = { review: "edit", rules: "edit", duplicates: "edit", transaction: "edit", categories: "budget",
+      var EDIT_HOME = { review: "flows", rules: "flows", duplicates: "flows", transaction: "flows", categories: "budget",
                         withholding: "taxes", settings: "status", waiting: "status" };
       var PAGE_PARTS = {
-        edit: [["edit:review", "Review"], ["edit:rules", "Payee rules"], ["edit:duplicates", "Duplicates"]],
+        flows: [["sankey", "Sankey"], ["table", "Table"], ["edit:review", "Review"], ["edit:rules", "Payee rules"],
+                ["edit:duplicates", "Duplicates"]],
         status: [["overview", "Overview"], ["log", "Engine log"], ["edit:settings", "Settings"], ["edit:waiting", "Saved changes"]],
         budget: [["lines", "Lines"], ["recurring", "Recurring"], ["edit:categories", "Categories"]],
         taxes: [["year", "This year"], ["history", "History"], ["edit:withholding", "Withholding"]],
@@ -1902,16 +1905,17 @@
         if (page === "status") { setView("status"); setStatusTab(part); return; }
         if (page === "budget") { budget.tab = part; budget.open = null; setView("budget"); return; }
         if (page === "taxes") { taxView = part; setView("taxes"); return; }
+        if (page === "flows") { flowsTab = part; setView("flows"); setFlowsTab(part); return; }
         setView(page);
       }
 
       // The editor's submenu: the parts of the page the open editor part belongs to.
       function drawEditTabs() {
-        var home = EDIT_HOME[editTab] || "edit";
+        var home = EDIT_HOME[editTab] || "flows";
         var bar = document.getElementById("edit-tabs");
         bar.textContent = "";
         bar.className = "subtabs";
-        bar.setAttribute("aria-label", { edit: "Transactions", status: "Status", budget: "Budget", taxes: "Taxes" }[home]);
+        bar.setAttribute("aria-label", { flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" }[home]);
         PAGE_PARTS[home].forEach(function (p) {
           var b = button(p[1], function () { openPart(home, p[0]); });
           b.setAttribute("aria-pressed", String(p[0] === "edit:" + editTab));
@@ -3058,7 +3062,7 @@
         var page = el("section", null, "panel txn-page");
         if (txnPage && txnPage.from && txnPage.from !== "edit") {
           var from = txnPage.from;
-          page.appendChild(button("Back to " + ({ budget: "Budget against actual", flows: "Where the money went", status: "Status" })[from],
+          page.appendChild(button("Back to " + ({ budget: "Budget against actual", flows: "Cashflow", status: "Status" })[from],
                                   function () { setView(from); }, "text"));
         }
         if (!txnPage) { page.appendChild(el("p", "Open a transaction from Budget against actual.", "support")); body.appendChild(page); return; }
@@ -5040,9 +5044,8 @@
         if (next === "subscriptions" || next === "recurring") { next = "budget"; budget.tab = "recurring"; }  // older links
         if (next !== "budget") closeDrawer(true);
         view = next;
-        press(["view-status", "view-flows", "view-budget", "view-investments", "view-retirement", "view-home", "view-taxes", "view-jobs",
-               "view-edit"],
-              "view-" + (view === "edit" ? EDIT_HOME[editTab] || "edit" : view));
+        press(["view-status", "view-flows", "view-budget", "view-investments", "view-retirement", "view-home", "view-taxes", "view-jobs"],
+              "view-" + (view === "edit" ? EDIT_HOME[editTab] || "flows" : view));
         if (view === "edit") drawEditTabs();
         document.getElementById("status").hidden = view !== "status";
         document.getElementById("flows").hidden = view !== "flows";
@@ -5072,9 +5075,6 @@
         document.getElementById("view-status").addEventListener("click", function () { setView("status"); });
         document.getElementById("view-flows").addEventListener("click", function () { setView("flows"); });
         document.getElementById("view-budget").addEventListener("click", function () { setView("budget"); });
-        document.getElementById("view-edit").addEventListener("click", function () {
-          openEdit(EDIT_HOME[editTab] === "edit" && editTab !== "transaction" ? editTab : "review");
-        });
         document.getElementById("view-taxes").addEventListener("click", function () { setView("taxes"); });
         document.getElementById("view-investments").addEventListener("click", function () { setView("investments"); });
         document.getElementById("view-retirement").addEventListener("click", function () { setView("retirement"); });
@@ -5087,7 +5087,7 @@
           b.addEventListener("click", function () { openPart("status", b.dataset.tab); });
         });
         document.querySelectorAll("#flows-tabs button").forEach(function (b) {
-          b.addEventListener("click", function () { setFlowsTab(b.dataset.tab); });
+          b.addEventListener("click", function () { openPart("flows", b.dataset.tab); });
         });
         document.getElementById("pending-show").addEventListener("click", function () {
           var list = document.getElementById("pending-list");
@@ -5123,6 +5123,7 @@
       // links do). Older links to tabs that became pages (Edit's budget lines, jobs, recurring) open the page.
       function openFrom(location) {
         var p = (location && location.parameter) || {};
+        if (p.view === "cashflow") p.view = "flows";
         var moved = { budget: "budget", jobs: "jobs", subscriptions: "recurring", recurring: "recurring" };
         if (p.view === "edit" && moved[p.tab]) { setView(moved[p.tab]); return; }
         if (p.view === "budget" && p.tab === "recurring") budget.tab = "recurring";

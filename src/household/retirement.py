@@ -870,7 +870,7 @@ def spending_path(base, groups, years, changes, loans):
     rows = []
     path = {}
     by_group = {}
-    for c, v in base.items():
+    for c in base:
         by_group.setdefault(groups.get(c, c), []).append(c)
     for y in years:
         total = 0.0

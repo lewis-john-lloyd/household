@@ -158,7 +158,6 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
 
     last = regular.iloc[-1]
     stub = rows[rows["stub_id"].astype(str) == str(last["stub_id"])]
-    p = taxdata.params(year)
     gross = _current(stub, "memo", ["Gross"])
     taxable = _current(stub, "memo", list(withholding.TAXABLE_MEMOS))
     gtl = _current(stub, "income", contains=withholding._is_group_term_life)
@@ -207,7 +206,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
                 by_date[d] = by_date.get(d, 0.0) + float(shares)
         rate = overrides.get("supplemental_rate",
                              float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
-        for d, shares in sorted(by_date.items()):
+        for _day, shares in sorted(by_date.items()):
             amount = shares * price
             out["wages"] += amount
             out["federal_withheld"] += amount * rate
@@ -303,7 +302,7 @@ def positions(paystubs, year, overrides=None, comp_events=None):
     year_rows = paystubs[paystubs["pay_date"].astype(str).str[:4] == str(year)]
     out = {}
     for (person, employer), rows in year_rows.groupby(["person", "employer"]):
-        mine = lambda b: b[(b["person"] == person) & (b["employer"] == employer)]  # noqa: E731
+        mine = lambda b, person=person, employer=employer: b[(b["person"] == person) & (b["employer"] == employer)]  # noqa: E731
         paid = rows["pay_date"].astype(str).str[:10]
         first, last = date.fromisoformat(paid.min()), date.fromisoformat(paid.max())
         ends = job_ends(comp_events, person, employer, first, last)

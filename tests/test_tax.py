@@ -74,7 +74,7 @@ def test_every_year_has_complete_law():
 
 
 def test_every_cited_document_is_pinned_and_every_value_is_covered():
-    for year, item, document, page, quote in taxsources.citations():
+    for _year, _item, document, page, quote in taxsources.citations():
         assert document in taxdata.DOCUMENTS and page >= 1 and quote
     assert taxsources.uncovered() == []
 

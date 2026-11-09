@@ -99,7 +99,7 @@ def _workbook():
     return wb
 
 
-def _ledger_with_accounts(session, ids):
+def _ledger_with_accounts(session, ids):  # noqa: F811  (the session fixture, by name)
     ledger, _, _ = engine.bootstrap(session, session.root)
     accounts = pd.DataFrame([{"account_id": a, "institution": "Acme Widgets", "owner": "alex", "type": "retirement",
                               "tax_treatment": "pre_tax"} for a in ids])

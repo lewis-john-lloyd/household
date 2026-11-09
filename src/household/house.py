@@ -147,7 +147,7 @@ def summary(properties, values, improved, loans, schedule, balances, params, tod
         pid = prop["property_id"]
         out = []
 
-        def add(key, label, value, as_of="", note=""):
+        def add(key, label, value, as_of="", note="", out=out, pid=pid):
             out.append({"property_id": pid, "order": len(out) + 1, "key": key, "label": label,
                         "value": round(value, 2) if isinstance(value, float) else value, "as_of": as_of, "note": note})
         price, costs = _num(prop.get("purchase_price")) or 0.0, _num(prop.get("basis_costs")) or 0.0

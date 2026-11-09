@@ -272,12 +272,12 @@ def build(paystubs, categorized, categories, equity_sales=None):
     out = []
     for level, src, dst in (("category", "source", "target"), ("group", "gsource", "gtarget")):
         for period_kind in (0, 1, 2):
-            by_period = signed.assign(period=signed["month"].map(lambda m: _periods(m)[min(period_kind, 1)]))
+            by_period = signed.assign(period=signed["month"].map(lambda m, k=period_kind: _periods(m)[min(k, 1)]))
             by_period = by_period.groupby(["period", "category"], as_index=False)["amount"].sum()
             detail = pd.DataFrame(_category_flows(by_period, groups), columns=cols)
             d = pd.concat([detail, pay_detail[min(period_kind, 1)]], ignore_index=True)
-            d = d.assign(period=d["month"].map(lambda m: _periods(m)[period_kind] if len(m) == 7 else
-                                               [m, m, f"{m} {AVERAGE}"][period_kind]))
+            d = d.assign(period=d["month"].map(lambda m, k=period_kind: _periods(m)[k] if len(m) == 7 else
+                                               [m, m, f"{m} {AVERAGE}"][k]))
             sums = d.groupby(["period", src, dst], as_index=False)["amount"].sum()
             sums.columns = ["period", "source", "target", "amount"]
             if period_kind == 2:  # the year's total spread over the months it has data for

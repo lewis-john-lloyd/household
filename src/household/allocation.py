@@ -334,7 +334,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
             row[at], row[at + 1] = -1.0, 1.0
             a_eq.append(row)
             b_eq.append(share[c] * owner_total[p] - owner_fixed[p].get(c, 0.0))
-    for key, g in pd.DataFrame(variables, columns=["a", "s", "cur"]).groupby("a"):
+    for _key, g in pd.DataFrame(variables, columns=["a", "s", "cur"]).groupby("a"):
         row = np.zeros(size)
         row[list(g.index)] = 1.0
         a_eq.append(row)

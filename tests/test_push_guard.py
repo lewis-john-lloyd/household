@@ -31,7 +31,7 @@ def test_added_lines_and_outgoing_ranges():
     diff = "+++ b/src/x.py\n@@ -1 +1 @@\n-old\n+new line\n+++ /dev/null\n+gone\n"
     assert push_guard.added_lines(diff) == [("src/x.py", "new line"), ("", "gone")]
     zero = push_guard.ZERO
-    lines = [f"refs/heads/main abc refs/heads/main def", f"refs/heads/new abc refs/heads/new {zero}",
+    lines = ["refs/heads/main abc refs/heads/main def", f"refs/heads/new abc refs/heads/new {zero}",
              f"(delete) {zero} refs/heads/old def"]
     assert push_guard.outgoing(lines, exists=lambda sha: True) == [["def..abc"], ["abc", "--not", "--remotes"]]
     # a force push of rewritten history: the remote's commit is not here, so everything new is checked

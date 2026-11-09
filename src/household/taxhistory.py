@@ -55,9 +55,9 @@ def history(facts):
     years = sorted(facts.loc[facts["kind"] == "filed", "year"].astype(str).unique())
     for year in years:
         filed, i, people = _year_facts(facts, year)
-        g = lambda k: float(i.get(k, 0.0))  # noqa: E731
+        g = lambda k, i=i: float(i.get(k, 0.0))  # noqa: E731
 
-        def add(jurisdiction, split, parts, total):
+        def add(jurisdiction, split, parts, total, year=year):
             for n, (part, value) in enumerate(parts):
                 if round(value, 2):
                     rows.append({"year": year, "jurisdiction": jurisdiction, "split": split, "part": part, "order": n,

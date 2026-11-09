@@ -34,7 +34,7 @@ def parse(text):
     try:
         df["value"].astype(float)
     except ValueError as e:
-        raise ParseError(f"{NAME}: non-numeric value ({e})")
+        raise ParseError(f"{NAME}: non-numeric value ({e})") from e
     years = sorted(df["year"].unique())
     return Result(kind="return_facts", parser=NAME, label=f"return_facts_{'_'.join(years)}",
                   tables={"return_facts": df},

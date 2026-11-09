@@ -541,3 +541,55 @@ test("each editor part lives on the page it is about, in that page's submenu", a
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+const RETIREMENT = {
+  chosenYear: 2031, chosenStrategy: "bracket/to22/constant", notes: ["2031 (51/49) with the plan", "no Social Security statement for sam"],
+  years: [2030, 2031, 2032].map((y, i) => ({ year: y, ages: (50 + i) + "/" + (48 + i), chosen: y === 2031, monteCarlo: 0.85 + i * 0.04,
+    historical: 0.8 + i * 0.05, fixed: [{ scenario: "5%", success: false, shortFrom: 2060, end: 0 }, { scenario: "9%", success: true, shortFrom: null, end: 90 }],
+    atRetirement: 40 + i * 5, firstSpending: 4, withdrawalRate: 0.05, medianEnd: 60, p10End: 1 })),
+  strategies: [
+    { key: "bracket/to22/constant", label: "Pre-tax to the 12% bracket, then taxable; convert to the top of 22%; constant real spending", order: "bracket",
+      convertTo: 0.22, rule: "constant", sepp: false, claims: "", chosen: true, historical: 0.9, monteCarlo: 0.89, afterTax: 70, afterTaxP10: 4,
+      tax: 8, irmaa: 1, penalty: 0, converted: 30, spent: 90, lowestSpending: 1 },
+    { key: "bracket/to22/vpw", label: "Variable percentage withdrawal", order: "bracket", convertTo: 0.22, rule: "vpw", sepp: false, claims: "",
+      chosen: false, historical: 1, monteCarlo: 1, afterTax: 20, afterTaxP10: 0, tax: 5, irmaa: 0, penalty: 0, converted: 10, spent: 95, lowestSpending: 0.4 },
+    { key: "bracket/to22/constant/alex70/sam67", label: "Claiming later", order: "bracket", convertTo: 0.22, rule: "constant", sepp: false,
+      claims: "alex 70, sam 67", chosen: false, historical: 0.92, monteCarlo: 0.9, afterTax: 72, afterTaxP10: 4, tax: 8, irmaa: 1, penalty: 0,
+      converted: 30, spent: 90, lowestSpending: 1 }],
+  plans: { "bracket/to22/constant": [2030, 2031, 2032].map((y, i) => ({ year: y, ages: (50 + i) + "/" + (48 + i), phase: y < 2031 ? "working" : "retired",
+    contributions: 7, spending: 4, health: 1, socialSecurity: 0, rmd: 0, fromTaxable: 2, fromPreTax: 3, fromRoth: 0, fromHsa: 0, converted: 5,
+    ordinaryIncome: 8, capitalGains: 1, federalTax: 1, stateTax: 0.5, irmaa: 0, penalty: 0, short: y === 2032 ? 3 : 0, taxable: 10, preTax: 20,
+    roth: 5, hsa: 1, total: 36 - i, p10: 20, p50: 36, p90: 60 })) },
+  benefits: [{ person: "alex", claimAge: 67, claimYear: 2047, statement: 27, computed: 27, plan: 24, planYearly: 288, aime: 50, pia: 24, note: "" },
+             { person: "sam", claimAge: 67, claimYear: 2049, statement: null, computed: 0, plan: 0, planYearly: 144, aime: 0, pia: 0,
+               note: "no statement: set social_security_monthly:sam" }],
+  earnings: [{ person: "alex", year: 2001, earnings: 10, indexed: 20, counted: true, projected: false },
+             { person: "alex", year: 2027, earnings: 10, indexed: 10, counted: true, projected: true }],
+  assumptions: [{ section: "today", key: "taxable", label: "Taxable accounts", value: "90", source: "investment values today", setting: "" },
+                { section: "changes", key: "kids", label: "kids (a group)", value: "0 from 2032", source: "now 20 a year", setting: "retirement_spending:kids" }],
+};
+
+test("retirement: the plan, each year, the strategies, Social Security and the assumptions, each in its own part", async () => {
+  const page = await open(`window.__answers.getRetirement = ${JSON.stringify(RETIREMENT)};
+                           window.__location = { parameter: { view: 'retirement' } };`);
+  await page.waitForSelector("#retirement-body h2");
+  assert.equal(await page.getAttribute("#view-retirement", "aria-pressed"), "true");
+  assert.equal(await page.textContent("#retirement-body h2"), "Retire in 2031, at 51 and 49");
+  assert.deepEqual(await page.$$eval("#retirement-body .subtabs button", (b) => b.map((x) => x.textContent)),
+                   ["Plan", "Year by year", "Strategies", "Social Security", "Assumptions"]);
+  assert.equal(await page.textContent("#retirement-body tr.picked td"), "2031");
+  assert.match(await page.textContent("#retirement-body table"), /short at 80\/78/);  // at 5% the money runs out in 2060
+  await page.click("#retirement-body .subtabs button:has-text('Year by year')");
+  assert.equal(await page.$$eval("#retirement-body tr.short", (r) => r.length), 1);
+  await page.click("#retirement-body .subtabs button:has-text('Strategies')");
+  assert.match(await page.textContent("#retirement-body"), /alex 70, sam 67/);
+  await page.click("#retirement-body .subtabs button:has-text('Social Security')");
+  assert.match(await page.textContent("#retirement-body"), /set social_security_monthly:sam/);
+  await page.click("#retirement-body .subtabs button:has-text('Assumptions')");
+  assert.match(await page.textContent("#retirement-body"), /retirement_spending:kids/);
+  await page.click("#retirement-body button:has-text('Open Settings')");
+  await page.waitForSelector("#edit:not([hidden])");
+  assert.equal(await page.getAttribute("#view-status", "aria-pressed"), "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

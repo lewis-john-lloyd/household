@@ -406,3 +406,13 @@ function getHome(): HomePage {
   }
   return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));
 }
+
+/** Everything the Retirement page shows (retirement.ts). */
+function getRetirement(): RetirementPage {
+  const tabs: Record<string, unknown[][]> = {};
+  for (const name of ["retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
+                      "retirement_earnings", "retirement_assumptions", "run_log", "run_notes"]) {
+    tabs[name] = readTabIfAny_(name);
+  }
+  return retirementPage(tabs);
+}

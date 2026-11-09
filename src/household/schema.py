@@ -122,6 +122,13 @@ LEDGER = (
     Table("improvements", ("date", "property_id", "description", "kind", "cost", "credit", "receipt", "note",
                            "doc_id"),
           {"kind": ("capital", "repair", "energy_credit")}),
+    # the Social Security statement (parsers/ssa_statement.py): whose it is and their birth date, the monthly
+    # benefit it estimates at each claiming age (today's dollars), and the earnings record; each statement's
+    # rows are kept under its date (as_of) and the latest is used
+    Table("ss_statements", ("person", "birth_date", "as_of", "doc_id")),
+    Table("ss_estimates", ("person", "as_of", "kind", "age", "monthly", "doc_id"),
+          {"kind": ("retirement", "disability")}),
+    Table("ss_earnings", ("person", "as_of", "year", "fica_earnings", "medicare_earnings", "doc_id")),
     Table("loan_events", ("date", "loan_id", "kind", "amount", "doc_id"),
           {"kind": ("payment", "prepayment", "recast", "rate_change")}),
     Table("source_documents", ("doc_id", "kind", "sha256", "original_name", "drive_link",
@@ -220,6 +227,24 @@ REPORTS = (
                                 "receipt", "note", "run_id")),
     # each loan's details for the Home page's Mortgage tab: its terms, its facts and its schedule's milestones
     Table("loan_details", ("loan_id", "order", "key", "label", "value", "kind", "as_of", "note", "run_id")),
+    # the retirement plan (retirement.py): each retirement year under each return model; each strategy at the
+    # plan's year; the plan year by year for each strategy; Social Security by person and the earnings it
+    # counts; and every assumption with where it came from and the setting that changes it
+    Table("retirement_years", ("retire_year", "ages", "model", "scenario", "success", "median_end", "p10_end",
+                               "short_from", "at_retirement", "first_spending", "withdrawal_rate", "chosen", "run_id")),
+    Table("retirement_strategies", ("strategy", "label", "order", "convert_to", "rule", "sepp", "claims", "model",
+                                    "success", "median_after_tax", "p10_after_tax", "median_tax", "median_irmaa",
+                                    "median_penalty", "median_converted", "median_spent", "lowest_spending", "chosen",
+                                    "run_id")),
+    Table("retirement_plan", ("strategy", "year", "ages", "phase", "contributions", "spending", "health",
+                              "social_security", "rmd", "from_taxable", "from_pre_tax", "from_roth", "from_hsa",
+                              "converted", "ordinary_income", "capital_gains", "federal_tax", "state_tax", "irmaa",
+                              "penalty", "short", "taxable", "pre_tax", "roth", "hsa", "total", "p10_total",
+                              "p50_total", "p90_total", "run_id")),
+    Table("retirement_social_security", ("person", "claim_age", "claim_year", "statement_monthly", "computed_monthly",
+                                         "plan_monthly", "plan_yearly", "aime", "pia", "note", "run_id")),
+    Table("retirement_earnings", ("person", "year", "fica_earnings", "indexed", "counted", "basis", "run_id")),
+    Table("retirement_assumptions", ("section", "key", "label", "value", "source", "setting", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),
     Table("flows", ("period", "level", "source", "target", "amount", "run_id"),

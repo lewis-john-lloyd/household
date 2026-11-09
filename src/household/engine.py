@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from . import (allocation, backup, logs, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_equity, legacy_investments, lots, mortgage, networth, house, valuation,
+from . import (allocation, backup, logs, budget, categorize, checks, compute, editor, explain, flows, inbox, ingest, investments, legacy, legacy_equity, legacy_investments, lots, mortgage, networth, house, retirement, valuation,
                paycheck, nudges, prices, pennsylvania, projection, recurring, schema, settings, sheets, tax, taxhistory, taxsources, transfers,
                wisconsin, withholding)
 
@@ -489,8 +489,8 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     trades, proposed, more = (allocation.rebalance(scope, nodes, allocation.ever_held(holdings, activity, since),
                                                    classes=valuation.classes(securities), people=people)
                               if current else (pd.DataFrame(columns=allocation.TRADE_COLUMNS), {}, []))
-    sheets.replace_table(reports, schema.table(schema.REPORTS, "allocation"),
-                         allocation.report(nodes, current, proposed).assign(run_id=run_id))
+    allocated = allocation.report(nodes, current, proposed)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "allocation"), allocated.assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "rebalance"), trades.assign(run_id=run_id))
     for line in more:
         _say(log, line)
@@ -527,6 +527,7 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
         first, last = min(totals), max(totals)
         _say(log, f"net worth: {totals[last]:,.0f} on {last} ({len(totals)} dates from {first}); owners "
                   + ", ".join(people or ("none set",)))
+    books["values_today"], books["allocated"] = now, allocated  # for the retirement plan
     return {"investments_value": round(float(pd.to_numeric(now["value"], errors="coerce").sum()), 2) if len(now) else 0.0,
             "rebalance_trades": len(trades), "net_worth": totals.get(max(totals), 0.0) if totals else 0.0}
 
@@ -552,6 +553,7 @@ def _lots(ledger, reports, books, today, run_id, log):
     still = lots.priced(still, valuation.Prices(_read(ledger, "prices")), today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "form_8949"), form.assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "open_lots"), still.assign(run_id=run_id))
+    books["open_lots"] = still
     facts = _read(ledger, "return_facts")
     for line in notes + more + lots.year_lines(form, facts) + lots.holding_check(still, holdings, plan):
         _say(log, line)
@@ -563,6 +565,50 @@ def _lots(ledger, reports, books, today, run_id, log):
               f"sales; {len(still)} lot parts open")
     return form, {"lot_parts_sold": len(form), "wash_sales": int((form["code"] == "W").sum()) if len(form) else 0,
                   "open_lot_parts": len(still)}
+
+
+RETIREMENT_TABLES = ("retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
+                     "retirement_earnings", "retirement_assumptions")
+
+
+def _retirement(ledger, reports, books, actuals, sched, today, run_id, log):
+    """The retirement plan (retirement.py) into Reports. A failure is logged and leaves the tables empty, so the
+    rest of the run goes on. Returns figures for the run's result."""
+    started = time.perf_counter()
+    empty = {name: pd.DataFrame(columns=[c for c in schema.table(schema.REPORTS, name).columns if c != "run_id"])
+             for name in RETIREMENT_TABLES}
+    out = dict(empty)
+    found = {}
+    try:
+        params = books["parameters"]
+        people = valuation.adults(params, _read(ledger, "paystubs"))
+        h, notes, assume = retirement.build(
+            params, people, _read(ledger, "ss_statements"), _read(ledger, "ss_estimates"), _read(ledger, "ss_earnings"),
+            books["accounts"], books.get("values_today", pd.DataFrame()), _read(ledger, "investment_activity"),
+            books.get("open_lots"), actuals, books["categories"], sched, _read(ledger, "equity_vests"),
+            retirement.allocation_stock_share(books.get("allocated")), today)
+        out["retirement_assumptions"] = assume.reindex(columns=empty["retirement_assumptions"].columns)
+        if h is None:
+            for line in notes:
+                _say(log, line, "WARN")
+        else:
+            years, table, plan, ss, earned, more = retirement.run(h, params, today)
+            out.update(retirement_years=years, retirement_strategies=table, retirement_plan=plan,
+                       retirement_social_security=ss, retirement_earnings=earned)
+            for line in notes:
+                _say(log, line, "WARN")
+            for line in more:
+                _say(log, line)
+            chosen = years[years["chosen"] == "yes"]
+            found = {"retirement_year": int(chosen["retire_year"].iloc[0]) if len(chosen) else None}
+    except Exception as e:  # the rest of the run doesn't wait on the retirement plan
+        _say(log, f"retirement: failed: {type(e).__name__}: {e}", "ERROR")
+    for name in RETIREMENT_TABLES:
+        sheets.replace_table(reports, schema.table(schema.REPORTS, name), out[name].assign(run_id=run_id))
+    _say(log, f"retirement: {len(out['retirement_strategies']) // 2} strategies and "
+              f"{out['retirement_years']['retire_year'].nunique() if len(out['retirement_years']) else 0} retirement "
+              f"years modeled in {time.perf_counter() - started:.0f}s")
+    return found
 
 
 def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
@@ -674,6 +720,7 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     worth = _investments_and_homes(ledger, reports, books, sched, today, run_id, log, session.drive())
     form_8949, lot_result = _lots(ledger, reports, books, today, run_id, log)
     worth.update(lot_result)
+    worth.update(_retirement(ledger, reports, books, actuals, sched, today, run_id, log))
     subscriptions = recurring.discover(categorized, today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring"), subscriptions.assign(run_id=run_id))
     _say(log, f"recurring: {len(subscriptions)} recurring charges, "

@@ -197,6 +197,9 @@ def parse(text):
 
 def finish(result, account_id):
     """The rows with their account and ids: each key hashed with the account."""
+    for name, rows in result.tables.items():  # holdings too, when the file has them
+        if name != KIND and "account_id" in rows:
+            result.tables[name] = rows.assign(account_id=account_id)
     df = result.tables[KIND].copy()
     df["account_id"] = account_id
     df["activity_id"] = [hashlib.sha256(f"{account_id}|{k}".encode()).hexdigest()[:16] for k in df["activity_id"]]

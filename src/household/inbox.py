@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from . import backup, ingest, pdftext, schema, sheets
+from . import backup, ingest, pdftext, schema, sheets, xlsx
 from .backup import RETRIES
 from .parsers import ParseError, identify
 from .parsers import amazon, changes, google_takeout
@@ -202,7 +202,19 @@ def is_pdf(name, mime):
     return mime == PDF or name.lower().endswith(".pdf")
 
 
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def is_xlsx(name, mime):
+    return mime == XLSX or name.lower().endswith(".xlsx")
+
+
 def to_text(name, mime, data, all_pages=False):
+    if is_xlsx(name, mime):  # a workbook's first sheet, as CSV text
+        try:
+            return xlsx.to_csv(data)
+        except xlsx.NotAWorkbook as e:
+            raise ParseError(f"workbook: {e}") from e
     if is_pdf(name, mime):
         logging.getLogger("pypdf").setLevel(logging.ERROR)
         return pdftext.extract(data, max_pages=None if all_pages else pdftext.MAX_PAGES)
@@ -412,7 +424,7 @@ def _read_one(f, drive, ledger_tables, by_sha, names, received_at, summary, cloc
 
     started = time.perf_counter()
     try:
-        if is_zip(data):
+        if is_zip(data) and not is_xlsx(f["name"], f.get("mimeType", "")):
             result = parse_zip(data)
             if result is None:
                 summary["status"] = "unrecognized"

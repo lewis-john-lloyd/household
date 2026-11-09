@@ -8,6 +8,13 @@ const vm = require("node:vm");
 
 const CODE = fs.readFileSync(path.join(__dirname, "..", "Code.js"), "utf8");
 const DAY = 24 * 60 * 60 * 1000;
+// The exporter's clock, fixed: it remembers exported ids for 30 days from now, so the fixed dates below must not
+// age past it as real time goes on
+const NOW = Date.parse("2026-10-15T00:00:00Z");
+class FixedDate extends Date {
+  constructor(...args) { super(...(args.length ? args : [NOW])); }
+  static now() { return NOW; }
+}
 
 function b64url(text) {
   return Buffer.from(text, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -42,7 +49,7 @@ function exporter(mailbox, props = {},
   };
   const context = {
     console: { log: (line) => logs.push(line) },
-    JSON, Math, Date, Number, String, Object, Array, Error, RegExp,
+    JSON, Math, Date: FixedDate, Number, String, Object, Array, Error, RegExp,
     PropertiesService: { getScriptProperties: () => ({
       getProperty: (k) => (k in store ? store[k] : null), setProperty: (k, v) => { store[k] = String(v); } }) },
     Gmail: { Users: { Messages: {

@@ -611,6 +611,8 @@ test("investments: over time draws any lines chosen, each keeping its color, up 
                            window.__location = { parameter: { view: 'investments', tab: 'history' } };`);
   await page.waitForSelector("#investments-body .line-picks");
   assert.equal(await page.textContent("#investments-body h2"), "Over time");
+  assert.deepEqual(await page.$$eval("#investments-body .subtabs button", (b) => b.map((x) => x.textContent)),
+                   ["Over time", "Overview", "Allocation", "Accounts", "Lots"]);
   const pressed = () => page.$$eval("#investments-body .line-pick[aria-pressed='true']", (b) => b.map((x) => x.textContent));
   assert.deepEqual(await pressed(), ["Net worth", "Investments"]);  // no home equity line to start with
   const color = (name) => page.$eval(`#investments-body .line-pick:has-text('${name}') .swatch`, (s) => s.style.background);

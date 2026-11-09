@@ -32,6 +32,19 @@ FIXED_WRAPPERS = ("taxable", "ibonds")
 LEFT_OUT = ("529",)
 MIN_TRADE = 50.0  # trades smaller than this are left out of the proposal
 
+# Asset location: how poorly each class suits money taxed each way (0 suits it; 1 and 2 less so). Bonds and cash,
+# whose returns are income and grow least, belong in pre-tax money, which is taxed as income on the way out
+# anyway and so costs the least growth; the stocks expected to grow most belong in Roth and HSA money, which is
+# never taxed again. REITs pay income taxed as ordinary, so any sheltered account suits them. A taxable account
+# is never traded (its sales are taxable), so it has no row here.
+LOCATION = {"BT": {"pretax": 0, "hsa": 1, "roth": 2}, "BI": {"pretax": 0, "hsa": 1, "roth": 2},
+            "BA": {"pretax": 0, "hsa": 1, "roth": 2}, "REIT": {"pretax": 0, "hsa": 0, "roth": 0},
+            "SDT": {"pretax": 1, "hsa": 0, "roth": 0}, "SIT": {"pretax": 1, "hsa": 0, "roth": 0},
+            "SDS": {"pretax": 2, "hsa": 0, "roth": 0}, "SIE": {"pretax": 2, "hsa": 0, "roth": 0}}
+# a placement level costs this many times a dollar traded: moving a bond out of a Roth account and a stock into
+# it (four trades) is worth it, a reshuffle to gain a little is not; reaching the targets always comes first
+LOCATION_WEIGHT = 3.0
+
 # a node's label in the views; a leaf class with no label here shows its code
 LABELS = {"stocks": "Stocks", "us_stocks": "US", "intl_stocks": "International", "bonds": "Bonds",
           "SDT": "US total market", "SDS": "US small value", "REIT": "REIT", "SIT": "International total",
@@ -179,9 +192,23 @@ def _targets(leaves, total, fixed, unreachable=()):
         pinned |= over
 
 
-def rebalance(vals, nodes, ever_held=None):
+def location_kind(bucket):
+    """How a bucket's money is taxed, for asset location: pretax, roth or hsa."""
+    b = str(bucket)
+    return "hsa" if b == "hsa" else "roth" if b.endswith("_roth") else "pretax"
+
+
+def placement(mix, kinds):
+    """How poorly a fund (its class mix) suits an account (its share of money by kind): 0 where it belongs."""
+    return sum(f * share * LOCATION.get(c, {}).get(kind, 0) for c, f in mix.items() for kind, share in kinds.items())
+
+
+def rebalance(vals, nodes, ever_held=None, location=True, classes=None):
     """(TRADE_COLUMNS, {class: proposed dollars}, notes). vals are the in-scope valuation rows; ever_held is
-    {account_id: set of symbols} the account has held (holdings and activity), which the proposal may buy."""
+    {account_id: set of symbols} the account has held (holdings and activity), which the proposal may buy.
+    With location, among mixes equally near the targets it prefers each class where it is taxed best (LOCATION),
+    when that is worth the trades it takes. classes is {symbol: asset_class} from securities, for the funds an
+    account held before but holds none of now."""
     from scipy.optimize import linprog
 
     notes = []
@@ -199,26 +226,32 @@ def rebalance(vals, nodes, ever_held=None):
     rows["tradable"] = [tradable(r) for r in rows.to_dict("records")]
     fixed_rows = rows[~rows["tradable"]]
     fixed = by_class(fixed_rows)
-    # the tradable money: per (account, bucket), its value and the funds it may hold
-    accounts = rows[rows["tradable"]].groupby(["account_id", "bucket"], as_index=False)["value"].sum()
+    # the tradable money: per account (a plan's pre-tax and Roth parts hold one fund mix), its value, the funds
+    # it may hold, and how its money is taxed, for asset location
+    tradable_rows = rows[rows["tradable"]]
+    accounts = tradable_rows.groupby("account_id", as_index=False)["value"].sum()
     funds = {}  # symbol -> class mix, for funds that can be bought
-    for r in rows[rows["tradable"]].to_dict("records"):
+    for r in tradable_rows.to_dict("records"):
         funds[r["symbol"]] = mixes[(r["account_id"], r["bucket"], r["symbol"])]
-    klass = {}
+    klass = {s: blend(c) for s, c in (classes or {}).items() if blend(c)}
     for r in vals.to_dict("records"):
-        if str(r["symbol"]).strip() and r["symbol"] not in klass:
+        if str(r["symbol"]).strip():
             klass[r["symbol"]] = class_mix(r)
-    variables = []  # (account, bucket, symbol, current)
+    variables, kinds, labels = [], {}, {}  # variables: (account, symbol, current)
     for a in accounts.to_dict("records"):
-        mine = rows[(rows["account_id"] == a["account_id"]) & (rows["bucket"] == a["bucket"]) & rows["tradable"]]
-        held = dict(zip(mine["symbol"], mine["value"]))
+        mine = tradable_rows[tradable_rows["account_id"] == a["account_id"]]
+        held = mine.groupby("symbol")["value"].sum().to_dict()
+        by_bucket = mine.groupby("bucket")["value"].sum()
+        kinds[a["account_id"]] = {location_kind(b): float(v) / float(by_bucket.sum()) for b, v in by_bucket.items()
+                                  if by_bucket.sum() > 0}
+        labels[a["account_id"]] = "+".join(sorted(by_bucket.index))
         may = set(held) | {s for s in (ever_held or {}).get(a["account_id"], set())
                            if UNCLASSIFIED not in klass.get(s, {UNCLASSIFIED: 1}) and s in klass}
         for s in sorted(may):
-            variables.append((a["account_id"], a["bucket"], s, float(held.get(s, 0.0))))
+            variables.append((a["account_id"], s, float(held.get(s, 0.0))))
             funds.setdefault(s, klass[s])
     classes = sorted(set(leaves) | set(fixed) | {c for m in funds.values() for c in m})
-    reachable = {c for _, _, s, _ in variables for c, f in funds[s].items() if f > 0}
+    reachable = {c for _, s, _ in variables for c, f in funds[s].items() if f > 0}
     unreachable = [c for c in sorted(leaves) if c not in reachable]
     for c in unreachable:
         if leaves[c] * total > fixed.get(c, 0.0) + 0.5:
@@ -239,20 +272,23 @@ def rebalance(vals, nodes, ever_held=None):
     scale = max(total, 1.0)
     cost[n:n + 2 * m] = 1000.0 / scale
     cost[n + 2 * m:] = 1.0 / scale
+    if location:  # each dollar of a class in an account that suits it less costs a little more
+        for v_i, (acct, sym, _) in enumerate(variables):
+            cost[v_i] = LOCATION_WEIGHT / scale * placement(funds[sym], kinds[acct])
     a_eq, b_eq = [], []
     for c_i, c in enumerate(classes):  # fixed + sum x*f - over + under = target
         row = np.zeros(size)
-        for v_i, (_, _, s, _) in enumerate(variables):
+        for v_i, (_, s, _) in enumerate(variables):
             row[v_i] = funds[s].get(c, 0.0)
         row[n + c_i], row[n + m + c_i] = -1.0, 1.0
         a_eq.append(row)
         b_eq.append(targets.get(c, 0.0) - fixed.get(c, 0.0))
-    for key, g in pd.DataFrame(variables, columns=["a", "b", "s", "cur"]).groupby(["a", "b"]):
+    for key, g in pd.DataFrame(variables, columns=["a", "s", "cur"]).groupby("a"):
         row = np.zeros(size)
         row[list(g.index)] = 1.0
         a_eq.append(row)
         b_eq.append(float(g["cur"].sum()))
-    for v_i, (_, _, _, cur) in enumerate(variables):  # x - buy + sell = current
+    for v_i, (_, _, cur) in enumerate(variables):  # x - buy + sell = current
         row = np.zeros(size)
         row[v_i], row[n + 2 * m + v_i], row[n + 2 * m + n + v_i] = 1.0, -1.0, 1.0
         a_eq.append(row)
@@ -262,14 +298,14 @@ def rebalance(vals, nodes, ever_held=None):
         return pd.DataFrame(columns=TRADE_COLUMNS), dict(fixed), notes + [f"rebalance: {result.message}"]
     x = result.x[:n]
     trades, proposed = [], dict(fixed)
-    for (acct, bkt, s, cur), new in zip(variables, x):
+    for (acct, s, cur), new in zip(variables, x):
         for c, f in funds[s].items():
             proposed[c] = proposed.get(c, 0.0) + new * f
         trade = new - cur
         if abs(trade) >= MIN_TRADE or (cur > 0 and new < 0.5):
             mix = funds[s]
             label = ", ".join(f"{c} {f:.0%}" for c, f in mix.items()) if len(mix) > 1 else next(iter(mix))
-            trades.append({"account_id": acct, "bucket": bkt, "symbol": s, "asset_class": label,
+            trades.append({"account_id": acct, "bucket": labels[acct], "symbol": s, "asset_class": label,
                            "current": round(cur, 2), "proposed": round(new, 2), "trade": round(trade, 2)})
     out = pd.DataFrame(trades, columns=TRADE_COLUMNS)
     if len(out):

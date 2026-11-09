@@ -439,7 +439,8 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     scope = allocation.in_scope(vals)
     current = allocation.by_class(scope) if scope is not None and len(scope) else {}
     since = (pd.Timestamp(today) - pd.DateOffset(years=2)).date().isoformat()
-    trades, proposed, more = (allocation.rebalance(scope, nodes, allocation.ever_held(holdings, activity, since))
+    trades, proposed, more = (allocation.rebalance(scope, nodes, allocation.ever_held(holdings, activity, since),
+                                                   classes=valuation.classes(securities))
                               if current else (pd.DataFrame(columns=allocation.TRADE_COLUMNS), {}, []))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "allocation"),
                          allocation.report(nodes, current, proposed).assign(run_id=run_id))

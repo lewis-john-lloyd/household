@@ -77,3 +77,22 @@ def test_ever_held_looks_back_only_to_a_date():
                              {"as_of": "2003-01-01", "account_id": "p", "symbol": "cash"}])
     activity = pd.DataFrame([{"date": "2003-02-01", "account_id": "p", "symbol": "MID"}])
     assert al.ever_held(holdings, activity, "2002-01-01") == {"p": {"NEW", "MID"}}
+
+
+def test_asset_location_moves_bonds_to_pre_tax_money_and_stocks_to_roth_without_moving_off_target():
+    vals = rows(("pre", "ira", "ira_pretax", "ACMEX", "SDT", 600), ("roth", "ira", "ira_roth", "WILLX", "BT", 400))
+    tree = [("SDT", "", 60), ("BT", "", 40)]
+    held = {"pre": {"ACMEX", "WILLX"}, "roth": {"ACMEX", "WILLX"}}  # each has held both
+    trades, proposed, _ = al.rebalance(vals, tree, held, classes={"ACMEX": "SDT", "WILLX": "BT"})
+    after = {(t["account_id"], t["symbol"]): t["proposed"] for t in trades.to_dict("records")}
+    assert after == {("pre", "WILLX"): 400, ("pre", "ACMEX"): 200, ("roth", "WILLX"): 0, ("roth", "ACMEX"): 400}
+    assert {c: round(v, 2) for c, v in proposed.items()} == {"SDT": 600, "BT": 400}  # the targets still hold
+    unmoved, _, notes = al.rebalance(vals, tree, held, location=False, classes={"ACMEX": "SDT", "WILLX": "BT"})
+    assert unmoved.empty and notes == ["rebalance: on target, nothing to trade"]
+
+
+def test_a_plans_pre_tax_and_roth_parts_hold_one_mix():
+    vals = rows(("plan", "401k", "401k_pretax", "ACMEX", "SDT", 750), ("plan", "401k", "401k_roth", "ACMEX", "SDT", 250))
+    trades, _, _ = al.rebalance(vals, [("SDT", "", 50), ("BT", "", 50)], {"plan": {"WILLX"}}, classes={"WILLX": "BT"})
+    assert set(trades["bucket"]) == {"401k_pretax+401k_roth"}
+    assert trades.set_index("symbol")["proposed"].to_dict() == {"WILLX": 500, "ACMEX": 500}

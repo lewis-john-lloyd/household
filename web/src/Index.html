@@ -3167,7 +3167,9 @@
 
         al.classList.add("w-wide");
         var rb = panel(grid2, "Rebalance proposal", "Trades inside tax-advantaged accounts only, among funds each account holds " +
-                                                    "or has held in the last two years. Taxable accounts and I-Bonds stay as they are.");
+                                                    "or has held in the last two years; taxable accounts and I-Bonds stay as they are. " +
+                                                    "Where it is worth the trades, bonds go to pre-tax money and the stocks expected to " +
+                                                    "grow most to Roth and HSA money.");
         rb.classList.add("w-wide");
         if (!d.trades.length) rb.appendChild(el("p", "Nothing to trade.", "support"));
         else {
@@ -3175,7 +3177,11 @@
           var last = "";
           d.trades.forEach(function (t) {
             var group = t.account + "\u0000" + t.bucket;
-            if (group !== last) { tt.row([t.account + "  (" + (PART_NAMES[t.bucket] || t.bucket) + ")", "", "", "", ""], "group"); last = group; }
+            if (group !== last) {
+              var kinds = t.bucket.split("+").map(function (b) { return PART_NAMES[b] || b; }).join(" and ");
+              tt.row([t.account + "  (" + kinds + ")", "", "", "", ""], "group");
+              last = group;
+            }
             var r = tt.row([t.symbol, t.assetClass, money.format(t.current), money.format(t.proposed), change(t.trade)]);
             r.lastChild.className = "num " + (t.trade > 0 ? "buy" : "sell");
           });

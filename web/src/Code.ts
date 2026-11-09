@@ -25,12 +25,53 @@ function readValues_(name: string): unknown[][] {
   if (!Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
     throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
   }
+  const api = Sheets.Spreadsheets.Values;
   try {
-    return (Sheets.Spreadsheets.Values.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" })
+    return (patiently_(() => api.get(reportsId_(), name, { valueRenderOption: "UNFORMATTED_VALUE" }))
       .values as unknown[][] | undefined) || [];
   } catch (e) {
     throw new Error(`Could not read the ${name} tab of Reports (check REPORTS_ID and that you can open Reports): ` + e);
   }
+}
+
+// Sheets allows each person 60 read requests a minute. A page reads all its tabs in one request (readTabsIfAny_),
+// and a request refused for quota waits and tries again, up to about half a minute, before the page says so.
+const QUOTA_WAITS_MS = [4000, 10000, 16000];
+
+function patiently_<T>(call: () => T): T {
+  for (let i = 0; ; i++) {
+    try {
+      return call();
+    } catch (e) {
+      if (i >= QUOTA_WAITS_MS.length || !/quota|rate limit|429/i.test(String(e))) throw e;
+      console.log(`Sheets refused for quota; trying again in ${QUOTA_WAITS_MS[i] / 1000}s`);
+      Utilities.sleep(QUOTA_WAITS_MS[i]);
+    }
+  }
+}
+
+/**
+ * Several Reports tabs in one request: each that exists, read; each that doesn't yet, []. Any failure is thrown,
+ * as readTabIfAny_ does.
+ */
+function readTabsIfAny_(names: string[]): Record<string, unknown[][]> {
+  const tabs: Record<string, unknown[][]> = {};
+  const present = names.filter((n) => tabTitles_().indexOf(n) >= 0);
+  names.forEach((n) => { tabs[n] = []; });
+  if (!present.length) return tabs;
+  if (!Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
+    throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
+  }
+  const api = Sheets.Spreadsheets.Values;
+  let ranges: { values?: unknown[][] }[] | undefined;
+  try {
+    ranges = patiently_(() => api.batchGet(reportsId_(), {
+      ranges: present.map((n) => `'${n.replace(/'/g, "''")}'`), valueRenderOption: "UNFORMATTED_VALUE" })).valueRanges;
+  } catch (e) {
+    throw new Error(`Could not read the ${present.join(", ")} tabs of Reports (check REPORTS_ID and that you can open Reports): ` + e);
+  }
+  present.forEach((n, i) => { tabs[n] = ((ranges && ranges[i] && ranges[i].values) as unknown[][] | undefined) || []; });
+  return tabs;
 }
 
 let tabTitles: string[] | null = null;  // Reports' tab names, read once per call from the page
@@ -39,9 +80,10 @@ let tabTitles: string[] | null = null;  // Reports' tab names, read once per cal
 function tabTitles_(): string[] {
   if (tabTitles === null) {
     if (!Sheets || !Sheets.Spreadsheets) throw new Error("The Sheets advanced service is not enabled: push appsscript.json again.");
+    const api = Sheets.Spreadsheets;
     let sheets: { properties?: { title?: string } }[] | undefined;
     try {
-      sheets = Sheets.Spreadsheets.get(reportsId_(), { fields: "sheets.properties.title" }).sheets;
+      sheets = patiently_(() => api.get(reportsId_(), { fields: "sheets.properties.title" })).sheets;
     } catch (e) {
       throw new Error("Could not open Reports (check REPORTS_ID and that you can open it): " + e);
     }
@@ -83,10 +125,11 @@ function getTransactions(period: string, categories: string[], through?: string)
  * spending, the recurring charges' months, and the recurring charges you track.
  */
 function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] } {
-  const book = budgetBook(readTab_("budget_vs_actual"), readTabIfAny_("daily_actuals"),
-                          readTabIfAny_("subscription_months"), readTabIfAny_("editor_categories"));
+  const tabs = readTabsIfAny_(["budget_vs_actual", "daily_actuals", "subscription_months", "editor_categories", "subscriptions"]);
+  if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
+  const book = budgetBook(tabs.budget_vs_actual, tabs.daily_actuals, tabs.subscription_months, tabs.editor_categories);
   console.log(`budget book: ${book.targets.length} targets, ${book.days.length} days, ${book.recurring.length} recurring months`);
-  return { book, tracked: subscriptionsPage(readTabIfAny_("subscriptions")).subscriptions };
+  return { book, tracked: subscriptionsPage(tabs.subscriptions).subscriptions };
 }
 
 /**
@@ -101,8 +144,8 @@ function readTabIfAny_(name: string): unknown[][] {
 
 /** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
 function getStatus(): Status {
-  return parseStatus(readTabIfAny_("run_log"), readTabIfAny_("run_notes"), readTabIfAny_("coverage"),
-                     readTabIfAny_("editor_review"));
+  const tabs = readTabsIfAny_(["run_log", "run_notes", "coverage", "editor_review"]);
+  return parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review);
 }
 
 // --- editing ------------------------------------------------------------------------------------------
@@ -173,9 +216,7 @@ function getEditor(): EditorData {
   const names = ["run_log", "editor_budget_lines", "editor_scheduled", "editor_payee_rules", "editor_categories", "editor_aliases",
                  "editor_parameters", "editor_review", "possible_duplicates", "withholding_backtest",
                  "wi_withholding_backtest", "editor_jobs", "pay_check", "editor_subscriptions"];
-  const tabs: Record<string, unknown[][]> = {};
-  for (const name of names) tabs[name] = readTabIfAny_(name);
-  const data = editorData(tabs);
+  const data = editorData(readTabsIfAny_(names));
   console.log(`editor: run ${data.baseRun}, ${data.budgetLines.length} budget lines, ${data.review.length} review questions`);
   return data;
 }
@@ -381,38 +422,26 @@ function getReviewLines(key: string): ReviewLine[] {
 
 /** Everything the tax page shows (taxes.ts). */
 function getTaxes(): TaxPage {
-  const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["tax_lines", "projection", "withholding_plan", "elections", "run_log", "run_notes", "tax_history",
-                      "filed_lines"]) {
-    tabs[name] = readTabIfAny_(name);
-  }
+  const tabs = readTabsIfAny_(["tax_lines", "projection", "withholding_plan", "elections", "run_log", "run_notes", "tax_history",
+                      "filed_lines"]);
   return taxPage(tabs);
 }
 
 function getInvestments(): WealthPage {
-  const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["investment_values", "net_worth", "allocation", "rebalance", "open_lots", "form_8949", "run_log",
-                      "run_notes"]) {
-    tabs[name] = readTabIfAny_(name);
-  }
+  const tabs = readTabsIfAny_(["investment_values", "net_worth", "allocation", "rebalance", "open_lots", "form_8949", "run_log",
+                      "run_notes"]);
   return wealthPage(tabs);
 }
 
 function getHome(): HomePage {
-  const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["property_summary", "home_values", "home_improvements", "home_taxes", "mortgage", "loan_details", "run_log",
-                      "run_notes"]) {
-    tabs[name] = readTabIfAny_(name);
-  }
+  const tabs = readTabsIfAny_(["property_summary", "home_values", "home_improvements", "home_taxes", "mortgage", "loan_details", "run_log",
+                      "run_notes"]);
   return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));
 }
 
 /** Everything the Retirement page shows (retirement.ts). */
 function getRetirement(): RetirementPage {
-  const tabs: Record<string, unknown[][]> = {};
-  for (const name of ["retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
-                      "retirement_earnings", "retirement_assumptions", "run_log", "run_notes"]) {
-    tabs[name] = readTabIfAny_(name);
-  }
+  const tabs = readTabsIfAny_(["retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
+                      "retirement_earnings", "retirement_assumptions", "run_log", "run_notes"]);
   return retirementPage(tabs);
 }

@@ -14,11 +14,17 @@ const VALUE_LIMIT = 9 * 1024, STORE_LIMIT = 500 * 1024;
 function server({ refuseProperties = false, failCreate = false, now = () => new Date("2026-01-31T12:00:00.123Z"),
                   props: start = {},
                   runLog = [["run_id", "computed_at", "stage", "detail"], ["r1", "2026-01-31T00:00:00Z", "compute", "{}"]],
-                  changesWritten = [["file_id", "file", "written_at"]] } = {}) {
+                  changesWritten = [["file_id", "file", "written_at"]], refusals = [] } = {}) {
   const tabs = { run_log: runLog, changes_written: changesWritten };
   const props = { ...start };
   const files = [];
+  const reads = [], slept = [];
   let uuid = 0;
+  const sheetsCall = (what) => {  // Sheets' answer to each request: a refusal from the list given, else the data
+    reads.push(what);
+    const refusal = refusals.shift();
+    if (refusal) throw new Error(refusal);
+  };
   const store = {
     getProperty: (k) => (k in props ? props[k] : null),
     getProperties: () => ({ ...props }),
@@ -40,10 +46,17 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
     Date: FakeDate,
     PropertiesService: { getUserProperties: () => store, getScriptProperties: () => ({ getProperty: () => "reports-id" }) },
     LockService: { getUserLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
-    Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest` },
+    Utilities: { newBlob: (text) => ({ text }), getUuid: () => `u${String(++uuid).padStart(7, "0")}-rest`,
+                 sleep: (ms) => slept.push(ms) },
     Sheets: { Spreadsheets: {
-      get: () => ({ sheets: Object.keys(tabs).map((title) => ({ properties: { title } })) }),
-      Values: { get: (_, name) => ({ values: tabs[name] }) },
+      get: () => { sheetsCall("titles"); return { sheets: Object.keys(tabs).map((title) => ({ properties: { title } })) }; },
+      Values: {
+        get: (_, name) => { sheetsCall(name); return { values: tabs[name] }; },
+        batchGet: (_, { ranges }) => {
+          sheetsCall(ranges.join(","));
+          return { valueRanges: ranges.map((r) => ({ values: tabs[r.replace(/^'|'$/g, "")] })) };
+        },
+      },
     } },
     Drive: { Files: {
       create: (meta, blob) => {
@@ -72,7 +85,7 @@ function server({ refuseProperties = false, failCreate = false, now = () => new 
   };
   vm.createContext(context);
   vm.runInContext(CODE, context);
-  return { context, props, files, runLog, changesWritten };
+  return { context, props, files, runLog, changesWritten, reads, slept };
 }
 
 const EDIT = { kind: "parameter", key: "transfer_account", value: "savings", was: { value: "checking" } };
@@ -216,4 +229,25 @@ test("only the newest discards are remembered, and none past thirty days", () =>
   s.props.DISCARDED_old = JSON.stringify({ id: "old", name: "n", savedAt: "", edits: [], discardedAt: "2025-01-01T00:00:00Z" });
   s.context.getAppliedAnyway();
   assert.equal("DISCARDED_old" in s.props, false);
+});
+
+test("a page reads its tabs in one request, and a tab not made yet reads as empty", () => {
+  const s = server();
+  const status = s.context.getStatus();
+  assert.deepEqual(s.reads, ["titles", "'run_log'"]);  // run_notes, coverage and editor_review aren't in Reports yet
+  assert.ok(status);
+});
+
+test("a request Sheets refuses for quota waits and is tried again; past the waits, the page says so", () => {
+  const quota = "Quota exceeded for quota metric 'Read requests' and limit 'Read requests per minute per user'";
+  const s = server({ refusals: [quota, quota] });
+  s.context.getStatus();
+  assert.deepEqual(s.reads, ["titles", "titles", "titles", "'run_log'"]);
+  assert.deepEqual(s.slept, [4000, 10000]);
+  const t = server({ refusals: ["", quota, quota, quota, quota] });
+  assert.throws(() => t.context.getStatus(), /Could not read the run_log tabs of Reports.*Quota exceeded/);
+  assert.equal(t.slept.length, 3);
+  const u = server({ refusals: ["The caller does not have permission"] });
+  assert.throws(() => u.context.getStatus(), /Could not open Reports.*permission/);
+  assert.deepEqual(u.slept, []);  // only quota is waited out
 });

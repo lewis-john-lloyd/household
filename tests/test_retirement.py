@@ -185,6 +185,28 @@ def test_the_spending_path_replaces_categories_and_groups_and_drops_a_paid_off_l
     assert {r["key"] for r in rows} == {"kids", "hobby", "acme_loan"}
 
 
+
+def test_the_budget_lists_each_line_and_adds_up_to_the_spending_path():
+    base = {"food": 10_000.0, "camps": 2_000.0, "tuition": 8_000.0, "household": 5_000.0, "hobby": 3_000.0}
+    groups = {"food": "food", "camps": "kids", "tuition": "kids", "household": "home", "hobby": "fun"}
+    changes = {"kids": [(2035, 0.0)], "hobby": [(None, 1_000.0)], "gifts": [(2032, 500.0)]}
+    loans = {"acme_loan": (2037, 3_000.0)}
+    path, _ = R.spending_path(base, groups, range(2030, 2041), changes, loans)
+    h = household(start=2030, spending=path, budget={
+        "base": base, "groups": groups, "changes": changes, "loans": loans, "lumpy": {"tuition": 0.9},
+        "settings": {"kids": "0 from 2035", "hobby": "1000", "gifts": "500 from 2032"}})
+    t = R.budget_table(h, 2038)
+    lines = t.set_index("line")
+    assert list(t["kind"]) == ["group", "group", "category", "group", "category", "group", "category", "category",
+                               "added", "loan"]
+    assert lines.loc["kids", "setting"] == "0 from 2035" and lines.loc["kids", "at_retirement"] == 0
+    assert lines.loc["kids", "is_set"] == "yes" and lines.loc["food", "is_set"] == ""
+    assert lines.loc["tuition", "at_retirement"] == "" and lines.loc["tuition", "lumpy"] == 0.9
+    assert lines.loc["hobby", "now"] == 3_000 and lines.loc["hobby", "at_retirement"] == 1_000
+    counted = lambda col: sum(v for k, v in zip(t["kind"], t[col]) if k != "category" and v != "")  # noqa: E731
+    assert counted("first_year") == path[2030] and counted("at_retirement") == path[2038]
+
+
 def ledger_frames():
     accounts = pd.DataFrame([
         {"account_id": "a_plan", "type": "workplace_plan", "tax_treatment": "pre_tax", "owner": "alex"},

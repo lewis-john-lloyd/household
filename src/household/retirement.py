@@ -124,6 +124,7 @@ class Household:
     ss_cut: float = 0.0
     ss_cut_from: int = TRUSTEES_CUT_YEAR
     pending: dict = field(default_factory=dict)  # {person: {year free: amount}} conversions still seasoning
+    budget: dict = field(default_factory=dict)  # what spending_path was built from, for budget_table
 
     @property
     def end(self):
@@ -901,6 +902,63 @@ def spending_path(base, groups, years, changes, loans):
     return path, rows
 
 
+BUDGET_COLUMNS = ["line", "group", "kind", "now", "first_year", "at_retirement", "retire_year", "setting", "is_set",
+                  "lumpy", "note"]
+
+
+def _step(steps, year, current):
+    amount = current
+    for start, value in steps:
+        if start is None or year >= start:
+            amount = value
+    return amount
+
+
+def budget_table(h, retire_year):
+    """The Retirement page's Budget: each group, each category in it, each added line and each loan's end, with
+    what it is now (the last 12 months, a year), in the plan's first year and in the retirement year, and its
+    retirement_spending setting (is_set when the ledger has one, blank or not, so an edit knows what it replaces).
+    A category whose group has a setting is counted in the group's line (its
+    first_year and at_retirement are blank). The lines' amounts add up to h.spending in those years."""
+    b = h.budget or {}
+    base, groups, changes = b.get("base", {}), b.get("groups", {}), b.get("changes", {})
+    loans, lumpy, raw = b.get("loans", {}), b.get("lumpy", {}), b.get("settings", {})
+    first = h.start
+    rows = []
+
+    def row(line, group, kind, now, at, note=""):
+        rows.append({"line": line, "group": group, "kind": kind, "now": round(now, 2),
+                     "first_year": "" if at is None else round(at(first), 2),
+                     "at_retirement": "" if at is None else round(at(retire_year), 2), "retire_year": retire_year,
+                     "setting": raw.get(line, ""), "is_set": "yes" if line in raw else "", "lumpy": round(lumpy[line], 3) if line in lumpy else "", "note": note})
+
+    by_group = {}
+    for c in base:
+        by_group.setdefault(groups.get(c, c), []).append(c)
+    for g in sorted(by_group):
+        members = sorted(by_group[g])
+        now = sum(base[c] for c in members)
+        if g in changes and g not in base:
+            row(g, g, "group", now, lambda y, g=g, now=now: _step(changes[g], y, now))
+        else:
+            row(g, g, "group", now, lambda y, ms=members: sum(
+                _step(changes[c], y, base[c]) if c in changes else base[c] for c in ms))
+        for c in members:
+            if members == [g]:
+                continue  # a group of one category of its name is one line
+            covered = g in changes and c not in changes and g not in base
+            row(c, g, "category", base[c], None if covered else (lambda y, c=c: _step(changes.get(c, []), y, base[c])),
+                "counted in its group's setting" if covered else "")
+    for name in sorted(changes):
+        if name not in base and name not in by_group:
+            row(name, "", "added", 0.0, lambda y, n=name: _step(changes[n], y, 0.0))
+    for loan_id, (payoff_year, yearly) in sorted(loans.items()):
+        if loan_id not in changes:
+            row(loan_id, "", "loan", 0.0, lambda y, p=payoff_year, v=yearly: -v if y > p else 0.0,
+                f"its payments, {yearly:,.0f} a year, end after {payoff_year}")
+    return pd.DataFrame(rows, columns=BUDGET_COLUMNS)
+
+
 def build(params, people_names, statements, estimates, earnings, accounts, values, activity, lots, actuals,
           categories, schedule, vests, allocation_share, today):
     """(Household, notes, assumption rows) from the ledger and Reports frames; Household None when an adult's
@@ -1029,7 +1087,7 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
     changes = {}
     for key in set(params.loc[params["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(params) else ():
         base_key, _, name = key.partition(":")
-        if base_key == "retirement_spending" and name:
+        if base_key == "retirement_spending" and name and str(value(key)).strip():
             steps = spending_steps(value(key))
             if steps is None:
                 notes.append(f"retirement: {key} can't be read ({value(key)!r}); write it like 12000 or "
@@ -1079,7 +1137,12 @@ def build(params, people_names, statements, estimates, earnings, accounts, value
                   success_target=number("retirement_success_target", DEFAULTS["success_target"]),
                   monte_carlo_runs=int(number("retirement_monte_carlo_runs", DEFAULTS["monte_carlo_runs"])),
                   ss_cut=number("social_security_cut", 0.0),
-                  ss_cut_from=int(number("social_security_cut_from", TRUSTEES_CUT_YEAR)), pending=pending)
+                  ss_cut_from=int(number("social_security_cut_from", TRUSTEES_CUT_YEAR)), pending=pending,
+                  budget={"base": base, "groups": groups, "changes": changes, "loans": loans, "lumpy": lumpy,
+                          "months": months, "settings": {
+                              k.partition(":")[2]: str(value(k)) for k in (set(params.loc[
+                                  params["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(params)
+                                  else ()) if k.startswith("retirement_spending:")}})
 
     for a in adults:
         for kind, label in (("pre_plan", "pre-tax in workplace plans"), ("pre_ira", "pre-tax IRAs"), ("roth", "Roth")):

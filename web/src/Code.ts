@@ -442,6 +442,6 @@ function getHome(): HomePage {
 /** Everything the Retirement page shows (retirement.ts). */
 function getRetirement(): RetirementPage {
   const tabs = readTabsIfAny_(["retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
-                      "retirement_earnings", "retirement_assumptions", "run_log", "run_notes"]);
+                      "retirement_earnings", "retirement_assumptions", "retirement_budget", "run_log", "run_notes"]);
   return retirementPage(tabs);
 }

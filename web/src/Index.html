@@ -535,6 +535,12 @@
       .w-table th.num, .w-table td.num { text-align: right; }
       .w-table tr.sub td { color: var(--on-surface-variant); }
       .w-table tr.group td { font-weight: 500; border-bottom-color: var(--outline); }
+      .w-table tr.budget-group td { font-weight: 500; border-top: 1px solid var(--outline-variant); }
+      .w-table tr.budget-member td:first-child { padding-left: 16px; color: var(--on-surface-variant); }
+      .budget-edit { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-end; padding: 8px 0 12px; }
+      .budget-edit label { display: flex; flex-direction: column; gap: 4px; }
+      .budget-edit input { width: 9em; }
+      .budget-edit .actions, .budget-edit .error { flex-basis: 100%; }
       .w-table tr.picked td { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
       .w-table tr.short td { color: var(--error); }
       .r-toolbar { margin: 0 0 12px; }
@@ -4624,7 +4630,7 @@
 
       // --- Retirement -------------------------------------------------------------------------------------------------
       var retire = null, retireView = "plan", retireStrategy = "";
-      var RETIRE_PARTS = [["plan", "Plan"], ["years", "Year by year"], ["strategies", "Strategies"], ["ss", "Social Security"],
+      var RETIRE_PARTS = [["plan", "Plan"], ["budget", "Budget"], ["years", "Year by year"], ["strategies", "Strategies"], ["ss", "Social Security"],
                           ["assumptions", "Assumptions"]];
       var RETIRE_SECTIONS = { people: "People", today: "Balances today", saving: "While working, a year",
                               spending: "Spending now, a year (the last 12 full months)", changes: "Spending changes in retirement",
@@ -4671,7 +4677,7 @@
                                    "date, from their Social Security statement in the inbox or the birth_date setting.", "support"));
           return;
         }
-        ({ plan: drawRetirePlan, years: drawRetireYears, strategies: drawRetireStrategies, ss: drawRetireSocialSecurity,
+        ({ plan: drawRetirePlan, budget: drawRetireBudget, years: drawRetireYears, strategies: drawRetireStrategies, ss: drawRetireSocialSecurity,
            assumptions: drawRetireAssumptions })[retireView](body, d);
       }
 
@@ -4855,6 +4861,126 @@
         body.appendChild(el("p", "The statement assumes work until claiming at the last posted year's earnings; retiring sooner leaves " +
                                  "zeros among the 35 years counted, so the plan's benefit is lower. A spouse gets the larger of their own " +
                                  "benefit and half the other's at full retirement age, once both have claimed.", "support"));
+      }
+
+      // The spending the plan uses, line by line. Each line starts at the last 12 months; a change here is a
+      // retirement_spending:<line> setting, staged like any other edit, and the next compute reruns the plan.
+      var budgetOpen = "";  // the line whose editor is open
+
+      function budgetSteps(text) {  // "18000; 9000 from 2040" -> [[null, "18000"], ["2040", "9000"]]
+        return String(text || "").split(";").map(function (p) {
+          var m = p.trim().match(/^(-?[\d,]+(?:\.\d+)?)(?:\s+from\s+(\d{4}))?$/);
+          return m ? [m[2] || "", m[1].replace(/,/g, "")] : null;
+        }).filter(Boolean);
+      }
+
+      function budgetValue(firstFrom, first, thenFrom, then) {
+        var parts = [];
+        if (first !== "") parts.push(first + (firstFrom ? " from " + firstFrom : ""));
+        if (then !== "") parts.push(then + " from " + thenFrom);
+        return parts.join("; ");
+      }
+
+      function budgetEditor(line, b, start, done) {
+        var form = el("form", null, "edit budget-edit");
+        var steps = b ? budgetSteps(b.setting) : [];
+        var one = steps[0] || ["", b ? String(Math.round(b.now)) : ""], two = steps[1] || ["", ""];
+        var name = b ? null : field(form, "Line", textInput("", "", "travel"));
+        var first = field(form, "A year", textInput(one[1], "", "0"));
+        var firstFrom = field(form, "From (blank: from " + start + ")", textInput(one[0], "", String(start)));
+        var then = field(form, "Then a year (optional)", textInput(two[1], "", ""));
+        var thenFrom = field(form, "From", textInput(two[0], "", ""));
+        [first, then].forEach(function (i) { i.inputMode = "decimal"; });
+        [firstFrom, thenFrom].forEach(function (i) { i.inputMode = "numeric"; });
+        var error = el("div", "", "error");
+        function put(value, words) {
+          var key = b ? b.line : name.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          if (!/^[a-z][a-z0-9_]*$/.test(key)) { error.textContent = "Name the line with letters, digits and _."; return; }
+          var e = { kind: "parameter", key: "retirement_spending:" + key, value: value,
+                    was: b && b.isSet ? { value: b.setting } : null };
+          stage(e, "retirement budget: " + key + " " + words);
+          done();
+        }
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Keep this change", function () {
+          var a = first.value.trim().replace(/,/g, ""), af = firstFrom.value.trim(), t = then.value.trim().replace(/,/g, ""),
+              tf = thenFrom.value.trim();
+          var num = /^-?\d+(\.\d+)?$/, yr = /^\d{4}$/;
+          if (!num.test(a)) { error.textContent = "A year is an amount in today's dollars, such as 12000."; return; }
+          if (af && !yr.test(af)) { error.textContent = "From is a year, such as " + start + "."; return; }
+          if (t && (!num.test(t) || !yr.test(tf))) { error.textContent = "Then needs an amount and the year it starts."; return; }
+          if (t && af && Number(tf) <= Number(af)) { error.textContent = "Then starts after the first change."; return; }
+          var v = budgetValue(af, a, tf, t);
+          put(v, "= " + v);
+        }, "filled"));
+        if (b) actions.appendChild(button("Leave out", function () { put("0", "left out (0)"); }));
+        if (b && b.isSet && b.setting) actions.appendChild(button("Back to actual", function () { put("", "back to the last 12 months"); }));
+        actions.appendChild(button("Cancel", function () { done(); }));
+        form.appendChild(actions);
+        form.appendChild(error);
+        form.addEventListener("submit", function (ev) { ev.preventDefault(); });
+        return form;
+      }
+
+      function drawRetireBudget(body, d) {
+        var lines = d.budget || [];
+        var y = lines.length ? lines[0].retireYear : (d.chosenYear || 0);
+        var plan = d.plans[d.chosenStrategy] || [];
+        var start = plan.length ? plan[0].year : (y || new Date().getFullYear() + 1);
+        var head = el("div", null, "w-head");
+        head.appendChild(el("h2", "Spending in retirement"));
+        head.appendChild(el("span", "a year, in today's dollars", "support"));
+        body.appendChild(head);
+        if (!lines.length) { body.appendChild(el("p", "None yet: run compute.", "support")); return; }
+        var counted = function (k) {
+          return lines.reduce(function (s, b) { return s + (b.kind !== "category" && b[k] !== null ? b[k] : 0); }, 0);
+        };
+        var now = lines.reduce(function (s, b) { return s + (b.kind === "group" ? b.now : 0); }, 0);
+        retireFigures(body, [[money.format(now), "spent in the last 12 months"],
+                             [money.format(counted("firstYear")), "the plan's spending in " + start],
+                             [money.format(counted("atRetirement")), "the plan's spending in " + y + ", when you retire"]]);
+        body.appendChild(el("p", "Each line starts at what the last 12 months spent. Change a line that won't carry on (a renovation, " +
+                                 "the kids' costs, a car), leave it out, or add one you expect (travel). Changes wait in the bar " +
+                                 "below until Save; the next compute reruns the plan with them. Health cover and taxes are worked " +
+                                 "out separately and aren't here.", "support"));
+        var p = el("section", null, "panel w-wide");
+        body.appendChild(p);
+        var actions = el("div", null, "actions");
+        actions.appendChild(button("Add a line", function () { budgetOpen = "+"; drawRetirement(); }));
+        p.appendChild(actions);
+        if (budgetOpen === "+") p.appendChild(budgetEditor("+", null, start, function () { budgetOpen = ""; drawRetirement(); }));
+        var t = wTable(p, ["Line", "Last 12 months", "In " + start, "In " + y, "Setting", ""], [1, 2, 3]);
+        var cols = 6;
+        lines.forEach(function (b) {
+          var pending = staged[targetOf({ kind: "parameter", key: "retirement_spending:" + b.line })];
+          var name = el("span", b.kind === "category" ? b.line : b.line);
+          var cellName = el("span");
+          cellName.appendChild(name);
+          if (b.kind === "added") cellName.appendChild(el("span", "added", "tag plain"));
+          if (b.kind === "loan") cellName.appendChild(el("span", "loan ends", "tag plain"));
+          if (b.lumpy !== null) {
+            var lump = el("span", "one-off?", "tag warn");
+            lump.title = whole.format(b.lumpy) + " of it came in two months, so it may not recur";
+            cellName.appendChild(lump);
+          }
+          if (pending) cellName.appendChild(el("span", "edited", "tag"));
+          var change = b.kind === "loan" ? "" : button(budgetOpen === b.line ? "Close" : "Change", function () {
+            budgetOpen = budgetOpen === b.line ? "" : b.line;
+            drawRetirement();
+          }, "small");
+          var amount = function (v) { return v === null ? "in group" : money.format(v); };
+          var row = t.row([cellName, b.kind === "loan" || b.kind === "added" ? "" : money.format(b.now), amount(b.firstYear),
+                           amount(b.atRetirement), pending ? pending.edit.value || "(actual)" : (b.setting || b.note), change],
+                          b.kind === "group" ? "budget-group" : (b.kind === "category" ? "budget-member" : ""));
+          if (budgetOpen === b.line) {
+            var tr = document.createElement("tr");
+            var td = document.createElement("td");
+            td.colSpan = cols;
+            td.appendChild(budgetEditor(b.line, b, start, function () { budgetOpen = ""; drawRetirement(); }));
+            tr.appendChild(td);
+            row.parentNode.insertBefore(tr, row.nextSibling);
+          }
+        });
       }
 
       function drawRetireAssumptions(body, d) {

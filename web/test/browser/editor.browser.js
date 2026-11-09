@@ -567,6 +567,12 @@ const RETIREMENT = {
              { person: "alex", year: 2027, earnings: 10, indexed: 10, counted: true, projected: true }],
   assumptions: [{ section: "today", key: "taxable", label: "Taxable accounts", value: "90", source: "investment values today", setting: "" },
                 { section: "changes", key: "kids", label: "kids (a group)", value: "0 from 2032", source: "now 20 a year", setting: "retirement_spending:kids" }],
+  budget: [
+    { line: "home", group: "home", kind: "group", now: 30, firstYear: 30, atRetirement: 30, retireYear: 2031, setting: "", isSet: false, lumpy: null, note: "" },
+    { line: "household", group: "home", kind: "category", now: 10, firstYear: 10, atRetirement: 10, retireYear: 2031, setting: "", isSet: false, lumpy: null, note: "" },
+    { line: "hobby", group: "home", kind: "category", now: 20, firstYear: 20, atRetirement: 20, retireYear: 2031, setting: "", isSet: false, lumpy: 0.9, note: "" },
+    { line: "kids", group: "kids", kind: "group", now: 20, firstYear: 20, atRetirement: 0, retireYear: 2031, setting: "0 from 2031", isSet: true, lumpy: null, note: "" },
+    { line: "gifts", group: "", kind: "added", now: 0, firstYear: 0, atRetirement: 5, retireYear: 2031, setting: "5 from 2031", isSet: true, lumpy: null, note: "" }],
 };
 
 test("retirement: the plan, each year, the strategies, Social Security and the assumptions, each in its own part", async () => {
@@ -576,7 +582,7 @@ test("retirement: the plan, each year, the strategies, Social Security and the a
   assert.equal(await page.getAttribute("#view-retirement", "aria-pressed"), "true");
   assert.equal(await page.textContent("#retirement-body h2"), "Retire in 2031, at 51 and 49");
   assert.deepEqual(await page.$$eval("#retirement-body .subtabs button", (b) => b.map((x) => x.textContent)),
-                   ["Plan", "Year by year", "Strategies", "Social Security", "Assumptions"]);
+                   ["Plan", "Budget", "Year by year", "Strategies", "Social Security", "Assumptions"]);
   assert.equal(await page.textContent("#retirement-body tr.picked td"), "2031");
   assert.match(await page.textContent("#retirement-body table"), /short at 80\/78/);  // at 5% the money runs out in 2060
   await page.click("#retirement-body .subtabs button:has-text('Year by year')");
@@ -590,6 +596,40 @@ test("retirement: the plan, each year, the strategies, Social Security and the a
   await page.click("#retirement-body button:has-text('Open Settings')");
   await page.waitForSelector("#edit:not([hidden])");
   assert.equal(await page.getAttribute("#view-status", "aria-pressed"), "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("retirement budget: each line from the last 12 months, changed, left out or added as a staged setting", async () => {
+  const page = await open(`window.__answers.getRetirement = ${JSON.stringify(RETIREMENT)};
+                           window.__location = { parameter: { view: 'retirement', tab: 'budget' } };`);
+  await page.waitForSelector("#retirement-body h2");
+  assert.equal(await page.textContent("#retirement-body h2"), "Spending in retirement");
+  const figures = await page.$$eval("#retirement-body .w-figure .num", (n) => n.map((x) => x.textContent));
+  assert.deepEqual(figures.map((f) => f.replace("\u0024", "")), ["50", "50", "35"]);  // groups now; groups and added lines in 2030 and 2031
+  assert.match(await page.textContent("#retirement-body tr:has-text('hobby')"), /one-off\?/);
+  await page.click("#retirement-body tr:has-text('hobby') button:has-text('Change')");
+  await page.click("#retirement-body .budget-edit button:has-text('Leave out')");
+  await page.click("#retirement-body tr:has-text('kids') button:has-text('Change')");
+  assert.equal(await page.inputValue("#retirement-body .budget-edit input >> nth=0"), "0");
+  assert.equal(await page.inputValue("#retirement-body .budget-edit input >> nth=1"), "2031");
+  await page.fill("#retirement-body .budget-edit input >> nth=2", "4");
+  await page.fill("#retirement-body .budget-edit input >> nth=3", "2029");
+  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  assert.match(await page.textContent("#retirement-body .budget-edit .error"), /starts after/);
+  await page.fill("#retirement-body .budget-edit input >> nth=3", "2040");
+  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  await page.click("#retirement-body button:has-text('Add a line')");
+  await page.fill("#retirement-body .budget-edit input >> nth=0", "Travel Fund");
+  await page.fill("#retirement-body .budget-edit input >> nth=1", "6");
+  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  assert.deepEqual(await staged(page), ["retirement budget: hobby left out (0)", "retirement budget: kids = 0 from 2031; 4 from 2040",
+                                        "retirement budget: travel_fund = 6"]);
+  assert.match(await page.textContent("#retirement-body tr:has-text('hobby')"), /edited/);
+  await page.click("#pending-save");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent.map((e) => [e.key, e.value, e.was]), [["retirement_spending:hobby", "0", null],
+    ["retirement_spending:kids", "0 from 2031; 4 from 2040", { value: "0 from 2031" }], ["retirement_spending:travel_fund", "6", null]]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

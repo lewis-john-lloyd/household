@@ -245,6 +245,10 @@ REPORTS = (
                                          "plan_monthly", "plan_yearly", "aime", "pia", "note", "run_id")),
     Table("retirement_earnings", ("person", "year", "fica_earnings", "indexed", "counted", "basis", "run_id")),
     Table("retirement_assumptions", ("section", "key", "label", "value", "source", "setting", "run_id")),
+    # the spending the plan uses, line by line (retirement.budget_table): now, in the plan's first year and in
+    # the retirement year, with the retirement_spending setting that changes each line
+    Table("retirement_budget", ("line", "group", "kind", "now", "first_year", "at_retirement", "retire_year",
+                                "setting", "is_set", "lumpy", "note", "run_id")),
     Table("mortgage", ("month", "loan_id", "payment", "interest", "principal", "escrow", "extra_principal",
                        "balance", "paid_from_ledger", "run_id")),
     Table("flows", ("period", "level", "source", "target", "amount", "run_id"),

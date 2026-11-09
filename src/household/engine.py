@@ -604,7 +604,7 @@ def _lots(ledger, reports, books, today, run_id, log):
 
 
 RETIREMENT_TABLES = ("retirement_years", "retirement_strategies", "retirement_plan", "retirement_social_security",
-                     "retirement_earnings", "retirement_assumptions")
+                     "retirement_earnings", "retirement_assumptions", "retirement_budget")
 
 
 def _retirement(ledger, reports, books, actuals, sched, today, run_id, log):
@@ -637,6 +637,7 @@ def _retirement(ledger, reports, books, actuals, sched, today, run_id, log):
                 _say(log, line)
             chosen = years[years["chosen"] == "yes"]
             found = {"retirement_year": int(chosen["retire_year"].iloc[0]) if len(chosen) else None}
+            out["retirement_budget"] = retirement.budget_table(h, found["retirement_year"] or h.start)
     except Exception as e:  # the rest of the run doesn't wait on the retirement plan
         _say(log, f"retirement: failed: {type(e).__name__}: {e}", "ERROR")
     for name in RETIREMENT_TABLES:

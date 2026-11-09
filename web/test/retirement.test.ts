@@ -55,3 +55,16 @@ test("the latest compute's retirement notes are kept without their topic", () =>
   assert.deepEqual(p.notes, ["2031 (51/49)"]);
   assert.equal(p.chosenYear, null);
 });
+
+test("the budget keeps each line, with a blank amount for a category its group's setting covers", () => {
+  const p = page({ retirement_budget: [
+    ["line", "group", "kind", "now", "first_year", "at_retirement", "retire_year", "setting", "is_set", "lumpy", "note", "run_id"],
+    ["kids", "kids", "group", 10, 10, 0, 2031, "0 from 2031", "yes", "", "", "r"],
+    ["camps", "kids", "category", 2, "", "", 2031, "", "", 0.9, "counted in its group's setting", "r"],
+    ["gifts", "", "added", 0, 0, 5, 2031, "5 from 2031", "yes", "", "", "r"],
+  ] });
+  assert.deepEqual(p.budget.map((b) => [b.line, b.kind, b.atRetirement, b.lumpy]),
+                   [["kids", "group", 0, null], ["camps", "category", null, 0.9], ["gifts", "added", 5, null]]);
+  assert.equal(p.budget[0].setting, "0 from 2031");
+  assert.deepEqual(p.budget.map((b) => b.isSet), [true, false, true]);
+});

@@ -33,10 +33,17 @@ interface Earning { person: string; year: number; earnings: number; indexed: num
 
 interface Assumption { section: string; key: string; label: string; value: string; source: string; setting: string }
 
+/** One line of the spending the plan uses: a group, a category in it, a line a setting adds, or a loan's end.
+ * firstYear and atRetirement are null for a category its group's setting covers. */
+interface BudgetLine {
+  line: string; group: string; kind: string; now: number; firstYear: number | null; atRetirement: number | null;
+  retireYear: number; setting: string; isSet: boolean; lumpy: number | null; note: string;
+}
+
 interface RetirementPage {
   chosenYear: number | null; chosenStrategy: string;
   years: RetireYear[]; strategies: RetireStrategy[]; plans: Record<string, PlanYear[]>;
-  benefits: Benefit[]; earnings: Earning[]; assumptions: Assumption[]; notes: string[];
+  benefits: Benefit[]; earnings: Earning[]; assumptions: Assumption[]; budget: BudgetLine[]; notes: string[];
 }
 
 function retireRows(values: unknown[][]): Record<string, string>[] {
@@ -134,6 +141,11 @@ function retirementPage(tabs: Record<string, unknown[][]>): RetirementPage {
   const assumptions = retireRows(tabs.retirement_assumptions || []).map((r) => ({
     section: r.section, key: r.key, label: r.label, value: r.value, source: r.source, setting: r.setting }));
 
+  const budget = retireRows(tabs.retirement_budget || []).map((r) => ({
+    line: r.line, group: r.group, kind: r.kind, now: retireNum(r.now), firstYear: retireNumOrNull(r.first_year),
+    atRetirement: retireNumOrNull(r.at_retirement), retireYear: retireNum(r.retire_year), setting: r.setting, isSet: retireYes(r.is_set),
+    lumpy: retireNumOrNull(r.lumpy), note: r.note }));
+
   const runs = retireRows(tabs.run_log || []).filter((r) => r.stage === "compute");
   const run = runs.length ? runs.sort((a, b) => a.computed_at.localeCompare(b.computed_at))[runs.length - 1].run_id : "";
   const notes = retireRows(tabs.run_notes || []).filter((r) => r.stage === "compute" && r.run_id === run && /^retirement:/.test(r.message))
@@ -142,5 +154,5 @@ function retirementPage(tabs: Record<string, unknown[][]>): RetirementPage {
   const chosen = years.filter((y) => y.chosen)[0];
   const pick = strategies.filter((s) => s.chosen)[0];
   return { chosenYear: chosen ? chosen.year : null, chosenStrategy: pick ? pick.key : "", years, strategies, plans, benefits,
-           earnings, assumptions, notes };
+           earnings, assumptions, budget, notes };
 }

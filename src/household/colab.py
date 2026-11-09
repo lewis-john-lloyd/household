@@ -4,7 +4,12 @@ The notebook user signs in with their own Google account. No credential is
 stored in this package or in the notebook.
 """
 
+import logging
 from dataclasses import dataclass
+
+# Drive's client warns on every request that its transport ignores per-request timeouts: true, harmless, and
+# noise in the notebook's output
+logging.getLogger("google_auth_httplib2").setLevel(logging.ERROR)
 
 
 @dataclass

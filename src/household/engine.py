@@ -485,8 +485,9 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     scope = allocation.in_scope(vals)
     current = allocation.by_class(scope) if scope is not None and len(scope) else {}
     since = (pd.Timestamp(today) - pd.DateOffset(years=2)).date().isoformat()
+    people = valuation.adults(params, _read(ledger, "paystubs"))
     trades, proposed, more = (allocation.rebalance(scope, nodes, allocation.ever_held(holdings, activity, since),
-                                                   classes=valuation.classes(securities))
+                                                   classes=valuation.classes(securities), people=people)
                               if current else (pd.DataFrame(columns=allocation.TRADE_COLUMNS), {}, []))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "allocation"),
                          allocation.report(nodes, current, proposed).assign(run_id=run_id))
@@ -518,7 +519,6 @@ def _investments_and_homes(ledger, reports, books, sched, today, run_id, log, dr
     for r in summary[summary["key"].isin(["value_used", "equity"])].to_dict("records"):
         _say(log, f"house: {r['property_id']} {r['label'].lower()} {float(r['value']):,.0f}"
                   + (f" ({r['note']})" if r["note"] else ""))
-    people = valuation.adults(params, _read(ledger, "paystubs"))
     rule = settings.value(params, "home_value_basis", "purchase_price").strip() or "purchase_price"
     net = networth.build(vals, people, props, pvals, loans, sched, balances, rule)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "net_worth"), net.assign(run_id=run_id))

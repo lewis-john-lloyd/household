@@ -96,3 +96,26 @@ def test_a_plans_pre_tax_and_roth_parts_hold_one_mix():
     trades, _, _ = al.rebalance(vals, [("SDT", "", 50), ("BT", "", 50)], {"plan": {"WILLX"}}, classes={"WILLX": "BT"})
     assert set(trades["bucket"]) == {"401k_pretax+401k_roth"}
     assert trades.set_index("symbol")["proposed"].to_dict() == {"WILLX": 500, "ACMEX": 500}
+
+
+def test_each_adult_is_kept_near_the_target_mix_and_not_only_the_household():
+    vals = pd.DataFrame([
+        {"date": "2001-04-10", "account_id": "a_ira", "owner": "alex", "wrapper": "ira", "bucket": "ira_roth",
+         "symbol": "ACMEX", "asset_class": "SDT", "value": 1000},
+        {"date": "2001-04-10", "account_id": "s_ira", "owner": "sam", "wrapper": "ira", "bucket": "ira_roth",
+         "symbol": "WILLX", "asset_class": "BT", "value": 1000},
+        {"date": "2001-04-10", "account_id": "j_tax", "owner": "joint", "wrapper": "taxable", "bucket": "taxable",
+         "symbol": "QUILX", "asset_class": "SDT", "value": 400}])
+    tree = [("SDT", "", 50), ("BT", "", 50)]
+    held = {"a_ira": {"ACMEX", "WILLX"}, "s_ira": {"ACMEX", "WILLX"}}
+    klass = {"ACMEX": "SDT", "WILLX": "BT"}
+    trades, _, notes = al.rebalance(vals, tree, held, classes=klass)
+    # the household is 1400 stocks to 1000 bonds: 200 moves from stocks to bonds, all of it in one account
+    assert round(trades["trade"].clip(lower=0).sum(), 2) == 200 and trades["account_id"].nunique() == 1
+    trades, proposed, notes = al.rebalance(vals, tree, held, classes=klass, people=("alex", "sam"))
+    after = {(t["account_id"], t["symbol"]): t["proposed"] for t in trades.to_dict("records")}
+    # each has half of the joint 400 in stocks, so each IRA holds 400 of stocks and 600 of bonds
+    assert after == {("a_ira", "ACMEX"): 400, ("a_ira", "WILLX"): 600, ("s_ira", "ACMEX"): 400, ("s_ira", "WILLX"): 600}
+    assert {c: round(v, 2) for c, v in proposed.items()} == {"SDT": 1200, "BT": 1200}
+    assert "rebalance: alex's own money is 50% off the target mix now, 0% after the trades" in notes
+    assert "rebalance: sam's own money is 33% off the target mix now, 0% after the trades" in notes

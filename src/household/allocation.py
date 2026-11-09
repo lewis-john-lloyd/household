@@ -203,12 +203,36 @@ def placement(mix, kinds):
     return sum(f * share * LOCATION.get(c, {}).get(kind, 0) for c, f in mix.items() for kind, share in kinds.items())
 
 
-def rebalance(vals, nodes, ever_held=None, location=True, classes=None):
+OWNER_WEIGHT = 30.0  # a dollar of one adult's portfolio off the target mix, beside 1000 for the household's
+
+
+def _owner_shares(owner, people):
+    """{person: share of an account's money}: all of it to its owner, a joint account's split evenly, nothing
+    for the kids' accounts."""
+    o = str(owner).strip().lower()
+    if o in people:
+        return {o: 1.0}
+    if o == "joint" and people:
+        return {p: 1.0 / len(people) for p in people}
+    return {}
+
+
+def _off(held, targets_share, total):
+    """The share of a portfolio in the wrong classes: half the sum of each class's distance from its target."""
+    if total <= 0:
+        return 0.0
+    keys = set(held) | set(targets_share)
+    return sum(abs(held.get(c, 0.0) - targets_share.get(c, 0.0) * total) for c in keys) / 2 / total
+
+
+def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=()):
     """(TRADE_COLUMNS, {class: proposed dollars}, notes). vals are the in-scope valuation rows; ever_held is
     {account_id: set of symbols} the account has held (holdings and activity), which the proposal may buy.
     With location, among mixes equally near the targets it prefers each class where it is taxed best (LOCATION),
     when that is worth the trades it takes. classes is {symbol: asset_class} from securities, for the funds an
-    account held before but holds none of now."""
+    account held before but holds none of now. people are the household's adults: among mixes equally near
+    the household's targets it then keeps each adult's own money (theirs, and half of what is joint) near the
+    target mix too, so neither carries a class the other holds none of, where the accounts allow."""
     from scipy.optimize import linprog
 
     notes = []
@@ -266,12 +290,30 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None):
     if not variables:
         return pd.DataFrame(columns=TRADE_COLUMNS), dict(fixed), notes + ["rebalance: nothing tradable"]
     n, m = len(variables), len(classes)
-    # x (n), then over/under per class (2m), then buy/sell per variable (2n)
-    size = n + 2 * m + 2 * n
+    people = tuple(people or ())
+    owner_of = {r["account_id"]: _owner_shares(r.get("owner", ""), people) for r in rows.to_dict("records")}
+    balance = [p for p in people if any(p in owner_of.get(a, {}) for a, _, _ in variables)] if len(people) > 1 else []
+    k = len(balance)
+    share = {c: targets.get(c, 0.0) / total if total else 0.0 for c in classes}
+    owner_fixed = {p: {} for p in balance}
+    owner_total = {p: 0.0 for p in balance}
+    for r in rows.to_dict("records"):
+        mix = mixes[(r["account_id"], r["bucket"], r["symbol"])]
+        for p, w in owner_of.get(r["account_id"], {}).items():
+            if p not in owner_total:
+                continue
+            owner_total[p] += w * r["value"]
+            if not r["tradable"]:
+                for c, f in mix.items():
+                    owner_fixed[p][c] = owner_fixed[p].get(c, 0.0) + w * r["value"] * f
+    # x (n), then over/under per class (2m), then buy/sell per variable (2n), then over/under per adult and class (2km)
+    owner_at = n + 2 * m + 2 * n
+    size = owner_at + 2 * k * m
     cost = np.zeros(size)
     scale = max(total, 1.0)
     cost[n:n + 2 * m] = 1000.0 / scale
-    cost[n + 2 * m:] = 1.0 / scale
+    cost[n + 2 * m:owner_at] = 1.0 / scale
+    cost[owner_at:] = OWNER_WEIGHT / scale
     if location:  # each dollar of a class in an account that suits it less costs a little more
         for v_i, (acct, sym, _) in enumerate(variables):
             cost[v_i] = LOCATION_WEIGHT / scale * placement(funds[sym], kinds[acct])
@@ -283,6 +325,15 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None):
         row[n + c_i], row[n + m + c_i] = -1.0, 1.0
         a_eq.append(row)
         b_eq.append(targets.get(c, 0.0) - fixed.get(c, 0.0))
+    for p_i, p in enumerate(balance):  # an adult's fixed + their part of sum x*f - over + under = their target
+        for c_i, c in enumerate(classes):
+            row = np.zeros(size)
+            for v_i, (acct, s_, _) in enumerate(variables):
+                row[v_i] = owner_of.get(acct, {}).get(p, 0.0) * funds[s_].get(c, 0.0)
+            at = owner_at + 2 * (p_i * m + c_i)
+            row[at], row[at + 1] = -1.0, 1.0
+            a_eq.append(row)
+            b_eq.append(share[c] * owner_total[p] - owner_fixed[p].get(c, 0.0))
     for key, g in pd.DataFrame(variables, columns=["a", "s", "cur"]).groupby("a"):
         row = np.zeros(size)
         row[list(g.index)] = 1.0
@@ -307,6 +358,15 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None):
             label = ", ".join(f"{c} {f:.0%}" for c, f in mix.items()) if len(mix) > 1 else next(iter(mix))
             trades.append({"account_id": acct, "bucket": labels[acct], "symbol": s, "asset_class": label,
                            "current": round(cur, 2), "proposed": round(new, 2), "trade": round(trade, 2)})
+    for p in balance:  # how far each adult's own money is from the target mix, now and after the trades
+        now, after = dict(owner_fixed[p]), dict(owner_fixed[p])
+        for (acct, s_, cur), new in zip(variables, x):
+            w = owner_of.get(acct, {}).get(p, 0.0)
+            for c, f in funds[s_].items():
+                now[c] = now.get(c, 0.0) + w * cur * f
+                after[c] = after.get(c, 0.0) + w * new * f
+        notes.append(f"rebalance: {p}'s own money is {_off(now, share, owner_total[p]):.0%} off the target mix now, "
+                     f"{_off(after, share, owner_total[p]):.0%} after the trades")
     out = pd.DataFrame(trades, columns=TRADE_COLUMNS)
     if len(out):
         out = out.sort_values(["account_id", "bucket", "trade"]).reset_index(drop=True)

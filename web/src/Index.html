@@ -3363,7 +3363,8 @@
         var rb = panel(grid2, "Rebalance proposal", "Trades inside tax-advantaged accounts only, among funds each account holds " +
                                                     "or has held in the last two years; taxable accounts and I-Bonds stay as they are. " +
                                                     "Where it is worth the trades, bonds go to pre-tax money and the stocks expected to " +
-                                                    "grow most to Roth and HSA money.");
+                                                    "grow most to Roth and HSA money. It also keeps each adult's own money (and half of what is joint) near " +
+                                                    "the target mix, where their accounts allow, so neither carries a class alone.");
         rb.classList.add("w-wide");
         if (!d.trades.length) rb.appendChild(el("p", "Nothing to trade.", "support"));
         else {

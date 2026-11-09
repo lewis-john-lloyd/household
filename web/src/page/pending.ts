@@ -1,61 +1,35 @@
-// @ts-nocheck
 // Editing: the pending changes and saving them as a change set.
 
 // --- editing ---------------------------------------------------------------------------------------
 // Edits are staged here, one per setting (a newer edit of the same thing replaces the older), and
 // shown in the pending bar. Save sends them to saveChanges, which writes one change set for ingest.
-var editor = null,
+var editor: EditorData | null = null,
   editTab = "review";
-var staged = {},
-  stagedOrder = [];
+/** A staged edit and how it reads in the pending bar. */
+interface StagedEdit {
+  edit: Edit;
+  text: string;
+}
+/** An entry a Save sent: the setting it changes and the staged edit. */
+interface SentEdit {
+  target: string;
+  entry: StagedEdit;
+}
+var staged: Record<string, StagedEdit> = {},
+  stagedOrder: string[] = [];
 var RULES = ["fixed", "billed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund"];
 var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
 var PRIORITIES = ["", "high", "medium", "low"];
 
-// The setting an edit changes; the same rule as editTarget in edits.ts.
-function targetOf(e) {
-  switch (e.kind) {
-    case "budget_line":
-      return e.rule === "scheduled" ? "budget_line|" + e.line + "|scheduled|" + e.effective : "budget_line|" + e.line;
-    case "line":
-      return "line|" + e.txn_id + "|" + (e.field === "split" ? "category" : e.field);
-    case "payee":
-      return "payee|" + e.key.toUpperCase();
-    case "payee_rule":
-      return "payee_rule|" + e.pattern;
-    case "category":
-      return "category|" + e.category;
-    case "alias":
-      return "alias|" + e.alias;
-    case "parameter":
-      return "parameter|" + e.key;
-    case "explanation":
-      return "explanation|" + e.jurisdiction + "|" + e.stub_id;
-    case "not_duplicate":
-      return "not_duplicate|" + [e.txn_a, e.txn_b].sort().join("|");
-    case "item":
-      return "item|" + e.item_id;
-    case "job":
-      return "job|" + e.person + "|" + e.effective + "|" + e.employer;
-    case "subscription":
-      return "subscription|" + e.key.toUpperCase();
-    case "recurring_merge":
-      return "recurring_merge|" + e.key.toUpperCase();
-    case "recurring_name":
-      return "recurring_name|" + e.key.toUpperCase();
-  }
-  return e.kind + "|" + JSON.stringify(e);
-}
-
-function stage(edit, text) {
-  var t = targetOf(edit);
+function stage(edit: Edit, text: string) {
+  var t = editTarget(edit); // the setting it changes (edits.ts)
   if (!staged[t]) stagedOrder.push(t);
   staged[t] = { edit: edit, text: text };
   drawPending();
   return t;
 }
 
-function unstage(t) {
+function unstage(t: string) {
   if (!staged[t]) return;
   delete staged[t];
   stagedOrder.splice(stagedOrder.indexOf(t), 1);
@@ -63,20 +37,20 @@ function unstage(t) {
 }
 
 function drawPending() {
-  var bar = document.getElementById("pending");
+  var bar = byId("pending");
   var n = stagedOrder.length;
-  bar.hidden = !n && !unconfirmed && !document.getElementById("pending-msg").textContent;
+  bar.hidden = !n && !unconfirmed && !byId("pending-msg").textContent;
   document.body.classList.toggle("editing", !bar.hidden);
-  document.getElementById("pending-count").textContent = n ? n + (n === 1 ? " change" : " changes") + " not saved" : "";
+  byId("pending-count").textContent = n ? n + (n === 1 ? " change" : " changes") + " not saved" : "";
   // a save not yet answered keeps Save and Discard all, so it can still be settled with nothing staged
   ["pending-save", "pending-discard"].forEach(function (id) {
-    document.getElementById(id).hidden = !n && !unconfirmed;
+    byId(id).hidden = !n && !unconfirmed;
   });
-  document.getElementById("pending-show").hidden = !n;
-  document.getElementById("pending-save").disabled = busy();
-  document.getElementById("pending-discard").disabled = busy();
-  document.getElementById("pending-dismiss").hidden = !!n || !!unconfirmed;
-  var list = document.getElementById("pending-list");
+  byId("pending-show").hidden = !n;
+  (byId("pending-save") as HTMLButtonElement).disabled = busy();
+  (byId("pending-discard") as HTMLButtonElement).disabled = busy();
+  byId("pending-dismiss").hidden = !!n || !!unconfirmed;
+  var list = byId("pending-list");
   list.textContent = "";
   stagedOrder.forEach(function (t) {
     var li = document.createElement("li");
@@ -106,40 +80,45 @@ function drawPending() {
 // and writes nothing twice.
 // Discard and undo must not quietly drop what a save may already have written: while a save or a check
 // runs, Save and Discard all wait, and an entry sent in an unanswered save can't be undone until it is.
-var unconfirmed = null; // { request, sent } of a Save that failed
-var inFlight = null; // what the running Save sent, or true while a check runs
+var unconfirmed: { request: string; sent: SentEdit[] } | null = null; // a Save that failed
+var inFlight: SentEdit[] | true | null = null; // what the running Save sent, or true while a check runs
 
 function busy() {
   return !!inFlight;
 }
 
-function sentIn(sent, t) {
+function sentIn(sent: SentEdit[], t: string) {
   return sent.some(function (x) {
     return x.target === t && staged[t] === x.entry;
   });
 }
 
-function locked(t) {
+function locked(t: string) {
   return !!(inFlight && inFlight !== true && sentIn(inFlight, t)) || !!(unconfirmed && sentIn(unconfirmed.sent, t));
 }
 
 // Asks whether the unconfirmed save landed; then(r) with its file, or null when it did not.
-function checkUnconfirmed(then, onError) {
-  var u = unconfirmed;
+function checkUnconfirmed(
+  then: (r: SaveResult | null, u: { request: string; sent: SentEdit[] }) => void,
+  onError: (error: Error) => void,
+) {
+  var u = unconfirmed!; // called only while a save is unconfirmed
   inFlight = true;
   drawPending();
-  google.script.run
-    .withSuccessHandler(function (r) {
+  ask(
+    "findSave",
+    [u.request],
+    function (r) {
       inFlight = null;
       unconfirmed = null;
       then(r, u);
-    })
-    .withFailureHandler(function (error) {
+    },
+    function (error) {
       inFlight = null;
       drawPending();
       onError(error);
-    })
-    .findSave(u.request);
+    },
+  );
 }
 
 function newRequest() {
@@ -149,7 +128,7 @@ function newRequest() {
 
 function saveStaged() {
   if (busy()) return;
-  var msg = document.getElementById("pending-msg");
+  var msg = byId("pending-msg");
   msg.className = "";
   if (unconfirmed) {
     msg.textContent = "Checking whether the last save went through…";
@@ -191,7 +170,7 @@ function saveStaged() {
 }
 
 function saveNow() {
-  var msg = document.getElementById("pending-msg");
+  var msg = byId("pending-msg");
   var sent = stagedOrder.map(function (t) {
     return { target: t, entry: staged[t] };
   });
@@ -206,12 +185,14 @@ function saveNow() {
   msg.textContent = "Saving " + edits.length + " changes…";
   inFlight = sent;
   drawPending();
-  google.script.run
-    .withSuccessHandler(function (r) {
+  ask(
+    "saveChanges",
+    [edits, texts, request],
+    function (r) {
       inFlight = null;
       saved(sent, r, "");
-    })
-    .withFailureHandler(function (error) {
+    },
+    function (error) {
       inFlight = null;
       unconfirmed = { request: request, sent: sent };
       msg.className = "error";
@@ -220,8 +201,8 @@ function saveNow() {
         ((error && error.message) || error) +
         ". Saving again first checks whether it went through, so nothing is saved twice.";
       drawPending();
-    })
-    .saveChanges(edits, texts, request);
+    },
+  );
 }
 
 // Discard all drops what is staged here. After a save that didn't confirm it first learns whether that
@@ -229,8 +210,8 @@ function saveNow() {
 // discard that file too, since only that takes them out of ingest's way.
 function discardStaged() {
   if (busy()) return;
-  var msg = document.getElementById("pending-msg");
-  function dropAll(lead) {
+  var msg = byId("pending-msg");
+  function dropAll(lead: string) {
     stagedOrder.slice().forEach(unstage);
     msg.className = "";
     msg.textContent = lead + "Discarded every change on this page.";
@@ -265,8 +246,10 @@ function discardStaged() {
           "Discard that change set too",
           function () {
             this.disabled = true;
-            google.script.run
-              .withSuccessHandler(function (d) {
+            ask(
+              "discardWaiting",
+              [r.id],
+              function (d) {
                 msg.className = d && d.remembered ? "" : "error";
                 msg.textContent =
                   "Discarded " +
@@ -278,8 +261,8 @@ function discardStaged() {
                     : "and " +
                       ((d && d.warning) || "the views could not remember this discard, so check the next ingest's file list."));
                 drawPending();
-              })
-              .withFailureHandler(function (error) {
+              },
+              function (error) {
                 msg.className = "error";
                 msg.textContent =
                   "Could not discard " +
@@ -288,8 +271,8 @@ function discardStaged() {
                   ((error && error.message) || error) +
                   ". If ingest has read it already, edit the settings back instead.";
                 drawPending();
-              })
-              .discardWaiting(r.id);
+              },
+            );
           },
           "small",
         ),
@@ -307,8 +290,8 @@ function discardStaged() {
   );
 }
 
-function saved(sent, r, lead) {
-  var msg = document.getElementById("pending-msg");
+function saved(sent: SentEdit[], r: SaveResult, lead: string) {
+  var msg = byId("pending-msg");
   sent.forEach(function (s) {
     if (staged[s.target] === s.entry) unstage(s.target);
   });

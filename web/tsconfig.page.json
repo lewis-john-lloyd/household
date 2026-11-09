@@ -3,20 +3,24 @@
     "target": "ES2019",
     "lib": [
       "ES2019",
+      "ES2020.Intl",
       "DOM",
       "DOM.Iterable"
     ],
     "module": "none",
-    "types": [],
+    "types": [
+      "google-apps-script"
+    ],
     "strict": true,
     "noEmitOnError": true,
     "rootDir": "src",
     "outDir": "build/page",
     "exactOptionalPropertyTypes": true,
-    "alwaysStrict": false
+    "alwaysStrict": false,
+    "skipLibCheck": true
   },
   "include": [
-    "src/budgetview.ts",
+    "src/*.ts",
     "src/page/**/*.ts"
   ]
 }

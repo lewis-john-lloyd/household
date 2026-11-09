@@ -1,21 +1,20 @@
-// @ts-nocheck
-// Cashflow: the Sankey and the money by what it is.
-
 // Cashflow: the Sankey, and beside it the same money by what it is to the household.
-function drawFlowSummary(s) {
-  var box = document.getElementById("flow-summary");
+function drawFlowSummary(s: FlowSummary) {
+  var box = byId("flow-summary");
   box.textContent = "";
-  var sum = function (items) {
+  var sum = function (items: FlowItem[]) {
     return items.reduce(function (a, i) {
       return a + i.amount;
     }, 0);
   };
-  [
-    ["Income", s.income, "came"],
-    ["Other money in", s.other, "came"],
-    ["Taxes and deductions", s.taxes, "taxes"],
-    ["Went to", s.went, "went"],
-  ].forEach(function (c) {
+  (
+    [
+      ["Income", s.income, "came"],
+      ["Other money in", s.other, "came"],
+      ["Taxes and deductions", s.taxes, "taxes"],
+      ["Went to", s.went, "went"],
+    ] as [string, FlowItem[], string][]
+  ).forEach(function (c) {
     if (!c[1].length) return;
     var panel = el("section", null, "panel flow-column " + c[2]);
     var head = el("div", null, "flow-head");
@@ -69,22 +68,22 @@ function drawFlowSummary(s) {
 }
 
 var flowsTab = "sankey",
-  lastFlows = null;
+  lastFlows: Answer<"getFlows"> | null = null;
 
 // Sankey or Table: the chart is drawn only while it shows, since Google sizes it to its box
-function setFlowsTab(tab) {
+function setFlowsTab(tab: string) {
   flowsTab = tab;
-  document.querySelectorAll("#flows-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#flows-tabs button").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
   });
-  document.getElementById("flows-sankey").hidden = tab !== "sankey";
-  document.getElementById("flow-summary").hidden = tab !== "table";
+  byId("flows-sankey").hidden = tab !== "sankey";
+  byId("flow-summary").hidden = tab !== "table";
   if (tab === "sankey" && lastFlows) drawFlows(lastFlows);
 }
 
-function drawFlows(result) {
-  var chart = document.getElementById("chart");
-  var note = document.getElementById("flows-note");
+function drawFlows(result: Answer<"getFlows">) {
+  var chart = byId("chart");
+  var note = byId("flows-note");
   lastFlows = result;
   drawFlowSummary(result.summary);
   if (flowsTab !== "sankey") return;
@@ -93,7 +92,7 @@ function drawFlows(result) {
     note.textContent = "";
     return;
   }
-  var label = {}; // each node shows its total after its name
+  var label: Record<string, string> = {}; // each node shows its total after its name
   result.totals.forEach(function (t) {
     label[t.name] = t.name + "  " + money.format(t.total);
   });
@@ -112,7 +111,7 @@ function drawFlows(result) {
   chart.textContent = "";
   // Google draws the chart in its own colors: hand it the page's, so labels read in dark mode too
   var css = getComputedStyle(document.documentElement);
-  var token = function (name) {
+  var token = function (name: string) {
     return css.getPropertyValue(name).trim();
   };
   new google.visualization.Sankey(chart).draw(data, {
@@ -140,10 +139,10 @@ function drawFlows(result) {
 }
 
 // What an order history says a charge bought: the first few items, the rest behind "+N more".
-function itemList(items) {
+function itemList(items: Item[]) {
   var list = document.createElement("ul");
   list.className = "items";
-  function add(i) {
+  function add(i: Item) {
     var li = document.createElement("li");
     li.textContent = i.name + " · " + cents.format(i.amount);
     li.title = i.name;

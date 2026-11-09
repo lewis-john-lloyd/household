@@ -1,12 +1,15 @@
-// @ts-nocheck
 // Taxes: this year, history, the forms, the plan and scenarios.
+
+var taxes: TaxPage | null = null,
+  taxYear = "";
+var PLAN_NAME: Record<string, string> = { federal: "Federal", wisconsin: "Wisconsin" };
 
 function loadTaxes() {
   if (taxes) {
     drawTaxes();
     return;
   }
-  document.getElementById("taxes-body").textContent = "Loading…";
+  byId("taxes-body").textContent = "Loading…";
   call(
     "getTaxes",
     [],
@@ -21,12 +24,12 @@ function loadTaxes() {
 // Taxes over the years: one column per filed year, its income split where it came from, how it was taxed,
 // or where it went, in dollars or as shares of the whole; hover a column for its parts and their change on the
 // year before, click it to open that year below when the page has it.
-var historyView = { split: "went", measure: "Dollars", jurisdiction: "federal" };
-var HISTORY_SPLITS = { went: "Where it went", came: "Where it came from", taxed: "How it was taxed" };
-var HISTORY_RETURNS = { federal: "Federal", state: "State" };
-var STATE_CODES = { pa: "PA", wi: "WI" };
-var STATE_NAMES_BY_CODE = { pa: "Pennsylvania", wi: "Wisconsin" };
-var PART_COLOR = {
+var historyView: Record<string, string> = { split: "went", measure: "Dollars", jurisdiction: "federal" };
+var HISTORY_SPLITS: Record<string, string> = { went: "Where it went", came: "Where it came from", taxed: "How it was taxed" };
+var HISTORY_RETURNS: Record<string, string> = { federal: "Federal", state: "State" };
+var STATE_CODES: Record<string, string> = { pa: "PA", wi: "WI" };
+var STATE_NAMES_BY_CODE: Record<string, string> = { pa: "Pennsylvania", wi: "Wisconsin" };
+var PART_COLOR: Record<string, number> = {
   "Kept after income tax": 1,
   "Federal income tax": 7,
   "Other federal taxes": 5,
@@ -45,9 +48,9 @@ var PART_COLOR = {
 };
 var CREDIT_PART = "Credits (part of what was kept)";
 
-function drawTaxHistory(body) {
-  var all = taxes.history;
-  var state = function (r) {
+function drawTaxHistory(body: HTMLElement) {
+  var all = taxes!.history;
+  var state = function (r: HistoryPart) {
     return r.jurisdiction !== "federal";
   };
   var returns = ["federal", "state"].filter(function (j) {
@@ -79,7 +82,7 @@ function drawTaxHistory(body) {
         }),
     ),
   );
-  var colorOf = function (part) {
+  var colorOf = function (part: string) {
     var n = PART_COLOR[part] || (people.indexOf(part) >= 0 ? people.indexOf(part) + 1 : 8);
     return "var(--series-" + n + ")";
   };
@@ -97,7 +100,7 @@ function drawTaxHistory(body) {
         return HISTORY_SPLITS[k];
       }),
       HISTORY_SPLITS[historyView.split],
-      function (label) {
+      function (label: string) {
         historyView.split = Object.keys(HISTORY_SPLITS).filter(function (k) {
           return HISTORY_SPLITS[k] === label;
         })[0];
@@ -110,7 +113,7 @@ function drawTaxHistory(body) {
     pill(
       ["Dollars", "Share of income"],
       historyView.measure,
-      function (m) {
+      function (m: string) {
         historyView.measure = m;
         redraw();
       },
@@ -124,7 +127,7 @@ function drawTaxHistory(body) {
           return HISTORY_RETURNS[j];
         }),
         HISTORY_RETURNS[historyView.jurisdiction],
-        function (label) {
+        function (label: string) {
           historyView.jurisdiction = returns.filter(function (j) {
             return HISTORY_RETURNS[j] === label;
           })[0];
@@ -141,10 +144,10 @@ function drawTaxHistory(body) {
   }
 
   // a column per return a year has: one federal, or each state's side by side within its year
-  var key = function (r) {
+  var key = function (r: HistoryPart) {
     return r.year + "|" + r.jurisdiction;
   };
-  var columns = [];
+  var columns: { key: string; year: string; jurisdiction: string }[] = [];
   rows.forEach(function (r) {
     if (
       !columns.some(function (c) {
@@ -163,7 +166,7 @@ function drawTaxHistory(body) {
       }),
     ),
   );
-  var parts = []; // in the split's order, bottom of the column first
+  var parts: string[] = []; // in the split's order, bottom of the column first
   rows
     .slice()
     .sort(function (a, b) {
@@ -186,17 +189,17 @@ function drawTaxHistory(body) {
     });
   section.appendChild(legend);
   var share = historyView.measure !== "Dollars";
-  var at = {};
+  var at: Record<string, Record<string, HistoryPart>> = {};
   rows.forEach(function (r) {
     (at[key(r)] || (at[key(r)] = {}))[r.part] = r;
   });
-  var totalOf = function (k) {
+  var totalOf = function (k: string) {
     var any = rows.filter(function (r) {
       return key(r) === k;
     })[0];
     return any ? any.total : 0;
   };
-  var scaled = function (k, v) {
+  var scaled = function (k: string, v: number) {
     return share ? (totalOf(k) ? (100 * v) / totalOf(k) : 0) : v;
   };
   var hi = 0,
@@ -226,10 +229,10 @@ function drawTaxHistory(body) {
   var top = share ? Math.max(100, Math.ceil(hi / step) * step) : Math.ceil((hi * 1.08) / step) * step;
   var bottom = lo < 0 ? lo * 1.2 : 0; // room for a loss below the line, without a whole empty step
   var NS = "http://www.w3.org/2000/svg";
-  var svgEl = function (name, attrs, parent) {
+  var svgEl = function (name: string, attrs: Record<string, string | number>, parent?: Element) {
     var e = document.createElementNS(NS, name);
     Object.keys(attrs).forEach(function (k) {
-      e.setAttribute(k, attrs[k]);
+      e.setAttribute(k, String(attrs[k]));
     });
     if (parent) parent.appendChild(e);
     return e;
@@ -238,7 +241,7 @@ function drawTaxHistory(body) {
   var width = Math.max(section.clientWidth - 40, 360),
     height = 360 + (several ? 16 : 0);
   var m = { top: 22, right: 12, bottom: 26 + (several ? 16 : 0), left: 60 };
-  var y = function (v) {
+  var y = function (v: number) {
     return m.top + ((top - v) / Math.max(top - bottom, 1)) * (height - m.top - m.bottom);
   };
   var svg = svgEl("svg", {
@@ -256,14 +259,14 @@ function drawTaxHistory(body) {
   svgEl("rect", { width: 5, height: 5, fill: "var(--surface-low)" }, pat);
   svgEl("line", { x1: 0, y1: 0, x2: 0, y2: 5, stroke: "var(--series-8)", "stroke-width": 2 }, pat);
   section.appendChild(svg);
-  var short = function (v) {
+  var short = function (v: number) {
     var a = Math.abs(v),
       sign = v < 0 ? "-" : "";
     return (
       sign + (a >= 1e6 ? "$" + (a / 1e6).toFixed(1) + "M" : a >= 1000 ? "$" + Math.round(a / 1000) + "k" : "$" + Math.round(a))
     );
   };
-  var ticks = [];
+  var ticks: number[] = [];
   for (var v = 0; v <= top + 0.001; v += step) ticks.push(v);
   for (v = -step; v >= bottom - 0.001; v -= step) ticks.push(v);
   ticks.forEach(function (v) {
@@ -284,10 +287,10 @@ function drawTaxHistory(body) {
   var tip = el("div", null, "tip");
   tip.hidden = true;
   section.appendChild(tip);
-  var opens = function (yr) {
+  var opens = function (yr: string) {
     return !!yearReturns(yr);
   };
-  var isProjected = function (yr) {
+  var isProjected = function (yr: string) {
     return rows.some(function (r) {
       return r.year === yr && r.projected;
     });
@@ -391,7 +394,7 @@ function drawTaxHistory(body) {
         tip.hidden = true;
       });
       if (opens(yr)) {
-        hit.style.cursor = "pointer";
+        (hit as SVGElement).style.cursor = "pointer";
         hit.addEventListener("click", function () {
           historyYear = historyYear === yr ? "" : yr; // a second click on the open year closes it
           drawTaxes();
@@ -416,11 +419,11 @@ function drawTaxHistory(body) {
   );
 }
 
-function signed(n) {
+function signed(n: number) {
   return (n > 0 ? "Owe " : n < 0 ? "Refund " : "") + money.format(Math.abs(n));
 }
 
-function pill(options, value, onpick, label) {
+function pill(options: string[], value: string, onpick: (option: string) => void, label: string) {
   var group = el("span", null, "segmented");
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", label);
@@ -440,7 +443,7 @@ var taxView = "year",
   historyYear = "";
 
 function drawTaxes() {
-  var body = document.getElementById("taxes-body");
+  var body = byId("taxes-body");
   body.textContent = "";
   subtabs(body, "Taxes", PAGE_PARTS.taxes, taxView, function (v) {
     if (v.indexOf("edit:") === 0) openEdit(v.slice(5));
@@ -457,11 +460,11 @@ function drawTaxes() {
     drawForm8949(body);
     return;
   }
-  if (!taxes.years.length) {
+  if (!taxes!.years.length) {
     body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
     return;
   }
-  var year = taxes.years[0];
+  var year = taxes!.years[0];
   var head = el("div", null, "tax-head");
   head.appendChild(el("h2", "Taxes for " + year.year));
   body.appendChild(head);
@@ -485,25 +488,25 @@ function drawTaxes() {
   });
   side.appendChild(returns);
   var aside = el("div", null, "stacked");
-  if (taxes.plan.length) aside.appendChild(planCard(taxes.plan));
-  if (taxes.notes.length) {
+  if (taxes!.plan.length) aside.appendChild(planCard(taxes!.plan));
+  if (taxes!.notes.length) {
     var notes = el("section", null, "panel");
     notes.appendChild(el("h2", "What the projection assumes"));
     var list = el("ul", null, "notes");
-    taxes.notes.forEach(function (n) {
+    taxes!.notes.forEach(function (n) {
       list.appendChild(el("li", n));
     });
     notes.appendChild(list);
     aside.appendChild(notes);
   }
-  if (taxes.totals.length > 1) aside.appendChild(scenariosPanel(taxes.totals));
-  if (taxes.accounts.length) aside.appendChild(accountsPanel(taxes.accounts));
+  if (taxes!.totals.length > 1) aside.appendChild(scenariosPanel(taxes!.totals));
+  if (taxes!.accounts.length) aside.appendChild(accountsPanel(taxes!.accounts));
   side.appendChild(aside);
   body.appendChild(side);
 }
 
 // the cards with each return's bottom line: owed or refunded
-function bottomLines(forms) {
+function bottomLines(forms: Record<string, TaxLine[]>) {
   var summary = el("div", null, "cards tax-summary");
   Object.keys(forms).forEach(function (form) {
     var lines = forms[form] || [];
@@ -519,29 +522,29 @@ function bottomLines(forms) {
 }
 
 // the years a breakdown can open for: computed from their inputs (taxes.years) or as filed (taxes.filed)
-function yearReturns(yr) {
-  var computed = taxes.years.filter(function (y) {
+function yearReturns(yr: string) {
+  var computed = taxes!.years.filter(function (y) {
     return y.year === yr;
   })[0];
   if (computed) return { forms: computed.forms, filed: computed.filed, computed: true };
-  var filed = taxes.filed && taxes.filed[yr];
+  var filed = taxes!.filed && taxes!.filed[yr];
   return filed ? { forms: filed, filed: false, computed: false } : null;
 }
 
 // Form 8949: each year's sales as the form lays them out, Part I short-term and Part II long-term, with
 // the totals that carry to Schedule D beside the return as filed.
-var f8949 = null,
+var f8949: F8949Page | null = null,
   f8949Year = "";
-var FORM_PARTS = {
+var FORM_PARTS: Record<string, string[]> = {
   short_term: ["Part I, short-term", "Schedule D line 7"],
   long_term: ["Part II, long-term", "Schedule D line 15"],
 };
 
-function centsText(n) {
+function centsText(n: number) {
   return cents.format(n).replace("-", "−");
 }
 
-function drawForm8949(body) {
+function drawForm8949(body: HTMLElement) {
   if (!f8949) {
     var wait = el("p", "Loading…", "support");
     wait.id = "f8949-loading";
@@ -596,7 +599,7 @@ function drawForm8949(body) {
       "support",
     ),
   );
-  var gains = {};
+  var gains: Record<string, number> = {};
   y.parts.forEach(function (p) {
     gains[p.term] = p.gain;
   });
@@ -684,12 +687,12 @@ function drawForm8949(body) {
   });
 }
 
-function drawTaxHistoryView(body) {
-  if (taxes.history && taxes.history.length) drawTaxHistory(body);
+function drawTaxHistoryView(body: HTMLElement) {
+  if (taxes!.history && taxes!.history.length) drawTaxHistory(body);
   else body.appendChild(el("p", "No filed returns yet: return_facts fills this in.", "support"));
   if (!historyYear || !yearReturns(historyYear)) return;
-  var r = yearReturns(historyYear);
-  var projected = taxes.history.some(function (h) {
+  var r = yearReturns(historyYear)!;
+  var projected = taxes!.history.some(function (h) {
     return h.year === historyYear && h.projected;
   });
   var head = el("div", null, "tax-head");
@@ -734,10 +737,10 @@ function drawTaxHistoryView(body) {
 
 // For each return, the extra withholding per paycheck that lands the year on a refund, on no balance, and
 // on owing, from the year so far plus the projection.
-function planCard(plan) {
+function planCard(plan: Row[]) {
   var card = el("article", null, "card plan");
   card.appendChild(el("h2", "Withholding for the rest of the year"));
-  var byReturn = {};
+  var byReturn: Record<string, Row[]> = {};
   plan.forEach(function (p) {
     (byReturn[p["return"]] = byReturn[p["return"]] || []).push(p);
   });
@@ -791,7 +794,7 @@ function planCard(plan) {
         "text",
       );
       cell(row, cents.format(Number(p.suggested_extra)));
-      var notes = [];
+      var notes: string[] = [];
       if (Math.abs(lands - goal) > 1)
         notes.push("gets to " + (lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands)) + " at most");
       if (p.penalty_free === "FALSE" || p.penalty_free === "false") notes.push("an underpayment penalty is possible");
@@ -817,7 +820,7 @@ function planCard(plan) {
 }
 
 // the summary card's name for each form's bottom line
-var STATE_NAMES = {
+var STATE_NAMES: Record<string, string> = {
   "Form 1040": "Federal",
   "Wisconsin Form 1": "Wisconsin",
   "Wisconsin Form 1NPR": "Wisconsin",
@@ -825,7 +828,7 @@ var STATE_NAMES = {
 };
 var RATIO_KEYS = ["wi1npr_32"]; // a share, not dollars
 
-function formTable(lines, withFiled, computedHead) {
+function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string) {
   var wrap = el("div", null, "scroll");
   var table = el("table", null, "form-lines");
   var head = el("tr");
@@ -847,16 +850,16 @@ function formTable(lines, withFiled, computedHead) {
     cell(row, l.line, "line-no");
     cell(row, l.label, "text");
     var ratio = RATIO_KEYS.indexOf(l.key) >= 0;
-    var show = function (v) {
+    var show = function (v: number) {
       return ratio ? (v * 100).toFixed(2) + "%" : cents.format(v);
     };
     cell(row, show(l.value));
     if (withFiled) {
       // a line with nothing filed comes back without a filed value (null or missing)
       var has = typeof l.filed === "number" && isFinite(l.filed);
-      var isOff = has && Math.abs(l.value - l.filed) > (ratio ? 0.00005 : 1);
-      cell(row, has ? show(l.filed) : "");
-      cell(row, isOff ? show(l.value - l.filed) : "", isOff ? "off" : "");
+      var isOff = has && Math.abs(l.value - (l.filed as number)) > (ratio ? 0.00005 : 1);
+      cell(row, has ? show(l.filed as number) : "");
+      cell(row, isOff ? show(l.value - (l.filed as number)) : "", isOff ? "off" : "");
     }
     tbody.appendChild(row);
   });
@@ -866,17 +869,17 @@ function formTable(lines, withFiled, computedHead) {
 }
 
 // 401(k), the mega backdoor, HSA and the rest: so far, by December 31, and against the limit.
-function accountsPanel(accounts) {
+function accountsPanel(accounts: Row[]) {
   var panel = el("section", null, "panel");
   panel.appendChild(el("h2", "Retirement and health accounts"));
   panel.appendChild(el("p", "So far this year from the pay stubs, and by December 31 at the same contributions.", "support"));
-  var people = {};
+  var people: Record<string, Row[]> = {};
   accounts.forEach(function (a) {
     (people[a.person] = people[a.person] || []).push(a);
   });
   Object.keys(people)
     .sort(function (a, b) {
-      return (a === "household") - (b === "household") || a.localeCompare(b);
+      return Number(a === "household") - Number(b === "household") || a.localeCompare(b);
     })
     .forEach(function (person) {
       panel.appendChild(el("h3", person === "household" ? "Household" : person, "account-person"));
@@ -928,7 +931,7 @@ function accountsPanel(accounts) {
   return panel;
 }
 
-function scenariosPanel(totals) {
+function scenariosPanel(totals: ScenarioTotals[]) {
   var panel = el("section", null, "panel");
   panel.appendChild(el("h2", "Scenarios for this year"));
   panel.appendChild(el("p", "Federal as a bar from zero (refund left, owed right), Wisconsin beside it.", "support"));
@@ -939,7 +942,7 @@ function scenariosPanel(totals) {
   return panel;
 }
 
-function drawScenarioBars(box, totals) {
+function drawScenarioBars(box: HTMLElement, totals: ScenarioTotals[]) {
   var biggest =
     Math.max.apply(
       null,

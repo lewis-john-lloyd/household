@@ -1,14 +1,28 @@
-// @ts-nocheck
 // Pay over time: the Jobs page's charts.
+
+/** A stretch of a person's pay: a comp_events row in force from at until the next. */
+interface PayStretch {
+  at: string;
+  t: number; // at, as a time
+  person: string;
+  employer: string;
+  salary: number;
+  fte: number;
+  pay: number; // salary times fte
+  band: string;
+  rating: string;
+  note: string;
+  clipped?: boolean; // starts before the chart does
+}
 
 var SERIES = 8;
 var YEARS_SHOWN = 12; // a pay chart opens at the level in force this many years back
-function payCharts(body, jobs) {
+function payCharts(body: HTMLElement, jobs: Row[]) {
   var rows = jobs
     .filter(function (j) {
       return /^\d{4}-\d{2}-\d{2}$/.test(j.effective) && Number(j.salary) > 0;
     })
-    .map(function (j) {
+    .map(function (j): PayStretch {
       var fte = Number(j.fte) > 0 ? Number(j.fte) : 1;
       return {
         at: j.effective,
@@ -27,7 +41,7 @@ function payCharts(body, jobs) {
       return a.t - b.t;
     });
   if (!rows.length) return;
-  var slot = {},
+  var slot: Record<string, number> = {},
     next = 0; // color follows the employer, by first appearance, across every chart
   rows.forEach(function (r) {
     var k = r.employer.toLowerCase();
@@ -36,7 +50,7 @@ function payCharts(body, jobs) {
       next += 1;
     }
   });
-  var colorOf = function (employer) {
+  var colorOf = function (employer: string) {
     var n = slot[employer.toLowerCase()];
     return n ? "var(--series-" + n + ")" : "var(--outline)";
   };
@@ -80,7 +94,7 @@ function payCharts(body, jobs) {
     panel.appendChild(head);
     var detail = el("div", null, "job-detail");
     detail.hidden = true;
-    var pick = payChart(
+    var pick: (i: number | null) => void = payChart(
       panel,
       mine,
       colorOf,
@@ -99,7 +113,7 @@ function payCharts(body, jobs) {
 }
 
 // A pay change in a dialog over the charts: the job form, staged like any edit when kept.
-function jobDialog(name, start, title, label) {
+function jobDialog(name: string, start: Row, title?: string, label?: string) {
   var dialog = document.createElement("dialog");
   dialog.className = "job-dialog";
   dialog.appendChild(el("h2", title || "Add a pay change for " + name));
@@ -124,7 +138,7 @@ function jobDialog(name, start, title, label) {
     label || "Add pay change",
   );
   var cancel = button("Cancel", close, "text");
-  form.querySelector(".actions").appendChild(cancel);
+  (form.querySelector(".actions") as HTMLElement).appendChild(cancel);
   dialog.appendChild(form);
   dialog.addEventListener("cancel", function () {
     dialog.remove();
@@ -137,12 +151,18 @@ function jobDialog(name, start, title, label) {
 
 // onSelect(row, next) is called when a stretch of the line (or its marker) is chosen; payChart returns a
 // function that marks the chosen stretch (null for none).
-function payChart(panel, rows, colorOf, onSelect, onClear) {
+function payChart(
+  panel: HTMLElement,
+  rows: PayStretch[],
+  colorOf: (employer: string) => string,
+  onSelect: (r: PayStretch, next: PayStretch | null) => void,
+  onClear: () => void,
+) {
   var NS = "http://www.w3.org/2000/svg";
-  var svgEl = function (name, attrs, parent) {
+  var svgEl = function (name: string, attrs: Record<string, string | number>, parent?: Element) {
     var e = document.createElementNS(NS, name);
     Object.keys(attrs).forEach(function (k) {
-      e.setAttribute(k, attrs[k]);
+      e.setAttribute(k, String(attrs[k]));
     });
     if (parent) parent.appendChild(e);
     return e;
@@ -194,10 +214,10 @@ function payChart(panel, rows, colorOf, onSelect, onClear) {
   });
   var y0 = Math.max(0, Math.floor((lo * 0.9) / step) * step),
     y1 = Math.ceil((hi * 1.04) / step) * step;
-  var x = function (t) {
+  var x = function (t: number) {
     return m.left + ((t - t0) / Math.max(t1 - t0, 1)) * (width - m.left - m.right);
   };
-  var y = function (v) {
+  var y = function (v: number) {
     return m.top + ((y1 - v) / Math.max(y1 - y0, 1)) * (height - m.top - m.bottom);
   };
   var svg = svgEl("svg", {
@@ -220,16 +240,16 @@ function payChart(panel, rows, colorOf, onSelect, onClear) {
     tx.textContent = String(yr);
   }
   // the step line: a level per row until the next, risers in neutral ink so color stays the employer's
-  var levels = [],
+  var levels: Element[] = [],
     current = -1;
-  var choose = function (i) {
+  var choose = function (i: number) {
     current = i;
     levels.forEach(function (l, n) {
-      l.setAttribute("stroke-width", n === i ? 5 : 2);
+      l.setAttribute("stroke-width", String(n === i ? 5 : 2));
     });
   };
   // choosing the stretch already open closes its details again
-  var select = function (i) {
+  var select = function (i: number) {
     if (i === current) {
       choose(-1);
       if (onClear) onClear();
@@ -301,7 +321,8 @@ function payChart(panel, rows, colorOf, onSelect, onClear) {
     seg.addEventListener("click", function () {
       select(i);
     });
-    seg.addEventListener("keydown", function (e) {
+    seg.addEventListener("keydown", function (event) {
+      var e = event as KeyboardEvent;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         select(i);
@@ -315,7 +336,7 @@ function payChart(panel, rows, colorOf, onSelect, onClear) {
   tip.hidden = true;
   panel.appendChild(tip);
   var lanes = { up: [-Infinity, -Infinity], down: [-Infinity, -Infinity] };
-  var runFrom = null; // the pay before a run of raises told as one
+  var runFrom: number | null = null; // the pay before a run of raises told as one
   rows.forEach(function (r, i) {
     var prev = rows[i - 1],
       after = rows[i + 1];
@@ -398,7 +419,7 @@ function payChart(panel, rows, colorOf, onSelect, onClear) {
       tip.hidden = true;
     });
   });
-  return function (i) {
+  return function (i: number | null) {
     choose(i === null ? -1 : i);
   };
 }

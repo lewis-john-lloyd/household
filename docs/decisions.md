@@ -110,7 +110,8 @@ A new helper in a money module needs its types before it passes.
 ## 9. TypeScript's unchecked index access stays off
 
 **Decided.** The web app compiles with `strict` and `exactOptionalPropertyTypes`, but not
-`noUncheckedIndexedAccess`.
+`noUncheckedIndexedAccess`. That holds for the page's own code too (`web/src/page`, `tsconfig.page.json`),
+which is checked against the server's types.
 
 **Why.** Turning it on gave 190 errors, nearly all from reading a Reports row by its column name, where the
 code already falls back for a missing cell (an empty string, zero, or null). Fixing them would add a fallback

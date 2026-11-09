@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Status: what needs you, the engine log, the projection.
 
 var UNSEEN_NOTE =
@@ -6,7 +5,7 @@ var UNSEEN_NOTE =
   "household inbox: it starts in My Drive. Move web_edits into the inbox once, then run ingest.";
 
 // Change sets saved and not yet read by ingest, and any it refused.
-function drawWaiting(body) {
+function drawWaiting(body: HTMLElement) {
   body.textContent = "Loading…";
   call(
     "getWaiting",
@@ -44,7 +43,7 @@ function drawWaiting(body) {
                   drawWaiting(body);
                   if (d && !d.remembered) {
                     // discarded, but the status page won't be able to tell if it was written anyway
-                    var msg = document.getElementById("pending-msg");
+                    var msg = byId("pending-msg");
                     msg.className = "error";
                     msg.textContent = d.warning;
                     drawPending();
@@ -65,10 +64,12 @@ function drawWaiting(body) {
 
 // Discarded change sets an ingest applied anyway: it was already reading them when they were discarded.
 function loadAppliedAnywayCard() {
-  google.script.run
-    .withSuccessHandler(function (list) {
+  ask(
+    "getAppliedAnyway",
+    [],
+    function (list) {
       if (!list.length) return;
-      var cards = document.getElementById("status-attention");
+      var cards = byId("status-attention");
       var clear = cards.querySelector(".card.clear");
       if (clear) clear.remove();
       var card = attentionCard(
@@ -111,18 +112,20 @@ function loadAppliedAnywayCard() {
           "filled",
         ),
       );
-      card.lastChild.appendChild(actions);
+      card.lastChild!.appendChild(actions);
       cards.insertBefore(card, cards.firstChild);
-    })
-    .withFailureHandler(function (error) {
+    },
+    function (error) {
       console.log("could not check discarded change sets: " + ((error && error.message) || error));
-    })
-    .getAppliedAnyway();
+    },
+  );
 }
 
 function loadWaitingCard() {
-  google.script.run
-    .withSuccessHandler(function (list) {
+  ask(
+    "getWaiting",
+    [],
+    function (list) {
       if (!list.length) return;
       var refused = list.filter(function (w) {
         return w.refused;
@@ -130,7 +133,7 @@ function loadWaitingCard() {
       var unseen = list.filter(function (w) {
         return w.unseen && !w.refused;
       });
-      var cards = document.getElementById("status-attention");
+      var cards = byId("status-attention");
       var clear = cards.querySelector(".card.clear");
       if (clear && (refused.length || unseen.length)) clear.remove();
       var card = attentionCard(
@@ -171,10 +174,10 @@ function loadWaitingCard() {
         !refused.length && !unseen.length,
       );
       cards.insertBefore(card, cards.firstChild);
-    })
-    .withFailureHandler(function (error) {
+    },
+    function (error) {
       // no folder yet is not an error (getWaiting gives []): this is one
-      var cards = document.getElementById("status-attention");
+      var cards = byId("status-attention");
       cards.insertBefore(
         attentionCard({
           key: "waiting_changes",
@@ -188,13 +191,13 @@ function loadWaitingCard() {
         }),
         cards.firstChild,
       );
-    })
-    .getWaiting();
+    },
+  );
 }
 
 // The view, its period list and the level.
-function fillPeriods(list) {
-  var select = document.getElementById("period");
+function fillPeriods(list: string[]) {
+  var select = byId("period") as HTMLSelectElement;
   select.textContent = "";
   list.forEach(function (p) {
     var option = document.createElement("option");
@@ -206,13 +209,13 @@ function fillPeriods(list) {
   chosen[view] = select.value;
 }
 
-function when(at) {
+function when(at: string) {
   var d = new Date(at);
-  return isNaN(d) ? at : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  return isNaN(d.getTime()) ? at : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 // Material icons (Apache 2.0), drawn inline so they need no font.
-var ICONS = {
+var ICONS: Record<string, string> = {
   add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
   edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
   download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
@@ -223,7 +226,7 @@ var ICONS = {
   check: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
   sync: "M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
 };
-var CARD_ICON = {
+var CARD_ICON: Record<string, string> = {
   review_open_lines: "edit",
   downloads_due: "download",
   inbox_unread: "inbox",
@@ -231,7 +234,7 @@ var CARD_ICON = {
   transfers_unmatched: "edit",
   waiting_changes: "sync",
 };
-var ACTION_LABEL = {
+var ACTION_LABEL: Record<string, string> = {
   review: "Answer in Review",
   duplicates: "Settle duplicates",
   withholding: "Explain stubs",
@@ -239,9 +242,9 @@ var ACTION_LABEL = {
   "view:jobs": "Open Jobs",
   "view:recurring": "Open Recurring",
 };
-var CARD_NOTE = { downloads_due: "Download each one into the inbox, then run ingest." };
+var CARD_NOTE: Record<string, string> = { downloads_due: "Download each one into the inbox, then run ingest." };
 
-function icon(name) {
+function icon(name: string) {
   var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("class", "icon");
@@ -254,7 +257,7 @@ function icon(name) {
 
 // One thing that needs you: the count and what it counts, a sentence more, the things themselves, and
 // the button that answers it.
-function attentionCard(a, waiting) {
+function attentionCard(a: Attention, waiting?: boolean) {
   var card = el("article", null, "card attention" + (waiting ? " waiting" : ""));
   var badge = el("div", null, "badge-icon");
   badge.appendChild(icon(CARD_ICON[a.key] || "warning"));
@@ -300,21 +303,21 @@ function attentionCard(a, waiting) {
   return card;
 }
 
-function chip(iconName, text) {
+function chip(iconName: string, text: string) {
   var c = el("span", null, "chip");
   c.appendChild(icon(iconName));
   c.appendChild(document.createTextNode(text));
   return c;
 }
 
-var STAGE_NAME = { run: "Run", ingest: "Ingest", compute: "Compute" };
+var STAGE_NAME: Record<string, string> = { run: "Run", ingest: "Ingest", compute: "Compute" };
 
-function drawStatus(status) {
-  var title = document.getElementById("status-title");
-  var runs = document.getElementById("status-runs");
-  var stale = document.getElementById("status-stale");
-  var cards = document.getElementById("status-attention");
-  var logs = document.getElementById("status-logs");
+function drawStatus(status: Status) {
+  var title = byId("status-title");
+  var runs = byId("status-runs");
+  var stale = byId("status-stale");
+  var cards = byId("status-attention");
+  var logs = byId("status-logs");
   [runs, cards, logs].forEach(function (e) {
     e.textContent = "";
   });
@@ -330,7 +333,7 @@ function drawStatus(status) {
   });
   stale.hidden = !status.stale;
   stale.textContent = "Compute hasn't run since the last ingest, so these numbers are from before it. Run compute.";
-  var flagged = {};
+  var flagged: Record<string, boolean> = {};
   status.attention.forEach(function (a) {
     a.flags.forEach(function (l) {
       flagged[l] = true;
@@ -351,7 +354,7 @@ function drawStatus(status) {
     var panel = el("details", null, "panel");
     var head = el("summary");
     head.appendChild(el("h2", STAGE_NAME[s.stage]));
-    var levelOf = function (i) {
+    var levelOf = function (i: number) {
       return (s.levels && s.levels[i]) || "INFO";
     };
     var flags = s.lines.filter(function (l) {
@@ -399,11 +402,11 @@ function drawStatus(status) {
 
 // A run's lines by topic, in the order each topic first appears: a line's topic is the words before its first
 // colon (a year or a run id left off), and an indented line belongs to the line above it.
-var LEVEL_RANK = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+var LEVEL_RANK: Record<string, number> = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 
-function logTopics(lines) {
-  var topics = [],
-    by = {},
+function logTopics(lines: string[]) {
+  var topics: { name: string; lines: string[]; at: number[] }[] = [],
+    by: Record<string, { name: string; lines: string[]; at: number[] }> = {},
     last = "run";
   lines.forEach(function (l, i) {
     var name = last;
@@ -424,20 +427,20 @@ function logTopics(lines) {
 
 var statusTab = "overview";
 
-function setStatusTab(tab) {
+function setStatusTab(tab: string) {
   statusTab = tab;
-  document.querySelectorAll("#status-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#status-tabs button").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
   });
-  document.getElementById("status-overview").hidden = tab !== "overview";
-  document.getElementById("status-log").hidden = tab !== "log";
+  byId("status-overview").hidden = tab !== "overview";
+  byId("status-log").hidden = tab !== "log";
 }
 
-var SEGMENT_COLOR = { waiting: "var(--waiting)", open: "var(--error)" };
+var SEGMENT_COLOR: Record<string, string> = { waiting: "var(--waiting)", open: "var(--error)" };
 
-function drawBreakdown(c) {
-  var box = document.getElementById("status-categories");
-  var since = document.getElementById("status-since");
+function drawBreakdown(c: Status["categories"]) {
+  var box = byId("status-categories");
+  var since = byId("status-since");
   box.textContent = "";
   if (!c || !c.total) {
     since.textContent = "";
@@ -446,7 +449,7 @@ function drawBreakdown(c) {
   }
   var d = new Date(c.since + "T00:00:00");
   since.textContent =
-    c.total.toLocaleString() + " lines since " + (isNaN(d) ? c.since : d.toLocaleDateString([], { dateStyle: "long" }));
+    c.total.toLocaleString() + " lines since " + (isNaN(d.getTime()) ? c.since : d.toLocaleDateString([], { dateStyle: "long" }));
   var stack = el("div", null, "stack");
   stack.setAttribute("role", "img");
   stack.setAttribute(
@@ -480,9 +483,9 @@ function drawBreakdown(c) {
 }
 
 // The tax projection in a line, with the way to the tax page.
-function drawProjection(rows, year, wi) {
-  var box = document.getElementById("status-projection");
-  document.getElementById("status-projection-title").textContent = "Taxes" + (year ? " for " + year : "");
+function drawProjection(rows: [string, number][], year: string, wi: number | null) {
+  var box = byId("status-projection");
+  byId("status-projection-title").textContent = "Taxes" + (year ? " for " + year : "");
   box.textContent = "";
   var asIs = rows.filter(function (r) {
     return r[0] === "as is";

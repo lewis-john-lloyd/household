@@ -1,8 +1,7 @@
-// @ts-nocheck
 // The drawer: one budget line's months, transactions and rule, or one recurring charge.
 
 // --- the drawer: one line's months, transactions and budget line, or one recurring charge ---------------
-function closeDrawer(quiet) {
+function closeDrawer(quiet?: boolean) {
   document.querySelectorAll(".drawer, .scrim").forEach(function (n) {
     n.remove();
   });
@@ -15,11 +14,11 @@ function closeDrawer(quiet) {
   }
 }
 
-function drawerKey(e) {
+function drawerKey(e: KeyboardEvent) {
   if (e.key === "Escape") closeDrawer();
 }
 
-function drawer(title, sub) {
+function drawer(title: string, sub?: string) {
   closeDrawer(true);
   var scrim = el("div", null, "scrim");
   scrim.onclick = function () {
@@ -49,16 +48,18 @@ function drawer(title, sub) {
   return d;
 }
 
-function openLine(category, v) {
-  var l = null;
+function openLine(category: string, v: BudgetView) {
+  var l: ViewLine | null = null;
   v.groups.forEach(function (g) {
     g.lines.forEach(function (x) {
       if (x.category === category) l = x;
     });
   });
-  l = l || {
+  var line: ViewLine = l || {
+    // a category with no line in the view
     category: category,
-    group: budget.data.book.groups[category] || "",
+    group: budget.data!.book.groups[category] || "",
+    priority: "",
     target: 0,
     actual: 0,
     compared: 0,
@@ -66,16 +67,16 @@ function openLine(category, v) {
   };
   var d = drawer(
     category,
-    (l.group ? l.group + ". " : "") +
+    (line.group ? line.group + ". " : "") +
       periodName(v.period) +
       (v.sameWeeks ? " so far" : "") +
       ": " +
-      money.format(l.actual) +
-      (l.target ? " of " + money.format(l.target) : "") +
+      money.format(line.actual) +
+      (line.target ? " of " + money.format(line.target) : "") +
       "; " +
       compareName(v) +
       ": " +
-      money.format(l.compared) +
+      money.format(line.compared) +
       ".",
   );
   lineHistory(d, category, v);
@@ -137,7 +138,7 @@ function openNewLine() {
   );
 }
 
-function transactionTable(txns) {
+function transactionTable(txns: Txn[]) {
   if (!txns.length) return el("p", "No transactions.", "support");
   var table = el("table", null, "txns");
   txns.forEach(function (t) {
@@ -171,14 +172,14 @@ function transactionTable(txns) {
 
 // A line's twelve months up to the period's last: what it spent each month (red past its target) and
 // the target as a dashed step line. The period's own months are drawn full, the others lighter.
-function lineHistory(d, category, v) {
+function lineHistory(d: HTMLElement, category: string, v: BudgetView) {
   var NS = "http://www.w3.org/2000/svg";
-  var book = budget.data.book;
+  var book = budget.data!.book;
   var lastMonth = periodDays(v.period)[1].slice(0, 7);
-  var months = [];
+  var months: string[] = [];
   for (var i = 11; i >= 0; i--) months.push(shiftPeriod(lastMonth, -i));
-  var spent = {},
-    target = {};
+  var spent: Record<string, number> = {},
+    target: Record<string, number> = {};
   book.days.forEach(function (x) {
     if (x[1] === category) spent[x[0].slice(0, 7)] = (spent[x[0].slice(0, 7)] || 0) + x[2];
   });
@@ -208,7 +209,7 @@ function lineHistory(d, category, v) {
     L = 48,
     B = 160,
     T = 16;
-  var y = function (n) {
+  var y = function (n: number) {
     return T + ((top - n) / top) * (B - T);
   };
   var svg = document.createElementNS(NS, "svg");
@@ -219,10 +220,10 @@ function lineHistory(d, category, v) {
     "aria-label",
     category + ": spending each month against its target, " + periodName(months[0]) + " to " + periodName(lastMonth),
   );
-  var add = function (name, attrs, text) {
+  var add = function (name: string, attrs: Record<string, string | number>, text?: string) {
     var e = document.createElementNS(NS, name);
     Object.keys(attrs).forEach(function (k) {
-      e.setAttribute(k, attrs[k]);
+      e.setAttribute(k, String(attrs[k]));
     });
     if (text !== undefined) e.textContent = text;
     svg.appendChild(e);
@@ -233,7 +234,7 @@ function lineHistory(d, category, v) {
     add("text", { x: L - 6, y: y(t) + 4, "text-anchor": "end", class: "axis" }, money.format(t));
   }
   var bw = (W - L) / 12;
-  var inPeriod = function (m) {
+  var inPeriod = function (m: string) {
     return m + "-01" >= v.from && m + "-01" <= v.through;
   };
   months.forEach(function (m, n) {
@@ -273,6 +274,6 @@ function lineHistory(d, category, v) {
   var lastTarget = target[lastMonth];
   if (lastTarget)
     add("text", { x: W, y: y(lastTarget) - 6, "text-anchor": "end", class: "axis strong" }, "target " + money.format(lastTarget));
-  svg.setAttribute("height", H);
+  svg.setAttribute("height", String(H));
   d.appendChild(svg);
 }

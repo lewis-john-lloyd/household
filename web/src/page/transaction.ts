@@ -1,13 +1,12 @@
-// @ts-nocheck
 // One transaction's page: its facts, split and items.
 
 // --- one transaction -------------------------------------------------------------------------------
-function openTransaction(id) {
+function openTransaction(id: string) {
   txnPage = { id: id, from: view };
   openEdit("transaction");
 }
 
-function loadTransaction(id, panel, done) {
+function loadTransaction(id: string, panel: HTMLElement, done: () => void) {
   var where = el("p", "Loading…", "support");
   where.id = "txn-" + Math.random().toString(36).slice(2);
   panel.appendChild(where);
@@ -26,12 +25,12 @@ function loadTransaction(id, panel, done) {
   );
 }
 
-function amountText(cents) {
+function amountText(cents: number) {
   return (cents / 100).toFixed(2);
 }
 
 // Category, split, note and flags for one line, each kept as its own change.
-function transactionEditor(panel, t, done) {
+function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   var said = t.date + " " + t.payee + " " + cents.format(t.amount);
   var id = el("code", t.id);
   id.title = "the line's txn_id";
@@ -48,9 +47,9 @@ function transactionEditor(panel, t, done) {
   // each item's category as it stands, a change not yet saved included; the split below follows them
   var itemCats = t.items.map(function (i) {
     var s = i.id && staged["item|" + i.id];
-    return s ? s.edit.category : i.category;
+    return s ? (s.edit.category as string) : i.category;
   });
-  var splitter = null;
+  var splitter: { fromItems(): void } | null = null;
   if (t.items.length) {
     var personSplit = /^you, split/.test(t.decidedBy);
     var bought = section(
@@ -132,7 +131,7 @@ function transactionEditor(panel, t, done) {
       return c !== t.items[n].category;
     })
   )
-    splitter.fromItems();
+    splitter!.fromItems();
 
   var more = section(panel, "Note and flags");
   var moreForm = el("form", null, "edit");
@@ -174,12 +173,12 @@ function transactionEditor(panel, t, done) {
 }
 
 // Rows of category and amount, adding up live against the line.
-function splitEditor(box, t, said, done, itemCategories) {
+function splitEditor(box: HTMLElement, t: Line, said: string, done: () => void, itemCategories?: () => string[]) {
   var total = Math.round(Math.abs(t.amount) * 100);
   var current = staged["line|" + t.id + "|category"];
   var start =
     current && current.edit.field === "split"
-      ? current.edit.value.split("; ").map(function (p) {
+      ? (current.edit.value as string).split("; ").map(function (p) {
           var m = /^(\S+)(?: (\S+))?$/.exec(p) || [];
           return [m[1] || "", m[2] || ""];
         })
@@ -193,8 +192,8 @@ function splitEditor(box, t, said, done, itemCategories) {
           ];
   var table = el("div", null, "split-rows");
   var status = el("p", "", "split-status");
-  var rows = [];
-  function addRow(category, amount) {
+  var rows: { pick: HTMLSelectElement; much: HTMLInputElement }[] = [];
+  function addRow(category: string, amount: string) {
     var r = el("div", null, "split-row");
     var pick = categoryChoice(category, "(category)");
     pick.setAttribute("aria-label", "Category");
@@ -255,7 +254,7 @@ function splitEditor(box, t, said, done, itemCategories) {
       wrong = "Each category can be one part only.";
     else if (
       p.some(function (x) {
-        return isNaN(x.cents);
+        return isNaN(x.cents as number);
       })
     )
       wrong = "An amount is not a number.";
@@ -290,10 +289,10 @@ function splitEditor(box, t, said, done, itemCategories) {
           })
           .join("; ");
   }
-  function money2(c) {
+  function money2(c: number) {
     return cents.format(c / 100);
   }
-  function known(n) {
+  function known(n: string) {
     return (editor ? editor.categories : []).some(function (c) {
       return c.category === n;
     });
@@ -320,7 +319,7 @@ function splitEditor(box, t, said, done, itemCategories) {
       : t.items.map(function (i) {
           return i.category;
         });
-    var byCategory = {};
+    var byCategory: Record<string, number> = {};
     t.items.forEach(function (i, n) {
       byCategory[cats[n]] = (byCategory[cats[n]] || 0) + Math.round(Math.abs(i.amount) * 100);
     });

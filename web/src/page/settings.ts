@@ -1,10 +1,9 @@
-// @ts-nocheck
 // A household setting's form.
 
-function parameterForm(p, done) {
+function parameterForm(given: Row | null, done: () => void) {
   var form = el("form", null, "edit");
-  var isNew = !p;
-  p = p || { key: "", value: "" };
+  var isNew = !given;
+  var p: Row = given || { key: "", value: "" };
   var key = isNew ? field(form, "Setting", textInput("", "", "order_payee:books")) : null;
   var value = field(form, "Value", textInput(p.value, "wide"));
   var error = el("div", "", "error");
@@ -14,7 +13,7 @@ function parameterForm(p, done) {
       var unset = !isNew && p.source === "not set"; // a known setting not in the ledger yet: a new one
       var e = {
         kind: "parameter",
-        key: isNew ? key.value.trim() : p.key,
+        key: key ? key.value.trim() : p.key,
         value: value.value.trim(),
         was: isNew || unset ? null : { value: p.value },
       };

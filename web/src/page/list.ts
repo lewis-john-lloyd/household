@@ -1,26 +1,28 @@
-// @ts-nocheck
 // Transactions: the list beside the editor.
 
 // --- the list and the editor ---------------------------------------------------------------------
 // Every editor part is a list on the left, one row per item (its name, a line about it, and what is staged
 // for it), and the chosen item's editor on the right. On a phone the editor replaces the list, with Back.
-var selected = {}; // the item chosen in each tab, by key
-var txnPage = null; // the transaction the transaction page shows, and the view it was opened from
+var selected: Record<string, string | null> = {}; // the item chosen in each tab, by key
+var txnPage: { id: string; from: string } | null = null; // the transaction the transaction page shows, and the view it was opened from
 
-function facts(panel, pairs) {
+/** A fact to show: its name, and its value as text or an element (left out when blank). */
+type Fact = [string, string | number | Node | null | undefined];
+
+function facts(panel: HTMLElement, pairs: Fact[]) {
   var dl = el("dl", null, "facts");
   pairs.forEach(function (p) {
     if (p[1] === "" || p[1] === null || p[1] === undefined) return;
     dl.appendChild(el("dt", p[0]));
     var dd = el("dd");
-    if (typeof p[1] === "object") dd.appendChild(p[1]);
+    if (typeof p[1] === "object") dd.appendChild(p[1] as Node);
     else dd.textContent = String(p[1]);
     dl.appendChild(dd);
   });
   panel.appendChild(dl);
 }
 
-function section(panel, title, help) {
+function section(panel: HTMLElement, title: string, help?: string) {
   var s = el("section", null, "editor-section");
   s.appendChild(el("h3", title));
   if (help) s.appendChild(el("p", help, "support"));
@@ -28,7 +30,22 @@ function section(panel, title, help) {
   return s;
 }
 
-function masterDetail(body, opts) {
+/** An editor part as a list and an editor: its items, how each is named, and its editor. */
+interface MasterDetail<T> {
+  items: T[];
+  key: (item: T) => string;
+  title: (item: T) => string;
+  sub?: (item: T) => string;
+  staged?: (item: T) => string;
+  section?: (item: T) => string;
+  detail: (item: T, panel: HTMLElement, done: () => void) => void;
+  add?: { label: string; form: (panel: HTMLElement, done: () => void) => void }[];
+  noun: string;
+  empty: string;
+  none?: string;
+}
+
+function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
   var wrap = el("div", null, "md");
   var side = el("section", null, "md-list");
   var panel = el("section", null, "md-detail");
@@ -59,8 +76,8 @@ function masterDetail(body, opts) {
     side.appendChild(adds);
   }
   var list = el("ul", null, "md-items");
-  var rows = [];
-  var lastSection = null;
+  var rows: { item: T; li: HTMLElement; row: HTMLButtonElement; text: string }[] = [];
+  var lastSection: string | null = null;
   opts.items.forEach(function (item) {
     var name = opts.section ? opts.section(item) : null;
     if (name && name !== lastSection) {
@@ -99,12 +116,12 @@ function masterDetail(body, opts) {
     rows.forEach(function (r) {
       r.li.hidden = !!q && r.text.indexOf(q) < 0;
     });
-    list.querySelectorAll(".md-section").forEach(function (s) {
-      var next = s.nextElementSibling,
+    list.querySelectorAll<HTMLElement>(".md-section").forEach(function (s) {
+      var next = s.nextElementSibling as HTMLElement | null,
         any = false;
       while (next && !next.classList.contains("md-section")) {
         if (!next.hidden) any = true;
-        next = next.nextElementSibling;
+        next = next.nextElementSibling as HTMLElement | null;
       }
       s.hidden = !any;
     });
@@ -115,7 +132,7 @@ function masterDetail(body, opts) {
       r.row.setAttribute("aria-current", String(opts.key(r.item) === selected[editTab]));
     });
   }
-  function open(title, fill) {
+  function open(title: string, fill: () => void) {
     panel.textContent = "";
     var back = button(
       "Back to the list",
@@ -129,7 +146,7 @@ function masterDetail(body, opts) {
     fill();
     wrap.classList.add("showing");
   }
-  function show(item) {
+  function show(item: T) {
     open(opts.title(item), function () {
       opts.detail(item, panel, done);
     });

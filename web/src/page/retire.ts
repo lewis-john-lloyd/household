@@ -1,11 +1,10 @@
-// @ts-nocheck
 // Retirement: the plan, year by year, strategies, Social Security, budget, assumptions.
 
 // --- Retirement -------------------------------------------------------------------------------------------------
-var retire = null,
+var retire: RetirementPage | null = null,
   retireView = "plan",
   retireStrategy = "";
-var RETIRE_PARTS = [
+var RETIRE_PARTS: string[][] = [
   ["plan", "Plan"],
   ["budget", "Budget"],
   ["years", "Year by year"],
@@ -13,7 +12,7 @@ var RETIRE_PARTS = [
   ["ss", "Social Security"],
   ["assumptions", "Assumptions"],
 ];
-var RETIRE_SECTIONS = {
+var RETIRE_SECTIONS: Record<string, string> = {
   people: "People",
   today: "Balances today",
   saving: "While working, a year",
@@ -25,12 +24,12 @@ var RETIRE_SECTIONS = {
   law: "Law",
 };
 var MONEY_SECTIONS = ["today", "saving", "spending", "health"];
-var ORDER_SHORT = {
+var ORDER_SHORT: Record<string, string> = {
   conventional: "Taxable, pre-tax, Roth",
   proportional: "In proportion",
   bracket: "Pre-tax to 12%, then taxable",
 };
-var RULE_SHORT = {
+var RULE_SHORT: Record<string, string> = {
   constant: "Constant real spending",
   guardrails: "Guardrails (Guyton-Klinger)",
   vpw: "Variable percentage withdrawal",
@@ -42,7 +41,7 @@ function loadRetirement() {
     drawRetirement();
     return;
   }
-  document.getElementById("retirement-body").textContent = "Loading…";
+  byId("retirement-body").textContent = "Loading…";
   call(
     "getRetirement",
     [],
@@ -55,11 +54,11 @@ function loadRetirement() {
   );
 }
 
-function shareText(v) {
+function shareText(v: number | null | undefined) {
   return v === null || v === undefined ? "–" : whole.format(v);
 }
 
-function agesIn(ages, from, year) {
+function agesIn(ages: string, from: number, year: number) {
   // "59/58" in from, as of year
   return ages
     .split("/")
@@ -69,12 +68,12 @@ function agesIn(ages, from, year) {
     .join("/");
 }
 
-function agesWords(ages) {
+function agesWords(ages: string) {
   var a = ages.split("/");
   return a.length === 2 ? a[0] + " and " + a[1] : a.join(", ");
 }
 
-function retireFigures(parent, items) {
+function retireFigures(parent: HTMLElement, items: string[][]) {
   var box = el("div", null, "w-figures");
   items.forEach(function (f) {
     var c = el("div", null, "w-figure");
@@ -86,8 +85,8 @@ function retireFigures(parent, items) {
 }
 
 function drawRetirement() {
-  var d = retire,
-    body = document.getElementById("retirement-body");
+  var d = retire!, // drawn once loaded
+    body = byId("retirement-body");
   body.innerHTML = "";
   subtabs(body, "Retirement", RETIRE_PARTS, retireView, function (v) {
     retireView = v;
@@ -106,17 +105,19 @@ function drawRetirement() {
     );
     return;
   }
-  ({
-    plan: drawRetirePlan,
-    budget: drawRetireBudget,
-    years: drawRetireYears,
-    strategies: drawRetireStrategies,
-    ss: drawRetireSocialSecurity,
-    assumptions: drawRetireAssumptions,
-  })[retireView](body, d);
+  (
+    ({
+      plan: drawRetirePlan,
+      budget: drawRetireBudget,
+      years: drawRetireYears,
+      strategies: drawRetireStrategies,
+      ss: drawRetireSocialSecurity,
+      assumptions: drawRetireAssumptions,
+    }) as Record<string, (body: HTMLElement, d: RetirementPage) => void>
+  )[retireView](body, d);
 }
 
-function chosenYear(d) {
+function chosenYear(d: RetirementPage) {
   return (
     d.years.filter(function (r) {
       return r.chosen;
@@ -124,13 +125,13 @@ function chosenYear(d) {
   );
 }
 
-function strategyOf(d, key) {
+function strategyOf(d: RetirementPage, key: string) {
   return d.strategies.filter(function (s) {
     return s.key === key;
   })[0];
 }
 
-function drawRetirePlan(body, d) {
+function drawRetirePlan(body: HTMLElement, d: RetirementPage) {
   var y = chosenYear(d),
     s = strategyOf(d, d.chosenStrategy);
   var head = el("div", null, "w-head");
@@ -163,7 +164,7 @@ function drawRetirePlan(body, d) {
     body.appendChild(ul);
   }
   var plan = d.plans[d.chosenStrategy] || [];
-  var byYear = {};
+  var byYear: Record<number, PlanYear> = {};
   plan.forEach(function (p) {
     byYear[p.year] = p;
   });
@@ -181,9 +182,9 @@ function drawRetirePlan(body, d) {
     ),
   );
   body.appendChild(chart);
-  var at = function (f) {
+  var at = function (f: (p: PlanYear) => number) {
     return plan.map(function (p) {
-      return [p.year + "-07-01", f(p)];
+      return [p.year + "-07-01", f(p)] as [string, number];
     });
   };
   lineChart(
@@ -254,7 +255,7 @@ function drawRetirePlan(body, d) {
         return x.scenario === n;
       })[0];
       if (!f) return "–";
-      return f.success ? "lasts" : "short at " + agesIn(r.ages, r.year, f.shortFrom);
+      return f.success ? "lasts" : "short at " + agesIn(r.ages, r.year, f.shortFrom as number);
     });
     var row = t.row(
       [String(r.year), r.ages, shareText(r.monteCarlo), shareText(r.historical)]
@@ -266,7 +267,7 @@ function drawRetirePlan(body, d) {
   });
 }
 
-function drawRetireYears(body, d) {
+function drawRetireYears(body: HTMLElement, d: RetirementPage) {
   var head = el("div", null, "w-head");
   head.appendChild(el("h2", "Year by year"));
   head.appendChild(el("span", "at a steady return, in today's dollars", "support"));
@@ -320,7 +321,7 @@ function drawRetireYears(body, d) {
     "Range",
   ];
   var t = wTable(box, heads, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-  var blank = function (v) {
+  var blank = function (v: number) {
     return v ? money.format(v) : "–";
   };
   plan.forEach(function (p) {
@@ -351,17 +352,17 @@ function drawRetireYears(body, d) {
   });
 }
 
-function drawRetireStrategies(body, d) {
+function drawRetireStrategies(body: HTMLElement, d: RetirementPage) {
   var head = el("div", null, "w-head");
   head.appendChild(el("h2", "Strategies"));
   head.appendChild(
     el("span", "retiring in " + (d.chosenYear || "–") + "; set retirement_strategy to a code to make it the plan", "support"),
   );
   body.appendChild(head);
-  var mark = function (s) {
+  var mark = function (s: RetireStrategy) {
     return s.chosen ? "picked" : "";
   };
-  var sorted = function (list) {
+  var sorted = function (list: RetireStrategy[]) {
     return list.slice().sort(function (a, b) {
       return (b.monteCarlo || 0) - (a.monteCarlo || 0) || b.afterTax - a.afterTax;
     });
@@ -467,7 +468,7 @@ function drawRetireStrategies(body, d) {
   }
 }
 
-function drawRetireSocialSecurity(body, d) {
+function drawRetireSocialSecurity(body: HTMLElement, d: RetirementPage) {
   var head = el("div", null, "w-head");
   head.appendChild(el("h2", "Social Security"));
   head.appendChild(el("span", "monthly, today's dollars", "support"));
@@ -477,7 +478,7 @@ function drawRetireSocialSecurity(body, d) {
   d.benefits.forEach(function (b) {
     var p = panel(grid, ownerName(b.person) + ", claiming at " + b.claimAge + " (" + b.claimYear + ")", b.note || null);
     var facts = el("dl", null, "facts");
-    var add = function (k, v) {
+    var add = function (k: string, v: string) {
       facts.appendChild(el("dt", k));
       facts.appendChild(el("dd", v, "amount"));
     };
@@ -537,7 +538,7 @@ function drawRetireSocialSecurity(body, d) {
 // retirement_spending:<line> setting, staged like any other edit, and the next compute reruns the plan.
 var budgetOpen = ""; // the line whose editor is open
 
-function budgetSteps(text) {
+function budgetSteps(text: string): string[][] {
   // "18000; 9000 from 2040" -> [[null, "18000"], ["2040", "9000"]]
   return String(text || "")
     .split(";")
@@ -545,17 +546,17 @@ function budgetSteps(text) {
       var m = p.trim().match(/^(-?[\d,]+(?:\.\d+)?)(?:\s+from\s+(\d{4}))?$/);
       return m ? [m[2] || "", m[1].replace(/,/g, "")] : null;
     })
-    .filter(Boolean);
+    .filter(Boolean) as string[][];
 }
 
-function budgetValue(firstFrom, first, thenFrom, then) {
-  var parts = [];
+function budgetValue(firstFrom: string, first: string, thenFrom: string, then: string) {
+  var parts: string[] = [];
   if (first !== "") parts.push(first + (firstFrom ? " from " + firstFrom : ""));
   if (then !== "") parts.push(then + " from " + thenFrom);
   return parts.join("; ");
 }
 
-function budgetEditor(line, b, start, done) {
+function budgetEditor(line: string, b: BudgetLine | null, start: number, done: () => void) {
   var form = el("form", null, "edit budget-edit");
   var steps = b ? budgetSteps(b.setting) : [];
   var one = steps[0] || ["", b ? String(Math.round(b.now)) : ""],
@@ -572,10 +573,10 @@ function budgetEditor(line, b, start, done) {
     i.inputMode = "numeric";
   });
   var error = el("div", "", "error");
-  function put(value, words) {
+  function put(value: string, words: string) {
     var key = b
       ? b.line
-      : name.value
+      : name!.value
           .trim()
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "_")
@@ -651,7 +652,7 @@ function budgetEditor(line, b, start, done) {
   return form;
 }
 
-function drawRetireBudget(body, d) {
+function drawRetireBudget(body: HTMLElement, d: RetirementPage) {
   var lines = d.budget || [];
   var y = lines.length ? lines[0].retireYear : d.chosenYear || 0;
   var plan = d.plans[d.chosenStrategy] || [];
@@ -664,9 +665,9 @@ function drawRetireBudget(body, d) {
     body.appendChild(el("p", "None yet: run compute.", "support"));
     return;
   }
-  var counted = function (k) {
+  var counted = function (k: "firstYear" | "atRetirement") {
     return lines.reduce(function (s, b) {
-      return s + (b.kind !== "category" && b[k] !== null ? b[k] : 0);
+      return s + (b.kind !== "category" && b[k] !== null ? (b[k] as number) : 0);
     }, 0);
   };
   var now = lines.reduce(function (s, b) {
@@ -707,7 +708,7 @@ function drawRetireBudget(body, d) {
   var t = wTable(p, ["Line", "Last 12 months", "In " + start, "In " + y, "Setting", ""], [1, 2, 3]);
   var cols = 6;
   lines.forEach(function (b) {
-    var pending = staged[targetOf({ kind: "parameter", key: "retirement_spending:" + b.line })];
+    var pending = staged[editTarget({ kind: "parameter", key: "retirement_spending:" + b.line })];
     var name = el("span", b.kind === "category" ? b.line : b.line);
     var cellName = el("span");
     cellName.appendChild(name);
@@ -730,7 +731,7 @@ function drawRetireBudget(body, d) {
             },
             "small",
           );
-    var amount = function (v) {
+    var amount = function (v: number | null) {
       return v === null ? "in group" : money.format(v);
     };
     var row = t.row(
@@ -739,7 +740,7 @@ function drawRetireBudget(body, d) {
         b.kind === "loan" || b.kind === "added" ? "" : money.format(b.now),
         amount(b.firstYear),
         amount(b.atRetirement),
-        pending ? pending.edit.value || "(actual)" : b.setting || b.note,
+        pending ? (pending.edit.value as string) || "(actual)" : b.setting || b.note,
         change,
       ],
       b.kind === "group" ? "budget-group" : b.kind === "category" ? "budget-member" : "",
@@ -755,12 +756,12 @@ function drawRetireBudget(body, d) {
         }),
       );
       tr.appendChild(td);
-      row.parentNode.insertBefore(tr, row.nextSibling);
+      row.parentNode!.insertBefore(tr, row.nextSibling);
     }
   });
 }
 
-function drawRetireAssumptions(body, d) {
+function drawRetireAssumptions(body: HTMLElement, d: RetirementPage) {
   var head = el("div", null, "w-head");
   head.appendChild(el("h2", "Assumptions"));
   head.appendChild(

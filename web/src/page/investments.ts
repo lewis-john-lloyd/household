@@ -1,17 +1,11 @@
-// @ts-nocheck
 // Investments: overview, over time, allocation, accounts and lots.
 
-// --- taxes ------------------------------------------------------------------------------------------
-var taxes = null,
-  taxYear = "";
-var PLAN_NAME = { federal: "Federal", wisconsin: "Wisconsin" };
-
 // --- Investments and Home -----------------------------------------------------------------------------------
-var investments = null,
-  home = null,
+var investments: WealthPage | null = null,
+  home: HomePage | null = null,
   investView = "overview",
   homeView = "overview";
-var INVEST_PARTS = [
+var INVEST_PARTS: string[][] = [
   ["history", "Over time"],
   ["overview", "Overview"],
   ["allocation", "Allocation"],
@@ -19,8 +13,17 @@ var INVEST_PARTS = [
   ["lots", "Lots"],
 ];
 var pct = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
-var BUCKET_SERIES = { "401k_pretax": 1, "401k_roth": 2, ira_pretax: 3, ira_roth: 4, hsa: 5, taxable: 6, ibonds: 7, "529": 8 };
-var PART_NAMES = {
+var BUCKET_SERIES: Record<string, number> = {
+  "401k_pretax": 1,
+  "401k_roth": 2,
+  ira_pretax: 3,
+  ira_roth: 4,
+  hsa: 5,
+  taxable: 6,
+  ibonds: 7,
+  "529": 8,
+};
+var PART_NAMES: Record<string, string> = {
   "401k_pretax": "401(k) pre-tax",
   "401k_roth": "401(k) Roth",
   ira_pretax: "IRA pre-tax",
@@ -33,14 +36,14 @@ var PART_NAMES = {
   home_equity: "Home equity",
   other_debt: "Other debt",
 };
-var KIND_NAMES = { capital: "Capital", repair: "Repair", energy_credit: "Energy credit" };
+var KIND_NAMES: Record<string, string> = { capital: "Capital", repair: "Repair", energy_credit: "Energy credit" };
 
 function loadInvestments() {
   if (investments) {
     drawInvestments();
     return;
   }
-  document.getElementById("investments-body").textContent = "Loading…";
+  byId("investments-body").textContent = "Loading…";
   call(
     "getInvestments",
     [],
@@ -57,7 +60,7 @@ function loadHome() {
     drawHome();
     return;
   }
-  document.getElementById("home-body").textContent = "Loading…";
+  byId("home-body").textContent = "Loading…";
   call(
     "getHome",
     [],
@@ -69,18 +72,18 @@ function loadHome() {
   );
 }
 
-function change(n) {
+function change(n: number) {
   return (n > 0.5 ? "+" : n < -0.5 ? "−" : "") + money.format(Math.abs(n));
 }
-function longDate(d) {
+function longDate(d: string) {
   return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10)) + ", " + d.slice(0, 4);
 }
-function ownerName(o) {
+function ownerName(o: string) {
   return o === "kids" ? "Kids" : o.charAt(0).toUpperCase() + o.slice(1);
 }
 
 // A page's submenu: one button per part, the part shown pressed; choosing one redraws the page on that part.
-function subtabs(parent, label, parts, current, pick) {
+function subtabs(parent: HTMLElement, label: string, parts: string[][], current: string, pick: (part: string) => void) {
   var box = el("div", null, "subtabs");
   box.setAttribute("role", "group");
   box.setAttribute("aria-label", label);
@@ -95,7 +98,7 @@ function subtabs(parent, label, parts, current, pick) {
   return box;
 }
 
-function panel(parent, title, lead) {
+function panel(parent: HTMLElement, title: string, lead?: string | null) {
   var p = el("section", null, "panel");
   p.appendChild(el("h3", title));
   if (lead) p.appendChild(el("p", lead, "support"));
@@ -103,7 +106,7 @@ function panel(parent, title, lead) {
   return p;
 }
 
-function figures(parent, items) {
+function figures(parent: HTMLElement, items: ([number, string] | null)[]) {
   var box = el("div", null, "w-figures");
   items.forEach(function (f) {
     if (!f) return;
@@ -119,12 +122,17 @@ function figures(parent, items) {
 // (numbers largest first, text A to Z), choosing it again reverses. Rows sort within their group (the rows
 // between two group rows), and a total row stays last in its group. A row can give its sort keys; else
 // each cell's text is read (money, a percent, a date or words).
-function wTable(parent, headers, numeric) {
+/** What a table row sorts by in each column: a number, a date's or words' text, or null (sorts last). */
+type SortKey = string | number | null;
+/** A table row, with the sort keys it gives (else its cells' text is read). */
+type KeyedRow = HTMLTableRowElement & { _keys?: SortKey[] };
+
+function wTable(parent: HTMLElement, headers: string[], numeric: number[]) {
   var wrap = el("div", null, "w-scroll");
   var t = el("table", null, "w-table");
   var tr = document.createElement("tr");
   var state = { col: -1, dir: "" };
-  var heads = [];
+  var heads: HTMLElement[] = [];
   headers.forEach(function (h, i) {
     var th = el("th", null, numeric.indexOf(i) >= 0 ? "num" : "");
     if (h) {
@@ -145,7 +153,7 @@ function wTable(parent, headers, numeric) {
   t.appendChild(tr);
   wrap.appendChild(t);
   parent.appendChild(wrap);
-  function keyOf(r, i) {
+  function keyOf(r: KeyedRow, i: number): SortKey {
     if (r._keys && r._keys[i] !== undefined) return r._keys[i];
     var c = r.children[i];
     return sortKey(
@@ -156,7 +164,7 @@ function wTable(parent, headers, numeric) {
         : "",
     );
   }
-  function sortBy(i) {
+  function sortBy(i: number) {
     var dir = state.col === i ? (state.dir === "asc" ? "desc" : "asc") : numeric.indexOf(i) >= 0 ? "desc" : "asc";
     state = { col: i, dir: dir };
     heads.forEach(function (th, k) {
@@ -165,8 +173,8 @@ function wTable(parent, headers, numeric) {
       if (th.hasAttribute("aria-sort"))
         th.setAttribute("aria-sort", k === i ? (dir === "asc" ? "ascending" : "descending") : "none");
     });
-    var rows = Array.prototype.slice.call(t.querySelectorAll("tr")).slice(1);
-    var segments = [[]];
+    var rows: KeyedRow[] = Array.prototype.slice.call(t.querySelectorAll("tr")).slice(1);
+    var segments: KeyedRow[][] = [[]];
     rows.forEach(function (r) {
       if (r.classList.contains("group")) segments.push([r], []);
       else segments[segments.length - 1].push(r);
@@ -198,8 +206,8 @@ function wTable(parent, headers, numeric) {
     });
   }
   return {
-    row: function (cells, cls, keys) {
-      var r = document.createElement("tr");
+    row: function (cells: (string | Node)[], cls?: string, keys?: SortKey[]) {
+      var r: KeyedRow = document.createElement("tr");
       if (cls) r.className = cls;
       if (keys) r._keys = keys;
       cells.forEach(function (c, i) {
@@ -214,7 +222,7 @@ function wTable(parent, headers, numeric) {
 
 // What a table cell sorts by: a number for money (a sign and commas allowed), a percent or a count, a
 // date's ISO text for "Nov 9, 2026", else its words in lower case; a blank or a dash sorts last.
-function sortKey(text) {
+function sortKey(text: string | null): SortKey {
   var x = String(text).trim();
   if (!x || x === "–" || x === "-") return null;
   var n = x
@@ -228,7 +236,7 @@ function sortKey(text) {
   return x.toLowerCase();
 }
 
-function niceTicks(lo, hi, count) {
+function niceTicks(lo: number, hi: number, count: number) {
   var span = hi - lo || Math.abs(hi) || 1;
   var step = Math.pow(10, Math.floor(Math.log10(span / count)));
   step =
@@ -239,13 +247,13 @@ function niceTicks(lo, hi, count) {
       .filter(function (s) {
         return span / s <= count;
       })[0] || step * 10;
-  var ticks = [];
+  var ticks: number[] = [];
   for (var t = Math.floor(lo / step) * step; t <= hi + step * 0.001; t += step) ticks.push(Math.round(t * 100) / 100);
   if (ticks[ticks.length - 1] < hi) ticks.push(ticks[ticks.length - 1] + step);
   return ticks;
 }
 
-function compactMoney(n) {
+function compactMoney(n: number) {
   var a = Math.abs(n),
     s = n < 0 ? "−" : "";
   if (a >= 1e6) return s + "$" + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
@@ -255,9 +263,20 @@ function compactMoney(n) {
 
 // A line chart over dates: series [{name, color, points: [[date, value]]}], one y axis, a crosshair and a
 // tooltip with every series at the date nearest the pointer, each line labeled at its end.
-function lineChart(parent, series, opts) {
+/** A line on a chart: its name and color, and its [date, value] points in date order. */
+interface ChartSeries {
+  name: string;
+  color: string;
+  points: [string, number][];
+}
+
+function lineChart(
+  parent: HTMLElement,
+  series: ChartSeries[],
+  opts: { label: string; now?: string; nowLabel?: string; dateName?: (d: string) => string },
+) {
   var NS = "http://www.w3.org/2000/svg";
-  var dates = [];
+  var dates: string[] = [];
   series.forEach(function (s) {
     s.points.forEach(function (p) {
       if (dates.indexOf(p[0]) < 0) dates.push(p[0]);
@@ -268,7 +287,7 @@ function lineChart(parent, series, opts) {
     parent.appendChild(el("p", "Not enough dates to draw yet.", "support"));
     return;
   }
-  var t = function (d) {
+  var t = function (d: string) {
     return Date.parse(d.length === 7 ? d + "-15" : d);
   };
   var lo = 0,
@@ -290,10 +309,10 @@ function lineChart(parent, series, opts) {
     B = 250;
   var t0 = t(dates[0]),
     t1 = t(dates[dates.length - 1]);
-  var x = function (d) {
+  var x = function (d: string) {
     return L + ((t(d) - t0) / (t1 - t0)) * (W - L - R);
   };
-  var y = function (v) {
+  var y = function (v: number) {
     return T + ((hi - v) / (hi - lo)) * (B - T);
   };
   var box = el("div", null, "w-chart-box");
@@ -302,10 +321,10 @@ function lineChart(parent, series, opts) {
   svg.setAttribute("class", "w-chart");
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", opts.label);
-  var add = function (name, attrs, text, into) {
+  var add = function (name: string, attrs: Record<string, string | number>, text?: string, into?: Element) {
     var e = document.createElementNS(NS, name);
     Object.keys(attrs).forEach(function (k) {
-      e.setAttribute(k, attrs[k]);
+      e.setAttribute(k, String(attrs[k]));
     });
     if (text !== undefined) e.textContent = text;
     (into || svg).appendChild(e);
@@ -327,7 +346,7 @@ function lineChart(parent, series, opts) {
     add("line", { x1: x(opts.now), x2: x(opts.now), y1: T, y2: B, class: "now" });
     add("text", { x: x(opts.now) + 4, y: B - 6, class: "axis" }, opts.nowLabel || "today");
   }
-  var ends = [];
+  var ends: { y: number; x: number; text: string; color: string }[] = [];
   series.forEach(function (s) {
     var d = s.points
       .map(function (p, i) {
@@ -353,21 +372,21 @@ function lineChart(parent, series, opts) {
   var tip = el("div", null, "w-tip");
   tip.hidden = true;
   var byDate = series.map(function (s) {
-    var m = {};
+    var m: Record<string, number> = {};
     s.points.forEach(function (p) {
       m[p[0]] = p[1];
     });
     return m;
   });
-  var show = function (ev) {
+  var show = function (ev: MouseEvent) {
     var r = svg.getBoundingClientRect();
     var px = ((ev.clientX - r.left) / r.width) * W;
     var best = dates[0];
     dates.forEach(function (d) {
       if (Math.abs(x(d) - px) < Math.abs(x(best) - px)) best = d;
     });
-    cross.setAttribute("x1", x(best));
-    cross.setAttribute("x2", x(best));
+    cross.setAttribute("x1", String(x(best)));
+    cross.setAttribute("x2", String(x(best)));
     cross.setAttribute("visibility", "visible");
     tip.innerHTML = "";
     tip.appendChild(el("div", opts.dateName ? opts.dateName(best) : longDate(best), "strong"));
@@ -377,8 +396,8 @@ function lineChart(parent, series, opts) {
         dots[n].setAttribute("visibility", "hidden");
         return;
       }
-      dots[n].setAttribute("cx", x(best));
-      dots[n].setAttribute("cy", y(v));
+      dots[n].setAttribute("cx", String(x(best)));
+      dots[n].setAttribute("cy", String(y(v)));
       dots[n].setAttribute("visibility", "visible");
       var row = el("div", null, "row");
       var name = el("span");
@@ -395,7 +414,7 @@ function lineChart(parent, series, opts) {
     tip.style.left = Math.min(Math.max(left + 12, 0), r.width - tip.offsetWidth) + "px";
     tip.style.top = "8px";
   };
-  hit.addEventListener("mousemove", show);
+  hit.addEventListener("mousemove", show as EventListener);
   hit.addEventListener("mouseleave", function () {
     tip.hidden = true;
     cross.setAttribute("visibility", "hidden");
@@ -421,8 +440,8 @@ function lineChart(parent, series, opts) {
 }
 
 function drawInvestments() {
-  var d = investments,
-    body = document.getElementById("investments-body");
+  var d = investments!, // drawn once loaded
+    body = byId("investments-body");
   body.innerHTML = "";
   if (!d.asOf) {
     body.appendChild(el("p", "No investment values yet: run compute after the holdings are in.", "support"));
@@ -436,9 +455,15 @@ function drawInvestments() {
   head.appendChild(
     el(
       "h2",
-      { overview: "Investments", history: "Over time", allocation: "Allocation", accounts: "Accounts", lots: "Lots and sales" }[
-        investView
-      ],
+      (
+        {
+          overview: "Investments",
+          history: "Over time",
+          allocation: "Allocation",
+          accounts: "Accounts",
+          lots: "Lots and sales",
+        } as Record<string, string>
+      )[investView],
     ),
   );
   head.appendChild(el("span", "as of " + longDate(d.asOf), "support"));
@@ -459,7 +484,7 @@ function drawInvestments() {
     drawLots(body, d);
     return;
   }
-  var parts = {};
+  var parts: Record<string, number> = {};
   d.owners.forEach(function (o) {
     Object.keys(o.parts).forEach(function (k) {
       parts[k] = (parts[k] || 0) + o.parts[k];
@@ -515,7 +540,7 @@ function drawInvestments() {
       (adults.join(" and ") || "the adults") +
       "; the kids' column is their own accounts.",
   );
-  var cols = [
+  var cols: [string, (o: OwnerRow) => number][] = [
     [
       "Investments",
       function (o) {
@@ -598,15 +623,15 @@ function drawInvestments() {
 
 // Over time: any line the model offers (totals, an owner, a tax bucket, an account), up to eight at once. Each
 // chosen line keeps its color while it stays chosen, so taking one off doesn't repaint the rest.
-var overTime = null,
+var overTime: Record<string, number> | null = null, // each chosen line's series number, by key
   overRange = "all";
-var OVER_GROUPS = [
+var OVER_GROUPS: string[][] = [
   ["total", "Totals"],
   ["owner", "By owner"],
   ["bucket", "By tax treatment"],
   ["account", "Accounts"],
 ];
-var OVER_RANGES = [
+var OVER_RANGES: string[][] = [
   ["all", "All"],
   ["10", "10 years"],
   ["5", "5 years"],
@@ -614,13 +639,13 @@ var OVER_RANGES = [
 ];
 var OVER_MAX = 8;
 
-function overLabel(l) {
+function overLabel(l: ValueLine) {
   if (l.group === "owner") return ownerName(l.owner);
   if (l.group === "account") return l.label + (l.owner ? " (" + ownerName(l.owner) + ")" : "");
   return l.label;
 }
 
-function drawOverTime(body, d) {
+function drawOverTime(body: HTMLElement, d: WealthPage) {
   var box = el("div", null, "over-time");
   body.appendChild(box);
   fillOverTime(box, d);
@@ -628,19 +653,19 @@ function drawOverTime(body, d) {
 
 function refreshOverTime() {
   // redraw the part in place: the page doesn't jump
-  var box = document.querySelector("#investments-body .over-time");
+  var box = document.querySelector<HTMLElement>("#investments-body .over-time");
   if (!box) {
     drawInvestments();
     return;
   }
   var y = window.scrollY;
   box.innerHTML = "";
-  fillOverTime(box, investments);
+  fillOverTime(box, investments!);
   window.scrollTo(0, y);
 }
 
-function fillOverTime(body, d) {
-  var byKey = {};
+function fillOverTime(body: HTMLElement, d: WealthPage) {
+  var byKey: Record<string, ValueLine> = {};
   d.lines.forEach(function (l) {
     byKey[l.key] = l;
   });
@@ -651,14 +676,14 @@ function fillOverTime(body, d) {
         return byKey[k];
       })
       .forEach(function (k, i) {
-        overTime[k] = i + 1;
+        overTime![k] = i + 1;
       });
   }
-  Object.keys(overTime).forEach(function (k) {
-    if (!byKey[k]) delete overTime[k];
+  Object.keys(overTime!).forEach(function (k) {
+    if (!byKey[k]) delete overTime![k];
   });
-  var chosen = Object.keys(overTime).sort(function (a, b) {
-    return overTime[a] - overTime[b];
+  var chosen = Object.keys(overTime!).sort(function (a, b) {
+    return overTime![a] - overTime![b];
   });
   var from = "";
   if (overRange !== "all") {
@@ -666,7 +691,7 @@ function fillOverTime(body, d) {
     cut.setFullYear(cut.getFullYear() - Number(overRange));
     from = cut.toISOString().slice(0, 10);
   }
-  var inRange = function (l) {
+  var inRange = function (l: ValueLine) {
     return l.points.filter(function (p) {
       return p[0] >= from;
     });
@@ -711,7 +736,7 @@ function fillOverTime(body, d) {
   main.appendChild(chart);
   var series = chosen
     .map(function (k) {
-      return { name: overLabel(byKey[k]), color: "var(--series-" + overTime[k] + ")", points: inRange(byKey[k]) };
+      return { name: overLabel(byKey[k]), color: "var(--series-" + overTime![k] + ")", points: inRange(byKey[k]) };
     })
     .filter(function (s) {
       return s.points.length;
@@ -763,27 +788,27 @@ function fillOverTime(body, d) {
     row.setAttribute("role", "group");
     row.setAttribute("aria-label", g[1]);
     mine.forEach(function (l) {
-      var on = overTime[l.key] !== undefined;
+      var on = overTime![l.key] !== undefined;
       var b = el("button", null, "line-pick");
       b.type = "button";
       b.setAttribute("aria-pressed", String(on));
       var sw = el("i", null, "swatch");
-      if (on) sw.style.background = "var(--series-" + overTime[l.key] + ")";
+      if (on) sw.style.background = "var(--series-" + overTime![l.key] + ")";
       b.appendChild(sw);
       b.appendChild(document.createTextNode(overLabel(l)));
       b.disabled = !on && chosen.length >= OVER_MAX;
       if (b.disabled) b.title = OVER_MAX + " lines at most: take one off first";
       b.addEventListener("click", function () {
         if (on) {
-          delete overTime[l.key];
+          delete overTime![l.key];
         } else {
-          var used = Object.keys(overTime).map(function (k) {
-            return overTime[k];
+          var used = Object.keys(overTime!).map(function (k) {
+            return overTime![k];
           });
           for (var slot = 1; used.indexOf(slot) >= 0; slot++) {
             /* the lowest free color */
           }
-          overTime[l.key] = slot;
+          overTime![l.key] = slot;
         }
         refreshOverTime();
       });
@@ -793,7 +818,7 @@ function fillOverTime(body, d) {
   });
 }
 
-function drawAllocation(body, d) {
+function drawAllocation(body: HTMLElement, d: WealthPage) {
   var grid2 = el("div");
   body.appendChild(grid2);
   var al = panel(grid2, "Allocation", "Against the targets in allocation_targets. 529s are left out; I-Bonds count as US bonds.");
@@ -854,7 +879,7 @@ function drawAllocation(body, d) {
         last = group;
       }
       var r = tt.row([t.symbol, t.assetClass, money.format(t.current), money.format(t.proposed), change(t.trade)]);
-      r.lastChild.className = "num " + (t.trade > 0 ? "buy" : "sell");
+      (r.lastChild as HTMLElement).className = "num " + (t.trade > 0 ? "buy" : "sell");
     });
   }
   if (d.notes.length) {
@@ -866,7 +891,7 @@ function drawAllocation(body, d) {
   }
 }
 
-function drawAccounts(body, d) {
+function drawAccounts(body: HTMLElement, d: WealthPage) {
   var acc = el("section", null, "panel w-wide");
   acc.appendChild(el("h3", "Accounts"));
   acc.appendChild(
@@ -899,17 +924,17 @@ function drawAccounts(body, d) {
   acc.appendChild(funds);
 }
 
-var TERM_NAMES = { short_term: "Short term", long_term: "Long term" };
+var TERM_NAMES: Record<string, string> = { short_term: "Short term", long_term: "Long term" };
 
 // Tax lots: what each lot in a taxable account holds, and every lot part sold, as Form 8949 has it
-function drawLots(body, d) {
+function drawLots(body: HTMLElement, d: WealthPage) {
   if (!d.openLots.length && !d.lotSales.length) {
     body.appendChild(
       el("p", "No lots yet: compute works them out from vests, the plan's sales and each account's activity.", "support"),
     );
     return;
   }
-  var sum = function (rows, k) {
+  var sum = function (rows: OpenLot[], k: "value" | "gain" | "washAdded") {
     return rows.reduce(function (s, r) {
       return s + (r[k] || 0);
     }, 0);

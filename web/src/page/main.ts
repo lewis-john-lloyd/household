@@ -1,10 +1,9 @@
-// @ts-nocheck
 // Loading each view, switching views, and starting the page.
 
 function load() {
-  document.getElementById("controls").hidden = view !== "flows";
+  byId("controls").hidden = view !== "flows";
   if (view === "status") {
-    document.getElementById("status-title").textContent = "Loading…";
+    byId("status-title").textContent = "Loading…";
     call(
       "getStatus",
       [],
@@ -45,14 +44,14 @@ function load() {
     loadJobs();
     return;
   }
-  if (!periods.flows) {
+  if (!periodsLoaded.flows) {
     call(
       "getPeriods",
       [],
       function (list) {
-        periods.flows = list;
+        periodsLoaded.flows = list;
         if (!list.length) {
-          document.getElementById("chart").textContent = "No flows yet: run compute.";
+          byId("chart").textContent = "No flows yet: run compute.";
           return;
         }
         load();
@@ -61,18 +60,18 @@ function load() {
     );
     return;
   }
-  fillPeriods(periods.flows);
-  document.getElementById("chart").textContent = "Loading…";
+  fillPeriods(periodsLoaded.flows);
+  byId("chart").textContent = "Loading…";
   call("getFlows", [chosen.flows, level], drawFlows, "chart");
 }
 
-function press(ids, on) {
+function press(ids: string[], on: string) {
   ids.forEach(function (id) {
-    document.getElementById(id).setAttribute("aria-pressed", String(id === on));
+    byId(id).setAttribute("aria-pressed", String(id === on));
   });
 }
 
-function setView(next) {
+function setView(next: string) {
   if (next === "subscriptions" || next === "recurring") {
     next = "budget";
     budget.tab = "recurring";
@@ -84,20 +83,20 @@ function setView(next) {
     "view-" + (view === "edit" ? EDIT_HOME[editTab] || "flows" : view),
   );
   if (view === "edit") drawEditTabs();
-  document.getElementById("status").hidden = view !== "status";
-  document.getElementById("flows").hidden = view !== "flows";
-  document.getElementById("budget").hidden = view !== "budget";
-  document.getElementById("edit").hidden = view !== "edit";
-  document.getElementById("taxes").hidden = view !== "taxes";
-  document.getElementById("investments").hidden = view !== "investments";
-  document.getElementById("retirement").hidden = view !== "retirement";
-  document.getElementById("home").hidden = view !== "home";
-  document.getElementById("jobs").hidden = view !== "jobs";
-  document.querySelector("main").classList.toggle("wide", view === "flows");
+  byId("status").hidden = view !== "status";
+  byId("flows").hidden = view !== "flows";
+  byId("budget").hidden = view !== "budget";
+  byId("edit").hidden = view !== "edit";
+  byId("taxes").hidden = view !== "taxes";
+  byId("investments").hidden = view !== "investments";
+  byId("retirement").hidden = view !== "retirement";
+  byId("home").hidden = view !== "home";
+  byId("jobs").hidden = view !== "jobs";
+  document.querySelector("main")!.classList.toggle("wide", view === "flows");
   load();
 }
 
-function setLevel(next) {
+function setLevel(next: string) {
   level = next;
   press(["group", "category"], level);
   load();
@@ -105,69 +104,69 @@ function setLevel(next) {
 
 google.charts.load("current", { packages: ["sankey"] });
 google.charts.setOnLoadCallback(function () {
-  document.getElementById("period").addEventListener("change", function (e) {
-    chosen[view] = e.target.value;
+  byId("period").addEventListener("change", function (e) {
+    chosen[view] = (e.target as HTMLSelectElement).value;
     load();
   });
-  document.getElementById("view-status").addEventListener("click", function () {
+  byId("view-status").addEventListener("click", function () {
     setView("status");
   });
-  document.getElementById("view-flows").addEventListener("click", function () {
+  byId("view-flows").addEventListener("click", function () {
     setView("flows");
   });
-  document.getElementById("view-budget").addEventListener("click", function () {
+  byId("view-budget").addEventListener("click", function () {
     setView("budget");
   });
-  document.getElementById("view-taxes").addEventListener("click", function () {
+  byId("view-taxes").addEventListener("click", function () {
     setView("taxes");
   });
-  document.getElementById("view-investments").addEventListener("click", function () {
+  byId("view-investments").addEventListener("click", function () {
     setView("investments");
   });
-  document.getElementById("view-retirement").addEventListener("click", function () {
+  byId("view-retirement").addEventListener("click", function () {
     setView("retirement");
   });
-  document.getElementById("view-home").addEventListener("click", function () {
+  byId("view-home").addEventListener("click", function () {
     setView("home");
   });
-  document.getElementById("view-jobs").addEventListener("click", function () {
+  byId("view-jobs").addEventListener("click", function () {
     setView("jobs");
   });
-  document.querySelectorAll("#budget-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
-      openPart("budget", b.dataset.tab);
+      openPart("budget", b.dataset.tab as string);
     });
   });
-  document.querySelectorAll("#status-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#status-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
-      openPart("status", b.dataset.tab);
+      openPart("status", b.dataset.tab as string);
     });
   });
-  document.querySelectorAll("#flows-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#flows-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
-      openPart("flows", b.dataset.tab);
+      openPart("flows", b.dataset.tab as string);
     });
   });
-  document.getElementById("pending-show").addEventListener("click", function () {
-    var list = document.getElementById("pending-list");
+  byId("pending-show").addEventListener("click", function () {
+    var list = byId("pending-list");
     list.hidden = !list.hidden;
     this.textContent = list.hidden ? "Show" : "Hide";
   });
-  document.getElementById("pending-save").addEventListener("click", saveStaged);
-  document.getElementById("pending-dismiss").addEventListener("click", function () {
-    document.getElementById("pending-msg").textContent = "";
+  byId("pending-save").addEventListener("click", saveStaged);
+  byId("pending-dismiss").addEventListener("click", function () {
+    byId("pending-msg").textContent = "";
     drawPending();
   });
-  document.getElementById("pending-discard").addEventListener("click", discardStaged);
+  byId("pending-discard").addEventListener("click", discardStaged);
   if (window.matchMedia) {
     // the chart takes its colors when drawn: redraw it when light and dark swap
     var scheme = window.matchMedia("(prefers-color-scheme: dark)");
     var redraw = function () {
       if (view === "flows" || view === "investments" || view === "retirement" || view === "home") load();
     };
-    var resized = null; // a wider or narrower window redraws the flow chart to fit, once it settles
+    var resized: number | null = null; // a wider or narrower window redraws the flow chart to fit, once it settles
     window.addEventListener("resize", function () {
-      clearTimeout(resized);
+      clearTimeout(resized!);
       resized = setTimeout(function () {
         if (view === "flows") load();
       }, 250);
@@ -182,10 +181,10 @@ google.charts.setOnLoadCallback(function () {
       e.returnValue = "";
     }
   });
-  document.getElementById("group").addEventListener("click", function () {
+  byId("group").addEventListener("click", function () {
     setLevel("group");
   });
-  document.getElementById("category").addEventListener("click", function () {
+  byId("category").addEventListener("click", function () {
     setLevel("category");
   });
   // A link can open a page: ?view=taxes, or ?view=edit&tab=review (the weekly email's links do).
@@ -195,10 +194,10 @@ google.charts.setOnLoadCallback(function () {
 
 // A link can open a page: ?view=taxes, ?view=budget&tab=recurring, ?view=edit&tab=review (the weekly email's
 // links do). Older links to tabs that became pages (Edit's budget lines, jobs, recurring) open the page.
-function openFrom(location) {
+function openFrom(location: PageLocation | null) {
   var p = (location && location.parameter) || {};
   if (p.view === "cashflow") p.view = "flows";
-  var moved = { budget: "budget", jobs: "jobs", subscriptions: "recurring", recurring: "recurring" };
+  var moved: Record<string, string> = { budget: "budget", jobs: "jobs", subscriptions: "recurring", recurring: "recurring" };
   if (p.view === "edit" && moved[p.tab]) {
     setView(moved[p.tab]);
     return;

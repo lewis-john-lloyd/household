@@ -1,11 +1,10 @@
-// @ts-nocheck
 // Transactions' parts: review, payee rules, categories, settings, withholding, duplicates.
 
 // --- the tabs ---------------------------------------------------------------------------------------
 // A merchant question split into its lines leaves the list once each of those lines has a category
 // waiting to be saved; undoing one brings the question back. splits: question key -> its open line ids.
-var splits = {};
-function splitAnswered(r) {
+var splits: Record<string, string[]> = {};
+function splitAnswered(r: Row) {
   var ids = splits[r.key];
   return !!(
     ids &&
@@ -16,9 +15,9 @@ function splitAnswered(r) {
   );
 }
 
-function drawReview(body) {
+function drawReview(body: HTMLElement) {
   masterDetail(body, {
-    items: editor.review.filter(function (r) {
+    items: editor!.review.filter(function (r) {
       return r.kind === "line" || !splitAnswered(r);
     }),
     noun: "questions",
@@ -59,8 +58,12 @@ function drawReview(body) {
       var target = "payee|" + r.key.toUpperCase();
       var now = staged[target] ? staged[target].edit : null;
       var form = el("form", null, "edit");
-      var key = field(form, "Merchant (shorten it to cover more spellings)", textInput(now ? now.key : r.key, "wide"));
-      var pick = field(form, "Category for all its lines", categoryChoice(now ? now.category : r.guess));
+      var key = field(
+        form,
+        "Merchant (shorten it to cover more spellings)",
+        textInput(now ? (now.key as string) : r.key, "wide"),
+      );
+      var pick = field(form, "Category for all its lines", categoryChoice(now ? (now.category as string) : r.guess));
       var error = el("div", "", "error");
       var actions = el("div", null, "actions");
       actions.appendChild(
@@ -112,11 +115,11 @@ function drawReview(body) {
 // A merchant question's lines, each with its own category: the answers are line edits, so the merchant
 // stays unanswered and its later lines are asked again. With every line answered the question leaves
 // the list (splits); with some left on (choose) it stays, for the rest.
-function splitIntoLines(r, panel, done) {
+function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
   var box = el("div", "Loading its lines…", "support");
   box.id = "split-lines";
   panel.appendChild(box);
-  var alone = editor.review
+  var alone = editor!.review
     .filter(function (q) {
       return q.kind === "line";
     })
@@ -150,11 +153,11 @@ function splitIntoLines(r, panel, done) {
         cell(row, l.account);
         cell(row, cents.format(l.amount), "num");
         var now = staged["line|" + l.id + "|category"];
-        var pick = categoryChoice(now ? now.edit.value : r.guess || "");
+        var pick = categoryChoice(now ? (now.edit.value as string) : r.guess || "");
         pick.setAttribute("aria-label", "Category for " + l.payee + " on " + l.date);
         row.appendChild(el("td")).appendChild(pick);
         table.appendChild(row);
-        return [l, pick];
+        return [l, pick] as [ReviewLine, HTMLSelectElement];
       });
       form.appendChild(table);
       var error = el("div", "", "error");
@@ -194,9 +197,9 @@ function splitIntoLines(r, panel, done) {
   );
 }
 
-function drawRules(body) {
+function drawRules(body: HTMLElement) {
   masterDetail(body, {
-    items: editor.payeeRules,
+    items: editor!.payeeRules,
     noun: "payee rules",
     key: function (r) {
       return r.pattern;
@@ -235,13 +238,13 @@ function drawRules(body) {
   });
 }
 
-function drawCategories(body) {
-  var items = editor.categories
+function drawCategories(body: HTMLElement) {
+  var items = editor!.categories
     .map(function (c) {
       return { kind: "category", row: c };
     })
     .concat(
-      editor.aliases.map(function (a) {
+      editor!.aliases.map(function (a) {
         return { kind: "alias", row: a };
       }),
     );
@@ -296,9 +299,9 @@ function drawCategories(body) {
   });
 }
 
-function drawSettings(body) {
+function drawSettings(body: HTMLElement) {
   masterDetail(body, {
-    items: editor.parameters,
+    items: editor!.parameters,
     noun: "settings",
     key: function (p) {
       return p.key;
@@ -326,11 +329,13 @@ function drawSettings(body) {
     detail: function (p, panel, done) {
       facts(
         panel,
-        [
-          ["What it's for", p.about || ""],
-          ["Value", p.source === "not set" ? "not set" : p.value],
-          ["Source", p.source === "not set" ? "" : p.source],
-        ].filter(function (f) {
+        (
+          [
+            ["What it's for", p.about || ""],
+            ["Value", p.source === "not set" ? "not set" : p.value],
+            ["Source", p.source === "not set" ? "" : p.source],
+          ] as Fact[]
+        ).filter(function (f) {
           return f[1];
         }),
       );
@@ -339,9 +344,9 @@ function drawSettings(body) {
   });
 }
 
-function drawWithholding(body) {
+function drawWithholding(body: HTMLElement) {
   masterDetail(body, {
-    items: editor.withholding,
+    items: editor!.withholding,
     noun: "stubs unexplained",
     key: function (w) {
       return w.jurisdiction + "|" + w.stub_id;
@@ -378,7 +383,7 @@ function drawWithholding(body) {
       var why = field(
         form,
         "Why",
-        textInput(staged[target] ? staged[target].edit.note : "", "wide", "extra withholding asked for"),
+        textInput(staged[target] ? (staged[target].edit.note as string) : "", "wide", "extra withholding asked for"),
       );
       var error = el("div", "", "error");
       var actions = el("div", null, "actions");
@@ -410,7 +415,7 @@ function drawWithholding(body) {
 // disagrees offers the row the paychecks suggest: the date its first period began, its pay on a yearly
 // footing, the employer of the row in force.
 // Merge one charge into another, so their charges are one history; or separate a key merged into this one.
-function mergeForm(r, items, done) {
+function mergeForm(r: Row, items: Row[], done: () => void) {
   var box = el("div");
   section(
     box,
@@ -458,19 +463,19 @@ function mergeForm(r, items, done) {
   return box;
 }
 
-function subscriptionForm(r, done) {
+function subscriptionForm(r: Row | null, done: () => void) {
   var form = el("form", null, "edit");
   var key = r ? null : field(form, "Merchant, as review names it", textInput("", "wide", "APPLE ONE"));
   var note = field(form, "Note", textInput(r ? r.note : "", "wide"));
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
-  var mark = function (yes) {
-    var name = r ? r.key : key.value.trim().toUpperCase();
+  var mark = function (yes: boolean) {
+    var name = r ? r.key : key!.value.trim().toUpperCase();
     if (!name) {
       error.textContent = "Name the merchant as review does.";
       return;
     }
-    var e = { kind: "subscription", key: name, subscription: yes ? "yes" : "no" };
+    var e: Edit = { kind: "subscription", key: name, subscription: yes ? "yes" : "no" };
     if (note.value.trim()) e.note = note.value.trim();
     unstage("subscription|" + name);
     stage(e, name + (yes ? ": track as recurring" : ": don't track"));
@@ -511,9 +516,9 @@ function subscriptionForm(r, done) {
   return form;
 }
 
-function drawDuplicates(body) {
+function drawDuplicates(body: HTMLElement) {
   masterDetail(body, {
-    items: editor.duplicates,
+    items: editor!.duplicates,
     noun: "possible duplicates",
     key: function (d) {
       return d.txn_a + "|" + d.txn_b;
@@ -558,7 +563,7 @@ function drawDuplicates(body) {
         "line|" + d.txn_a + "|void",
         "line|" + d.txn_b + "|void",
       ];
-      function only(edit, text) {
+      function only(edit: Edit, text: string) {
         targets.forEach(unstage);
         stage(edit, text);
         done();
@@ -597,7 +602,7 @@ function drawDuplicates(body) {
   });
 }
 
-function drawTransactionPage(body) {
+function drawTransactionPage(body: HTMLElement) {
   var page = el("section", null, "panel txn-page");
   if (txnPage && txnPage.from && txnPage.from !== "edit") {
     var from = txnPage.from;

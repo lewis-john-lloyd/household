@@ -1,7 +1,10 @@
-// @ts-nocheck
 // The editor's forms: budget lines, payee rules, categories, jobs, settings.
 
-var EDIT_HOME = {
+// Each editor part lives on the page it is about: review, payee rules and duplicates (and a transaction's
+// own page) on Cashflow, beside the flow of money they decide, categories on Budget, withholding on Taxes, settings and saved changes on
+// Status. Each page's submenu lists its own parts and its editor parts together; an "edit:" part opens the
+// editor under that page's name.
+var EDIT_HOME: Record<string, string> = {
   review: "flows",
   rules: "flows",
   duplicates: "flows",
@@ -11,7 +14,7 @@ var EDIT_HOME = {
   settings: "status",
   waiting: "status",
 };
-var PAGE_PARTS = {
+var PAGE_PARTS: Record<string, string[][]> = {
   flows: [
     ["sankey", "Sankey"],
     ["table", "Table"],
@@ -39,7 +42,7 @@ var PAGE_PARTS = {
 };
 
 // Open an editor part where it belongs (an older name for one is still understood).
-function openEdit(tab) {
+function openEdit(tab: string) {
   if (!EDIT_HOME[tab]) tab = "review";
   editTab = tab;
   if (view !== "edit") setView("edit");
@@ -50,7 +53,7 @@ function openEdit(tab) {
 }
 
 // Go to a page's own part from its submenu.
-function openPart(page, part) {
+function openPart(page: string, part: string) {
   if (part.indexOf("edit:") === 0) {
     openEdit(part.slice(5));
     return;
@@ -83,10 +86,13 @@ function openPart(page, part) {
 // The editor's submenu: the parts of the page the open editor part belongs to.
 function drawEditTabs() {
   var home = EDIT_HOME[editTab] || "flows";
-  var bar = document.getElementById("edit-tabs");
+  var bar = byId("edit-tabs");
   bar.textContent = "";
   bar.className = "subtabs";
-  bar.setAttribute("aria-label", { flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" }[home]);
+  bar.setAttribute(
+    "aria-label",
+    ({ flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" } as Record<string, string>)[home],
+  );
   PAGE_PARTS[home].forEach(function (p) {
     var b = button(p[1], function () {
       openPart(home, p[0]);
@@ -97,7 +103,7 @@ function drawEditTabs() {
   });
 }
 
-function setEditTab(tab) {
+function setEditTab(tab: string) {
   editTab = EDIT_HOME[tab] ? tab : "review";
   drawEditTabs();
   redrawEditor();
@@ -108,7 +114,7 @@ function loadEditor() {
     redrawEditor();
     return;
   }
-  document.getElementById("edit-body").textContent = "Loading…";
+  byId("edit-body").textContent = "Loading…";
   call(
     "getEditor",
     [],
@@ -122,7 +128,7 @@ function loadEditor() {
 
 function redrawEditor() {
   if (!editor || view !== "edit") return;
-  var body = document.getElementById("edit-body");
+  var body = byId("edit-body");
   body.textContent = "";
   if (editTab === "waiting") {
     drawWaiting(body);
@@ -136,26 +142,28 @@ function redrawEditor() {
     body.appendChild(el("div", "No compute run with editor tables yet: run ingest and compute once with this release.", "note"));
     return;
   }
-  ({
-    review: drawReview,
-    rules: drawRules,
-    categories: drawCategories,
-    settings: drawSettings,
-    withholding: drawWithholding,
-    duplicates: drawDuplicates,
-  })[editTab](body);
+  (
+    ({
+      review: drawReview,
+      rules: drawRules,
+      categories: drawCategories,
+      settings: drawSettings,
+      withholding: drawWithholding,
+      duplicates: drawDuplicates,
+    }) as Record<string, (body: HTMLElement) => void>
+  )[editTab](body);
 }
 
 // The name a recurring charge shows by: one waiting to be saved, else the one you gave it, else its key.
-function chargeName(r) {
+function chargeName(r: Row): string {
   var s = staged["recurring_name|" + String(r.key).toUpperCase()];
-  if (s) return s.edit.name || r.key;
+  if (s) return (s.edit.name as string) || r.key;
   return r.name || r.key;
 }
 
 // A recurring charge's name, with a pencil that turns it into a box to rename it in place (Enter or
 // Save stages the rename, Escape or Cancel puts the name back). The key stays below a name you gave.
-function chargeTitle(r, redraw, tag) {
+function chargeTitle(r: Row, redraw: () => void, tag?: keyof HTMLElementTagNameMap) {
   var box = el("span", null, "charge-name");
   var shown = chargeName(r);
   box.appendChild(el(tag || "strong", shown));
@@ -220,7 +228,7 @@ function chargeTitle(r, redraw, tag) {
 }
 
 // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
-function stagedText(t) {
+function stagedText(t: string) {
   return stagedOrder
     .filter(function (k) {
       return k === t || k.indexOf(t + "|") === 0;
@@ -232,11 +240,11 @@ function stagedText(t) {
 }
 
 // Every field an edit can change, as the page showed it (WAS_FIELDS in edits.ts and changes.py).
-function budgetWas(l) {
+function budgetWas(l: Row) {
   return l.in_force === "scheduled only" ? null : rowWas(l);
 }
 
-function rowWas(l) {
+function rowWas(l: Row): Row {
   return {
     effective: l.effective,
     category: l.category,
@@ -250,9 +258,9 @@ function rowWas(l) {
 }
 
 // The scheduled amount in force on this line and date (editor_scheduled), which a new one replaces, or null.
-function scheduledOn(line, date) {
+function scheduledOn(line: string, date: string) {
   return (
-    (editor.scheduled || []).filter(function (x) {
+    (editor!.scheduled || []).filter(function (x) {
       return x.line === line && x.effective.slice(0, 10) === date;
     })[0] || null
   );
@@ -260,10 +268,10 @@ function scheduledOn(line, date) {
 
 // A budget line's change from a date, its end, or a scheduled amount. A "recurring" line's target is its
 // category's tracked charges plus the amount, an allowance for the rest, shown added up as it is typed.
-function budgetForm(l, done, preset) {
+function budgetForm(given: Row | null, done: () => void, preset?: string) {
   var form = el("form", null, "edit");
-  var isNew = !l;
-  l = l || {
+  var isNew = !given;
+  var l: Row = given || {
     line: preset || "",
     effective: "",
     category: preset || "",
@@ -285,11 +293,11 @@ function budgetForm(l, done, preset) {
   form.appendChild(charges);
   var showCharges = function () {
     var recurring = rule.value === "recurring";
-    amount.parentNode.firstChild.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
+    amount.parentNode!.firstChild!.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
     charges.textContent = "";
     charges.hidden = !recurring;
     if (!recurring) return;
-    var mine = (editor.subscriptions || []).filter(function (r) {
+    var mine = (editor!.subscriptions || []).filter(function (r) {
       return r.marked === "yes" && r.category === category.value && r.status !== "stopped";
     });
     var total = 0;
@@ -331,7 +339,7 @@ function budgetForm(l, done, preset) {
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
   function lineName() {
-    return isNew ? name.value.trim() : l.line;
+    return isNew ? name!.value.trim() : l.line;
   }
   actions.appendChild(
     button(isNew ? "Add line" : l.in_force === "ended" ? "Start again" : "Keep this change", function () {
@@ -432,14 +440,14 @@ function budgetForm(l, done, preset) {
   return form;
 }
 
-function ruleWas(r) {
+function ruleWas(r: Row) {
   return { category: r.category, precedence: r.precedence, effective: r.effective, ask: r.ask };
 }
 
-function ruleForm(r, done) {
+function ruleForm(given: Row | null, done: () => void) {
   var form = el("form", null, "edit");
-  var isNew = !r;
-  r = r || { pattern: "", category: "", precedence: "", effective: "", ask: "FALSE" };
+  var isNew = !given;
+  var r: Row = given || { pattern: "", category: "", precedence: "", effective: "", ask: "FALSE" };
   var pattern = isNew ? field(form, "Pattern (matches the payee)", textInput("", "wide", "ACME GROCER")) : null;
   var category = field(form, "Category", categoryChoice(r.category, isNew ? "(choose)" : "(none: only asks)"));
   var precedence = field(form, "Precedence (lower wins)", textInput(r.precedence, "amount"));
@@ -452,11 +460,11 @@ function ruleForm(r, done) {
   var actions = el("div", null, "actions");
   actions.appendChild(
     button(isNew ? "Add rule" : "Keep this change", function () {
-      var text = isNew ? pattern.value.trim() : r.pattern;
+      var text = isNew ? pattern!.value.trim() : r.pattern;
       try {
         new RegExp(text);
       } catch (err) {
-        error.textContent = "The pattern does not read: " + err.message;
+        error.textContent = "The pattern does not read: " + (err as Error).message;
         return;
       }
       var e = {
@@ -524,10 +532,10 @@ function ruleForm(r, done) {
   return form;
 }
 
-function categoryForm(c, done) {
+function categoryForm(given: Row | null, done: () => void) {
   var form = el("form", null, "edit");
-  var isNew = !c;
-  c = c || { category: "", group: "", priority: "" };
+  var isNew = !given;
+  var c: Row = given || { category: "", group: "", priority: "" };
   var name = isNew ? field(form, "Category", textInput("", "", "lower_case")) : null;
   var group = field(form, "Group", textInput(c.group));
   var priority = field(form, "Priority", choice(PRIORITIES, c.priority));
@@ -537,7 +545,7 @@ function categoryForm(c, done) {
     button(isNew ? "Add category" : "Keep this change", function () {
       var e = {
         kind: "category",
-        category: isNew ? name.value.trim() : c.category,
+        category: isNew ? name!.value.trim() : c.category,
         group: group.value.trim(),
         priority: priority.value,
         was: isNew ? null : { group: c.group, priority: c.priority },
@@ -548,7 +556,7 @@ function categoryForm(c, done) {
       }
       if (
         isNew &&
-        editor.categories.some(function (x) {
+        editor!.categories.some(function (x) {
           return x.category === e.category;
         })
       ) {
@@ -564,10 +572,10 @@ function categoryForm(c, done) {
   return form;
 }
 
-function aliasForm(a, done) {
+function aliasForm(given: Row | null, done: () => void) {
   var form = el("form", null, "edit");
-  var isNew = !a;
-  a = a || { alias: "", category: "", note: "" };
+  var isNew = !given;
+  var a: Row = given || { alias: "", category: "", note: "" };
   var name = isNew ? field(form, "Old name", textInput("")) : null;
   var category = field(form, "Counts as", categoryChoice(a.category));
   var note = field(form, "Note", textInput(a.note, "wide"));
@@ -577,7 +585,7 @@ function aliasForm(a, done) {
     button(isNew ? "Add alias" : "Keep this change", function () {
       var e = {
         kind: "alias",
-        alias: isNew ? name.value.trim() : a.alias,
+        alias: isNew ? name!.value.trim() : a.alias,
         category: category.value,
         note: note.value.trim(),
         was: isNew ? null : { category: a.category, note: a.note },
@@ -597,12 +605,12 @@ function aliasForm(a, done) {
 
 // A pay change for comp_events: a raise, a new job or a change of hours. j holds what to start from (a row
 // to correct, or what the paychecks suggest); a row for the same date, person and employer corrects it.
-function jobForm(j, done, label) {
+function jobForm(given: Row | null, done: () => void, label?: string) {
   var form = el("form", null, "edit");
-  j = j || {};
+  var j: Row = given || {};
   var people = Array.from(
     new Set(
-      editor.jobs.map(function (r) {
+      editor!.jobs.map(function (r) {
         return r.person;
       }),
     ),
@@ -621,7 +629,7 @@ function jobForm(j, done, label) {
     button(
       label || "Keep this change",
       function () {
-        var e = {
+        var e: { kind: string; [field: string]: string } = {
           kind: "job",
           effective: effective.value,
           person: person.value.trim(),

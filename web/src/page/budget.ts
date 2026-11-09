@@ -1,4 +1,3 @@
-// @ts-nocheck
 // The Budget page: lenses, comparisons, the lines and their gauges.
 
 // --- the Budget page -----------------------------------------------------------------------------
@@ -6,9 +5,18 @@
 // by budgetview.js from the book getBudgetBook sends once, so a new lens or comparison asks the server
 // nothing. A line opens a drawer with its months and its budget line. Recurring: the charges you track,
 // by the line they belong to, with what changed first.
-var budget = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
-var LENS_NAMES = { month: "Month", quarter: "Quarter", year: "Year" };
-var RULE_NAMES = {
+var budget: {
+  tab: string;
+  lens: string;
+  period: string;
+  compare: string;
+  sameWeeks: boolean;
+  data: Answer<"getBudgetBook"> | null;
+  open: { category?: string; line?: string } | null; // the drawer open: a line's category, or a new line
+  sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
+} = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
+var LENS_NAMES: Record<string, string> = { month: "Month", quarter: "Quarter", year: "Year" };
+var RULE_NAMES: Record<string, string> = {
   fixed: "A fixed amount",
   recurring: "Its recurring charges, plus an allowance",
   trailing: "What the last 4 months spent",
@@ -17,7 +25,7 @@ var RULE_NAMES = {
   sinking_fund: "Set aside, spent from a balance",
   billed: "A bill in the months it comes (quarterly, say)",
 };
-var PER_MONTH = {
+var PER_MONTH: Record<string, number> = {
   monthly: 1,
   biweekly: 26 / 12,
   weekly: 52 / 12,
@@ -34,7 +42,7 @@ function loadBudget() {
     drawBudgetPage();
     return;
   }
-  document.getElementById("budget-body").textContent = "Loading…";
+  byId("budget-body").textContent = "Loading…";
   var waiting = 0;
   var ready = function () {
     waiting -= 1;
@@ -66,7 +74,7 @@ function loadBudget() {
   }
 }
 
-function setBudgetTab(tab) {
+function setBudgetTab(tab: string) {
   budget.tab = tab;
   budget.open = null;
   drawBudgetPage();
@@ -74,31 +82,31 @@ function setBudgetTab(tab) {
 
 function drawBudgetPage() {
   if (view !== "budget" || !budget.data || !editor) return;
-  document.querySelectorAll("#budget-tabs button").forEach(function (b) {
+  document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.tab === budget.tab));
   });
-  var body = document.getElementById("budget-body");
+  var body = byId("budget-body");
   body.textContent = "";
   closeDrawer(true);
   if (budget.tab === "recurring") drawRecurring(body);
   else drawLinesTab(body);
 }
 
-function shortDay(d) {
+function shortDay(d: string) {
   return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10));
 }
-function shortPeriod(p) {
+function shortPeriod(p: string) {
   return lensOf(p) === "month" ? MONTH_SHORT[Number(p.slice(5, 7)) - 1] + " " + p.slice(0, 4) : periodName(p);
 }
-function signedMoney(n) {
+function signedMoney(n: number) {
   return (n > 0.5 ? "+" : n < -0.5 ? "-" : "") + money.format(Math.abs(n));
 }
-function defaultCompare(p) {
+function defaultCompare(p: string) {
   var q = quickPicks(p);
   return q[q.length - 1];
 }
 
-function setLens(lens) {
+function setLens(lens: string) {
   var day = today();
   if (budget.period && budget.period !== periodOf(today(), lensOf(budget.period))) day = periodDays(budget.period)[0];
   budget.lens = lens;
@@ -107,15 +115,15 @@ function setLens(lens) {
 }
 
 // The budget lines in force (or ended) that pay for a category, from the editor's budget lines.
-function linesFor(category) {
-  return editor.budgetLines.filter(function (l) {
+function linesFor(category: string) {
+  return editor!.budgetLines.filter(function (l) {
     return (l.category || l.spends_from) === category;
   });
 }
 
-function drawLinesTab(body) {
+function drawLinesTab(body: HTMLElement) {
   if (!budget.period) setLens(budget.lens);
-  var book = budget.data.book;
+  var book = budget.data!.book;
   var v = budgetView(book, budget.period, budget.compare, budget.sameWeeks, today());
   body.appendChild(budgetControls(v));
   if (!book.targets.length && !book.days.length) {
@@ -143,7 +151,7 @@ function drawLinesTab(body) {
   else if (budget.open && budget.open.line === "") openNewLine();
 }
 
-function budgetControls(v) {
+function budgetControls(v: BudgetView) {
   var c = el("div", null, "bv-controls");
   var seg = el("span", null, "segmented");
   seg.setAttribute("role", "group");
@@ -157,9 +165,9 @@ function budgetControls(v) {
     seg.appendChild(b);
   });
   c.appendChild(seg);
-  var list = lensPeriods(budget.data.book, budget.lens, today());
+  var list = lensPeriods(budget.data!.book, budget.lens, today());
   var at = list.indexOf(budget.period);
-  var move = function (n) {
+  var move = function (n: number) {
     budget.period = list[at + n];
     budget.compare = defaultCompare(budget.period);
     drawBudgetPage();
@@ -174,7 +182,7 @@ function budgetControls(v) {
   );
   earlier.setAttribute("aria-label", "The " + budget.lens + " before");
   earlier.disabled = at < 0 || at >= list.length - 1;
-  var labels = {};
+  var labels: Record<string, string> = {};
   var current = periodOf(today(), budget.lens);
   list.forEach(function (p) {
     labels[p] = periodName(p) + (p === current ? ", so far" : "");
@@ -246,16 +254,16 @@ function budgetControls(v) {
   return c;
 }
 
-function compareName(v) {
+function compareName(v: BudgetView) {
   return (v.sameWeeks ? "the same weeks of " : "") + periodName(v.compare);
 }
 
 // The period at a glance: what is budgeted, what is spent, and a gauge of how full the budget is against
 // how far through the period it is, then the same for each group.
-function budgetSummary(v) {
+function budgetSummary(v: BudgetView) {
   var box = el("div", null, "bv-summary bv-period");
   var figures = el("div", null, "bv-figures");
-  var stat = function (big, small, cls) {
+  var stat = function (big: string, small: string, cls?: string) {
     var s = el("div", null, cls);
     s.appendChild(el("b", big));
     s.appendChild(el("span", small));
@@ -313,7 +321,7 @@ function budgetSummary(v) {
 }
 
 // One gauge: spent against budgeted, with a mark at the share of the period gone.
-function fullness(name, actual, target, gone, big) {
+function fullness(name: string, actual: number, target: number, gone: number, big: boolean) {
   var row = el("div", null, "bv-gauge" + (big ? " big" : ""));
   var label = el("div", null, "gauge-label");
   label.appendChild(el("span", name, "gauge-name"));
@@ -342,7 +350,7 @@ function fullness(name, actual, target, gone, big) {
 }
 
 // A bar for how much of a budget is spent: full and red past it, with a mark where the budget ends.
-function spentBar(actual, target) {
+function spentBar(actual: number, target: number) {
   var m = el("span", null, "spent-bar");
   var fill = el("i");
   var over = target > 0 && actual > target + 0.5;
@@ -358,22 +366,22 @@ function spentBar(actual, target) {
   return m;
 }
 
-function trackedByKey() {
-  var by = {};
-  budget.data.tracked.forEach(function (t) {
+function trackedByKey(): Record<string, Row> {
+  var by: Record<string, Row> = {};
+  budget.data!.tracked.forEach(function (t) {
     by[t.key] = t;
   });
   return by;
 }
 
-function budgetTable(v) {
+function budgetTable(v: BudgetView) {
   var wrap = el("div", null, "scroll");
   var table = el("table", null, "bv");
   var head = el("tr");
   // each column but "Target from" sorts the groups, and the lines within each, by it; again reverses
-  var keys = [
+  var keys: (((x: ViewGroup | ViewLine) => string | number) | null)[] = [
     function (x) {
-      return (x.name || x.category || "").toLowerCase();
+      return ((x as ViewGroup).name || (x as ViewLine).category || "").toLowerCase();
     },
     null,
     function (x) {
@@ -423,9 +431,9 @@ function budgetTable(v) {
   table.appendChild(el("thead")).appendChild(head);
   var body = el("tbody");
   var tracked = trackedByKey();
-  var order = function (list) {
+  var order = function <T extends ViewGroup | ViewLine>(list: T[]): T[] {
     if (sort.col < 0) return list;
-    var k = keys[sort.col];
+    var k = keys[sort.col]!; // a column that sorts
     return list.slice().sort(function (a, b) {
       var x = k(a),
         y = k(b);

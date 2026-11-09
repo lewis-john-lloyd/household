@@ -1,9 +1,8 @@
-// @ts-nocheck
 // Home: each property, its taxes, mortgage and improvements.
 
 function drawHome() {
-  var d = home,
-    body = document.getElementById("home-body");
+  var d = home!, // drawn once loaded
+    body = byId("home-body");
   body.innerHTML = "";
   if (!d.homes.length) {
     body.appendChild(
@@ -30,7 +29,7 @@ function drawHome() {
       drawHome();
     },
   );
-  var isOwned = function (h) {
+  var isOwned = function (h: Home) {
     return h.lines.some(function (l) {
       return l.key === "status" && l.value === "owned";
     });
@@ -40,7 +39,7 @@ function drawHome() {
       return !isOwned(h);
     });
   owned.forEach(function (h) {
-    var line = {};
+    var line: Record<string, HomeLine> = {};
     h.lines.forEach(function (l) {
       line[l.key] = l;
     });
@@ -71,7 +70,7 @@ function drawHome() {
     );
 }
 
-function drawOneHome(body, d, h, line, loans) {
+function drawOneHome(body: HTMLElement, d: HomePage, h: Home, line: Record<string, HomeLine>, loans: HomeLine[]) {
   var head = el("div", null, "w-head");
   head.appendChild(el("h2", h.id));
   if (line.purchase_price && line.purchase_price.asOf)
@@ -92,15 +91,15 @@ function drawOneHome(body, d, h, line, loans) {
   var owed = loans.reduce(function (s, l) {
     return s + Number(l.value || 0);
   }, 0);
-  var val = function (k) {
+  var val = function (k: string) {
     return line[k] ? Number(line[k].value) : null;
   };
   figures(body, [
-    val("equity") !== null ? [val("equity"), "equity at the value counted"] : null,
+    val("equity") !== null ? [val("equity") as number, "equity at the value counted"] : null,
     [owed, "owed"],
-    val("value_used") !== null ? [val("value_used"), "value counted (" + (line.value_used.note || "") + ")"] : null,
-    val("estimate_median") !== null ? [val("estimate_median"), "median estimate"] : null,
-    val("basis") !== null ? [val("basis"), "adjusted basis"] : null,
+    val("value_used") !== null ? [val("value_used") as number, "value counted (" + (line.value_used.note || "") + ")"] : null,
+    val("estimate_median") !== null ? [val("estimate_median") as number, "median estimate"] : null,
+    val("basis") !== null ? [val("basis") as number, "adjusted basis"] : null,
   ]);
   var grid = el("div", null, "w-grid");
   body.appendChild(grid);
@@ -132,7 +131,7 @@ function drawOneHome(body, d, h, line, loans) {
   }
 }
 
-function drawHomeTaxes(body, d, h) {
+function drawHomeTaxes(body: HTMLElement, d: HomePage, h: Home) {
   var taxes = d.taxes.filter(function (t) {
     return t.property === h.id;
   });
@@ -180,7 +179,7 @@ function drawHomeTaxes(body, d, h) {
 }
 
 // A loan's value as its kind says: money, a rate in percent, a date, a month, a term in months, or text.
-function loanValue(x) {
+function loanValue(x: LoanDetail) {
   var n = Number(String(x.value).replace(/,/g, ""));
   if (x.kind === "money" && x.value !== "" && !isNaN(n)) return cents.format(n);
   if (x.kind === "percent" && x.value !== "" && !isNaN(n)) return n + "%";
@@ -191,7 +190,7 @@ function loanValue(x) {
   return x.value;
 }
 
-function drawMortgage(body, d, loans) {
+function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
   var ids = loans.map(function (l) {
     return l.key.slice(5);
   });
@@ -245,7 +244,7 @@ function drawMortgage(body, d, loans) {
     var thisYear = paid.filter(function (p) {
       return p.month.slice(0, 4) === d.month.slice(0, 4);
     });
-    var sum = function (rows, k) {
+    var sum = function (rows: Payment[], k: "interest") {
       return rows.reduce(function (s, p) {
         return s + p[k];
       }, 0);
@@ -282,7 +281,7 @@ function drawMortgage(body, d, loans) {
               return p.loan === id;
             })
             .map(function (p) {
-              return [p.month, p.balance];
+              return [p.month, p.balance] as [string, number];
             }),
         };
       }),
@@ -325,7 +324,7 @@ function drawMortgage(body, d, loans) {
   if (!sched.length) body.appendChild(el("p", "No loan on this home.", "support"));
 }
 
-function drawImprovements(body, d, h) {
+function drawImprovements(body: HTMLElement, d: HomePage, h: Home) {
   var im = el("section", null, "panel w-wide");
   im.appendChild(el("h3", "Improvements"));
   im.appendChild(

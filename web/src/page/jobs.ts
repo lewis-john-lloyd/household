@@ -1,4 +1,3 @@
-// @ts-nocheck
 // The Jobs page: each person's pay over time.
 
 // --- the Jobs page -------------------------------------------------------------------------------------
@@ -10,7 +9,7 @@ function loadJobs() {
     drawJobsPage();
     return;
   }
-  document.getElementById("jobs-body").textContent = "Loading…";
+  byId("jobs-body").textContent = "Loading…";
   call(
     "getEditor",
     [],
@@ -31,7 +30,7 @@ function redrawPage() {
 
 function drawJobsPage() {
   if (view !== "jobs" || !editor) return;
-  var body = document.getElementById("jobs-body");
+  var body = byId("jobs-body");
   body.textContent = "";
   if (!editor.baseRun) {
     body.appendChild(el("p", "No compute run with editor tables yet: run ingest and compute once with this release.", "support"));
@@ -70,13 +69,13 @@ function drawJobsPage() {
   );
 }
 
-function personName(p) {
+function personName(p: string) {
   return p ? p.charAt(0).toUpperCase() + p.slice(1) : "";
 }
 
 // A run of paychecks that disagrees with the jobs: what it says, and the change it suggests. Pay well under
 // the job's salary reads as fewer hours: the salary is kept and the share of full time suggested.
-function payAlert(r) {
+function payAlert(r: Row) {
   var box = el("div", null, "alert changed");
   var text = el("span");
   text.appendChild(el("strong", personName(r.person) + "'s paychecks, " + r.from + " to " + r.to + ": "));
@@ -110,14 +109,14 @@ function payAlert(r) {
 }
 
 // One stretch of a pay line: the job row it comes from, what the paychecks say, and a correction.
-function showJob(box, name, r, next, close) {
+function showJob(box: HTMLElement, name: string, r: PayStretch, next: PayStretch | null, close: () => void) {
   box.textContent = "";
   box.hidden = false;
   var head = el("div", null, "pay-head");
   head.appendChild(el("h3", r.employer + ", " + r.at + " to " + (next ? next.at : "now")));
   head.appendChild(button("Close", close, "text"));
   box.appendChild(head);
-  var row = editor.jobs.filter(function (j) {
+  var row = editor!.jobs.filter(function (j) {
     return j.person === r.person && j.effective === r.at && j.employer === r.employer;
   })[0];
   var stubs = row && row.stubs;

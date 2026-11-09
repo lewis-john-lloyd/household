@@ -1,10 +1,9 @@
-// @ts-nocheck
 // Recurring: the charges tracked, by line, and their price changes.
 
 // --- Recurring: the charges you track, by line ------------------------------------------------------------
-function drawRecurring(body) {
-  var tracked = budget.data.tracked,
-    rows = editor.subscriptions;
+function drawRecurring(body: HTMLElement) {
+  var tracked = budget.data!.tracked,
+    rows = editor!.subscriptions;
   var lead = el(
     "p",
     "Tracked charges are the fixed part of the budget: a line can take its target from its charges, " +
@@ -17,7 +16,7 @@ function drawRecurring(body) {
   var yearly = active.reduce(function (s, t) {
     return s + (Number(t.yearly) || 0);
   }, 0);
-  var month = budgetView(budget.data.book, periodOf(today(), "month"), periodOf(today(), "month"), false, today());
+  var month = budgetView(budget.data!.book, periodOf(today(), "month"), periodOf(today(), "month"), false, today());
   var box = el("div", null, "bv-summary");
   [
     [money.format(yearly / 12), "a month recurring, on average"],
@@ -45,7 +44,7 @@ function drawRecurring(body) {
   unanswered.forEach(function (r) {
     body.appendChild(trackAlert(r));
   });
-  var byCategory = {};
+  var byCategory: Record<string, Row[]> = {};
   tracked
     .filter(function (t) {
       return t.status !== "stopped";
@@ -58,7 +57,7 @@ function drawRecurring(body) {
     .sort()
     .forEach(function (category) {
       var card = el("section", null, "panel rec-card");
-      var h = el("h3", (budget.data.book.groups[category] ? budget.data.book.groups[category] + ": " : "") + category);
+      var h = el("h3", (budget.data!.book.groups[category] ? budget.data!.book.groups[category] + ": " : "") + category);
       var lines = linesFor(category).filter(function (l) {
         return l.in_force !== "ended";
       });
@@ -127,9 +126,9 @@ function drawRecurring(body) {
 }
 
 // The editor's row for a merchant key (what is tracked, found or turned down), for its forms.
-function editorCharge(key) {
+function editorCharge(key: string): Row {
   return (
-    editor.subscriptions.filter(function (r) {
+    editor!.subscriptions.filter(function (r) {
       return r.key === key;
     })[0] || {
       key: key,
@@ -149,7 +148,7 @@ function editorCharge(key) {
   );
 }
 
-function chargeRow(t) {
+function chargeRow(t: Row) {
   var row = el("div", null, "rec-row");
   row.tabIndex = 0;
   var left = el("div");
@@ -186,7 +185,7 @@ function chargeRow(t) {
   return row;
 }
 
-function openCharge(key) {
+function openCharge(key: string) {
   var r = editorCharge(key);
   var t = trackByKey(key);
   var d = drawer(chargeName(t || r), r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
@@ -205,15 +204,15 @@ function openCharge(key) {
     drawBudgetPage();
   };
   d.appendChild(subscriptionForm(r, done));
-  d.appendChild(mergeForm(r, editor.subscriptions, done));
+  d.appendChild(mergeForm(r, editor!.subscriptions, done));
 }
 
-function trackByKey(key) {
+function trackByKey(key: string) {
   return trackedByKey()[key] || null;
 }
 
 // A tracked charge whose price changed: what it means for its line, and the change that follows it.
-function priceAlert(t) {
+function priceAlert(t: Row) {
   var box = el("div", null, "alert changed");
   var text = el("span");
   text.appendChild(el("strong", chargeName(t)));
@@ -231,7 +230,7 @@ function priceAlert(t) {
     t.last +
     ". ";
   var actions = el("span", null, "actions");
-  var perYear = { weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 }[t.cadence] || 0;
+  var perYear = ({ weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 } as Record<string, number>)[t.cadence] || 0;
   var delta = ((Number(t.latest) - Number(t.previous)) * perYear) / 12;
   var line = lines[0];
   if (!line) words += "No budget line pays for " + t.category + ".";
@@ -288,7 +287,7 @@ function priceAlert(t) {
 }
 
 // A charge that comes back but isn't tracked: track it, merge it into one that is, or turn it down.
-function trackAlert(r) {
+function trackAlert(r: Row) {
   var box = el("div", null, "alert");
   var text = el("span");
   text.appendChild(chargeTitle(r, drawBudgetPage));

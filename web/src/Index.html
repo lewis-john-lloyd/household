@@ -607,9 +607,15 @@
     </section>
 
     <section id="flows" hidden>
-      <div id="chart">Loading…</div>
-      <div id="flows-note" class="note"></div>
-      <div id="flow-summary" class="flow-summary"></div>
+      <div id="flows-tabs" class="subtabs" role="group" aria-label="Where the money went">
+        <button data-tab="sankey" aria-pressed="true">Sankey</button>
+        <button data-tab="table" aria-pressed="false">Table</button>
+      </div>
+      <div id="flows-sankey">
+        <div id="chart">Loading…</div>
+        <div id="flows-note" class="note"></div>
+      </div>
+      <div id="flow-summary" class="flow-summary" hidden></div>
     </section>
 
     <section id="budget" hidden>
@@ -728,10 +734,23 @@
         }
       }
 
+      var flowsTab = "sankey", lastFlows = null;
+
+      // Sankey or Table: the chart is drawn only while it shows, since Google sizes it to its box
+      function setFlowsTab(tab) {
+        flowsTab = tab;
+        document.querySelectorAll("#flows-tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.tab === tab)); });
+        document.getElementById("flows-sankey").hidden = tab !== "sankey";
+        document.getElementById("flow-summary").hidden = tab !== "table";
+        if (tab === "sankey" && lastFlows) drawFlows(lastFlows);
+      }
+
       function drawFlows(result) {
         var chart = document.getElementById("chart");
         var note = document.getElementById("flows-note");
+        lastFlows = result;
         drawFlowSummary(result.summary);
+        if (flowsTab !== "sankey") return;
         if (!result.rows.length) {
           chart.textContent = "No flows for this period.";
           note.textContent = "";
@@ -4322,6 +4341,9 @@
         });
         document.querySelectorAll("#status-tabs button").forEach(function (b) {
           b.addEventListener("click", function () { setStatusTab(b.dataset.tab); });
+        });
+        document.querySelectorAll("#flows-tabs button").forEach(function (b) {
+          b.addEventListener("click", function () { setFlowsTab(b.dataset.tab); });
         });
         document.getElementById("pending-show").addEventListener("click", function () {
           var list = document.getElementById("pending-list");

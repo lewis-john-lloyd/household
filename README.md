@@ -18,7 +18,7 @@ It runs in Colab under the owner's Google sign-in, so its reach is limited by co
 
 - `tools/import_guard.py` (CI and pre-commit) allows only a short list of imports: pure standard-library modules, pandas, numpy, scikit-learn (the categorization model), pypdf, and Google's Sheets, Drive and Colab clients. No sockets, HTTP libraries, subprocesses, `os`, `eval`/`exec` or dynamic imports. Widening the list is a visible change to that file. It is an import policy that keeps changes reviewable, not a sandbox: the allowed libraries (and the Google clients' access, which is the signed-in owner's) can do whatever they do, so the boundary is reviewing a release before the notebook pins it.
 - pypdf, the one library a release may download, is pinned to an exact version. pandas, numpy, scikit-learn and Google's clients come from the Colab image, bounded in `pyproject.toml` below the next major version the code hasn't been tested with (pip installs a version inside the bound if the image moves past it), and every ingest and compute logs the versions it ran with (`engine.versions`, also a `versions` row in `run_log`).
-- Only the owner creates release tags, and notebooks install a tag, so nothing reaches Colab without the owner reviewing the diff (`/compare/<old tag>...<new tag>` on GitHub).
+- Only the owner creates release tags, and notebooks install a tag (the newest unless one is pinned), so nothing reaches Colab without the owner reviewing the diff (`/compare/<old tag>...<new tag>` on GitHub).
 - CI's token can only read the repo, and every action it uses is pinned to a commit, not a tag that could be moved (`tests/test_ci.py` holds both). To update an action, look up the commit its new tag points to (`git ls-remote --tags https://github.com/actions/<name>`).
 
 ## Where the data lives, and for how long
@@ -209,6 +209,8 @@ This repo is public, so hooks check for household data before it can leave the m
 
 ## Releases
 
-Notebooks pin a tag, for example `pip install git+https://github.com/lewis-john-lloyd/household@v0.0.1`. Upgrading is a deliberate edit of that tag; rolling back is reverting it.
+The engine notebook installs a release tag: by default the newest one (`git ls-remote --tags`), so tagging a release is what upgrades it, and only the owner tags. Setting its `RELEASE` to a tag (`"v0.0.1"`) pins that one instead, which is how to roll back. Either way it installs `git+https://github.com/lewis-john-lloyd/household@<tag>` and prints the tag it installed.
+
+The notebook holds only the household folder's id. It calls `runner.run(session, folder_id)`, which runs every stage in order: the legacy investments workbook, ingest, the legacy Net Worth tab, the legacy stock plan tabs, prices and compute. The old workbooks and how their tabs map onto the ledger come from `engine_settings.json` in the household folder (see `runner.py` for its parts; each is optional, and a part left out skips its stage), so a new legacy import needs a settings change, not a notebook change. A legacy stage that fails says why and the run goes on.
 
 Ordinary commits leave the version number alone. When work is ready to run, one release commit sets the version in `pyproject.toml` and `household/__init__.py`, and the owner tags that commit.

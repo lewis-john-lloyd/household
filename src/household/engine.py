@@ -35,6 +35,10 @@ def new_run_id(now=None):
 
 def bootstrap(session, folder_id):
     """Open or create the ledger and Reports spreadsheets and their declared tables."""
+    # every stage reads the ledger as written; compute alone reads accounts renamed or moved (compute_all sets
+    # them after this), so a stage run after compute in the same session doesn't see stale names
+    _RENAMED.clear()
+    _LEGACY_MOVED.clear()
     ledger, _ = sheets.open_or_create(session.sheets, sheets.LEDGER_TITLE, folder_id)
     reports, _ = sheets.open_or_create(session.sheets, sheets.REPORTS_TITLE, folder_id)
     created = {
@@ -353,7 +357,29 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
 # (so a document read again matches what it wrote before), and compute reads every account column under the new
 # name. Set by compute_all from the parameters before anything else is read.
 _RENAMED = {}
+_LEGACY_MOVED = {}  # {id the old investments workbook's readings were read under: the account they belong to}
 ACCOUNT_COLUMNS = ("account_id", "account")
+
+
+def legacy_moves(parameters, accounts):
+    """{id: account} from the legacy_account:<id> settings, and a note for each one that can't be used: both
+    must be accounts in the ledger."""
+    out, notes = {}, []
+    if parameters is None or not len(parameters):
+        return out, notes
+    p = parameters[parameters["jurisdiction"].astype(str) == "household"]
+    for key in sorted(set(p["key"].astype(str))):
+        if not key.startswith(settings.LEGACY_ACCOUNT_PREFIX):
+            continue
+        old, new = key[len(settings.LEGACY_ACCOUNT_PREFIX):], settings.value(parameters, key).strip()
+        if not new:
+            continue
+        missing = [a for a in (old, new) if a not in accounts]
+        if missing:
+            notes.append(f"accounts: {key} = {new}: no account {' or '.join(missing)} in the ledger")
+            continue
+        out[old] = new
+    return out, notes
 
 
 def renamed_accounts(parameters):
@@ -380,6 +406,9 @@ def renamed_accounts(parameters):
 
 def _read(ledger, name):
     df = sheets.read_table(ledger, schema.table(schema.LEDGER, name))
+    if _LEGACY_MOVED and name == "holdings" and len(df):
+        legacy = df["doc_id"].astype(str) == legacy_investments.LEGACY_DOC
+        df.loc[legacy, "account_id"] = df.loc[legacy, "account_id"].map(lambda a: _LEGACY_MOVED.get(str(a), a))
     if _RENAMED and len(df):
         for column in ACCOUNT_COLUMNS:
             if column in df.columns:
@@ -656,9 +685,12 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     _say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ledger, reports, _ = bootstrap(session, folder_id)
-    _RENAMED.clear()
-    renames, problems = renamed_accounts(sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters")))
+    raw_parameters = sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters"))
+    renames, problems = renamed_accounts(raw_parameters)
     accounts_now = set(sheets.read_table(ledger, schema.table(schema.LEDGER, "accounts"))["account_id"].astype(str))
+    moves, more = legacy_moves(raw_parameters, accounts_now)
+    problems += more
+    _LEGACY_MOVED.update(moves)
     for old, new in list(renames.items()):
         if old not in accounts_now:
             problems.append(f"accounts: account_renamed:{old} names no account")
@@ -671,6 +703,9 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         _say(log, line, "WARN")
     if renames:
         _say(log, "accounts: read as renamed: " + ", ".join(f"{o} as {n}" for o, n in sorted(renames.items())))
+    if moves:
+        _say(log, "accounts: the old investments workbook's readings of " + ", ".join(
+            f"{o} read as {n}'s" for o, n in sorted(moves.items())))
 
     books = _books(ledger)
     txns, effective, paired, lonely = books["txns"], books["effective"], books["paired"], books["lonely"]

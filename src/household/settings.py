@@ -45,6 +45,9 @@ SETTINGS = {
                          "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
     "account_renamed": "An account's new name (account_renamed:<its id> = the new id): the views and reports show "
                        "the new one, and a file named with either one finds the account",
+    "legacy_account": "The old investments workbook's readings kept under one account that belong to another "
+                      "(legacy_account:<the id they were read under> = the account they belong to), such as an old "
+                      "rollover IRA whose tab was read into the IRA that took its place",
     "price_proxy": "A public fund a plan's fund tracks (price_proxy:<the fund's symbol, lower case, other characters "
                    "as _> = its ticker, such as VFIAX), so the fund's value between statements moves with it",
     "birth_date": "A person's birth date, YYYY-MM-DD (birth_date:<person>), for the retirement plan; their Social "
@@ -94,6 +97,7 @@ SETTINGS = {
 
 LINKS = ("views_url", "payroll_url", "benefits_url", "fsa_claims_url")
 RENAME_PREFIX = "account_renamed:"
+LEGACY_ACCOUNT_PREFIX = "legacy_account:"
 ACCOUNT_ID = re.compile(r"[a-z][a-z0-9_]{0,40}")
 PROXY_PREFIX = "price_proxy:"
 
@@ -240,7 +244,7 @@ def check(params):
             out.append((key, v, sender_problem(v)))
         elif base == "receipt_subject" and subject_problem(v):
             out.append((key, v, subject_problem(v)))
-        elif base == "account_renamed" and not ACCOUNT_ID.fullmatch(v):
+        elif base in ("account_renamed", "legacy_account") and not ACCOUNT_ID.fullmatch(v):
             out.append((key, v, "is not an account id (lower case letters, digits and _)"))
         elif base == "price_proxy" and not re.fullmatch(r"[A-Z0-9.:^-]{1,20}", v):
             out.append((key, v, "is not a ticker (VFIAX, NYSEARCA:BND)"))

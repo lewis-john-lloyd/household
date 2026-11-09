@@ -121,6 +121,9 @@ def holdings(rows, account_id, source=""):
         except ValueError:
             notes.append(f"{account_id}: row {n}: {row[0]!r} is not a date, left out")
             continue
+        if dates and as_of < dates[-1]:
+            notes.append(f"{account_id}: row {n}: {as_of} comes before the row above it ({dates[-1]}): "
+                         "is its year a typo?")
         dates.append(as_of)
         for value_at, shares_at, role, symbol, _ in cols:
             cell = row[value_at] if value_at < len(row) else ""

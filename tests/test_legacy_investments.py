@@ -147,3 +147,9 @@ def test_with_nothing_new_the_migration_writes_nothing_and_backs_nothing_up(sess
     monkeypatch.setattr(engine.backup, "snapshot_ledger", lambda *a, **k: snapshots.append(a))
     again = engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira"}, log=None)
     assert (again["holdings"], again["securities"], snapshots) == (0, 0, [])
+
+
+def test_a_row_dated_before_the_one_above_it_is_noted():
+    emptied = IRA[:4] + [[serial(2000, 4, 2), 0, 0, 0, 0, 0, 0, 0]]  # a year typed one too low
+    df, notes = li.holdings(emptied, "a_ira")
+    assert notes == ["a_ira: row 5: 2000-04-02 comes before the row above it (2001-03-03): is its year a typo?"]

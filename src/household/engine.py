@@ -584,8 +584,9 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
             vests = projection.scheduled_vests(*(sheets.read_table(ledger, schema.table(schema.LEDGER, t))
                                                   for t in ("vest_schedule", "equity_vests", "prices")))
             if vests:
-                _say(log, f"projection: vests from the vesting schedule at {vests['price']:,.2f} a share, the latest "
-                          f"price on file ({vests['price_date']}); a month-old date means prices need fetching")
+                _say(log, f"projection: vests from the vesting schedule at {vests['price']:,.2f} a share, the "
+                          f"{vests['months']}-month average (latest {vests['latest']:,.2f} on {vests['price_date']}; "
+                          "a month-old date means prices need fetching)")
             lines, notes, detail = projection.project(year, stubs, sales, facts, jobs, vests)
             lines["year"], lines["run_id"] = year, run_id
             sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)

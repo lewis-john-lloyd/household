@@ -91,8 +91,12 @@ def test_a_grants_latest_page_is_its_schedule_and_the_price_is_the_latest_seen()
     assert s.groupby("grant_id")["shares"].sum().to_dict() == {"G100": 36, "G90": 10}
     vested = pd.DataFrame([{"vest_date": "2026-09-25", "fmv": "30"}, {"vest_date": "2026-08-25", "fmv": "28"}])
     prices = pd.DataFrame([{"symbol": "ACME", "date": "2026-10-31", "close": "32"}, {"symbol": "QUILX", "date": "2026-11-01", "close": "9"}])
-    assert projection.scheduled_vests(old, vested, prices)["price"] == 32
-    assert projection.scheduled_vests(old, vested)["price"] == 30
+    # the 12-month average of each month's last price: August 28, September 30, October 32
+    got = projection.scheduled_vests(old, vested, prices)
+    assert (got["price"], got["months"], got["latest"], got["price_date"]) == (30, 3, 32, "2026-10-31")
+    assert projection.scheduled_vests(old, vested)["price"] == 29
+    older = pd.concat([vested, pd.DataFrame([{"vest_date": "2025-06-25", "fmv": "90"}])])  # over a year before the latest
+    assert projection.scheduled_vests(old, older, prices)["price"] == 30
     assert projection.scheduled_vests(old.iloc[0:0], vested) is None
     assert projection.scheduled_vests(old.assign(award_type="OPTION"), vested) is None  # an option's vest is not pay
 

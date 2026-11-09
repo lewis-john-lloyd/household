@@ -10,7 +10,7 @@ is projected from what the stubs show is recurring:
     stub shows (see withholding.py), unless a scenario replaces it;
   - recurring supplemental pay (monthly RSU vests: supplemental days in the last
     90 days worth over 1,000): each vest left in the grants' vesting schedule
-    (vest_schedule) at the latest share price, or without a schedule one a month at
+    (vest_schedule) at the 12-month average share price, or without a schedule one a month at
     its recent average, scaled by the scenario's stock price change, withheld at
     the latest supplemental rate;
   - Wisconsin withholding on each regular paycheck under the WT-4 settings the
@@ -317,9 +317,10 @@ def positions(paystubs, year, overrides=None, comp_events=None):
 
 def scheduled_vests(schedule, vested=None, prices=None):
     """The projection's vests: each share award's schedule in force (parsers/schwab_awards.in_force; an option's
-    vesting is no income, so options are left out) and a share
-    price, the latest of a vest's fair market value (equity_vests) and a close for the grants' symbol
-    (prices); None with no schedule or no price."""
+    vesting is no income, so options are left out) and a share price: the 12-month moving average of the
+    vests' fair market values (equity_vests) and the closes of the grants' symbol (prices), the last of each
+    month in the year to the latest price averaged, so a month's swing doesn't move the projection; None with
+    no schedule or no price."""
     from .parsers import schwab_awards
     s = schwab_awards.in_force(schedule)
     s = s[s["award_type"].astype(str).str.upper().isin(schwab_awards.SHARE_AWARDS)]  # an option's vest is not pay
@@ -335,9 +336,16 @@ def scheduled_vests(schedule, vested=None, prices=None):
         seen += list(zip(p["date"].astype(str), p["close"].dropna()))
     if not seen:
         return None
-    day, price = max(seen)
-    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))), "price": float(price),
-            "price_date": str(day)}
+    latest_day, latest = max(seen)
+    # the 12-month moving average: the last price of each month in the year to the latest, averaged
+    start = (date.fromisoformat(str(latest_day)[:10]) - timedelta(days=365)).isoformat()
+    by_month = {}
+    for day, price in sorted(seen):
+        if str(day) > start:
+            by_month[str(day)[:7]] = float(price)
+    return {"schedule": list(zip(s["vest_date"].astype(str), _num(s["shares"]))),
+            "price": round(sum(by_month.values()) / len(by_month), 2), "months": len(by_month),
+            "latest": float(latest), "price_date": str(latest_day)}
 
 
 def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, vests=None):

@@ -25,6 +25,9 @@ row a person would otherwise have typed:
   recurring_merge  a merchant key whose charges count  -> proposal_decisions (kind
                    as another's (same_as), or blank       subscription_merge)
                    same_as to separate it again
+  recurring_name   the name to show a merchant key's   -> proposal_decisions (kind
+                   recurring charge by, or blank to       subscription_name)
+                   go back to the key
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -85,6 +88,7 @@ KINDS = {
     "job": ({"effective", "person", "employer"}, {"salary", "band", "rating", "fte", "note"}),
     "subscription": ({"key", "subscription"}, {"note"}),
     "recurring_merge": ({"key", "same_as"}, set()),
+    "recurring_name": ({"key", "name"}, set()),
 }
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
@@ -202,12 +206,14 @@ def _merge_key(text):
 def _values(kind, e):
     """Per-kind checks of values that need no ledger."""
     out = []
-    if kind in ("payee", "subscription", "recurring_merge") and not e["key"]:
+    if kind in ("payee", "subscription", "recurring_merge", "recurring_name") and not e["key"]:
         out.append("key is empty")
     if kind == "subscription" and e["subscription"] not in ("yes", "no"):
         out.append("subscription must be yes or no")
     if kind == "recurring_merge" and _merge_key(e["same_as"]) == _merge_key(e["key"]):
         out.append("same_as must be another key")
+    if kind == "recurring_name" and (len(e["name"]) > 60 or any(ord(c) < 32 for c in e["name"])):
+        out.append("name must be at most 60 characters on one line")
     if kind == "line":
         if e["field"] not in LINE_FIELDS:
             out.append(f"field must be one of {', '.join(LINE_FIELDS)}")
@@ -297,7 +303,7 @@ def _target(e):
     if kind == "line":
         field = "category" if e["field"] == "split" else e["field"]  # a category and a split replace each other
         return ("line", e["txn_id"], field)
-    if kind in ("payee", "subscription", "recurring_merge"):
+    if kind in ("payee", "subscription", "recurring_merge", "recurring_name"):
         return (kind, _merge_key(e["key"]))
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
@@ -368,6 +374,8 @@ def _describe(e):
         return f"subscription {e['key']}: {e['subscription']}"
     if kind == "recurring_merge":
         return f"recurring {e['key']}: " + (f"part of {e['same_as']}" if e["same_as"] else "on its own")
+    if kind == "recurring_name":
+        return f"recurring {e['key']}: " + (f"shown as {e['name']}" if e["name"].strip() else "shown by its key")
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -425,6 +433,11 @@ def _rows(edits, at):
             add("proposal_decisions", {"proposal_key": f"subscription_merge:{_merge_key(e['key'])}",
                                        "kind": "subscription_merge", "decided_at": at,
                                        "decision": "approve" if into else "reject", "note": into})
+        elif kind == "recurring_name":
+            name = e["name"].strip()
+            add("proposal_decisions", {"proposal_key": f"subscription_name:{_merge_key(e['key'])}",
+                                       "kind": "subscription_name", "decided_at": at,
+                                       "decision": "approve" if name else "reject", "note": name})
         elif kind == "line":
             add("txn_corrections", {"txn_id": e["txn_id"], "field": e["field"], "value": e["value"],
                                     "recorded_at": at, "reason": SOURCE, "source": "hand"})

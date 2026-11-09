@@ -419,6 +419,17 @@
       .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
         background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
       .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }
+      .charge-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+      .charge-name .icon-button { min-height: 0; width: 26px; height: 26px; padding: 0; border: 0; background: transparent;
+        color: var(--on-surface-variant); display: inline-grid; place-items: center; border-radius: 50%; }
+      .charge-name .icon-button:hover { background: var(--surface-container-high); }
+      .charge-name .icon-button svg, .charge-name .icon-button .material-symbols-outlined { width: 16px; height: 16px; font-size: 16px; }
+      .charge-name .key { flex-basis: 100%; font-size: 12px; }
+      .alert .charge-name { display: inline-flex; flex-wrap: nowrap; margin-right: 4px; }
+      .alert .charge-name .key { flex-basis: auto; white-space: nowrap; }
+      .alert .charge-name .key::before { content: "("; }
+      .alert .charge-name .key::after { content: ")"; }
+      .charge-name input.rename { min-width: 16em; }
       .tag.warn { background: var(--waiting-container); color: var(--on-surface); }
       .spent-bar { position: relative; display: inline-block; width: 140px; height: 8px; border-radius: 4px;
         background: var(--surface-high); vertical-align: middle; }
@@ -1101,7 +1112,7 @@
             l.recurring.forEach(function (r) {
               var t = tracked[r.key] || {};
               var rec = el("tr", null, "rec");
-              cell(rec, r.key);
+              cell(rec, chargeName({ key: r.key, name: t.name }));
               var about = [t.cadence, t.status === "price changed" && t.previous ? "now " + cents.format(Number(t.latest)) + " (was " + cents.format(Number(t.previous)) + ")" : ""];
               cell(rec, about.filter(Boolean).join(", "), "text");
               cell(rec, r.expected === null ? "" : money.format(r.expected));
@@ -1348,9 +1359,10 @@
         var row = el("div", null, "rec-row");
         row.tabIndex = 0;
         var left = el("div");
-        left.appendChild(el("span", t.key));
+        left.appendChild(chargeTitle(t, drawBudgetPage, "span"));
         if (t.status === "price changed") left.appendChild(el("span", "price changed", "tag warn"));
-        var staged_ = stagedText("subscription|" + t.key.toUpperCase()) || stagedText("recurring_merge|" + t.key.toUpperCase());
+        var staged_ = stagedText("subscription|" + t.key.toUpperCase()) || stagedText("recurring_merge|" + t.key.toUpperCase()) ||
+                      stagedText("recurring_name|" + t.key.toUpperCase());
         if (staged_) left.appendChild(el("span", staged_, "tag warn"));
         var when = t.status === "stopped" ? "last charged " + t.last : t.next_expected ? "next " + t.next_expected : "";
         left.appendChild(el("div", [t.cadence, t.status === "price changed" ? t.change : "", when,
@@ -1367,7 +1379,7 @@
       function openCharge(key) {
         var r = editorCharge(key);
         var t = trackByKey(key);
-        var d = drawer(key, r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
+        var d = drawer(chargeName(t || r), r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
         facts(d, [["Every", (t && t.cadence) || r.cadence], ["Latest", (t && t.latest) ? cents.format(Number(t.latest)) : r.latest ? cents.format(Number(r.latest)) : ""],
                   ["Last charged", (t && t.last) || r.last], ["A year", ((t && t.yearly) || r.yearly) ? cents.format(Number((t && t.yearly) || r.yearly)) : ""],
                   ["Category", (t && t.category) || r.category], ["Spelled", r.example], ["Includes", (t && t.includes) || r.includes], ["Note", r.note]]);
@@ -1382,7 +1394,7 @@
       function priceAlert(t) {
         var box = el("div", null, "alert changed");
         var text = el("span");
-        text.appendChild(el("strong", t.key));
+        text.appendChild(el("strong", chargeName(t)));
         var lines = linesFor(t.category).filter(function (l) { return l.in_force === "yes"; });
         var words = " went from " + cents.format(Number(t.previous)) + " to " + cents.format(Number(t.latest)) + " " + t.cadence +
                     " on " + t.last + ". ";
@@ -1416,7 +1428,7 @@
       function trackAlert(r) {
         var box = el("div", null, "alert");
         var text = el("span");
-        text.appendChild(el("strong", r.key));
+        text.appendChild(chargeTitle(r, drawBudgetPage));
         text.appendChild(document.createTextNode(" comes back " + r.cadence + " for about " + cents.format(Number(r.latest)) +
                                                  " and isn't tracked." + (r.category ? " Its lines are in " + r.category + "." : "")));
         box.appendChild(text);
@@ -1551,6 +1563,7 @@
           case "job": return "job|" + e.person + "|" + e.effective + "|" + e.employer;
           case "subscription": return "subscription|" + e.key.toUpperCase();
           case "recurring_merge": return "recurring_merge|" + e.key.toUpperCase();
+          case "recurring_name": return "recurring_name|" + e.key.toUpperCase();
         }
         return e.kind + "|" + JSON.stringify(e);
       }
@@ -1853,6 +1866,57 @@
       }
 
       // What is staged for a setting (and, with a prefix ending in "|", for everything under it), in words.
+      // The name a recurring charge shows by: one waiting to be saved, else the one you gave it, else its key.
+      function chargeName(r) {
+        var s = staged["recurring_name|" + String(r.key).toUpperCase()];
+        if (s) return s.edit.name || r.key;
+        return r.name || r.key;
+      }
+
+      // A recurring charge's name, with a pencil that turns it into a box to rename it in place (Enter or
+      // Save stages the rename, Escape or Cancel puts the name back). The key stays below a name you gave.
+      function chargeTitle(r, redraw, tag) {
+        var box = el("span", null, "charge-name");
+        var shown = chargeName(r);
+        box.appendChild(el(tag || "strong", shown));
+        var pencil = button("", null, "icon-button");
+        pencil.appendChild(icon("edit"));
+        pencil.setAttribute("aria-label", "Rename " + shown);
+        pencil.title = "Rename";
+        box.appendChild(pencil);
+        if (shown !== r.key) box.appendChild(el("span", r.key + " on the statement", "support key"));
+        pencil.onclick = function (ev) {
+          ev.stopPropagation();
+          box.textContent = "";
+          var input = textInput(shown === r.key ? "" : shown, "rename", r.key);
+          input.maxLength = 60;
+          input.setAttribute("aria-label", "Name for " + r.key);
+          var save = function () {
+            var name = input.value.trim().replace(/\s+/g, " ");
+            var t = "recurring_name|" + String(r.key).toUpperCase();
+            unstage(t);
+            if (name === r.key) name = "";
+            if (name !== (r.name || "")) {
+              stage({ kind: "recurring_name", key: r.key, name: name }, r.key + (name ? ": shown as " + name : ": shown by its key"));
+            }
+            redraw();
+          };
+          input.onkeydown = function (e) {
+            e.stopPropagation();
+            if (e.key === "Enter") { e.preventDefault(); save(); }
+            if (e.key === "Escape") { e.preventDefault(); redraw(); }
+          };
+          input.onclick = function (e) { e.stopPropagation(); };
+          box.appendChild(input);
+          var ok = button("Save", function (e) { e.stopPropagation(); save(); }, "text");
+          var no = button("Cancel", function (e) { e.stopPropagation(); redraw(); }, "text");
+          box.appendChild(ok);
+          box.appendChild(no);
+          input.focus();
+        };
+        return box;
+      }
+
       function stagedText(t) {
         return stagedOrder.filter(function (k) { return k === t || k.indexOf(t + "|") === 0; })
           .map(function (k) { return staged[k].text; }).join("; ");

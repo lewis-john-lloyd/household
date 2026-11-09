@@ -96,9 +96,10 @@ RAISE_MIN = 0.5
 FRESH_DAYS = 45
 PER_YEAR = {"weekly": 52, "biweekly": 26, "monthly": 12, "quarterly": 4, "yearly": 1}
 SUB_COLUMNS = ["key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
-               "next_expected", "status", "change", "example", "note", "includes", "merged"]
+               "next_expected", "status", "change", "example", "note", "includes", "merged", "name"]
 EDITOR_COLUMNS = ["key", "marked", "status", "cadence", "charges", "last", "latest", "yearly", "category", "example",
-                  "note", "includes", "merged"]
+                  "note", "includes", "merged", "name"]
+MAX_NAME = 60
 
 
 def marks(decisions):
@@ -125,6 +126,30 @@ def _covers(key, line_key):
 def _example(g):
     text = g["payee_text"] if "payee_text" in g else g["payee_raw"]
     return str(text.astype(str).value_counts().index[0]) if len(g) else ""
+
+
+def names(decisions):
+    """{key: the name to show it by} from proposal_decisions: the latest "subscription_name" answer per key
+    (a "recurring_name" edit, the name in its note; a reject, or a blank name, goes back to the key)."""
+    if decisions is None or decisions.empty:
+        return {}
+    d = decisions[(decisions["kind"] == "subscription_name")
+                  & decisions["proposal_key"].astype(str).str.startswith("subscription_name:")]
+    d = d.sort_values("decided_at", kind="stable")
+    out = {}
+    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
+        key, name = str(k)[len("subscription_name:"):], str(n if n is not None else "").strip()
+        if v == "approve" and name:
+            out[key] = name[:MAX_NAME]
+        else:
+            out.pop(key, None)
+    return out
+
+
+def named(df, decisions):
+    """df with each row's name: the one you gave its key, else blank (the views show the key)."""
+    given = names(decisions)
+    return df.assign(name=[given.get(str(k), "") for k in df["key"]]) if len(df) else df.assign(name=[])
 
 
 def merges(decisions):
@@ -233,6 +258,7 @@ def subscriptions(categorized, decisions, today=None):
     order = {"price changed": 0, "active": 1, "no charges": 2, "stopped": 3}
     out["_o"] = out["status"].map(order)
     out["_y"] = -pd.to_numeric(out["yearly"], errors="coerce").fillna(0)
+    out = named(out, decisions)
     return out.sort_values(["_o", "_y", "key"], kind="stable").drop(columns=["_o", "_y"]).reset_index(drop=True)
 
 
@@ -281,11 +307,11 @@ def editor_rows(subs, found, categorized, decisions, today=None):
     rows += found_rows
     rows += [{**_empty(k, note), "marked": "no", "status": ""} for k, (on, note) in marked.items()
              if not on and k not in seen and k not in merged]
-    out = pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+    out = named(pd.DataFrame(rows, columns=EDITOR_COLUMNS), decisions)
     return out[[c for c in EDITOR_COLUMNS]]
 
 
-MONTH_COLUMNS = ["month", "key", "category", "group", "expected", "actual"]
+MONTH_COLUMNS = ["month", "key", "category", "group", "expected", "actual", "name"]
 
 
 def subscription_months(categorized, decisions, categories=None, today=None):
@@ -321,7 +347,7 @@ def subscription_months(categorized, decisions, categories=None, today=None):
                          "group": groups.get(sub["category"], ""),
                          "expected": None if expected is None else round(expected, 2),
                          "actual": round(float(spent.get(month, 0.0)), 2)})
-    return pd.DataFrame(rows, columns=MONTH_COLUMNS)
+    return named(pd.DataFrame(rows, columns=MONTH_COLUMNS), decisions)
 
 
 def monthly_expected(categorized, decisions, through, today=None):

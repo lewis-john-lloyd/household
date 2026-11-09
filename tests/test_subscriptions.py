@@ -167,3 +167,34 @@ def test_daily_spending_leaves_out_what_is_not_spending():
                           {"date": "2026-10-07", "category": "hobby", "amount": 4}])
     out = compute.daily_actuals(lines, {"transfer"})
     assert out.values.tolist() == [["2026-10-05", "media", 12.5], ["2026-10-07", "hobby", -4.0]]
+
+
+def named(key, name, at="2026-10-02T00:00:00Z"):
+    return {"proposal_key": f"subscription_name:{key}", "kind": "subscription_name", "decided_at": at,
+            "decision": "approve" if name else "reject", "note": name}
+
+
+def test_a_charge_can_be_shown_by_a_name_you_give_it_and_back_by_its_key():
+    decisions = pd.concat([DECISIONS, pd.DataFrame([named("PAGE TURNER BOOKS", "Book club"), named("WILLOW ST", "Lessons")])])
+    subs = recurring.subscriptions(LINES, decisions, TODAY).set_index("key")
+    assert subs["name"].to_dict() == {"PAGE TURNER BOOKS": "Book club", "QUILL & INK": ""}
+    rows = recurring.editor_rows(recurring.subscriptions(LINES, decisions, TODAY), recurring.discover(LINES, TODAY),
+                                 LINES, decisions, TODAY).set_index("key")
+    assert rows.at["WILLOW ST", "name"] == "Lessons"  # found but not tracked: named all the same
+    months = recurring.subscription_months(LINES, decisions, today=TODAY)
+    assert set(months.loc[months["key"] == "PAGE TURNER BOOKS", "name"]) == {"Book club"}
+    cleared = pd.concat([decisions, pd.DataFrame([named("PAGE TURNER BOOKS", "", at="2026-10-03T00:00:00Z")])])
+    assert recurring.names(cleared) == {"WILLOW ST": "Lessons"}
+
+
+def test_a_recurring_name_edit_is_an_answer_on_one_line():
+    doc = ('{"format": "household_changes", "version": 1, "created_at": "2026-10-20T00:00:00Z", "base_run": "r1", '
+           '"edits": [%s]}')
+    row = changes.parse(doc % '{"kind": "recurring_name", "key": "page turner books", "name": "Book club"}'
+                        ).tables["proposal_decisions"].iloc[0]
+    assert (row["proposal_key"], row["kind"], row["decision"], row["note"]) == (
+        "subscription_name:PAGE TURNER BOOKS", "subscription_name", "approve", "Book club")
+    back = changes.parse(doc % '{"kind": "recurring_name", "key": "PAGE TURNER BOOKS", "name": ""}')
+    assert back.tables["proposal_decisions"].iloc[0]["decision"] == "reject"
+    with pytest.raises(ParseError, match="at most 60 characters"):
+        changes.parse(doc % ('{"kind": "recurring_name", "key": "WILLOW ST", "name": "%s"}' % ("x" * 61)))

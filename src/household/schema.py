@@ -240,15 +240,15 @@ REPORTS = (
                           "run_id")),
     # recurring charges you track (recurring.subscriptions), and the Recurring editor's rows
     Table("subscriptions", ("key", "category", "cadence", "charges", "first", "last", "latest", "previous", "yearly",
-                            "next_expected", "status", "change", "example", "note", "includes", "merged", "run_id")),
+                            "next_expected", "status", "change", "example", "note", "includes", "merged", "name", "run_id")),
     # each filed year's income split three ways, for the Taxes page's history (taxhistory.py)
     Table("tax_history", ("year", "jurisdiction", "split", "part", "order", "value", "total", "basis", "run_id"),
           {"basis": ("filed", "projected")}),
     # every filed year's return as filed (return_facts), line by line, for the Taxes page's years (taxhistory.py)
     Table("filed_lines", ("year", "form", "order", "line", "key", "label", "value", "run_id")),
-    Table("subscription_months", ("month", "key", "category", "group", "expected", "actual", "run_id")),
+    Table("subscription_months", ("month", "key", "category", "group", "expected", "actual", "name", "run_id")),
     Table("editor_subscriptions", ("key", "marked", "status", "cadence", "charges", "last", "latest", "yearly",
-                                   "category", "example", "note", "includes", "merged", "run_id")),
+                                   "category", "example", "note", "includes", "merged", "name", "run_id")),
     # paychecks beside comp_events (paycheck.py): runs that agree, disagree or have no row in force
     Table("pay_check", ("person", "employer", "kind", "from", "to", "paychecks", "stubs_annual", "comp_effective",
                         "comp_employer", "comp_salary", "comp_fte", "comp_annual", "off", "status", "finding",

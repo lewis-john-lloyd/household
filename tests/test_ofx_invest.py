@@ -128,3 +128,14 @@ def test_each_statement_needs_an_account_the_ledger_knows_by_its_last_four():
 def test_a_failed_server_status_refuses_the_file():
     with pytest.raises(ParseError, match="server status 2000"):
         ofx_invest.parse(FILE.replace("<CODE>0<SEVERITY>INFO</STATUS><INVSTMTRS>", "<CODE>2000<SEVERITY>ERROR</STATUS><INVSTMTRS>", 1))
+
+
+def test_a_plan_known_only_by_its_balance_block_moves_shares_between_funds_inside_it():
+    body = ("<TRANSFER><INVTRAN><FITID>e1<DTTRADE>2001-02-01</INVTRAN><SECID><UNIQUEID>CUSIP0001<UNIQUEIDTYPE>CUSIP</SECID>"
+            "<SUBACCTSEC>OTHER<UNITS>-2.0<TFERACTION>OUT<POSTYPE>LONG<UNITPRICE>10.0</TRANSFER>"
+            "<TRANSFER><INVTRAN><FITID>e2<DTTRADE>2001-02-01</INVTRAN><SECID><UNIQUEID>TRUST0001<UNIQUEIDTYPE>CUSIP</SECID>"
+            "<SUBACCTSEC>OTHER<UNITS>1.0<TFERACTION>IN<POSTYPE>LONG<UNITPRICE>20.0</TRANSFER>")
+    one = statement("X-6666", body).replace("</INVSTMTRS>", "<INV401KBAL><TOTAL>40.0</INV401KBAL></INVSTMTRS>")
+    text = re.sub(r"(\d{4})-(\d{2})-(\d{2})", r"\1\2\3", HEAD + one + TAIL)
+    a = ofx_invest.parse(text).tables["investment_activity"]
+    assert a[["kind", "shares", "amount"]].values.tolist() == [["exchange", -2, 0], ["exchange", 1, 0]]

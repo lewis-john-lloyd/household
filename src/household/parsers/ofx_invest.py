@@ -86,7 +86,9 @@ def securities(root):
 
 def _rows(st, secs):
     """One statement's transactions as (sort key, row) pairs, before deposits are inferred."""
-    plan = bool(st.get("INV401K")) or "INV401KSOURCE" in str(st.get("INVTRANLIST", ""))
+    # a workplace plan: its 401(k) details, its balance by source, or a source on its transactions (Empower's
+    # download has only the balance)
+    plan = bool(st.get("INV401K") or st.get("INV401KBAL")) or "INV401KSOURCE" in str(st.get("INVTRANLIST", ""))
     out, seen, repeats = [], set(), 0
     for tranlist in st.get("INVTRANLIST", []):
         for tag, items in tranlist.items():

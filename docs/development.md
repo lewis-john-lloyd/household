@@ -9,10 +9,11 @@ pip install -e ".[dev]"
 pytest
 python -m ruff check src tests tools
 python -m ruff format src tests tools
+python -m mypy
 python tools/leak_guard.py
 ```
 
-Ruff checks for real errors and likely bugs (pyflakes and bugbear) and keeps every file in one format (120 columns); CI and the push guard run both. A formatting-only commit goes in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs` once per clone). `tests/test_golden.py` pins whole outputs on made-up data (digests in `tests/golden.json`): a refactor must leave them alone, and a change meant to change an output re-pins them with `HOUSEHOLD_GOLDEN=update pytest tests/test_golden.py`.
+Type annotations are gradual: the functions where one stage hands work to another are annotated (`tests/test_typed.py` keeps them so, with the types they share in `kinds.py`), and mypy checks every annotated function (`[tool.mypy]` in pyproject). Ruff checks for real errors and likely bugs (pyflakes and bugbear) and keeps every file in one format (120 columns); CI and the push guard run both. A formatting-only commit goes in `.git-blame-ignore-revs` (`git config blame.ignoreRevsFile .git-blame-ignore-revs` once per clone). `tests/test_golden.py` pins whole outputs on made-up data (digests in `tests/golden.json`): a refactor must leave them alone, and a change meant to change an output re-pins them with `HOUSEHOLD_GOLDEN=update pytest tests/test_golden.py`.
 
 The engine notebook calls `runner.run`, which calls the stages through `engine`: `stage_legacy` (the old workbooks into the ledger), `stage_ingest` (the inbox, review answers and prices; the only writer of the ledger) and `stage_compute` (Reports from the ledger). `ledgerio` opens the two spreadsheets and reads the ledger the way compute sees it (renamed accounts, moved readings, corrected activity), `books` gives both stages the transactions as they now stand, and `runlog` keeps what each stage prints for the Status page.
 

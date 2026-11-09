@@ -34,7 +34,7 @@ MONEY = re.compile(r"(-\s?)?\$([\d,]+\.\d\d)")
 HOLDINGS = ["as_of", "account_id", "symbol", "source", "shares", "value"]
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:20000]
     return (
         "vanguard.com" in text
@@ -62,7 +62,7 @@ def _adds_up(parts, total, what):
         raise ParseError(f"{NAME}: {what}: {round(sum(parts), 2):,.2f} is not the {total:,.2f} it shows")
 
 
-def parse(text):
+def parse(text: str) -> Result:
     period = re.search(r"ACCOUNT SUMMARY:\s*(\d{2}/\d{2}/\d{4})\s*-\s*(\d{2}/\d{2}/\d{4})", text)
     if not period:
         raise ParseError(f"{NAME}: no statement period")

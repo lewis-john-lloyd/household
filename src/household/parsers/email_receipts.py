@@ -143,7 +143,7 @@ ENTITIES = {
 }
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return text.lstrip("﻿").startswith(START)
 
 
@@ -959,8 +959,12 @@ READERS = (
 DETAIL_COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
-def parse(text):
-    rows, details, skipped, unpriced, empty, unreadable, unread = [], [], {}, {}, 0, [], []
+def parse(text: str) -> Result:
+    rows: list = []
+    details: list = []
+    skipped: dict = {}
+    unpriced: dict = {}
+    empty, unreadable, unread = 0, [], []
     for message_id, headers, body in _messages(text):
         if "unreadable" in headers:  # the exporter could not read it; it tries again every run
             unreadable.append(f"{message_id} ({headers['unreadable']})")

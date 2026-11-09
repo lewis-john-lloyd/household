@@ -13,20 +13,19 @@ from . import (
     compute,
     editor,
     flows,
+    house,
     inbox,
     investments,
     legacy,
     lots,
     mortgage,
     networth,
-    house,
-    retirement,
-    valuation,
-    paycheck,
     nudges,
+    paycheck,
     pennsylvania,
     projection,
     recurring,
+    retirement,
     schema,
     settings,
     sheets,
@@ -34,9 +33,12 @@ from . import (
     taxhistory,
     taxsources,
     transfers,
+    valuation,
     wisconsin,
     withholding,
 )
+from .books import categorize_books, read_books
+from .kinds import Log, Session, StageResult
 from .ledgerio import (
     _ACTIVITY_FIXES,
     _LEGACY_MOVED,
@@ -49,7 +51,6 @@ from .ledgerio import (
     renamed_accounts,
     versions,
 )
-from .books import categorize_books, read_books
 from .runlog import record_stage, recording, say
 
 
@@ -293,7 +294,14 @@ def _retirement(ledger, reports, books, actuals, sched, today, run_id, log):
     return found
 
 
-def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=None, log=print):
+def compute_all(
+    session: Session,
+    folder_id: str,
+    legacy_id: str | None = None,
+    legacy_year: int | None = None,
+    run_id: str | None = None,
+    log: Log = print,
+) -> StageResult:
     """Stage 2: read the ledger, rebuild Reports, and optionally check one year against the legacy rollup."""
     run_id = run_id or new_run_id()
     log, said = recording(log)

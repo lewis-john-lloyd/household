@@ -35,7 +35,7 @@ CARD = re.compile(r"(\d{4})")
 SPACES = re.compile(r"[   ]")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return [c.strip() for c in next(csv.reader([first]))] == HEADER if first else False
 
@@ -72,7 +72,7 @@ def _item(description, product):
     )
 
 
-def parse(text):
+def parse(text: str) -> Result:
     raw = pd.DataFrame(list(csv.DictReader(io.StringIO(text.lstrip("﻿")))), dtype=str).fillna("")
     raw = raw[raw["Status"].str.strip() == "Complete"]
     rows = []

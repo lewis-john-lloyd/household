@@ -2,13 +2,16 @@
 old category names aliased, and each line's category as categorize decides it.
 """
 
+from typing import Any
+
 import pandas as pd
 
 from . import categorize, compute, explain, ingest, transfers
+from .kinds import Spreadsheet
 from .ledgerio import read_ledger
 
 
-def read_books(ledger):
+def read_books(ledger: Spreadsheet) -> dict[str, Any]:
     """The ledger's transactions as they now stand, with what categorization needs.
 
     effective: corrections applied, transfer pairs marked, old category names

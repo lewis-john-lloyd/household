@@ -455,8 +455,8 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
                 failed[f["id"]] = e
     for f, summary, _ in moves:  # registered but not moved: the next run files it
         if f["id"] in failed:
-            e = failed[f["id"]]
-            summary.update(status="error", reason=f"not moved: {type(e).__name__}: {e}")
+            error = failed[f["id"]]
+            summary.update(status="error", reason=f"not moved: {type(error).__name__}: {error}")
     clock.add("file in Drive", started)
     if moves:
         log(f"filed ({time.perf_counter() - started:.1f}s)")

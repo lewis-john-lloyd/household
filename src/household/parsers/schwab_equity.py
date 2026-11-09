@@ -35,7 +35,7 @@ REQUIRED = {
 }
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return _is_json(text) or all(f'"{c}"' in first or c in first.split(",") for c in REQUIRED)
 
@@ -69,9 +69,12 @@ def _num(value):
     return parse_money(value) if str(value).strip() else 0.0
 
 
-def parse(text):
+def parse(text: str) -> Result:
     rows = list(json_rows(text)) if _is_json(text) else list(csv.DictReader(io.StringIO(text.lstrip("\ufeff"))))
-    vests, sales, current, lots = [], [], None, []
+    vests: list = []
+    sales: list = []
+    lots: list = []
+    current = None
     dividends = 0
 
     def close_sale():

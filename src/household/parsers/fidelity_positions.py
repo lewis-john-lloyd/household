@@ -28,7 +28,7 @@ HEADER = "Account number,Account name,Symbol,Description,Quantity,Last price"
 HOLDINGS = ["as_of", "account_id", "symbol", "source", "shares", "value"]
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return text.lstrip("﻿").startswith(HEADER)
 
 
@@ -46,7 +46,7 @@ def symbol_of(text):
     return m.group(1) if m else s
 
 
-def parse(text):
+def parse(text: str) -> Result:
     body = text.lstrip("﻿")
     when = re.search(r"Date downloaded\s+([A-Za-z]{3}-\d{2}-\d{4})", body)
     if not when:

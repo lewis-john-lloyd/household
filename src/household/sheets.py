@@ -8,8 +8,12 @@ overwrite stored facts.
 import json
 import re
 from datetime import date, timedelta
+from typing import Any
 
 import pandas as pd
+
+from .kinds import Frame, Spreadsheet
+from .schema import Table
 
 REPORTS_TITLE = "reports"
 LEDGER_TITLE = "ledger"
@@ -29,7 +33,7 @@ def open_or_create(client, title, folder_id):
         return client.create(title, folder_id=folder_id), True
 
 
-def ensure_tables(spreadsheet, tables):
+def ensure_tables(spreadsheet: Spreadsheet, tables: tuple[Table, ...] | list[Table]) -> list[str]:
     """Create missing tabs with headers and validation; check existing headers. Never edits data.
 
     A tab whose header differs from the schema is an error, unless the tab has no
@@ -183,7 +187,7 @@ def iso_date(value):
     return value
 
 
-def read_table(spreadsheet, t):
+def read_table(spreadsheet: Spreadsheet, t: Table) -> Frame:
     """Read a declared table as a DataFrame of raw (unformatted) values, its date columns as YYYY-MM-DD.
 
     The review tab is read by column name (a column it doesn't have yet reads as blank), so
@@ -224,7 +228,9 @@ def _cell(value):
     return {"userEnteredValue": {"stringValue": str(value)}}
 
 
-def append_tables(spreadsheet, tables, size=None):
+def append_tables(
+    spreadsheet: Spreadsheet, tables: list[tuple[Table, Frame]], size: dict[str, Any] | None = None
+) -> dict[str, int]:
     """Append records to several tables as one write: every table's rows land, or none do.
 
     tables is a list of (Table, DataFrame). One spreadsheets.batchUpdate of appendCells requests, which
@@ -321,7 +327,7 @@ def price_formula(quote, day):
     )
 
 
-def replace_table(spreadsheet, t, df):
+def replace_table(spreadsheet: Spreadsheet, t: Table, df: Frame) -> int:
     """Overwrite a derived table. Allowed only on the Reports spreadsheet."""
     if spreadsheet.title != REPORTS_TITLE:
         raise PermissionError(f"replace_table refused on '{spreadsheet.title}': only Reports is rebuilt")

@@ -360,7 +360,7 @@ METHODS = {
 }
 
 # Values with no source document on file, and why they are trusted anyway.
-UNCITED = {
+UNCITED: dict[int | tuple[int, str], str] = {
     2024: "Rev. Proc. 2023-34, Notice 2023-75, Rev. Proc. 2023-23 and Pub 15-T (2024) are not on file; "
     "every 2024 pay stub reproduces under these values in the withholding backtest",
     (2025, "ss_wage_base"): "SSA's 2025 announcement (not on file); the filed 2025 return's excess Social "

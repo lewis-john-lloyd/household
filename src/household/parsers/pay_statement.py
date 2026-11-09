@@ -42,7 +42,7 @@ PRE_TAX = {
 }
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return "Pay Statement" in text and "Pay Summary" in text and "FIT Taxable Wages" in text
 
 
@@ -80,7 +80,7 @@ def _stubs(text):
     return ["\n".join(lines[a:b]) for a, b in zip(bounds, bounds[1:])]
 
 
-def parse(text):
+def parse(text: str) -> Result:
     stubs = [_parse_one(chunk) for chunk in _stubs(text)]
     rows = pd.concat([r for r, _ in stubs], ignore_index=True)
     notes = [n for _, ns in stubs for n in ns]

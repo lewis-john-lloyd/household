@@ -32,12 +32,12 @@ CARD_CHARGES_POSITIVE = True
 STATUSES = {"Posted", "Pending"}
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return tuple(c.strip().strip('"') for c in first.split(",")) == HEADER
 
 
-def parse(text):
+def parse(text: str) -> Result:
     rows = list(csv.DictReader(io.StringIO(text.lstrip("﻿"))))
     bad = sorted({r["Status"] for r in rows} - STATUSES)
     if bad:

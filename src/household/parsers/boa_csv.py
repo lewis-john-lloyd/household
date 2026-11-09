@@ -22,12 +22,12 @@ KIND = "card_statement"
 HEADER = ("Posted Date", "Reference Number", "Payee", "Address", "Amount")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return tuple(c.strip().strip('"') for c in first.split(",")) == HEADER
 
 
-def parse(text):
+def parse(text: str) -> Result:
     out = []
     for r in csv.DictReader(io.StringIO(text.lstrip("﻿"))):
         try:

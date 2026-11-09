@@ -19,12 +19,12 @@ FACTS = schema.table(schema.LEDGER, "return_facts")
 HEADER = tuple(c for c in FACTS.columns if c != "doc_id")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return tuple(c.strip() for c in first.split(",")) == HEADER
 
 
-def parse(text):
+def parse(text: str) -> Result:
     df = pd.DataFrame(list(csv.DictReader(io.StringIO(text.lstrip("﻿")))), dtype=str).fillna("")
     bad = sorted(set(df["kind"]) - set(FACTS.enums["kind"]))
     if bad:

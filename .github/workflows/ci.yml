@@ -21,6 +21,7 @@ jobs:
       - run: python tools/import_guard.py
       - run: python -m ruff check src tests tools
       - run: python -m ruff format --check src tests tools
+      - run: python -m mypy
       - run: pytest -q
 
   web:

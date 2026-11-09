@@ -56,7 +56,7 @@ INFOS = ("MFINFO", "STOCKINFO", "OTHERINFO", "DEBTINFO")
 INCOME_KIND = {"DIV": "dividend", "CGLONG": "dividend", "CGSHORT": "dividend", "INTEREST": "interest", "MISC": "other"}
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:4000]
     return ("<OFX>" in head or "OFXHEADER" in head) and "<INVSTMTRS>" in text
 
@@ -240,7 +240,7 @@ def infer_deposits(rows):
     return out
 
 
-def parse(text):
+def parse(text: str) -> Result:
     root = ofx.read(text)
     for status in ofx.find(root, "SONRS") + ofx.find(root, "INVSTMTTRNRS"):
         code = ofx.first(status, "STATUS", "CODE")

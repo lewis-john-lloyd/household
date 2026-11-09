@@ -4,20 +4,22 @@ GOOGLEFINANCE answered. Ingest is the only stage that writes the ledger.
 
 import time
 from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
 import pandas as pd
 
-from . import backup, categorize, compute, inbox, valuation, prices, schema, sheets
+from . import backup, categorize, compute, inbox, prices, schema, sheets, valuation
+from .books import categorize_books, read_books
+from .kinds import Log, Session, StageResult
 from .ledgerio import bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
-from .books import categorize_books, read_books
 
 
-def fetch_prices(session, folder_id, rounds=8, log=print):
+def fetch_prices(session: Session, folder_id: str, rounds: int = 8, log: Log = print) -> StageResult:
     """Ask GOOGLEFINANCE for the prices still wanted, round after round (each as ingest asks, prices.py), until
     none is wanted, a round adds nothing, or rounds run out: a backfill in one call. Safe to run every time."""
     ledger, _, _ = bootstrap(session, folder_id)
-    out = {"added": 0, "wanted": None, "rounds": 0}
+    out: dict[str, Any] = {"added": 0, "wanted": None, "rounds": 0}
     for _ in range(rounds):
         got = _price_requests(ledger, log)
         out["rounds"] += 1
@@ -110,7 +112,7 @@ def changes_written(sources, now=None):
     return s.drop_duplicates("file_id", keep="first").sort_values("file")[columns].reset_index(drop=True)
 
 
-def ingest_inbox(session, folder_id, run_id=None, log=print):
+def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, log: Log = print) -> StageResult:
     """Stage 1: back up the ledger, then ingest every file in the inbox (see inbox.py).
 
     Progress goes to log (print by default; None for silence).
@@ -128,7 +130,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
     timing = {"backup": round(time.perf_counter() - started, 2)}
     say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip ({timing['backup']:.1f}s)")
     files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
-    counts = {}
+    counts: dict[str, int] = {}
     for f in files:
         counts[f["status"]] = counts.get(f["status"], 0) + 1
     say(log, "review: reading the answers in the review tab, then rebuilding its questions (often a minute)")
@@ -171,7 +173,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
 # name. Set by compute_all from the parameters before anything else is read.
 
 
-def review(session, folder_id, log=print, now=None):
+def review(session: Session, folder_id: str, log: Log = print, now: datetime | None = None) -> StageResult:
     """Read the answers typed in the review tab into the ledger, then rewrite the tab with what is open.
 
     Runs at the end of every ingest (ingest_inbox); call it alone to turn answers

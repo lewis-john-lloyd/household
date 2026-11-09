@@ -27,7 +27,7 @@ TRANCHE = re.compile(
 )
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:3000]
     return "STOCK OPTIONS" in head and "Grant price" in head and "Vesting date" in head and "Granted:" in text
 
@@ -40,7 +40,7 @@ def _num(text):
     return float(text.replace(",", "").replace("$", ""))
 
 
-def parse(text):
+def parse(text: str) -> Result:
     starts = [m.start() for m in re.finditer(r"(?m)^\s*(\S+)\s*\n\s*Granted:", text)]
     if not starts:
         raise ParseError(f"{NAME}: no grant (an ID followed by Granted:)")

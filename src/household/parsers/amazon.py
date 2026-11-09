@@ -82,7 +82,7 @@ def _shape(text):
     return None
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return _shape(text) is not None
 
 
@@ -159,7 +159,7 @@ def _refunds(raw):
     )
 
 
-def parse(text):
+def parse(text: str) -> Result:
     shape = _shape(text)
     raw = _rows(text)
     if shape == "trimmed":

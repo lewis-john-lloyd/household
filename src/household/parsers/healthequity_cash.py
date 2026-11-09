@@ -33,7 +33,7 @@ KIND = "investment_activity"
 HEADER = ["Date", "Transaction", "Amount", "HSA Cash Balance"]
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:3000]
     return "Completed Transactions" in head and "HSA Cash Balance" in head and "<table" in head.lower()
 
@@ -74,7 +74,7 @@ def kind_of(transaction, amount):
     return "other"
 
 
-def parse(text):
+def parse(text: str) -> Result:
     rows = [_cells(r) for r in re.findall(r"<tr[^>]*>(.*?)</tr>", text, re.S | re.I)]
     at = next((i for i, r in enumerate(rows) if r[:4] == HEADER), None)
     if at is None:

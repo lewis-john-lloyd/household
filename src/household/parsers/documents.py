@@ -15,7 +15,7 @@ NAME = "documents"
 RETURN_YEAR = (r"(20\d\d) Federal Tax Return", r"Form 1040 \((20\d\d)\)", r"(20\d\d) Form 1040")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return _kind(text) is not None
 
 
@@ -43,7 +43,7 @@ def _year(kind, text):
     return ""
 
 
-def parse(text):
+def parse(text: str) -> Result:
     kind = _kind(text)
     if kind == "paystub_unparsed":
         day = _pay_date(text)

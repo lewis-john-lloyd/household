@@ -3,11 +3,14 @@ safe to run every time.
 """
 
 from . import backup, ingest, legacy, legacy_equity, legacy_investments, schema, sheets
+from .kinds import Log, Session, StageResult
 from .ledgerio import bootstrap, new_run_id, read_ledger
 from .runlog import say
 
 
-def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
+def ingest_legacy_year(
+    session: Session, folder_id: str, legacy_id: str, year: int, run_id: str | None = None
+) -> StageResult:
     """Stage 1 for the migration: back up the ledger, then append one legacy year's transactions."""
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
@@ -22,7 +25,15 @@ def ingest_legacy_year(session, folder_id, legacy_id, year, run_id=None):
     return {"run_id": run_id, "read": len(incoming), "appended": appended, "skipped": skipped}
 
 
-def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="Equities", run_id=None, log=print):
+def ingest_legacy_investments(
+    session: Session,
+    folder_id: str,
+    workbook_id: str,
+    tabs: dict[str, str],
+    funds_tab: str = "Equities",
+    run_id: str | None = None,
+    log: Log = print,
+) -> StageResult:
     """Add the legacy investments workbook's funds to `securities` and its account tabs' readings to `holdings`
     (legacy_investments.py), backing up the ledger first. Safe to run every time: with nothing new it reads,
     says so, and writes nothing (no backup either).
@@ -90,7 +101,16 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
     }
 
 
-def ingest_legacy_equity(session, folder_id, workbook_id, grant_columns, grants_tab, sales_tab, run_id=None, log=print):
+def ingest_legacy_equity(
+    session: Session,
+    folder_id: str,
+    workbook_id: str,
+    grant_columns: dict[str, str],
+    grants_tab: str,
+    sales_tab: str,
+    run_id: str | None = None,
+    log: Log = print,
+) -> StageResult:
     """Add the legacy tax workbook's stock-plan vests to `equity_vests` and its sales to `equity_sales`
     (legacy_equity.py), for the dates before the plan's own records begin, backing up the ledger first. Safe to
     run every time: what the ledger already holds is not added again, and with nothing new it writes nothing.
@@ -144,7 +164,15 @@ def ingest_legacy_equity(session, folder_id, workbook_id, grant_columns, grants_
     }
 
 
-def ingest_legacy_net_worth(session, folder_id, workbook_id, columns, tab="Net Worth", run_id=None, log=print):
+def ingest_legacy_net_worth(
+    session: Session,
+    folder_id: str,
+    workbook_id: str,
+    columns: dict[str, list[str]],
+    tab: str = "Net Worth",
+    run_id: str | None = None,
+    log: Log = print,
+) -> StageResult:
     """Add the legacy workbook's home values to `property_values` and its loan balances to `loan_balances`
     (legacy_investments.net_worth), backing up the ledger first. Safe to run every time: a value or balance the
     ledger already holds (same date and home or loan) is not added again, and with nothing new it writes nothing.

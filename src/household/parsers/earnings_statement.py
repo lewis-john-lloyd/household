@@ -22,7 +22,7 @@ LONG_DATE = "%B %d, %Y"
 DATE = r"([A-Z][a-z]+ \d{1,2}, \d{4})"
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return "Earnings Statement" in text and "Fed Taxable Income" in text
 
 
@@ -40,7 +40,7 @@ def _number(text, label):
     return float(m.group(1).replace(",", ""))
 
 
-def parse(text):
+def parse(text: str) -> Result:
     lines = text.splitlines()
     pay_date = _date(text, "Check Date")
     period_start = _date(text, "Period Beginning")

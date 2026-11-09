@@ -1,13 +1,15 @@
 """What a stage prints, kept line by line for the views' Status page (run_log and run_notes in Reports)."""
 
 import json
+from typing import Any
 
 import pandas as pd
 
 from . import logs, schema, sheets
+from .kinds import Log, Spreadsheet
 
 
-def say(log, message, level=None):
+def say(log: Log | None, message: str, level: str | None = None) -> None:
     """Print a line through log, with its level (logs.Line; INFO unless given or already set)."""
     if log:
         log(logs.Line(message, level or logs.level_of(message)))
@@ -29,7 +31,9 @@ def recording(log):
 STAGES = {"ingest", "compute", "run"}  # run: runner.run's own lines and its table of stages
 
 
-def record_stage(reports, stage, run_id, at, summary, lines):
+def record_stage(
+    reports: Spreadsheet, stage: str, run_id: str, at: str, summary: dict[str, Any], lines: list[Any]
+) -> None:
     """Keep this run of this stage in Reports (run_log: its summary as JSON; run_notes: every line it
     printed), replacing that stage's last run and leaving the other stages' alone."""
     for name, rows in (

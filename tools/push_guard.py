@@ -16,7 +16,7 @@ git runs this from .githooks/pre-push (turned on once per clone with
      through (2). A file is binary when git says so or its name does (.pdf, .png, ...).
      Every version a pushed commit adds or changes is checked, as it was at that commit,
      so a file added in one commit and deleted or replaced in a later one is still caught;
-  4. the import guard, Ruff (its checks and its format) and the tests.
+  4. the import guard, Ruff (its checks and its format), mypy and the tests.
 
 The leak guard's `leak-guard: allow` marker excuses a line from (1), never from (2):
 a real value is a leak however it is marked, and no file is exempt from (2), this one included. Without a denylist the push stops;
@@ -292,6 +292,7 @@ def main(stdin_lines, argv=()):
             [sys.executable, "tools/import_guard.py"],
             [sys.executable, "-m", "ruff", "check", "src", "tests", "tools"],
             [sys.executable, "-m", "ruff", "format", "--check", "src", "tests", "tools"],
+            [sys.executable, "-m", "mypy"],
             [sys.executable, "-m", "pytest", "-q"],
         ):
             if subprocess.run(command).returncode:

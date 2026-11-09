@@ -29,7 +29,7 @@ HEADER = ["Date", "Fund", "Category", "Description", "Price", "Amount", "Shares"
 KINDS = {"buy": "buy", "dividend": "reinvest", "sell": "sell", "fee": "fee"}
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿")[:3000]
     return "All Investment Transactions" in head and ",".join(HEADER) in head
 
@@ -54,12 +54,15 @@ def _date(text):
         raise ParseError(f"{NAME}: not a date: {text!r}") from e
 
 
-def parse(text):
+def parse(text: str) -> Result:
     lines = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     start = next((i for i, r in enumerate(lines) if [c.strip() for c in r[: len(HEADER)]] == HEADER), None)
     if start is None:
         raise ParseError(f"{NAME}: no transaction header")
-    acts, prices, last, running = [], [], {}, {}
+    acts: list = []
+    prices: list = []
+    last: dict = {}
+    running: dict = {}
     for r in lines[start + 1 :]:
         if not any(c.strip() for c in r):
             continue

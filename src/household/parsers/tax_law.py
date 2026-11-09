@@ -103,11 +103,11 @@ def _identify(text):
     return None
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return _identify(text) is not None
 
 
-def parse(text):
+def parse(text: str) -> Result:
     label, title, year = _identify(text)
     return Result(
         kind=KIND,

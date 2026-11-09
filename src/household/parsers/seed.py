@@ -66,11 +66,11 @@ def _table(text):
     return next((t for t in TABLES.values() if header == t.columns), None)
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return _table(text) is not None
 
 
-def parse(text):
+def parse(text: str) -> Result:
     table = _table(text)
     df = pd.DataFrame(list(csv.DictReader(io.StringIO(text.lstrip("﻿")))), dtype=str).fillna("")
     df = df.apply(lambda c: c.str.strip())

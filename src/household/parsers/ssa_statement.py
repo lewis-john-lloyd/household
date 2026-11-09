@@ -28,7 +28,7 @@ NAMESPACE = "http://ssa.gov/osss/schemas/"
 TAG = r"(?:[A-Za-z_][\w.-]*:)?"
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿")[:600]
     return ROOT in head and NAMESPACE in head
 
@@ -47,7 +47,7 @@ def _whole(text, what):
     return float(t)
 
 
-def parse(text):
+def parse(text: str) -> Result:
     body = text.lstrip("﻿")
     name = _one(body, "Name", "name")
     person = name.split()[0].lower() if name.split() else ""

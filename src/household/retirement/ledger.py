@@ -154,7 +154,7 @@ def _step(steps, year, current):
     return amount
 
 
-def budget_table(h, retire_year):
+def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
     """The Retirement page's Budget: each group, each category in it, each added line and each loan's end, with
     what it is now (the last 12 months, a year), in the plan's first year and in the retirement year, and its
     retirement_spending setting (is_set when the ledger has one, blank or not, so an edit knows what it replaces).
@@ -183,7 +183,7 @@ def budget_table(h, retire_year):
             }
         )
 
-    by_group = {}
+    by_group: dict[str, list[str]] = {}
     for c in base:
         by_group.setdefault(groups.get(c, c), []).append(c)
     for g in sorted(by_group):
@@ -228,22 +228,22 @@ def budget_table(h, retire_year):
 
 
 def build(
-    params,
-    people_names,
-    statements,
-    estimates,
-    earnings,
-    accounts,
-    values,
-    activity,
-    lots,
-    actuals,
-    categories,
-    schedule,
-    vests,
-    allocation_share,
-    today,
-):
+    params: pd.DataFrame,
+    people_names: list[str] | tuple[str, ...],
+    statements: pd.DataFrame | None,
+    estimates: pd.DataFrame | None,
+    earnings: pd.DataFrame | None,
+    accounts: pd.DataFrame,
+    values: pd.DataFrame,
+    activity: pd.DataFrame | None,
+    lots: pd.DataFrame | None,
+    actuals: pd.DataFrame | None,
+    categories: pd.DataFrame,
+    schedule: pd.DataFrame | None,
+    vests: pd.DataFrame | None,
+    allocation_share: float | None,
+    today: str,
+) -> tuple[Household | None, list[str], pd.DataFrame]:
     """(Household, notes, assumption rows) from the ledger and Reports frames; Household None when an adult's
     birth date is missing."""
     today_year = int(today[:4])
@@ -352,7 +352,7 @@ def build(
     since = (pd.Timestamp(today) - pd.DateOffset(years=1)).date().isoformat()
     contributions = {a: {"pre_plan": 0.0, "roth": 0.0} for a in adults}
     roth_basis = {a: 0.0 for a in adults}
-    pending = {a: {} for a in adults}
+    pending: dict[str, dict] = {a: {} for a in adults}
     hsa_in = into_ira_529 = 0.0
     if activity is not None and len(activity):
         act = activity.assign(amount=_num(activity["amount"]), date=activity["date"].astype(str))
@@ -669,7 +669,7 @@ def build(
     return h, notes, pd.DataFrame(assume)
 
 
-def allocation_stock_share(allocation):
+def allocation_stock_share(allocation: pd.DataFrame | None) -> float | None:
     """The stocks' share of the targets (the allocation report's stocks node), or None."""
     if allocation is None or allocation.empty:
         return None

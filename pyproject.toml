@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "freezegun>=1.5", "ruff>=0.17,<0.18"]
+dev = ["pytest>=8", "freezegun>=1.5", "ruff>=0.17,<0.18", "mypy>=2.4,<3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -42,3 +42,12 @@ ignore = ["B905"]
 
 [tool.ruff.format]
 skip-magic-trailing-comma = true
+
+[tool.mypy]
+# gradual: only annotated functions are checked; the stage boundaries are annotated (tests/test_typed.py)
+python_version = "3.10"
+files = ["src/household"]
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_redundant_casts = true
+warn_unused_ignores = true

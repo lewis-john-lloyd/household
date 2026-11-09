@@ -32,8 +32,10 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 from . import __version__, engine, inbox, logs
+from .kinds import Log, Session, StageResult
 
 SETTINGS_NAME = "engine_settings.json"
 SETTINGS_VERSION = 1
@@ -239,7 +241,7 @@ def describe(settings):
     return f"settings: {SETTINGS_NAME} sets " + (", ".join(parts) if parts else "nothing")
 
 
-def run(session, folder_id, log=print, run_id=None):
+def run(session: Session, folder_id: str, log: Log = print, run_id: str | None = None) -> StageResult:
     """Every stage in order (see the module docstring). Each line printed carries the time since the run began;
     each stage says when it starts, what it did and how long it took, a failure with where it happened; the run
     ends with a table of the stages. The run's own lines are kept in Reports (run_log and run_notes, stage
@@ -251,7 +253,7 @@ def run(session, folder_id, log=print, run_id=None):
     settings = read_settings(session.drive(), folder_id) or {}
     say(describe(settings), "INFO" if settings else "WARN")
     inv, budget, equity = (settings.get(k) for k in ("legacy_investments", "legacy_budget", "legacy_equity"))
-    calls = {
+    calls: dict[str, Any] = {
         "legacy investments": inv
         and (lambda: engine.ingest_legacy_investments(session, folder_id, inv["workbook_id"], inv["tabs"], log=say)),
         "ingest": lambda: engine.ingest_inbox(session, folder_id, log=say),

@@ -8,13 +8,15 @@ under the account they belong to (legacy_account), and investment activity as co
 """
 
 from datetime import datetime, timezone
+from typing import Any
 
 import pandas as pd
 
 from . import legacy_investments, schema, settings, sheets
+from .kinds import Frame, Session, Spreadsheet
 
 
-def versions():
+def versions() -> str:
     """The libraries this run uses and their versions ("pandas 2.2.2, ..."): the tested range is in
     pyproject.toml, and Colab's image decides where in it a run lands, so each run says."""
     import gspread
@@ -34,11 +36,11 @@ def versions():
     return ", ".join(out)
 
 
-def new_run_id(now=None):
+def new_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
 
-def bootstrap(session, folder_id):
+def bootstrap(session: Session, folder_id: str) -> tuple[Spreadsheet, Spreadsheet, dict[str, Any]]:
     """Open or create the ledger and Reports spreadsheets and their declared tables."""
     # every stage reads the ledger as written; compute alone reads accounts renamed or moved (compute_all sets
     # them after this), so a stage run after compute in the same session doesn't see stale names
@@ -54,16 +56,21 @@ def bootstrap(session, folder_id):
     return ledger, reports, created
 
 
-_RENAMED = {}
-_LEGACY_MOVED = {}  # {id the old investments workbook's readings were read under: the account they belong to}
-_ACTIVITY_FIXES = {}  # {activity_id: {field: value}} from activity_corrections, the last row in force
+_RENAMED: dict[str, str] = {}
+_LEGACY_MOVED: dict[
+    str, str
+] = {}  # {id the old investments workbook's readings were read under: the account they belong to}
+_ACTIVITY_FIXES: dict[
+    str, dict[str, str]
+] = {}  # {activity_id: {field: value}} from activity_corrections, the last row in force
 ACCOUNT_COLUMNS = ("account_id", "account")
 
 
-def legacy_moves(parameters, accounts):
+def legacy_moves(parameters: Frame, accounts: set[str]) -> tuple[dict[str, str], list[str]]:
     """{id: account} from the legacy_account:<id> settings, and a note for each one that can't be used: both
     must be accounts in the ledger."""
-    out, notes = {}, []
+    out: dict = {}
+    notes: list[str] = []
     if parameters is None or not len(parameters):
         return out, notes
     p = parameters[parameters["jurisdiction"].astype(str) == "household"]
@@ -81,9 +88,10 @@ def legacy_moves(parameters, accounts):
     return out, notes
 
 
-def renamed_accounts(parameters):
+def renamed_accounts(parameters: Frame) -> tuple[dict[str, str], list[str]]:
     """{old id: new id} from the account_renamed:<old> settings, and a note for each one that can't be used."""
-    out, notes = {}, []
+    out: dict = {}
+    notes: list[str] = []
     if parameters is None or not len(parameters):
         return out, notes
     p = parameters[parameters["jurisdiction"].astype(str) == "household"]
@@ -103,10 +111,11 @@ def renamed_accounts(parameters):
     return out, notes
 
 
-def activity_fixes(corrections, activity):
+def activity_fixes(corrections: Frame, activity: Frame) -> tuple[dict[str, dict[str, str]], list[str]]:
     """{activity_id: {field: value}} from activity_corrections (the last row for an activity and field wins),
     and a note for each that can't be used: an activity the ledger doesn't have, or a kind that isn't one."""
-    out, notes = {}, []
+    out: dict = {}
+    notes: list[str] = []
     if corrections is None or not len(corrections):
         return out, notes
     known = set(activity["activity_id"].astype(str)) if activity is not None and len(activity) else set()
@@ -122,7 +131,7 @@ def activity_fixes(corrections, activity):
     return out, notes
 
 
-def read_ledger(ledger, name):
+def read_ledger(ledger: Spreadsheet, name: str) -> Frame:
     df = sheets.read_table(ledger, schema.table(schema.LEDGER, name))
     if _ACTIVITY_FIXES and name == "investment_activity" and len(df):
         for i in df.index[df["activity_id"].astype(str).isin(_ACTIVITY_FIXES)]:

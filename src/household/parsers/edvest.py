@@ -32,7 +32,7 @@ TRANSACTIONS = "Account Number,Trade Date,Process Date,Transaction Type,Transact
 HOLDINGS = ["as_of", "account_id", "symbol", "source", "shares", "value"]
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿")[:400]
     return head.startswith(POSITIONS) and TRANSACTIONS in text
 
@@ -60,7 +60,7 @@ def kind_of(kind, description):
     return "other"
 
 
-def parse(text):
+def parse(text: str) -> Result:
     body = text.lstrip("﻿")
     first, _, rest = body.partition("\n\n") if "\n\n" in body else body.partition("\r\n\r\n")
     at = body.find(TRANSACTIONS)

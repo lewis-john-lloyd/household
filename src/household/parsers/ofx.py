@@ -54,7 +54,7 @@ def unescape(text):
 ACCOUNT = ("BANKACCTFROM", "CCACCTFROM")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:4000]
     return ("<OFX>" in head or "OFXHEADER" in head) and any(f"<{s}>" in text for s in STATEMENTS)
 
@@ -113,7 +113,7 @@ def day(value):
     return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
 
 
-def parse(text):
+def parse(text: str) -> Result:
     root = read(text)
     for status in find(root, "SONRS") + find(root, "STMTTRNRS") + find(root, "CCSTMTTRNRS"):
         code = first(status, "STATUS", "CODE")

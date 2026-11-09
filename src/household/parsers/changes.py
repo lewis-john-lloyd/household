@@ -111,7 +111,7 @@ AMOUNT_RULES = (
 )  # rules that need an amount (the others fall back to one)
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿").lstrip()[:200]
     return head.startswith("{") and re.search(r'"format"\s*:\s*"' + FORMAT + '"', head) is not None
 
@@ -331,7 +331,7 @@ def _target(e):
     return (kind, e[key]) + extra
 
 
-def parse(text):
+def parse(text: str) -> Result:
     if len(text.encode("utf-8")) > MAX_BYTES:
         raise ParseError(f"{NAME}: the change set is over {MAX_BYTES} bytes")
     try:
@@ -356,7 +356,7 @@ def parse(text):
     elif len(edits) > MAX_EDITS:
         problems.append(f"{len(edits)} edits, more than {MAX_EDITS}")
         edits = []
-    seen = {}
+    seen: dict[tuple, int] = {}
     for n, edit in enumerate(edits, start=1):
         wrong = _shape(edit)
         problems += [f"{_label(n, edit)}: {w}" for w in wrong]
@@ -368,6 +368,7 @@ def parse(text):
         else:
             seen[target] = n
     _refuse(problems)
+    assert at is not None  # _refuse raised otherwise
 
     tables, notes = _rows(edits, at)
     keys = {name: list(schema.table(schema.LEDGER, name).columns) for name in tables}  # an exact repeat adds nothing

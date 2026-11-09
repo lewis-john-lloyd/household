@@ -32,7 +32,7 @@ TOTALS = re.compile(rf"^Account Totals\s+{MONEY}\s+{MONEY}\s*$", re.M)
 PERIOD = re.compile(r"Statement Period:\s*(\d\d/\d\d/\d{4})\s+to\s+(\d\d/\d\d/\d{4})")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     # a page printed from the browser may carry its title ("Fidelity NetBenefits - Statement Details") first
     head = text.lstrip()[:3000]
     return (
@@ -76,7 +76,7 @@ def funds(text):
     return out
 
 
-def parse(text):
+def parse(text: str) -> Result:
     period = PERIOD.search(text)
     if not period:
         raise ParseError(f"{NAME}: no Statement Period")

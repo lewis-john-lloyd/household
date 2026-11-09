@@ -29,6 +29,7 @@ ALLOWED = {
     "logging",
     "re",
     "time",
+    "typing",  # annotations only
     "warnings",
     "zipfile",
     # data handling and the categorization model

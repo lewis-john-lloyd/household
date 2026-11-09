@@ -38,7 +38,7 @@ WORD = re.compile(r"\S+")
 GROUP = re.compile(r"^([-$]*)(\d{1,3})$")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     return all(s in text for s in ("Earnings Statement", "Statutory", "Net Check", "Pay Date:")) or (
         all(s in text for s in ("Statutory", "Net Check", "Pay Date:", "Period Beginning:"))
     )
@@ -107,7 +107,7 @@ def _date(text, label):
     return us_date(m.group(1))
 
 
-def parse(text):
+def parse(text: str) -> Result:
     lines = text.splitlines()
     pay_date, start, end = _date(text, "Pay Date"), _date(text, "Period Beginning"), _date(text, "Period Ending")
     employer = lines[_find(lines, "Period Beginning:")].split("Period Beginning:")[0].strip()

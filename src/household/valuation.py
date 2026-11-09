@@ -404,7 +404,17 @@ def partial_docs(documents):
     return frozenset(documents.loc[parser.isin(PARTIAL_PARSERS), "doc_id"].astype(str).str.strip())
 
 
-def values(accounts, holdings, activity, prices, securities, today, dates=None, partial=frozenset(), proxies=None):
+def values(
+    accounts: pd.DataFrame,
+    holdings: pd.DataFrame,
+    activity: pd.DataFrame,
+    prices: "Prices",
+    securities: pd.DataFrame,
+    today: str,
+    dates: list[str] | None = None,
+    partial: frozenset[str] | set[str] = frozenset(),
+    proxies: dict[str, str] | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
     """COLUMNS for every investment account on each valuation date, and notes. partial: the ids of partial
     documents (partial_docs); proxies: {symbol key: ticker} from the price_proxy settings (fill_gaps)."""
     notes = []

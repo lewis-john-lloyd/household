@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from .. import taxdata
 
@@ -28,7 +29,7 @@ GAIN_RATE_AT_END = 0.15  # and the taxable accounts' unrealized gain after this
 TRUSTEES_CUT_YEAR = 2034  # the year the 2025 Trustees Report projects combined OASDI reserves run out
 ITERATIONS = 8
 SEED = 1928
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "plan_to_age": 95,
     "success_target": 0.90,
     "inflation": 0.03,

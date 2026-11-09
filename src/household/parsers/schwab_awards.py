@@ -31,7 +31,7 @@ SYMBOL = re.compile(r"^[A-Z][A-Z.]{0,5}$")
 TYPES = ("RSU", "PSU", "ISO", "NSO", "NQ", "ESPP", "RS")
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text[:5000]
     return "Vesting Schedule" in head and "Award ID" in head and "Grant Agreement Status" in head
 
@@ -52,7 +52,7 @@ def _starts(cells, i):
     return i + 2 < len(cells) and DATE.match(cells[i]) and SYMBOL.match(cells[i + 1]) and cells[i + 2].upper() in TYPES
 
 
-def parse(text):
+def parse(text: str) -> Result:
     cells = [c.strip() for c in re.split(r"[\t\r\n]+", text) if c.strip()]
     starts = [i for i in range(len(cells)) if _starts(cells, i)]
     if not starts:

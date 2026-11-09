@@ -67,7 +67,7 @@ KINDS = (
 CSV_HEADER = "Run Date,Action,Symbol,Description,Type,Price ($),Quantity,"
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿")[:3000]
     return CSV_HEADER in head or head.lstrip().startswith("!Type:Invst")
 
@@ -222,7 +222,7 @@ def _qif_symbol(security):
     return m.group(1) if m else " ".join(security.split())
 
 
-def parse(text):
+def parse(text: str) -> Result:
     stripped = text.lstrip("﻿")
     rows = parse_plan(stripped) if stripped.lstrip().startswith("!Type:Invst") else parse_history(stripped)
     plan = stripped.lstrip().startswith("!Type:Invst")

@@ -48,7 +48,7 @@ KNOWN = KEPT + (
 COLUMNS = ["detail_id", "date", "amount", "service", "kind", "counterparty", "memo"]
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     head = text.lstrip("﻿")[:2000]
     return head.startswith("!Type:") and any(f"\nL{k}" in head.replace("\r", "") for k in KNOWN)
 
@@ -63,7 +63,7 @@ def records(text):
             yield r
 
 
-def parse(text):
+def parse(text: str) -> Result:
     rows = []
     for r in records(text.lstrip("﻿")):
         if "D" not in r or "T" not in r:

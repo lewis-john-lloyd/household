@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .. import retirelaw as law, settings
-from .model import CONVERSIONS, ORDERS, RULES, Strategy, parse_strategy
+from .model import CONVERSIONS, ORDERS, RULES, Household, Strategy, parse_strategy
 from .ssa import _claim_year, benefits, pia
 from .simulation import _age_mid, fixed_paths, historical_paths, monte_carlo_paths, run_all, simulate, success
 
@@ -306,7 +306,9 @@ def success_at(years, year):
     return float(row["success"].iloc[0]) if len(row) else 0.0
 
 
-def run(h, params, today):
+def run(
+    h: Household, params: pd.DataFrame, today: str
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
     """Every retirement table: (years, strategies, plan, social security, earnings, notes)."""
     today_year = int(today[:4])
     notes = []

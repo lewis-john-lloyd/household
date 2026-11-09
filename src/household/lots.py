@@ -269,7 +269,12 @@ def term(holding_from, sale_date):
     return "long_term" if end > _plus_year(start) else "short_term"
 
 
-def build(acquired, sold, splits=None, wash_symbols=None):
+def build(
+    acquired: pd.DataFrame,
+    sold: pd.DataFrame,
+    splits: pd.DataFrame | None = None,
+    wash_symbols: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """(form_8949, open_lots, notes) from acquired and sold frames (equity_lots, activity_lots). wash_symbols:
     the symbols whose losses are checked for wash sales (their wash groups, that is); None checks every
     symbol. A loss in any other symbol is taken as it is."""
@@ -417,7 +422,7 @@ def build(acquired, sold, splits=None, wash_symbols=None):
                 )
             )
     form = pd.DataFrame(rows, columns=FORM_8949)
-    still = []
+    still: list = []
     for p in pieces:  # parts of a lot with the same basis and dates read as one
         if p["open"] <= SHARE_EPS or p["sheltered"]:
             continue

@@ -39,7 +39,7 @@ CLOTHES = re.compile(
 SHOES = re.compile(r"\b(boots|sneakers|shoes|clogs|sandals|slippers)\b", re.I)
 
 
-def sniff(text):
+def sniff(text: str) -> bool:
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
     return [c.strip() for c in next(csv.reader([first]))] == HEADER if first else False
 
@@ -58,7 +58,7 @@ def _shares(prices, total):
     return cents
 
 
-def parse(text):
+def parse(text: str) -> Result:
     raw = pd.DataFrame(list(csv.DictReader(io.StringIO(text.lstrip("﻿")))), dtype=str).fillna("")
     rows = []
     for order_id, order in raw.groupby("target_order_id", sort=False):

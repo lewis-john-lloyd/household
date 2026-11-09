@@ -16,7 +16,7 @@ def text(name):
 
 @pytest.mark.parametrize("name, parser", [
     ("pay_statement.txt", pay_statement), ("earnings_statement.txt", earnings_statement),
-    ("schwab_equity.csv", schwab_equity), ("accounts_seed.csv", seed),
+    ("schwab_equity.csv", schwab_equity), ("schwab_equity.json", schwab_equity), ("accounts_seed.csv", seed),
 ])
 def test_each_fixture_is_identified_by_its_parser(name, parser):
     assert identify(text(name)) is parser
@@ -77,6 +77,15 @@ def test_schwab_vests_and_sale_lots():
     assert sales["gain"].sum() == 125 and sales["proceeds"].sum() == 1650
     assert set(sales["term"]) == {"short_term"}
     assert r.notes == ["1 dividend rows not ingested"]
+
+
+def test_schwab_json_export_reads_as_the_csv_does():
+    a, b = schwab_equity.parse(text("schwab_equity.csv")), schwab_equity.parse(text("schwab_equity.json"))
+    for table in ("equity_vests", "equity_sales"):
+        assert a.tables[table].to_dict("records") == b.tables[table].to_dict("records")
+    assert b.notes == ["1 dividend rows not ingested"]
+    with pytest.raises(ParseError):
+        schwab_equity.parse(text("schwab_equity.json").replace('"Quantity": "15"', '"Quantity": "16"'))
 
 
 def test_schwab_sale_must_match_its_lots():

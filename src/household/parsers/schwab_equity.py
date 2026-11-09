@@ -1,10 +1,11 @@
-"""Schwab Equity Award Center transaction export (CSV).
+"""Schwab Equity Award Center transaction export (CSV or JSON).
 
 Each action row (Deposit, Sale, Dividend, Journal) is followed by detail rows
 with an empty Date. A Deposit's detail gives the award, vest date and vest-day
 market value; a Sale's details are its lots with cost basis, gain and holding
 period. Exports overlap, so rows are keyed on what identifies them, not on the
-file.
+file. The JSON export has the same actions, each with its details nested under it; it is read
+as the CSV's row stream.
 
 Check: each sale's lots must add to its share count, and lot proceeds (basis
 plus gain) to the sale amount plus fees.
@@ -12,6 +13,7 @@ plus gain) to the sale amount plus fees.
 
 import csv
 import io
+import json
 
 import pandas as pd
 
@@ -25,7 +27,27 @@ REQUIRED = {"Date", "Action", "Quantity", "AwardId", "VestDate", "VestFairMarket
 
 def sniff(text):
     first = text.lstrip("﻿").splitlines()[0] if text.strip() else ""
-    return all(f'"{c}"' in first or c in first.split(",") for c in REQUIRED)
+    return _is_json(text) or all(f'"{c}"' in first or c in first.split(",") for c in REQUIRED)
+
+
+def _is_json(text):
+    head = text.lstrip("\ufeff").lstrip()[:2000]
+    return head.startswith("{") and '"Transactions"' in head and ('"AwardId"' in text or '"GrantId"' in text)
+
+
+def json_rows(text):
+    """The JSON export as the CSV's rows: each action, then its details with an empty Date."""
+    try:
+        data = json.loads(text.lstrip("\ufeff"))
+    except ValueError as e:
+        raise ParseError(f"{NAME}: not JSON: {e}") from e
+    blank = dict.fromkeys(REQUIRED | {"AwardDate", "Shares", "SalePrice", "Amount", "FeesAndCommissions"}, "")
+    for t in data.get("Transactions") or []:
+        yield {**blank, **{k: ("" if t.get(k) is None else str(t.get(k)))
+                           for k in ("Date", "Action", "Quantity", "Amount", "FeesAndCommissions")}}
+        for d in t.get("TransactionDetails") or []:
+            details = d.get("Details") or {}
+            yield {**blank, **{k: ("" if v is None else str(v)) for k, v in details.items()}, "Date": ""}
 
 
 def _num(value):
@@ -33,7 +55,7 @@ def _num(value):
 
 
 def parse(text):
-    rows = list(csv.DictReader(io.StringIO(text.lstrip("﻿"))))
+    rows = list(json_rows(text)) if _is_json(text) else list(csv.DictReader(io.StringIO(text.lstrip("\ufeff"))))
     vests, sales, current, lots = [], [], None, []
     dividends = 0
 

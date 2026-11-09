@@ -1,0 +1,11 @@
+{"FromDate": "01/01/2001", "ToDate": "03/01/2001", "Transactions": [
+ {"Date": "02/27/2001", "Action": "Sale", "Symbol": "XYZ", "Quantity": "15", "Description": "Share Sale", "FeesAndCommissions": "$1.00", "DisbursementElection": "Journal", "Amount": "$1,649.00",
+  "TransactionDetails": [
+   {"Details": {"Type": "RS", "Shares": "10", "SalePrice": "$110.00", "GrantId": "G1", "VestDate": "01/25/2001", "VestFairMarketValue": "$100.00", "GrossProceeds": null, "TotalCostBasis": "$1,000.00", "RealizedGainLoss": "$100.00", "HoldingPeriod": "SHORT TERM"}},
+   {"Details": {"Type": "RS", "Shares": "5", "SalePrice": "$110.00", "GrantId": "G1", "VestDate": "02/25/2001", "VestFairMarketValue": "$105.00", "GrossProceeds": null, "TotalCostBasis": "$525.00", "RealizedGainLoss": "$25.00", "HoldingPeriod": "SHORT TERM"}}]},
+ {"Date": "02/27/2001", "Action": "Deposit", "Symbol": "XYZ", "Quantity": "5", "Description": "RS", "FeesAndCommissions": null, "DisbursementElection": null, "Amount": null,
+  "TransactionDetails": [{"Details": {"AwardDate": "12/01/2000", "AwardId": "G1", "VestDate": "02/25/2001", "VestFairMarketValue": "$105.00"}}]},
+ {"Date": "02/15/2001", "Action": "Dividend", "Symbol": "XYZ", "Quantity": null, "Description": "Credit", "FeesAndCommissions": null, "DisbursementElection": null, "Amount": "$1.00", "TransactionDetails": []},
+ {"Date": "01/29/2001", "Action": "Deposit", "Symbol": "XYZ", "Quantity": "10", "Description": "RS", "FeesAndCommissions": null, "DisbursementElection": null, "Amount": null,
+  "TransactionDetails": [{"Details": {"AwardDate": "12/01/2000", "AwardId": "G1", "VestDate": "01/25/2001", "VestFairMarketValue": "$100.00"}}]}
+]}

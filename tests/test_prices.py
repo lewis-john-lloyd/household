@@ -131,3 +131,9 @@ def test_the_latest_close_is_asked_each_day_for_what_googlefinance_prices_and_no
     latest = ask[ask["date"] == "2001-06-14"]
     assert latest["symbol"].tolist() == ["ACMEX"]  # WILLX was tried and never priced
 
+
+
+def test_a_price_proxy_ticker_is_asked_like_a_security():
+    ask, _ = prices.requests(SECURITIES, HOLDINGS, NO_ACTIVITY, None, TODAY, stand_ins=["PAGEX", "ACMEX", "=bad"])
+    assert ["PAGEX", "PAGEX", "2001-05-31"] in ask.values.tolist()
+    assert set(ask["symbol"]) == {"ACMEX", "WILLX", "PAGEX"}

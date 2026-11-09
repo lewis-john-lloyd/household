@@ -4,7 +4,7 @@ The engine has no network of its own (tools/import_guard.py), so it asks Sheets:
 GOOGLEFINANCE formula per security and date still wanted into price_requests, Sheets evaluates them, and
 ingest reads the answers back into the ledger's prices table, then rewrites the tab with what is left.
 
-Which prices are wanted: every security with a quote in `securities`, on every date the legacy investments
+Which prices are wanted: every security with a quote in `securities` and every price_proxy ticker, on every date the legacy investments
 workbook recorded holdings (so each old reading can be priced), then at each month-end after the last of
 those dates up to the last month-end that has passed, and its latest close (asked each day ingest runs). With no legacy readings, month-ends start from the
 first holdings reading or investment activity. A date is asked once: an answer of "none" (the fund did not
@@ -75,14 +75,20 @@ def wanted_dates(holdings, activity, today):
     return sorted(set(legacy) | set(ends))
 
 
-def requests(securities, holdings, activity, prices, today, limit=MAX_REQUESTS):
+def requests(securities, holdings, activity, prices, today, limit=MAX_REQUESTS, stand_ins=()):
     """The price_requests rows still wanted (symbol, quote, date), newest dates first, at most limit.
+
+    stand_ins are the price_proxy tickers (valuation.proxies): each is asked like a security, under its
+    ticker as both symbol and quote, so a plan fund with no price of its own can move with it.
 
     Besides the wanted dates, each security is asked for its latest close (on yesterday's date, the last close
     on or before it), so the projection and the views price with the market as it is, not a month old. A
     security GOOGLEFINANCE has never priced is not asked for its latest close, so it adds no empty rows.
     """
     usable, _ = quotes(securities)
+    for ticker in stand_ins:
+        if QUOTE.match(ticker) and ticker not in usable:
+            usable[ticker] = ticker
     dates = wanted_dates(holdings, activity, today)
     have, priced = set(), set()
     if prices is not None and len(prices):

@@ -216,6 +216,7 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     for symbol in refused:
         _say(log, f"prices: {symbol}'s quote can't be used (capitals and digits, as VEMAX or MUTF:VEMAX)", "WARN")
     holdings, activity = _read(ledger, "holdings"), _read(ledger, "investment_activity")
+    stand_ins = sorted(set(valuation.proxies(_read(ledger, "parameters")).values()))
     added = 0
 
     def collect():
@@ -229,7 +230,7 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
         return held if got.empty else pd.concat([held, got], ignore_index=True), len(waiting)
 
     held, _ = collect()
-    ask, wanted = prices.requests(securities, holdings, activity, held, today)
+    ask, wanted = prices.requests(securities, holdings, activity, held, today, stand_ins=stand_ins)
     sheets.rewrite_price_requests(ledger, requests_table, ask)
     if len(ask):
         _say(log, f"prices: asked GOOGLEFINANCE for {len(ask)} prices in price_requests; waiting up to {wait}s "
@@ -241,9 +242,9 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
         held, waiting = collect()
         if not waiting:
             break
-    ask, wanted = prices.requests(securities, holdings, activity, held, today)
+    ask, wanted = prices.requests(securities, holdings, activity, held, today, stand_ins=stand_ins)
     sheets.rewrite_price_requests(ledger, requests_table, ask)
-    if usable or added:
+    if usable or stand_ins or added:
         _say(log, f"prices: {added} read from GOOGLEFINANCE, {wanted} still wanted"
                   + (f" ({len(ask)} asked in price_requests; run ingest again for the rest)" if wanted else ""))
     return {"added": added, "wanted": wanted, "asked": len(ask)}

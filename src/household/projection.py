@@ -316,11 +316,13 @@ def positions(paystubs, year, overrides=None, comp_events=None):
 
 
 def scheduled_vests(schedule, vested=None, prices=None):
-    """The projection's vests: each grant's schedule in force (parsers/schwab_awards.in_force) and a share
+    """The projection's vests: each share award's schedule in force (parsers/schwab_awards.in_force; an option's
+    vesting is no income, so options are left out) and a share
     price, the latest of a vest's fair market value (equity_vests) and a close for the grants' symbol
     (prices); None with no schedule or no price."""
     from .parsers import schwab_awards
     s = schwab_awards.in_force(schedule)
+    s = s[s["award_type"].astype(str).str.upper().isin(schwab_awards.SHARE_AWARDS)]  # an option's vest is not pay
     if s.empty:
         return None
     seen = []

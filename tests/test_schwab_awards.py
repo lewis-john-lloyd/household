@@ -73,7 +73,7 @@ def test_the_awards_page_reads_as_each_grants_vesting_schedule():
     df = r.tables["vest_schedule"]
     assert df.groupby("grant_id")["shares"].sum().to_dict() == {"G100": 30, "G90": 10}
     assert df.iloc[0].to_dict() == {"grant_id": "G100", "award_date": "2026-03-04", "symbol": "ACME", "award_type": "RSU",
-                                    "vest_date": "2026-08-25", "shares": 5}
+                                    "grant_price": 0, "expires": "", "vest_date": "2026-08-25", "shares": 5}
     assert r.notes[1] == "G90 (ACME RSU of 2025-08-06): 10 granted, 6 vested, 4 unvested, 2 vests to 2026-11-25"
 
 
@@ -94,6 +94,7 @@ def test_a_grants_latest_page_is_its_schedule_and_the_price_is_the_latest_seen()
     assert projection.scheduled_vests(old, vested, prices)["price"] == 32
     assert projection.scheduled_vests(old, vested)["price"] == 30
     assert projection.scheduled_vests(old.iloc[0:0], vested) is None
+    assert projection.scheduled_vests(old.assign(award_type="OPTION"), vested) is None  # an option's vest is not pay
 
 
 def vest(pay_date, stub_id, amount=2_000.0):

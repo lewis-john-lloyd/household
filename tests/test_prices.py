@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from household import engine, prices, schema, sheets
+from household import engine, prices, schema, sheets, stage_ingest
 from household.legacy_investments import LEGACY_DOC
 from test_engine import session  # noqa: F401  (the fixture)
 
@@ -166,11 +166,11 @@ def test_fetch_prices_asks_round_after_round_until_none_is_wanted(session, monke
             {"added": 9, "wanted": 0, "asked": 0},
         ]
     )
-    monkeypatch.setattr(engine, "_price_requests", lambda ledger, log: next(answers))
+    monkeypatch.setattr(stage_ingest, "_price_requests", lambda ledger, log: next(answers))
     out = engine.fetch_prices(session, session.root, log=None)
     assert out == {"added": 10, "wanted": 0, "rounds": 3}
     stuck = iter([{"added": 0, "wanted": 5, "asked": 5}] * 9)
-    monkeypatch.setattr(engine, "_price_requests", lambda ledger, log: next(stuck))
+    monkeypatch.setattr(stage_ingest, "_price_requests", lambda ledger, log: next(stuck))
     assert engine.fetch_prices(session, session.root, log=None)["rounds"] == 2  # a round that adds nothing ends it
 
 

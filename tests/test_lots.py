@@ -313,7 +313,7 @@ def test_compute_writes_form_8949_and_the_open_lots(session):  # noqa: F811
     ]
     sheets.append_tables(ledger, [(schema.table(schema.LEDGER, n), df) for n, df in rows])
     said = []
-    form, result = engine._lots(ledger, reports, engine._books(ledger), "2001-03-01", "r1", said.append)
+    form, result = engine._lots(ledger, reports, engine.read_books(ledger), "2001-03-01", "r1", said.append)
     assert result == {"lot_parts_sold": 1, "wash_sales": 1, "open_lot_parts": 1} and form["code"].tolist() == ["W"]
     written = sheets.read_table(reports, schema.table(schema.REPORTS, "open_lots"))
     assert written[["lot_id", "account_id", "shares", "basis", "wash_added"]].values.tolist() == [

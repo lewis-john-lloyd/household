@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from household import engine, legacy_investments as li, schema, sheets
+from household import engine, legacy_investments as li, schema, sheets, stage_legacy
 from test_engine import session  # noqa: F401  (the fixture)
 from test_sheets import FakeSpreadsheet, FakeWorksheet
 
@@ -197,7 +197,7 @@ def test_with_nothing_new_the_migration_writes_nothing_and_backs_nothing_up(sess
     _ledger_with_accounts(session, ["a_ira"])
     engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira"}, log=None)
     snapshots = []
-    monkeypatch.setattr(engine.backup, "snapshot_ledger", lambda *a, **k: snapshots.append(a))
+    monkeypatch.setattr(stage_legacy.backup, "snapshot_ledger", lambda *a, **k: snapshots.append(a))
     again = engine.ingest_legacy_investments(session, session.root, "workbook", {"ira": "a_ira"}, log=None)
     assert (again["holdings"], again["securities"], snapshots) == (0, 0, [])
 

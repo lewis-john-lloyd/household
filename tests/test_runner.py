@@ -85,7 +85,7 @@ def recorded(monkeypatch):
     monkeypatch.setattr(engine, "bootstrap", lambda session, folder: (None, "reports", None))
     monkeypatch.setattr(
         engine,
-        "_record",
+        "record_stage",
         lambda reports, stage, run_id, at, summary, lines: kept.update(stage=stage, summary=summary, lines=list(lines)),
     )
     return kept

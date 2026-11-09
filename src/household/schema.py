@@ -636,7 +636,7 @@ REPORTS = (
     ),
     # each loan's details for the Home page's Mortgage tab: its terms, its facts and its schedule's milestones
     Table("loan_details", ("loan_id", "order", "key", "label", "value", "kind", "as_of", "note", "run_id")),
-    # the retirement plan (retirement.py): each retirement year under each return model; each strategy at the
+    # the retirement plan (the retirement package): each retirement year under each return model; each strategy at the
     # plan's year; the plan year by year for each strategy; Social Security by person and the earnings it
     # counts; and every assumption with where it came from and the setting that changes it
     Table(

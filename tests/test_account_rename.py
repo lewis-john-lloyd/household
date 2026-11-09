@@ -4,7 +4,7 @@ named with either one finds it."""
 import pandas as pd
 import pytest
 
-from household import engine, ingest, settings
+from household import engine, ingest, ledgerio, settings
 from household.parsers.common import ParseError
 
 
@@ -34,9 +34,9 @@ def test_compute_reads_every_account_column_under_the_new_name(monkeypatch):
             {"as_of": "2001-01-31", "account_id": "acme_brokerage", "symbol": "VFIAX", "value": 20},
         ]
     )
-    monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: holdings.copy())
-    monkeypatch.setattr(engine, "_RENAMED", {"a_plan_old": "a_plan_acme"})
-    assert list(engine._read(None, "holdings")["account_id"]) == ["a_plan_acme", "acme_brokerage"]
+    monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: holdings.copy())
+    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_plan_old": "a_plan_acme"})
+    assert list(engine.read_ledger(None, "holdings")["account_id"]) == ["a_plan_acme", "acme_brokerage"]
 
 
 def test_a_file_named_with_the_new_name_finds_the_account_under_its_old_id():
@@ -69,21 +69,21 @@ def test_only_the_old_workbooks_readings_move_and_the_rest_take_the_accounts_new
             {"as_of": "2005-01-31", "account_id": "a_ira", "symbol": "VFIAX", "value": 5, "doc_id": "positions_2005"},
         ]
     )
-    monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: holdings.copy())
-    monkeypatch.setattr(engine, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
-    monkeypatch.setattr(engine, "_RENAMED", {"a_ira": "a_ira_now"})
-    assert list(engine._read(None, "holdings")["account_id"]) == ["a_ira_rollover", "a_ira_now"]
-    assert list(engine._read(None, "accounts")["account_id"]) == ["a_ira_now", "a_ira_now"]  # only holdings move
+    monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: holdings.copy())
+    monkeypatch.setattr(ledgerio, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
+    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_ira": "a_ira_now"})
+    assert list(engine.read_ledger(None, "holdings")["account_id"]) == ["a_ira_rollover", "a_ira_now"]
+    assert list(engine.read_ledger(None, "accounts")["account_id"]) == ["a_ira_now", "a_ira_now"]  # only holdings move
 
 
 def test_every_stage_starts_from_the_ledger_as_written(monkeypatch):
-    monkeypatch.setattr(engine, "_RENAMED", {"a_ira": "a_ira_now"})
-    monkeypatch.setattr(engine, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
-    monkeypatch.setattr(engine.sheets, "open_or_create", lambda *a: (None, False))
-    monkeypatch.setattr(engine.sheets, "ensure_tables", lambda *a: [])
+    monkeypatch.setattr(ledgerio, "_RENAMED", {"a_ira": "a_ira_now"})
+    monkeypatch.setattr(ledgerio, "_LEGACY_MOVED", {"a_ira": "a_ira_rollover"})
+    monkeypatch.setattr(ledgerio.sheets, "open_or_create", lambda *a: (None, False))
+    monkeypatch.setattr(ledgerio.sheets, "ensure_tables", lambda *a: [])
     session = type("S", (), {"sheets": None})()
     engine.bootstrap(session, "folder")
-    assert engine._RENAMED == {} and engine._LEGACY_MOVED == {}
+    assert ledgerio._RENAMED == {} and ledgerio._LEGACY_MOVED == {}
 
 
 def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypatch):
@@ -104,6 +104,6 @@ def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypa
     got, notes = engine.activity_fixes(fixes, activity)
     assert got == {"a1": {"kind": "transfer_in"}}
     assert "zz, which the ledger doesn't have" in notes[0] and "'gift' isn't a kind" in notes[1]
-    monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: activity.copy())
-    monkeypatch.setattr(engine, "_ACTIVITY_FIXES", got)
-    assert list(engine._read(None, "investment_activity")["kind"]) == ["transfer_in", "contribution"]
+    monkeypatch.setattr(ledgerio.sheets, "read_table", lambda ledger, t: activity.copy())
+    monkeypatch.setattr(ledgerio, "_ACTIVITY_FIXES", got)
+    assert list(engine.read_ledger(None, "investment_activity")["kind"]) == ["transfer_in", "contribution"]

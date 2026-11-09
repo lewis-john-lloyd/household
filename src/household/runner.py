@@ -339,7 +339,7 @@ def run(session, folder_id, log=print, run_id=None):
         }
         try:
             _, reports, _ = engine.bootstrap(session, folder_id)
-            engine._record(reports, "run", run_id, started_at, summary, say.lines)
+            engine.record_stage(reports, "run", run_id, started_at, summary, say.lines)
         except Exception as e:  # the notebook has the log either way
             say(f"run: could not keep this run's log in Reports: {e}", "WARN")
     say("done: the Status page in the views says what needs you; its Engine log tab has this run")

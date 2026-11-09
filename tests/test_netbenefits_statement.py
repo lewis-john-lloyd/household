@@ -66,3 +66,13 @@ def test_a_statement_that_doesnt_add_up_is_refused():
 
 def test_a_statement_printed_with_the_browser_title_first_is_still_one():
     assert identify("Fidelity NetBenefits - Statement Details\n\n" + statement()) is nb
+
+
+def test_a_price_cut_to_the_cent_still_checks_but_a_misread_value_does_not():
+    # 40 shares worth 49.98 is 1.2495 each, which the statement shows cut to 1.24
+    row = "S&P 500                0.000     40.000            ¤0.00         ¤1.24             ¤0.00          ¤49.98\nIndex\n"
+    table = "Market Value of Your Account\n" + row + "\nAccount Totals   {then}     {now}\n"
+    held = nb.parse(statement(then="¤0.00", now="¤49.98", table=table)).tables["holdings"]
+    assert held[["shares", "value"]].values.tolist() == [[40.0, 49.98]]
+    with pytest.raises(ParseError):
+        nb.parse(statement(then="¤0.00", now="¤50.98", table=table.replace("49.98", "50.98")))

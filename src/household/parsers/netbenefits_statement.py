@@ -10,7 +10,7 @@ The plan's name is in the header but not its number, so the file's name finds th
 it, ingest.finish_investment_rows), as for other single-account downloads.
 
 Checks, so a statement read wrong is refused rather than kept: every fund row has two shares, two prices and
-two values; shares times price is the value (to the price's rounding); and the funds add up to the Account
+two values; shares times price is the value (to the cent the price is cut to); and the funds add up to the Account
 Totals at both dates.
 """
 
@@ -92,8 +92,8 @@ def parse(text):
     held = []
     for name, shares0, shares1, price0, price1, value0, value1 in rows:
         for shares, price, value in ((shares0, price0, value0), (shares1, price1, value1)):
-            # the price is rounded to the cent: allow that rounding on every share
-            if abs(shares * price - value) > 0.006 * shares + 0.02:
+            # the price is shown cut to the cent (a fund at 12.3456 shows 12.34): allow a cent on every share
+            if abs(shares * price - value) > 0.01 * shares + 0.02:
                 raise ParseError(f"{NAME}: {name}: {shares} shares at {price} is not {value}")
         if shares0 or value0:
             held.append({"as_of": before, "account_id": "", "symbol": name, "source": "", "shares": shares0,

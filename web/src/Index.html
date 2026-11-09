@@ -287,6 +287,8 @@
         font-variant-numeric: tabular-nums; }
       th:first-child, td:first-child { text-align: left; padding-left: 4px; }
       td.text { text-align: left; }
+      .w-table th button.sort { all: unset; cursor: pointer; font: inherit; color: inherit; }
+      .w-table th button.sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
       th button.sort { all: unset; cursor: pointer; font-weight: 500; }
       th button.sort[data-dir="asc"]::after { content: " ▲"; }
       th button.sort[data-dir="desc"]::after { content: " ▼"; }
@@ -3050,18 +3052,70 @@
         parent.appendChild(box);
       }
 
+      // A table for the Investments and Home pages. Every titled column sorts: choosing a heading sorts by it
+      // (numbers largest first, text A to Z), choosing it again reverses. Rows sort within their group (the rows
+      // between two group rows), and a total row stays last in its group. A row can give its sort keys; else
+      // each cell's text is read (money, a percent, a date or words).
       function wTable(parent, headers, numeric) {
         var wrap = el("div", null, "w-scroll");
         var t = el("table", null, "w-table");
         var tr = document.createElement("tr");
-        headers.forEach(function (h, i) { tr.appendChild(el("th", h, numeric.indexOf(i) >= 0 ? "num" : "")); });
+        var state = { col: -1, dir: "" };
+        var heads = [];
+        headers.forEach(function (h, i) {
+          var th = el("th", null, numeric.indexOf(i) >= 0 ? "num" : "");
+          if (h) {
+            var b = button(h, function () { sortBy(i); }, "sort");
+            b.setAttribute("aria-label", "Sort by " + h);
+            th.appendChild(b);
+            th.setAttribute("aria-sort", "none");
+          }
+          heads.push(th);
+          tr.appendChild(th);
+        });
         t.appendChild(tr);
         wrap.appendChild(t);
         parent.appendChild(wrap);
+        function keyOf(r, i) {
+          if (r._keys && r._keys[i] !== undefined) return r._keys[i];
+          var c = r.children[i];
+          return sortKey(c ? (c.firstChild && c.firstChild.nodeType === 1 && c.firstChild.firstChild ? c.firstChild.firstChild.textContent : c.textContent) : "");
+        }
+        function sortBy(i) {
+          var dir = state.col === i ? (state.dir === "asc" ? "desc" : "asc") : (numeric.indexOf(i) >= 0 ? "desc" : "asc");
+          state = { col: i, dir: dir };
+          heads.forEach(function (th, k) {
+            var b = th.querySelector("button.sort");
+            if (b) b.setAttribute("data-dir", k === i ? dir : "");
+            if (th.hasAttribute("aria-sort")) th.setAttribute("aria-sort", k === i ? (dir === "asc" ? "ascending" : "descending") : "none");
+          });
+          var rows = Array.prototype.slice.call(t.querySelectorAll("tr")).slice(1);
+          var segments = [[]];
+          rows.forEach(function (r) {
+            if (r.classList.contains("group")) segments.push([r], []); else segments[segments.length - 1].push(r);
+          });
+          var sign = dir === "asc" ? 1 : -1;
+          segments.forEach(function (seg) {
+            if (seg.length && seg[0].classList.contains("group")) return;
+            var totals = seg.filter(function (r) { return r.classList.contains("total"); });
+            var body = seg.filter(function (r) { return !r.classList.contains("total"); });
+            body.sort(function (a, b) {
+              var x = keyOf(a, i), y = keyOf(b, i);
+              if (x === y) return 0;
+              if (x === null) return 1;
+              if (y === null) return -1;
+              return (x < y ? -1 : 1) * sign;
+            });
+            seg.length = 0;
+            Array.prototype.push.apply(seg, body.concat(totals));
+          });
+          segments.forEach(function (seg) { seg.forEach(function (r) { t.appendChild(r); }); });
+        }
         return {
-          row: function (cells, cls) {
+          row: function (cells, cls, keys) {
             var r = document.createElement("tr");
             if (cls) r.className = cls;
+            if (keys) r._keys = keys;
             cells.forEach(function (c, i) {
               var td = cell(r, c instanceof Node ? "" : c, numeric.indexOf(i) >= 0 ? "num" : "");
               if (c instanceof Node) td.appendChild(c);
@@ -3070,6 +3124,18 @@
             return r;
           }
         };
+      }
+
+      // What a table cell sorts by: a number for money (a sign and commas allowed), a percent or a count, a
+      // date's ISO text for "Nov 9, 2026", else its words in lower case; a blank or a dash sorts last.
+      function sortKey(text) {
+        var x = String(text).trim();
+        if (!x || x === "–" || x === "-") return null;
+        var n = x.replace(/[$,%\s]/g, "").replace(/^\+/, "").replace(/^[\u2212-]/, "-");
+        if (/^-?\d+(\.\d+)?$/.test(n)) return Number(n);
+        var m = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4})$/.exec(x);
+        if (m && MONTH_SHORT.indexOf(m[1]) >= 0) return m[3] + "-" + String(MONTH_SHORT.indexOf(m[1]) + 1).padStart(2, "0") + "-" + m[2].padStart(2, "0");
+        return x.toLowerCase();
       }
 
       function niceTicks(lo, hi, count) {
@@ -3330,7 +3396,8 @@
         d.accounts.forEach(function (a) {
           var name = el("span", a.account);
           if (a.carried) name.appendChild(el("span", "carried", "tag"));
-          ac.row([name, ownerName(a.owner || "joint"), PART_NAMES[a.bucket] || a.bucket, money.format(a.value)]);
+          ac.row([name, ownerName(a.owner || "joint"), PART_NAMES[a.bucket] || a.bucket, money.format(a.value)], "",
+                 [a.account.toLowerCase(), ownerName(a.owner || "joint").toLowerCase(), (PART_NAMES[a.bucket] || a.bucket).toLowerCase(), a.value]);
         });
         ac.row(["Total", "", "", money.format(d.total)], "total");
         var funds = el("details");

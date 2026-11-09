@@ -149,6 +149,17 @@ def finish_investment_rows(result, file_name, accounts):
     if result.parser == "edvest":  # its positions are dated by the download's name
         from .parsers import edvest
         edvest.date_positions(result, file_name)
+    if not marked and str(result.account_hint).startswith("institution:"):  # a file that names only its custodian
+        try:
+            account = resolve_account("", file_name, accounts)
+        except ParseError:
+            name = result.account_hint.split(":", 1)[1].lower()
+            mine = [a for a in accounts.to_dict("records") if str(a.get("institution", "")).strip().lower() == name]
+            if len(mine) != 1:
+                raise ParseError(f"{len(mine)} {result.account_hint.split(':', 1)[1]} accounts in the accounts table: "
+                                 "rename the file to include its account_id") from None
+            account = mine[0]
+        return fidelity.finish(result, str(account["account_id"]))
     if not marked:
         account = resolve_account(result.account_hint, file_name, accounts)
         return fidelity.finish(result, str(account["account_id"]))

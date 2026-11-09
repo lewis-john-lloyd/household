@@ -1,3 +1,5 @@
 # formatting-only commits, for git blame --ignore-revs-file (git config blame.ignoreRevsFile .git-blame-ignore-revs)
 # Ruff format of every Python file
 5d18b5f37feb8010c2e69540315331ce36aea9c9
+# Prettier format of the web app
+e42533544715535be2a55b69aa0cc505ca3ddec1

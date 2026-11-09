@@ -22,19 +22,19 @@ The package holds logic only. All data lives in the owner's Google Drive. Notebo
 ```
 pip install -e ".[dev]"
 pytest
+python -m ruff check src tests tools && python -m ruff format --check src tests tools
+python -m mypy
 python tools/leak_guard.py
 git config core.hooksPath .githooks
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
-The web app's tests run with `npm test`, `npm run test:server` and `npm run test:browser` in `web/`.
+The web app's checks run in `web/`: `npm run format:check`, `npm run typecheck`, `npm test`, `npm run test:server` and `npm run test:browser`. `tests/test_end_to_end.py` needs the web app built (`npm run build`).
 
 ## Documentation
 
-- [Safety and privacy](docs/safety.md): the repo rules, what the package may import, where the data lives and for how long, the push checks
-- [The inbox](docs/inbox.md): how each kind of file is identified, checked and filed
-- [Investments](docs/investments.md): investment downloads and statements, holdings and prices, filling history between readings, tax lots and wash sales
-- [Categories, budget and the monthly checklist](docs/budget.md)
-- [Mortgage, retirement and pay history](docs/planning.md)
-- [Receipts, the weekly email and the county check](docs/apps-scripts.md): the Apps Scripts and how to set them up
-- [Views](docs/views.md): the web app, editing through change sets, and how to deploy it
-- [Development, tax law and releases](docs/development.md)
+[docs/](docs/README.md), grouped by reader:
+
+- **Using it:** [the inbox](docs/inbox.md), [investments](docs/investments.md), [categories, budget and the monthly checklist](docs/budget.md), [mortgage, retirement and pay history](docs/planning.md), [the views](docs/views.md), [receipts, the weekly email and the county check](docs/apps-scripts.md)
+- **How it works:** [how it fits together](docs/architecture.md) (with diagrams), [decisions](docs/decisions.md), [safety and privacy](docs/safety.md)
+- **Working on it:** [development, tax law and releases](docs/development.md)

@@ -27,3 +27,4 @@ assessor/.clasp.json
 
 # local agent worktrees
 .claude/
+.coverage

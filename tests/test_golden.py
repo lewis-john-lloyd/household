@@ -201,3 +201,28 @@ def test_a_fuller_household_through_ingest_and_compute_is_unchanged(session):  #
     filled = sum(1 for v in tables.values() if len(v))
     assert filled >= 30, f"only {filled} tables have rows: the scenario no longer reaches most of compute"
     check("fuller_household", tables)
+
+
+@freeze_time("2026-11-09 12:00:00")
+def test_a_year_of_pay_stubs_through_the_projection_is_unchanged(session):  # noqa: F811
+    """This year's stubs reach the tax projection, the withholding plan, the elections and the backtests."""
+    from household import schema, sheets
+    from test_projection import stubs_through
+
+    for name in ("accounts_seed_golden.csv", "categories_seed_golden.csv", "parameters_seed_golden.csv"):
+        session._drive.add(name, session.box, "text/csv", GOLDEN_FILES[name].encode())
+    session._drive.add("checking.qfx", session.box, "application/octet-stream", golden_ofx().encode())
+    engine.ingest_inbox(session, session.root, run_id="golden-1")
+    ledger = session.sheets.files["ledger"]
+    stubs = stubs_through(20).astype(str)
+    sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "paystubs"), stubs)])
+    engine.compute_all(session, session.root, run_id="golden-2")
+    tables = {}
+    for name, tab in session.sheets.files["reports"].tabs.items():
+        if name in ("run_log", "run_notes", "run_lines"):
+            continue
+        values = tab.rows
+        tables[f"reports.{name}"] = pd.DataFrame(values[1:], columns=values[0]) if values else pd.DataFrame()
+    for name in ("projection", "tax_lines", "withholding_plan", "elections", "withholding_backtest"):
+        assert len(tables[f"reports.{name}"]), f"{name} is empty: the stubs no longer reach it"
+    check("stubs_and_projection", tables)

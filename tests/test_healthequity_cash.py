@@ -51,3 +51,9 @@ def test_two_accounts_at_the_custodian_need_the_account_id_in_the_file_name():
         ingest.finish_investment_rows(healthequity_cash.parse(YEAR), "TransactionHistory.xls", two)
     r = ingest.finish_investment_rows(healthequity_cash.parse(YEAR), "c_hsa_TransactionHistory.xls", two)
     assert set(r.tables["investment_activity"]["account_id"]) == {"c_hsa"}
+
+
+def test_a_deposit_not_yet_available_counts_on_the_day_it_was_made():
+    pending = YEAR.replace(">1/2/2001<", ">1/2/2001 (Available 1/4/01)<", 1)
+    a = healthequity_cash.parse(pending).tables["investment_activity"]
+    assert a["date"].iloc[0] == "2001-01-02"

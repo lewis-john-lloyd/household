@@ -81,7 +81,8 @@ def parse(text):
         if len(r) < 4 or not r[0]:
             continue
         try:
-            day = datetime.strptime(r[0], "%m/%d/%Y").date().isoformat()
+            # a deposit not yet available reads "1/26/2001 (Available 1/28/01)": the date it was made counts
+            day = datetime.strptime(r[0].split("(")[0].strip(), "%m/%d/%Y").date().isoformat()
         except ValueError as e:
             raise ParseError(f"{NAME}: not a date: {r[0]!r}") from e
         lines.append((day, r[1], _money(r[2], "Amount"), _money(r[3], "HSA Cash Balance")))

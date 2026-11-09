@@ -24,6 +24,22 @@ jobs:
       - run: python -m mypy
       - run: pytest -q
 
+  end-to-end:
+    # made-up inbox files through ingest and compute, then the built web app's page code on the Reports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
+        with:
+          node-version: "22"
+      - run: pip install -e ".[dev]"
+      - run: npm ci && npm run build
+        working-directory: web
+      - run: pytest -q -rs tests/test_end_to_end.py
+
   web:
     runs-on: ubuntu-latest
     defaults:

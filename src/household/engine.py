@@ -39,6 +39,7 @@ def bootstrap(session, folder_id):
     # them after this), so a stage run after compute in the same session doesn't see stale names
     _RENAMED.clear()
     _LEGACY_MOVED.clear()
+    _ACTIVITY_FIXES.clear()
     ledger, _ = sheets.open_or_create(session.sheets, sheets.LEDGER_TITLE, folder_id)
     reports, _ = sheets.open_or_create(session.sheets, sheets.REPORTS_TITLE, folder_id)
     created = {
@@ -358,6 +359,7 @@ def ingest_inbox(session, folder_id, run_id=None, log=print):
 # name. Set by compute_all from the parameters before anything else is read.
 _RENAMED = {}
 _LEGACY_MOVED = {}  # {id the old investments workbook's readings were read under: the account they belong to}
+_ACTIVITY_FIXES = {}  # {activity_id: {field: value}} from activity_corrections, the last row in force
 ACCOUNT_COLUMNS = ("account_id", "account")
 
 
@@ -404,8 +406,31 @@ def renamed_accounts(parameters):
     return out, notes
 
 
+def activity_fixes(corrections, activity):
+    """{activity_id: {field: value}} from activity_corrections (the last row for an activity and field wins),
+    and a note for each that can't be used: an activity the ledger doesn't have, or a kind that isn't one."""
+    out, notes = {}, []
+    if corrections is None or not len(corrections):
+        return out, notes
+    known = set(activity["activity_id"].astype(str)) if activity is not None and len(activity) else set()
+    kinds = schema.table(schema.LEDGER, "investment_activity").enums["kind"]
+    for r in corrections.to_dict("records"):
+        aid, f, v = str(r["activity_id"]).strip(), str(r["field"]).strip(), str(r["value"]).strip()
+        if aid not in known:
+            notes.append(f"investment activity: a correction names {aid}, which the ledger doesn't have")
+        elif f == "kind" and v not in kinds:
+            notes.append(f"investment activity: {aid}: {v!r} isn't a kind ({', '.join(kinds)})")
+        else:
+            out.setdefault(aid, {})[f] = v
+    return out, notes
+
+
 def _read(ledger, name):
     df = sheets.read_table(ledger, schema.table(schema.LEDGER, name))
+    if _ACTIVITY_FIXES and name == "investment_activity" and len(df):
+        for i in df.index[df["activity_id"].astype(str).isin(_ACTIVITY_FIXES)]:
+            for f, v in _ACTIVITY_FIXES[str(df.at[i, "activity_id"])].items():
+                df.at[i, f] = v
     if _LEGACY_MOVED and name == "holdings" and len(df):
         legacy = df["doc_id"].astype(str) == legacy_investments.LEGACY_DOC
         df.loc[legacy, "account_id"] = df.loc[legacy, "account_id"].map(lambda a: _LEGACY_MOVED.get(str(a), a))
@@ -691,6 +716,10 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
     moves, more = legacy_moves(raw_parameters, accounts_now)
     problems += more
     _LEGACY_MOVED.update(moves)
+    fixes, more = activity_fixes(sheets.read_table(ledger, schema.table(schema.LEDGER, "activity_corrections")),
+                                 sheets.read_table(ledger, schema.table(schema.LEDGER, "investment_activity")))
+    problems += more
+    _ACTIVITY_FIXES.update(fixes)
     for old, new in list(renames.items()):
         if old not in accounts_now:
             problems.append(f"accounts: account_renamed:{old} names no account")
@@ -703,6 +732,8 @@ def compute_all(session, folder_id, legacy_id=None, legacy_year=None, run_id=Non
         _say(log, line, "WARN")
     if renames:
         _say(log, "accounts: read as renamed: " + ", ".join(f"{o} as {n}" for o, n in sorted(renames.items())))
+    if fixes:
+        _say(log, f"investment activity: {len(fixes)} rows read as corrected (activity_corrections)")
     if moves:
         _say(log, "accounts: the old investments workbook's readings of " + ", ".join(
             f"{o} read as {n}'s" for o, n in sorted(moves.items())))

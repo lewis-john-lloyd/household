@@ -70,3 +70,18 @@ def test_every_stage_starts_from_the_ledger_as_written(monkeypatch):
     session = type("S", (), {"sheets": None})()
     engine.bootstrap(session, "folder")
     assert engine._RENAMED == {} and engine._LEGACY_MOVED == {}
+
+
+def test_a_correction_changes_an_activity_rows_kind_as_compute_reads_it(monkeypatch):
+    activity = pd.DataFrame([{"activity_id": "a1", "account_id": "a_plan", "kind": "contribution", "amount": 90},
+                             {"activity_id": "a2", "account_id": "a_plan", "kind": "contribution", "amount": 5}])
+    fixes = pd.DataFrame([{"activity_id": "a1", "field": "kind", "value": "contribution"},
+                          {"activity_id": "a1", "field": "kind", "value": "transfer_in"},  # the later one is in force
+                          {"activity_id": "zz", "field": "kind", "value": "transfer_in"},
+                          {"activity_id": "a2", "field": "kind", "value": "gift"}])
+    got, notes = engine.activity_fixes(fixes, activity)
+    assert got == {"a1": {"kind": "transfer_in"}}
+    assert "zz, which the ledger doesn't have" in notes[0] and "'gift' isn't a kind" in notes[1]
+    monkeypatch.setattr(engine.sheets, "read_table", lambda ledger, t: activity.copy())
+    monkeypatch.setattr(engine, "_ACTIVITY_FIXES", got)
+    assert list(engine._read(None, "investment_activity")["kind"]) == ["transfer_in", "contribution"]

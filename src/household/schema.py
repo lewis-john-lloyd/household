@@ -87,6 +87,10 @@ LEDGER = (
                                   "shares", "price", "value", "amount", "cash_balance", "source", "doc_id"),
           {"kind": ("contribution", "buy", "sell", "exchange", "reinvest", "dividend", "interest", "conversion_in",
                     "conversion_out", "transfer_in", "transfer_out", "withdrawal", "fee", "adjustment", "other")}),
+    # a person's correction to one row of investment_activity, which stays as it was read (a plan's download
+    # that calls a rollover a contribution, say); the last row for an activity and field is in force
+    Table("activity_corrections", ("activity_id", "field", "value", "recorded_at", "reason", "source"),
+          {"field": ("kind",)}),
     # each fund or stock the household holds: its name, asset class and expense ratio, and the symbol
     # GOOGLEFINANCE knows it by (quote; blank for a fund with no public price, such as a plan-only trust)
     Table("securities", ("symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group")),

@@ -14,10 +14,12 @@ fund's symbol (and its type, beside it) in the first row, and in the second what
   <label>, Val  a balance under a label (Safety-Net cash), kept as a value
   Val           a value alone, under a name in the first row (one per child in an education tab)
 
-Each dated row becomes `holdings` rows (as_of, account_id, symbol, shares, value), one per fund with a value.
+Each dated row becomes `holdings` rows (as_of, account_id, symbol, source, shares, value), one per fund with a
+value. A tab that is one money source of a workplace plan (its Roth money, say) names that source, so a plan
+kept as one account keeps its parts apart.
 A first-row name that isn't a symbol (a child's name, say) is kept with a blank symbol, so the account's
 total is right. Several tabs can map to one account (a 401(k)'s pre-tax and rollover money); their readings
-on the same date add up. Rows are read unformatted, so dates are serial day counts and money plain numbers.
+on the same date add up (a fund's readings in one source of one account on one date). Rows are read unformatted, so dates are serial day counts and money plain numbers.
 """
 
 import re
@@ -28,7 +30,7 @@ from .legacy import parse_date, parse_money
 
 LEGACY_DOC = "legacy:investments"
 SYMBOL = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
-COLUMNS = ["as_of", "account_id", "symbol", "shares", "value", "doc_id"]
+COLUMNS = ["as_of", "account_id", "symbol", "source", "shares", "value", "doc_id"]
 
 
 def _text(v):
@@ -103,8 +105,9 @@ def groups(first, second):
     return out
 
 
-def holdings(rows, account_id):
-    """An account tab's rows to holdings rows for account_id, and notes about rows left out."""
+def holdings(rows, account_id, source=""):
+    """An account tab's rows to holdings rows for account_id (the part of it source names, when the tab is one
+    money source of a workplace plan), and notes about rows left out."""
     if len(rows) < 3:
         return pd.DataFrame(columns=COLUMNS[:-1]), []
     cols = groups(rows[0], rows[1])
@@ -132,7 +135,8 @@ def holdings(rows, account_id):
                 shares = count if role == "shares" or count > 1 else ""
             if value == 0 and shares in ("", 0):
                 continue
-            out.append({"as_of": as_of, "account_id": account_id, "symbol": symbol, "shares": shares, "value": value})
+            out.append({"as_of": as_of, "account_id": account_id, "symbol": symbol, "source": source,
+                        "shares": shares, "value": value})
     df = pd.DataFrame(out, columns=COLUMNS[:-1])
     df.attrs["dates"] = sorted(set(dates))  # every date the tab has a row for, a row of zeros included
     return df, notes
@@ -169,7 +173,7 @@ def merge(frames):
     df = pd.concat(frames, ignore_index=True)
     df["shares"] = pd.to_numeric(df["shares"], errors="coerce")
     df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    out = (df.groupby(["as_of", "account_id", "symbol"], sort=True, dropna=False)
+    out = (df.groupby(["as_of", "account_id", "symbol", "source"], sort=True, dropna=False)
              .agg(shares=("shares", lambda s: round(s.sum(), 6) if s.notna().any() else ""),
                   value=("value", lambda s: round(s.sum(), 2)))
              .reset_index())

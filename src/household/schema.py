@@ -72,10 +72,14 @@ LEDGER = (
     Table("equity_sales", ("sale_date", "grant_id", "vest_date", "shares", "sale_price",
                            "proceeds", "basis", "gain", "term", "doc_id"),
           {"term": ("short_term", "long_term")}),
-    Table("holdings", ("as_of", "account_id", "symbol", "shares", "value", "doc_id")),
-    # an investment account's activity (parsers/fidelity.py): shares and their value, and money in or out
+    # a reading of what an account held on a date: shares and value per fund (shares blank for a value alone).
+    # source is the part of a workplace plan the reading covers (pretax, match, aftertax, rollover, roth), blank
+    # for the whole account
+    Table("holdings", ("as_of", "account_id", "symbol", "source", "shares", "value", "doc_id")),
+    # an investment account's activity (parsers/fidelity.py, parsers/ofx_invest.py): shares and their value, and
+    # money in or out; source is a workplace plan's money source for the row, as its custodian names it
     Table("investment_activity", ("activity_id", "account_id", "date", "kind", "action", "symbol", "description",
-                                  "shares", "price", "value", "amount", "cash_balance", "doc_id"),
+                                  "shares", "price", "value", "amount", "cash_balance", "source", "doc_id"),
           {"kind": ("contribution", "buy", "sell", "exchange", "reinvest", "dividend", "interest", "conversion_in",
                     "conversion_out", "transfer_in", "transfer_out", "withdrawal", "fee", "adjustment", "other")}),
     # each fund or stock the household holds: its name, asset class and expense ratio, and the symbol

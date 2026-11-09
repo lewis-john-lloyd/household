@@ -133,10 +133,56 @@ def resolve_account(hint, file_name, accounts):
 
 
 def finish_investment_rows(result, file_name, accounts):
-    """Fill in an investment history's account and activity ids (in place on result), from its file name."""
+    """Fill in an investment history's accounts and activity ids (in place on result).
+
+    A file for one account (Fidelity's) finds it from its file name. A file of several (an OFX download)
+    marks each statement's rows "acct:<last four>", each matched to the accounts table's last4 alone; then
+    a transfer out of a pre-tax account and one into a Roth account in the same file, on the same day for
+    the same money, is a conversion (a backdoor Roth: the traditional IRA's deposit moved to the Roth IRA).
+    """
     from .parsers import fidelity
-    account = resolve_account(result.account_hint, file_name, accounts)
-    return fidelity.finish(result, str(account["account_id"]))
+    acts = result.tables.get("investment_activity")
+    marked = sorted({str(a) for a in acts["account_id"] if str(a).startswith("acct:")}) if acts is not None and len(acts) else []
+    for name in ("holdings",):
+        if name in result.tables and len(result.tables[name]):
+            marked = sorted(set(marked) | {str(a) for a in result.tables[name]["account_id"] if str(a).startswith("acct:")})
+    if not marked:
+        account = resolve_account(result.account_hint, file_name, accounts)
+        return fidelity.finish(result, str(account["account_id"]))
+    to = {m: str(resolve_account(m.split(":", 1)[1], "", accounts)["account_id"]) for m in marked}
+    for name, df in list(result.tables.items()):
+        if "account_id" in df and len(df):
+            df = df.copy()
+            df["account_id"] = df["account_id"].map(lambda a: to.get(str(a), a))
+            result.tables[name] = df
+    if acts is not None and len(acts):
+        df = result.tables["investment_activity"]
+        df["activity_id"] = [hashlib.sha256(f"{a}|{k}".encode()).hexdigest()[:16]
+                             for a, k in zip(df["account_id"], df["activity_id"])]
+        result.tables["investment_activity"] = conversions(df, accounts)
+    result.account_id = to[marked[0]] if len(marked) == 1 else ""
+    result.label = f"{result.account_id or 'accounts'}_{result.covers_to or 'undated'}"
+    def named(note):
+        for m in marked:
+            note = note.replace(f"account ..{m.split(':', 1)[1]}", to[m])
+        return note
+    result.notes = [named(n) for n in result.notes]
+    return result
+
+
+def conversions(df, accounts):
+    """Name a transfer pair between a pre-tax and a Roth account (same day, same money) conversion_out/_in."""
+    treatment = {str(a["account_id"]): str(a.get("tax_treatment", "")) for a in accounts.to_dict("records")}
+    df = df.copy()
+    money = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0).round(2)
+    outs = df.index[(df["kind"] == "transfer_out") & df["account_id"].map(lambda a: treatment.get(a) == "pre_tax")]
+    ins = list(df.index[(df["kind"] == "transfer_in") & df["account_id"].map(lambda a: treatment.get(a) == "roth")])
+    for o in outs:
+        match = next((i for i in ins if df.at[i, "date"] == df.at[o, "date"] and money[i] == -money[o]), None)
+        if match is not None:
+            df.at[o, "kind"], df.at[match, "kind"] = "conversion_out", "conversion_in"
+            ins.remove(match)
+    return df
 
 
 def finish_bank_rows(result, file_name, accounts, recorded_at):

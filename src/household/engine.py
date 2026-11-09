@@ -60,14 +60,16 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
     """Stage 1 for the migration: back up the ledger, then add the legacy investments workbook's funds to
     `securities` and its account tabs' readings to `holdings` (legacy_investments.py).
 
-    tabs maps each account tab's name to the ledger account_id it belongs to ({"tab": "account_id"}); several
-    tabs can name one account. Only the tabs named are read. A fund the ledger already lists, or a reading it
+    tabs maps each account tab's name to the ledger account_id it belongs to ({"tab": "account_id"}), or to an
+    account_id and the plan money source the tab holds ({"tab": "account_id:roth"}); several tabs can name one
+    account. Only the tabs named are read. A fund the ledger already lists, or a reading it
     already holds (same date, account and fund), is not added again, so running it twice adds nothing.
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
     known = set(_read(ledger, "accounts")["account_id"].astype(str).str.strip())
-    unknown = sorted({a for a in tabs.values() if a not in known})
+    where = {tab: (target.split(":", 1) + [""])[:2] for tab, target in tabs.items()}
+    unknown = sorted({a for a, _ in where.values() if a not in known})
     if unknown:
         raise ValueError(f"no such accounts in the ledger: {', '.join(unknown)} (add them first)")
     backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
@@ -77,16 +79,18 @@ def ingest_legacy_investments(session, folder_id, workbook_id, tabs, funds_tab="
     read = {n: vr.get("values", []) for n, vr in zip(names, got.get("valueRanges", []))}
     funds, notes = legacy_investments.securities(read[funds_tab])
     frames = []
-    for tab, account in tabs.items():
-        df, more = legacy_investments.holdings(read[tab], account)
+    for tab, (account, source) in where.items():
+        df, more = legacy_investments.holdings(read[tab], account, source)
         frames.append(df)
         notes += more
     held = legacy_investments.merge(frames)
     have_funds = set(_read(ledger, "securities")["symbol"].astype(str).str.strip())
     funds = funds[~funds["symbol"].isin(have_funds)]
     have = _read(ledger, "holdings")
-    keys = set(zip(have["as_of"].astype(str), have["account_id"].astype(str), have["symbol"].astype(str)))
-    new = held[[k not in keys for k in zip(held["as_of"], held["account_id"], held["symbol"])]]
+    def key(df):
+        return zip(*(df[c].astype(str) for c in ("as_of", "account_id", "symbol", "source")))
+    keys = set(key(have))
+    new = held[[k not in keys for k in key(held)]]
     counts = sheets.append_tables(ledger, [(schema.table(schema.LEDGER, "securities"), funds),
                                            (schema.table(schema.LEDGER, "holdings"), new)])
     for note in notes:

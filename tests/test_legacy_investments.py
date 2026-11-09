@@ -49,11 +49,19 @@ def test_the_funds_tab_becomes_securities_quoted_by_their_own_symbol():
 
 def test_an_account_tab_reads_shares_and_value_per_fund_on_each_date():
     df, notes = li.holdings(IRA, "a_ira")
-    assert df.values.tolist() == [
+    assert df.drop(columns="source").values.tolist() == [
         ["2001-01-12", "a_ira", "WILLX", "", 80],  # a value with no shares yet
         ["2001-03-03", "a_ira", "ACMEX", 2.5, 50], ["2001-03-03", "a_ira", "WILLX", 1.25, 40],
         ["2001-03-03", "a_ira", "cash", 5, 5]]
-    assert notes == []
+    assert notes == [] and set(df["source"]) == {""}
+
+
+def test_a_tab_that_is_one_money_source_of_a_plan_keeps_its_readings_apart():
+    pre, _ = li.holdings(IRA, "a_401k", "pretax")
+    roth, _ = li.holdings(IRA, "a_401k", "roth")
+    df = li.merge([pre, roth])
+    on = df[(df["as_of"] == "2001-03-03") & (df["symbol"] == "ACMEX")]
+    assert on[["source", "shares", "value"]].values.tolist() == [["pretax", 2.5, 50], ["roth", 2.5, 50]]
 
 
 def test_a_plan_fund_a_label_and_a_value_per_name_read_as_values():

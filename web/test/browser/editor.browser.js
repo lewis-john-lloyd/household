@@ -593,3 +593,39 @@ test("retirement: the plan, each year, the strategies, Social Security and the a
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+const LINE = (key, group, label, owner, values) => ({ key, group, label, owner,
+  points: values.map((v, i) => [`20${String(10 + i).padStart(2, "0")}-12-31`, v]) });
+const INVESTMENTS = {
+  asOf: "2025-12-31", total: 90, buckets: [{ key: "taxable", label: "Taxable", value: 90 }], funds: [], trades: [], allocation: [],
+  accounts: [{ account: "a_brokerage", owner: "alex", wrapper: "brokerage", bucket: "taxable", value: 90, carried: false }],
+  owners: [{ owner: "alex", parts: { taxable: 90 }, total: 90 }], history: [], notes: [], openLots: [], lotSales: [], lotYears: [],
+  lotNotes: [],
+  lines: [LINE("net_worth", "total", "Net worth", "", [10, 20, 30]), LINE("invested", "total", "Investments", "", [10, 20, 30]),
+          LINE("owner:alex", "owner", "alex", "alex", [10, 20, 30]), LINE("bucket:taxable", "bucket", "Taxable", "", [10, 20, 30])]
+    .concat(Array.from({ length: 9 }, (_, n) => LINE(`account:acct_${n}`, "account", `acct_${n}`, "alex", [n, n + 1, n + 2]))),
+};
+
+test("investments: over time draws any lines chosen, each keeping its color, up to eight", async () => {
+  const page = await open(`window.__answers.getInvestments = ${JSON.stringify(INVESTMENTS)};
+                           window.__location = { parameter: { view: 'investments', tab: 'history' } };`);
+  await page.waitForSelector("#investments-body .line-picks");
+  assert.equal(await page.textContent("#investments-body h2"), "Over time");
+  const pressed = () => page.$$eval("#investments-body .line-pick[aria-pressed='true']", (b) => b.map((x) => x.textContent));
+  assert.deepEqual(await pressed(), ["Net worth", "Investments"]);  // no home equity line to start with
+  const color = (name) => page.$eval(`#investments-body .line-pick:has-text('${name}') .swatch`, (s) => s.style.background);
+  await page.click("#investments-body .line-pick:has-text('acct_3')");
+  assert.equal(await color("acct_3"), "var(--series-3)");
+  await page.click("#investments-body .line-pick:has-text('Net worth')");
+  assert.equal(await color("acct_3"), "var(--series-3)");  // taking one off doesn't repaint the rest
+  assert.equal(await page.$$eval("#investments-body table.w-table tr:has(td)", (r) => r.length), 2);
+  for (const n of [0, 1, 2, 4, 5, 6]) await page.click(`#investments-body .line-pick:has-text('acct_${n} ')`);
+  assert.equal((await pressed()).length, 8);
+  assert.equal(await page.$eval("#investments-body .line-pick:has-text('acct_7')", (b) => b.disabled), true);
+  await page.click("#investments-body .segmented button:has-text('1 year')");
+  assert.equal(await page.$eval("#investments-body .segmented button[aria-pressed='true']", (b) => b.textContent), "1 year");
+  await page.click("#investments-body .subtabs button:has-text('Overview')");
+  assert.equal(await page.$$eval("#investments-body svg.w-chart, #investments-body .line-picks", (x) => x.length), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

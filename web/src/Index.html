@@ -538,6 +538,17 @@
       .w-table tr.picked td { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 500; }
       .w-table tr.short td { color: var(--error); }
       .r-toolbar { margin: 0 0 12px; }
+      .over-bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+      .over-group { font-size: 14px; font-weight: 500; margin: 16px 0 8px; color: var(--on-surface-variant); }
+      .line-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+      .line-pick { min-height: 32px; padding: 0 12px; border-radius: 8px; background: transparent; border: 1px solid var(--outline-variant);
+        color: var(--on-surface-variant); display: inline-flex; align-items: center; gap: 8px; }
+      .line-pick:hover { box-shadow: none; background: var(--surface-container); }
+      .line-pick[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; }
+      .line-pick .swatch, .over-name .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none;
+        box-shadow: inset 0 0 0 1px var(--outline-variant); }
+      .line-pick[aria-pressed="true"] .swatch { box-shadow: none; }
+      .over-name { display: inline-flex; align-items: center; gap: 8px; }
       .r-toolbar select { max-width: 100%; }
       .w-table tr.projected td { color: var(--on-surface-variant); }
       .w-table tr.total td { font-weight: 500; border-bottom: 0; }
@@ -3050,6 +3061,8 @@
 
       // --- Investments and Home -----------------------------------------------------------------------------------
       var investments = null, home = null, investView = "overview", homeView = "overview";
+      var INVEST_PARTS = [["overview", "Overview"], ["history", "Over time"], ["allocation", "Allocation"], ["accounts", "Accounts"],
+                          ["lots", "Lots"]];
       var pct = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
       var BUCKET_SERIES = { "401k_pretax": 1, "401k_roth": 2, ira_pretax: 3, ira_roth: 4, hsa: 5, taxable: 6, ibonds: 7, "529": 8 };
       var PART_NAMES = { "401k_pretax": "401(k) pre-tax", "401k_roth": "401(k) Roth", ira_pretax: "IRA pre-tax", ira_roth: "IRA Roth",
@@ -3324,12 +3337,14 @@
         var d = investments, body = document.getElementById("investments-body");
         body.innerHTML = "";
         if (!d.asOf) { body.appendChild(el("p", "No investment values yet: run compute after the holdings are in.", "support")); return; }
-        subtabs(body, "Investments", [["overview", "Overview"], ["allocation", "Allocation"], ["accounts", "Accounts"], ["lots", "Lots"]],
+        subtabs(body, "Investments", INVEST_PARTS,
                 investView, function (v) { investView = v; drawInvestments(); });
         var head = el("div", null, "w-head");
-        head.appendChild(el("h2", { overview: "Investments", allocation: "Allocation", accounts: "Accounts", lots: "Lots and sales" }[investView]));
+        head.appendChild(el("h2", { overview: "Investments", history: "Over time", allocation: "Allocation", accounts: "Accounts",
+                                    lots: "Lots and sales" }[investView]));
         head.appendChild(el("span", "as of " + longDate(d.asOf), "support"));
         body.appendChild(head);
+        if (investView === "history") { drawOverTime(body, d); return; }
         if (investView === "allocation") { drawAllocation(body, d); return; }
         if (investView === "accounts") { drawAccounts(body, d); return; }
         if (investView === "lots") { drawLots(body, d); return; }
@@ -3380,16 +3395,112 @@
         });
         buckets.style.border = "0"; buckets.style.padding = "12px 0 0";
 
-        var hist = el("section", null, "panel w-wide");
-        hist.appendChild(el("h3", "Net worth over time"));
-        hist.appendChild(el("p", "Month-ends from the first reading, and today. Home equity counts each home at its purchase price " +
-                                 "(the home_value_basis setting) less what is owed on it.", "support"));
-        body.appendChild(hist);
-        lineChart(hist, [
-          { name: "Net worth", color: "var(--series-1)", points: d.history.map(function (p) { return [p.date, p.total]; }) },
-          { name: "Investments", color: "var(--series-3)", points: d.history.map(function (p) { return [p.date, p.invested]; }) },
-          { name: "Home equity", color: "var(--series-4)", points: d.history.filter(function (p) { return p.homes; }).map(function (p) { return [p.date, p.homes]; }) }
-        ].filter(function (s) { return s.points.length; }), { label: "Net worth, investments and home equity at each month-end" });
+      }
+
+      // Over time: any line the model offers (totals, an owner, a tax bucket, an account), up to eight at once. Each
+      // chosen line keeps its color while it stays chosen, so taking one off doesn't repaint the rest.
+      var overTime = null, overRange = "all";
+      var OVER_GROUPS = [["total", "Totals"], ["owner", "By owner"], ["bucket", "By tax treatment"], ["account", "Accounts"]];
+      var OVER_RANGES = [["all", "All"], ["10", "10 years"], ["5", "5 years"], ["1", "1 year"]];
+      var OVER_MAX = 8;
+
+      function overLabel(l) {
+        if (l.group === "owner") return ownerName(l.owner);
+        if (l.group === "account") return l.label + (l.owner ? " (" + ownerName(l.owner) + ")" : "");
+        return l.label;
+      }
+
+      function drawOverTime(body, d) {
+        var byKey = {};
+        d.lines.forEach(function (l) { byKey[l.key] = l; });
+        if (!overTime) {
+          overTime = {};
+          ["net_worth", "invested", "home_equity"].filter(function (k) { return byKey[k]; })
+            .forEach(function (k, i) { overTime[k] = i + 1; });
+        }
+        Object.keys(overTime).forEach(function (k) { if (!byKey[k]) delete overTime[k]; });
+        var chosen = Object.keys(overTime).sort(function (a, b) { return overTime[a] - overTime[b]; });
+        var from = "";
+        if (overRange !== "all") {
+          var cut = new Date(d.asOf + "T00:00:00");
+          cut.setFullYear(cut.getFullYear() - Number(overRange));
+          from = cut.toISOString().slice(0, 10);
+        }
+        var inRange = function (l) { return l.points.filter(function (p) { return p[0] >= from; }); };
+
+        var bar = el("div", null, "r-toolbar over-bar");
+        var seg = el("div", null, "segmented");
+        seg.setAttribute("role", "group");
+        seg.setAttribute("aria-label", "How far back");
+        OVER_RANGES.forEach(function (r) {
+          var b = button(r[1], function () { overRange = r[0]; drawInvestments(); });
+          b.setAttribute("aria-pressed", String(overRange === r[0]));
+          seg.appendChild(b);
+        });
+        bar.appendChild(seg);
+        if (chosen.length) bar.appendChild(button("Clear", function () { overTime = {}; drawInvestments(); }));
+        body.appendChild(bar);
+
+        var chart = el("section", null, "panel w-wide");
+        chart.appendChild(el("h3", chosen.length ? "Value over time" : "Choose lines below"));
+        chart.appendChild(el("p", "Month-ends from the first reading, and today. Home equity counts each home at its purchase price " +
+                                  "(the home_value_basis setting) less what is owed on it; an account's line is all its parts together.", "support"));
+        body.appendChild(chart);
+        var series = chosen.map(function (k) {
+          return { name: overLabel(byKey[k]), color: "var(--series-" + overTime[k] + ")", points: inRange(byKey[k]) };
+        }).filter(function (s) { return s.points.length; });
+        if (series.length) {
+          lineChart(chart, series, { label: "Value over time: " + series.map(function (s) { return s.name; }).join(", ") });
+          var t = wTable(chart, ["Line", "From", "Then", "Now", "Change"], [2, 3, 4]);
+          series.forEach(function (s) {
+            var first = s.points[0], last = s.points[s.points.length - 1];
+            var name = el("span", null, "over-name");
+            var sw = el("i", null, "swatch");
+            sw.style.background = s.color;
+            name.appendChild(sw);
+            name.appendChild(document.createTextNode(s.name));
+            t.row([name, longDate(first[0]), money.format(first[1]), money.format(last[1]),
+                   (last[1] - first[1] >= 0 ? "+" : "−") + money.format(Math.abs(last[1] - first[1]))], "",
+                  [s.name.toLowerCase(), first[0], first[1], last[1], last[1] - first[1]]);
+          });
+        } else if (chosen.length) {
+          chart.appendChild(el("p", "Nothing in this range.", "support"));
+        }
+
+        var pick = panel(body, "Lines", "Up to " + OVER_MAX + " at once.");
+        pick.classList.add("w-wide");
+        OVER_GROUPS.forEach(function (g) {
+          var mine = d.lines.filter(function (l) { return l.group === g[0]; });
+          if (!mine.length) return;
+          pick.appendChild(el("h4", g[1], "over-group"));
+          var row = el("div", null, "line-picks");
+          row.setAttribute("role", "group");
+          row.setAttribute("aria-label", g[1]);
+          mine.forEach(function (l) {
+            var on = overTime[l.key] !== undefined;
+            var b = el("button", null, "line-pick");
+            b.type = "button";
+            b.setAttribute("aria-pressed", String(on));
+            var sw = el("i", null, "swatch");
+            if (on) sw.style.background = "var(--series-" + overTime[l.key] + ")";
+            b.appendChild(sw);
+            b.appendChild(document.createTextNode(overLabel(l)));
+            b.disabled = !on && chosen.length >= OVER_MAX;
+            if (b.disabled) b.title = OVER_MAX + " lines at most: take one off first";
+            b.addEventListener("click", function () {
+              if (on) {
+                delete overTime[l.key];
+              } else {
+                var used = Object.keys(overTime).map(function (k) { return overTime[k]; });
+                for (var slot = 1; used.indexOf(slot) >= 0; slot++) { /* the lowest free color */ }
+                overTime[l.key] = slot;
+              }
+              drawInvestments();
+            });
+            row.appendChild(b);
+          });
+          pick.appendChild(row);
+        });
       }
 
       function drawAllocation(body, d) {
@@ -4872,6 +4983,7 @@
         }
         if (p.view === "edit") { editTab = "review"; setView("edit"); return; }
         if (p.view === "retirement" && p.tab && RETIRE_PARTS.some(function (t) { return t[0] === p.tab; })) retireView = p.tab;
+        if (p.view === "investments" && p.tab && INVEST_PARTS.some(function (t) { return t[0] === p.tab; })) investView = p.tab;
         if (["flows", "budget", "investments", "retirement", "home", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(p.view) >= 0) setView(p.view); else load();
       }
     </script>

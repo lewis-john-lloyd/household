@@ -41,6 +41,18 @@ test("net worth by owner lists the adults before the kids, and its history split
                    [["2001-03-31", 10, 10, 0, 0], ["2001-04-10", 165, 70, 100, -5]]);
 });
 
+test("over time offers the totals, each owner, each tax bucket and each account, each line by date", () => {
+  const page = wealth.wealthPage({ investment_values: VALUES, net_worth: NET });
+  assert.deepEqual(page.lines.map((l) => l.key), ["net_worth", "invested", "home_equity", "other_debt", "owner:alex", "owner:sam",
+                                                  "owner:kids", "bucket:401k_pretax", "bucket:401k_roth", "bucket:ira_roth", "bucket:529",
+                                                  "account:a_plan", "account:k_529", "account:s_ira"]);
+  const line = (k: string) => page.lines.find((l) => l.key === k)!;
+  assert.deepEqual(line("account:a_plan").points, [["2001-03-31", 10], ["2001-04-10", 40]]);  // its pre-tax and Roth parts together
+  assert.deepEqual(line("home_equity").points, [["2001-04-10", 100]]);  // no home before it was bought
+  assert.deepEqual(line("owner:alex").points, [["2001-03-31", 10], ["2001-04-10", 80]]);
+  assert.equal(line("account:s_ira").owner, "sam");
+});
+
 test("the home page groups each home's lines and sums the amortization by year, marking projected years", () => {
   const page = wealth.homePage({
     property_summary: [["property_id", "order", "key", "label", "value", "as_of", "note", "run_id"],

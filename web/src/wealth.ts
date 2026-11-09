@@ -17,6 +17,9 @@ interface OwnerRow { owner: string; parts: Record<string, number>; total: number
 
 interface WorthPoint { date: string; total: number; invested: number; homes: number; debt: number }
 
+/** One line the Over time part can draw: a total, an owner's net worth, a tax bucket, or one account. */
+interface ValueLine { key: string; group: "total" | "owner" | "bucket" | "account"; label: string; owner: string; points: [string, number][] }
+
 interface AllocationRow {
   node: string; parent: string; depth: number; label: string; leaf: boolean;
   targetShare: number; currentShare: number; targetValue: number; currentValue: number; deltaValue: number;
@@ -45,6 +48,7 @@ interface WealthPage {
   funds: FundValue[];
   owners: OwnerRow[];
   history: WorthPoint[];
+  lines: ValueLine[];  // every line the Over time part offers, totals first, then owners, buckets and accounts
   allocation: AllocationRow[];
   trades: Trade[];
   notes: string[];
@@ -99,6 +103,49 @@ function latestNotes(tabs: Record<string, unknown[][]>, keep: RegExp): string[] 
   const run = runs.length ? runs.sort((a, b) => a.computed_at.localeCompare(b.computed_at))[runs.length - 1].run_id : "";
   return wealthRows(tabs.run_notes || []).filter((r) => r.stage === "compute" && r.run_id === run && keep.test(r.message))
     .sort((a, b) => num(a.n) - num(b.n)).map((r) => r.message);
+}
+
+/** Each date's sum of value by key, as [date, value] in date order. */
+function summed(rows: Record<string, string>[], key: (r: Record<string, string>) => string): Map<string, [string, number][]> {
+  const by = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const k = key(r);
+    if (!k) continue;
+    const dates = by.get(k) || new Map<string, number>();
+    dates.set(r.date, (dates.get(r.date) || 0) + num(r.value));
+    by.set(k, dates);
+  }
+  const out = new Map<string, [string, number][]>();
+  by.forEach((dates, k) => out.set(k, Array.from(dates.entries()).sort((a, b) => a[0].localeCompare(b[0]))));
+  return out;
+}
+
+function valueLines(vals: Record<string, string>[], net: Record<string, string>[], history: WorthPoint[],
+                    ownerOrder: (o: string) => number): ValueLine[] {
+  const lines: ValueLine[] = [];
+  const total = (key: string, label: string, pick: (p: WorthPoint) => number) => {
+    const points = history.filter((p) => pick(p) !== 0 || key === "net_worth").map((p) => [p.date, pick(p)] as [string, number]);
+    if (points.length) lines.push({ key, group: "total", label, owner: "", points });
+  };
+  total("net_worth", "Net worth", (p) => p.total);
+  total("invested", "Investments", (p) => p.invested);
+  total("home_equity", "Home equity", (p) => p.homes);
+  total("other_debt", "Other debt", (p) => p.debt);
+  const owners = summed(net, (r) => r.owner);
+  Array.from(owners.keys()).sort((a, b) => ownerOrder(a) - ownerOrder(b) || a.localeCompare(b)).forEach((o) => {
+    lines.push({ key: "owner:" + o, group: "owner", label: o, owner: o, points: owners.get(o) || [] });
+  });
+  const buckets = summed(vals, (r) => r.bucket);
+  BUCKET_ORDER.concat(Array.from(buckets.keys()).filter((b) => BUCKET_ORDER.indexOf(b) < 0)).forEach((b) => {
+    if (buckets.has(b)) lines.push({ key: "bucket:" + b, group: "bucket", label: BUCKET_LABELS[b] || b, owner: "", points: buckets.get(b) || [] });
+  });
+  const owner: Record<string, string> = {};
+  vals.forEach((r) => { owner[r.account_id] = r.owner; });
+  const accounts = summed(vals, (r) => r.account_id);
+  Array.from(accounts.keys()).sort().forEach((a) => {
+    lines.push({ key: "account:" + a, group: "account", label: a, owner: owner[a] || "", points: accounts.get(a) || [] });
+  });
+  return lines;
 }
 
 function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
@@ -167,12 +214,13 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
     years.set(x.year, y);
   }
   const ownerOrder = (o: string) => (o === "kids" ? 1 : 0);
+  const history = Array.from(points.values()).sort((a, b) => a.date.localeCompare(b.date));
   return {
     asOf, total: now.reduce((s, r) => s + num(r.value), 0), buckets,
     accounts: Array.from(byAccount.values()).sort((a, b) => b.value - a.value),
     funds: Array.from(byFund.values()).sort((a, b) => b.value - a.value),
     owners: Array.from(owners.values()).sort((a, b) => ownerOrder(a.owner) - ownerOrder(b.owner) || a.owner.localeCompare(b.owner)),
-    history: Array.from(points.values()).sort((a, b) => a.date.localeCompare(b.date)),
+    history, lines: valueLines(vals, net, history, ownerOrder),
     allocation, trades, notes: latestNotes(tabs, /^(valuation|rebalance):/),
     openLots, lotSales, lotYears: Array.from(years.values()).sort((a, b) => b.year.localeCompare(a.year)),
     lotNotes: latestNotes(tabs, /^lots\b/),

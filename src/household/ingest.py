@@ -146,6 +146,9 @@ def finish_investment_rows(result, file_name, accounts):
     for name in ("holdings",):
         if name in result.tables and len(result.tables[name]):
             marked = sorted(set(marked) | {str(a) for a in result.tables[name]["account_id"] if str(a).startswith("acct:")})
+    if result.parser == "edvest":  # its positions are dated by the download's name
+        from .parsers import edvest
+        edvest.date_positions(result, file_name)
     if not marked:
         account = resolve_account(result.account_hint, file_name, accounts)
         return fidelity.finish(result, str(account["account_id"]))

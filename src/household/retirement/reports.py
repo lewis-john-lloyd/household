@@ -1,14 +1,17 @@
 """Searching for the retirement year and the strategy, and laying the plan out as the Reports tables."""
 
 from dataclasses import replace
+from typing import Optional
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
-from .. import retirelaw as law, settings
+from .. import retirelaw as law
+from .. import settings
 from .model import CONVERSIONS, ORDERS, RULES, Household, Strategy, parse_strategy
+from .simulation import Outcome, _age_mid, fixed_paths, historical_paths, monte_carlo_paths, run_all, simulate, success
 from .ssa import _claim_year, benefits, pia
-from .simulation import _age_mid, fixed_paths, historical_paths, monte_carlo_paths, run_all, simulate, success
 
 # --- the reports ------------------------------------------------------------------------------------------
 
@@ -92,15 +95,17 @@ SS_COLUMNS = [
 EARNINGS_COLUMNS = ["person", "year", "fica_earnings", "indexed", "counted"]
 
 
-def _ages(h, year):
+def _ages(h: Household, year: int) -> str:
     return "/".join(str(year - p.born.year) for p in h.people)
 
 
-def first_spending(h, year):
+def first_spending(h: Household, year: int) -> float:
     return h.spending.get(year, h.spending[max(h.spending)]) if h.spending else 0.0
 
 
-def search(h, strategy, today_year, candidates=None):
+def search(
+    h: Household, strategy: Strategy, today_year: int, candidates: Optional[range] = None
+) -> tuple[DataFrame, int | None]:
     """The retirement years table and the year chosen."""
     mc = monte_carlo_paths(h)
     rows, chosen = [], None
@@ -108,8 +113,8 @@ def search(h, strategy, today_year, candidates=None):
     for y in candidates or range(h.start, last + 1):
         res = run_all(h, strategy, y, today_year, {"monte_carlo": mc})
         for model, r in res.items():
-            at = float(np.median(r["at_retirement"]))
-            starts = [s for s in r["first_short"] if s]
+            at = float(np.median(r.at_retirement))
+            starts = [s for s in r.first_short if s]
             rows.append(
                 {
                     "retire_year": y,
@@ -117,12 +122,12 @@ def search(h, strategy, today_year, candidates=None):
                     "model": model.split(" ")[0] if model.startswith("fixed") else model,
                     "scenario": model[len("fixed ") :] if model.startswith("fixed") else "",
                     "success": success(r),
-                    "median_end": float(np.median(r["end"])),
-                    "p10_end": float(np.percentile(r["end"], 10)),
+                    "median_end": float(np.median(r.end)),
+                    "p10_end": float(np.percentile(r.end, 10)),
                     "short_from": int(min(starts)) if starts and model.startswith("fixed") else "",
                     "at_retirement": at,
-                    "first_spending": float(np.median(r["first_need"])),
-                    "withdrawal_rate": float(np.median(r["first_rate"])),
+                    "first_spending": float(np.median(r.first_need)),
+                    "withdrawal_rate": float(np.median(r.first_rate)),
                     "chosen": "",
                 }
             )
@@ -131,7 +136,7 @@ def search(h, strategy, today_year, candidates=None):
     return pd.DataFrame(rows, columns=YEAR_COLUMNS), chosen
 
 
-def variants(h, base, claim_choices=(62, 67, 70)):
+def variants(h: Household, base: Strategy, claim_choices: tuple[int, int, int] = (62, 67, 70)) -> list[Strategy]:
     """The base strategy under the other spending rules, and with each adult claiming at each age."""
     out = [replace(base, rule=r) for r in RULES if r != base.rule]
     if len(h.people) <= 2:
@@ -148,7 +153,9 @@ def variants(h, base, claim_choices=(62, 67, 70)):
     return out
 
 
-def strategies(h, retire_year, base, today_year, only=None):
+def strategies(
+    h: Household, retire_year: int, base: Strategy, today_year: int, only: Optional[list[Strategy]] = None
+) -> tuple[DataFrame, dict[Strategy, dict[str, Outcome]]]:
     """Every order, conversion target and 72(t) choice at the retirement year, and the base strategy's
     variants (or only the strategies given)."""
     mc = monte_carlo_paths(h)
@@ -185,21 +192,21 @@ def strategies(h, retire_year, base, today_year, only=None):
                     "claims": ", ".join(f"{n} {a}" for n, a in s.claims),
                     "model": model,
                     "success": success(r),
-                    "median_after_tax": float(np.median(r["after_tax"])),
-                    "p10_after_tax": float(np.percentile(r["after_tax"], 10)),
-                    "median_tax": float(np.median(r["tax"])),
-                    "median_irmaa": float(np.median(r["irmaa"])),
-                    "median_penalty": float(np.median(r["penalty"])),
-                    "median_converted": float(np.median(r["converted"])),
-                    "median_spent": float(np.median(r["spent"])),
-                    "lowest_spending": float(np.percentile(np.where(np.isfinite(r["lowest"]), r["lowest"], 1), 10)),
+                    "median_after_tax": float(np.median(r.after_tax)),
+                    "p10_after_tax": float(np.percentile(r.after_tax, 10)),
+                    "median_tax": float(np.median(r.tax)),
+                    "median_irmaa": float(np.median(r.irmaa)),
+                    "median_penalty": float(np.median(r.penalty)),
+                    "median_converted": float(np.median(r.converted)),
+                    "median_spent": float(np.median(r.spent)),
+                    "lowest_spending": float(np.percentile(np.where(np.isfinite(r.lowest), r.lowest, 1), 10)),
                     "chosen": "",
                 }
             )
     return pd.DataFrame(rows, columns=STRATEGY_COLUMNS), results
 
 
-def best(table):
+def best(table: DataFrame) -> Strategy | None:
     """Among constant-spending strategies with the usual claiming ages: those within a point of the best
     Monte Carlo success, the one with the most after-tax wealth at the end."""
     mc = table[(table["model"] == "monte carlo") & (table["rule"] == "constant") & (table["claims"] == "")]
@@ -209,20 +216,24 @@ def best(table):
     return parse_strategy(near.sort_values("median_after_tax", ascending=False).iloc[0]["strategy"])
 
 
-def plan_rows(h, strategy, retire_year, today_year, results=None):
+def plan_rows(
+    h: Household, strategy: Strategy, retire_year: int, today_year: int, results: Optional[dict[str, Outcome]] = None
+) -> DataFrame:
     """Year by year for one strategy at the middle fixed return, with the Monte Carlo spread of the total."""
     mid = h.cagrs[len(h.cagrs) // 2]
     det = (results or {}).get(f"fixed {mid:.0%}")
-    if det is None or not det.get("rows"):
+    if det is None or not det.rows:
         r, i = fixed_paths(h, mid)
         det = simulate(h, strategy, retire_year, r, i, today_year, record=True)
     mc = (results or {}).get("monte carlo")
-    if mc is None or mc.get("totals") is None:
+    totals = mc.totals if mc is not None else None
+    if totals is None:
         r, i = monte_carlo_paths(h)
-        mc = simulate(h, strategy, retire_year, r, i, today_year, record=True)
-    p10, p50, p90 = (np.percentile(mc["totals"], q, axis=1) for q in (10, 50, 90))
+        totals = simulate(h, strategy, retire_year, r, i, today_year, record=True).totals
+    assert totals is not None  # a recorded run keeps them
+    p10, p50, p90 = (np.percentile(totals, q, axis=1) for q in (10, 50, 90))
     rows = []
-    for j, row in enumerate(det["rows"]):
+    for j, row in enumerate(det.rows):
         rows.append(
             {
                 **{c: "" for c in PLAN_COLUMNS},
@@ -236,7 +247,9 @@ def plan_rows(h, strategy, retire_year, today_year, results=None):
     return pd.DataFrame(rows, columns=PLAN_COLUMNS).fillna("")
 
 
-def social_security(h, retire_year, today_year, claims=None):
+def social_security(
+    h: Household, retire_year: int, today_year: int, claims: Optional[dict[str, int]] = None
+) -> tuple[DataFrame, DataFrame]:
     """Each adult's benefit: the statement's estimate at their claiming age, the same figured here (working to
     the claim at the last earnings, which should agree), and what retiring in the plan's year leaves."""
     claims = claims or {}
@@ -301,7 +314,7 @@ def social_security(h, retire_year, today_year, claims=None):
 SEARCH_AGAIN = 3
 
 
-def success_at(years, year):
+def success_at(years: DataFrame, year: int) -> float:
     row = years[(years["retire_year"] == year) & (years["model"] == "monte carlo")]
     return float(row["success"].iloc[0]) if len(row) else 0.0
 

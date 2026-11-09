@@ -27,12 +27,17 @@ open lots (what each lot still holds, its basis and holding period), and notes. 
 account or symbol: they come from the ledger.
 """
 
+from collections.abc import Collection
 from datetime import date, timedelta
+from typing import Any, Optional
 
 import pandas as pd
+from pandas import DataFrame
 
 from . import logs, valuation
 from .legacy import parse_date
+from .logs import Line
+from .valuation import Prices
 
 WINDOW_DAYS = 30
 SHARE_EPS = 1e-6
@@ -77,7 +82,7 @@ ACQUIRED = ["lot_id", "account_id", "sheltered", "symbol", "group", "acquired", 
 SOLD = ["sale_date", "account_id", "symbol", "group", "shares", "proceeds", "lot_id", "reported_basis", "order"]
 
 
-def _num(value):
+def _num(value: float | int | str) -> Optional[float]:
     try:
         text = str(value).replace(",", "").replace("$", "").strip()
         return float(text) if text else None
@@ -85,7 +90,7 @@ def _num(value):
         return None
 
 
-def _day(value):
+def _day(value: str) -> str:
     """An ISO date from a date cell (text or a sheet's serial day count), "" for a blank or unreadable one."""
     if value is None or str(value).strip() == "":
         return ""
@@ -95,7 +100,7 @@ def _day(value):
         return ""
 
 
-def groups(securities):
+def groups(securities: DataFrame) -> dict[str, str]:
     """{symbol: wash group}: a security's wash_group when set, else its own symbol (the last row wins)."""
     out = {}
     if securities is not None and len(securities) and "wash_group" in securities:
@@ -105,7 +110,7 @@ def groups(securities):
     return out
 
 
-def factor(splits, symbol, day):
+def factor(splits: Optional[DataFrame], symbol: str, day: str) -> float:
     """How many of today's shares one share held on day is: the product of the ratios of the symbol's splits
     after day."""
     f = 1.0
@@ -118,9 +123,9 @@ def factor(splits, symbol, day):
     return f
 
 
-def grant_symbols(schedule):
+def grant_symbols(schedule: DataFrame) -> dict[str, str]:
     """{grant_id: symbol} from vest_schedule."""
-    out = {}
+    out: dict[str, str] = {}
     if schedule is not None and len(schedule):
         for g, s in zip(schedule["grant_id"].astype(str).str.strip(), schedule["symbol"].astype(str).str.strip()):
             if g and s:
@@ -128,7 +133,13 @@ def grant_symbols(schedule):
     return out
 
 
-def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
+def equity_lots(
+    vests: DataFrame,
+    sales: DataFrame,
+    schedule: DataFrame,
+    accounts: Optional[dict[str, str]] = None,
+    group_of: Optional[dict[str, str]] = None,
+) -> tuple[DataFrame, DataFrame, list[Line]]:
     """(acquired, sold, notes) from equity_vests and equity_sales: each vest's net shares at its market value,
     and each sale naming its lot. accounts: {symbol: the taxable account its shares are held in} (holders)."""
     symbols, group_of, accounts = grant_symbols(schedule), group_of or {}, accounts or {}
@@ -159,9 +170,9 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
     for n, r in enumerate(sales.to_dict("records") if sales is not None and len(sales) else []):
         grant, day, vested = str(r["grant_id"]).strip(), _day(r["sale_date"]), _day(r["vest_date"])
         shares = _num(r["shares"])
-        proceeds = _num(r["proceeds"])
-        if proceeds is None and shares is not None and _num(r["sale_price"]) is not None:
-            proceeds = shares * _num(r["sale_price"])
+        proceeds, price = _num(r["proceeds"]), _num(r["sale_price"])
+        if proceeds is None and shares is not None and price is not None:
+            proceeds = shares * price
         symbol = symbols.get(grant, "")
         if not (day and shares and proceeds is not None and symbol):
             continue
@@ -181,7 +192,7 @@ def equity_lots(vests, sales, schedule, accounts=None, group_of=None):
     return pd.DataFrame(acq, columns=ACQUIRED), pd.DataFrame(sold, columns=SOLD), sorted(set(notes))
 
 
-def holders(holdings, accounts, symbols):
+def holders(holdings: DataFrame, accounts: DataFrame, symbols: set[str]) -> dict[str, str]:
     """{symbol: account_id}: the taxable account whose latest reading holds each symbol (a stock plan's shares
     land in a brokerage account)."""
     if holdings is None or holdings.empty or not symbols:
@@ -199,7 +210,9 @@ def holders(holdings, accounts, symbols):
     return {s: g["account_id"].iloc[-1] for s, g in h.groupby("symbol")}
 
 
-def activity_lots(activity, accounts, group_of=None, leave_out=()):
+def activity_lots(
+    activity: DataFrame, accounts: DataFrame, group_of: Optional[dict[str, str]] = None, leave_out: Collection[str] = ()
+) -> tuple[DataFrame, DataFrame]:
     """(acquired, sold) frames from investment_activity: each purchase or reinvested dividend of a fund (cash
     left out) is a lot in any account; each sale in a taxable account is a sale. Symbols in leave_out (a stock
     plan's, read from its own records) are skipped."""
@@ -256,14 +269,14 @@ def activity_lots(activity, accounts, group_of=None, leave_out=()):
     return pd.DataFrame(acq, columns=ACQUIRED), pd.DataFrame(sold, columns=SOLD)
 
 
-def _plus_year(d):
+def _plus_year(d: date) -> date:
     try:
         return d.replace(year=d.year + 1)
     except ValueError:  # 29 February
         return d.replace(year=d.year + 1, day=28)
 
 
-def term(holding_from, sale_date):
+def term(holding_from: str, sale_date: str) -> str:
     """long_term when the shares were held more than a year, else short_term."""
     start, end = date.fromisoformat(holding_from), date.fromisoformat(sale_date)
     return "long_term" if end > _plus_year(start) else "short_term"
@@ -279,7 +292,8 @@ def build(
     the symbols whose losses are checked for wash sales (their wash groups, that is); None checks every
     symbol. A loss in any other symbol is taken as it is."""
     watched = None if wash_symbols is None else set(wash_symbols)
-    pieces, notes = [], []
+    pieces: list[dict[str, Any]] = []
+    notes: list[str] = []
     for r in acquired.sort_values(["acquired", "lot_id"], kind="stable").to_dict("records"):
         f = factor(splits, r["symbol"], r["acquired"])
         pieces.append(
@@ -300,11 +314,11 @@ def build(
                 "grant_id": r["grant_id"],
             }
         )
-    count = {}
+    count: dict[str, int] = {}
     for p in pieces:
         count[p["lot_id"]] = 1
 
-    def split(p, shares):
+    def split(p: dict[str, Any], shares: float) -> dict[str, Any]:
         """Carve shares off piece p into a new piece just after it; p keeps the rest. Returns the new piece."""
         count[p["lot_id"]] += 1
         moved = p["added"] * shares / p["open"]
@@ -460,7 +474,7 @@ def build(
     return form, lots, notes
 
 
-def priced(open_lots, prices, today):
+def priced(open_lots: DataFrame, prices: Prices, today: str) -> DataFrame:
     """open_lots with today's price, value, unrealized gain and the term a sale today would be."""
     out = open_lots.copy()
     close = [prices.on(sym, today) for sym in out["symbol"]]
@@ -471,14 +485,14 @@ def priced(open_lots, prices, today):
     return out
 
 
-def year_lines(form, facts=None):
+def year_lines(form: DataFrame, facts: Optional[DataFrame] = None) -> list[str]:
     """A note per tax year: the gains Form 8949 gives, beside the filed return's when it is on file."""
-    filed = {}
+    filed: dict[tuple[str, str], float | None] = {}
     if facts is not None and len(facts):
         for y, k, v in zip(facts["year"].astype(str), facts["key"].astype(str), facts["value"]):
             if k in ("capital_gain_short", "capital_gain_long"):
                 filed[(y, k)] = _num(v)
-    lines = []
+    lines: list[str] = []
     for y, t in sorted(by_year(form).items()):
         line = (
             f"lots {y}: short-term gain {t['short_term']:,.2f}, long-term {t['long_term']:,.2f}; "
@@ -491,12 +505,12 @@ def year_lines(form, facts=None):
     return lines
 
 
-def holding_check(open_lots, holdings, symbols):
+def holding_check(open_lots: DataFrame, holdings: DataFrame, symbols: set[str]) -> list[Line]:
     """A note for each stock plan symbol whose open lots disagree with its latest reading's shares."""
     if holdings is None or holdings.empty:
         return []
     h = holdings.assign(symbol=holdings["symbol"].astype(str).str.strip(), as_of=holdings["as_of"].astype(str))
-    lines = []
+    lines: list[Line] = []
     for sym in sorted(symbols):
         mine = h[h["symbol"] == sym]
         if mine.empty:
@@ -519,7 +533,7 @@ def holding_check(open_lots, holdings, symbols):
     return lines
 
 
-def check_reported(form, tolerance=0.02):
+def check_reported(form: DataFrame, tolerance: float = 0.02) -> DataFrame:
     """Lot parts whose basis before wash sales (basis less wash_carried) disagrees with the plan's reported
     basis for them (its sale row's, shared by shares)."""
     if form.empty:
@@ -528,9 +542,9 @@ def check_reported(form, tolerance=0.02):
     return form[reported.notna() & ((reported - (form["basis"] - form["wash_carried"])).abs() > tolerance)]
 
 
-def by_year(form):
+def by_year(form: DataFrame) -> dict[str, dict[str, float]]:
     """{year: {"short_term": gain, "long_term": gain, "disallowed": adjustment}} from form_8949."""
-    out = {}
+    out: dict[str, dict[str, float]] = {}
     for r in form.to_dict("records"):
         y = out.setdefault(str(r["year"]), {"short_term": 0.0, "long_term": 0.0, "disallowed": 0.0})
         y[r["term"]] += r["gain"]
@@ -538,6 +552,6 @@ def by_year(form):
     return out
 
 
-def adjusted_sales(form):
+def adjusted_sales(form: DataFrame) -> DataFrame:
     """form_8949 as equity_sales-like rows (sale_date, gain, term) for the tax projection."""
     return form[["sale_date", "gain", "term"]].copy()

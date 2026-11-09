@@ -1,14 +1,18 @@
 """Federal and Wisconsin tax in retirement, vectorized over the paths."""
 
-import numpy as np
+from collections.abc import Sequence
 
-from .. import retirelaw as law, taxdata
+import numpy as np
+from numpy import ndarray
+
+from .. import retirelaw as law
+from .. import taxdata
 from .model import LAW_YEAR
 
 # --- tax, vectorized over paths ---------------------------------------------------------------------------
 
 
-def _schedule(x, steps):
+def _schedule(x: ndarray, steps: Sequence[tuple[float, float]]) -> ndarray:
     tax = np.zeros_like(x)
     for i, (floor, rate) in enumerate(steps):
         top = steps[i + 1][0] if i + 1 < len(steps) else np.inf
@@ -21,13 +25,13 @@ WI = taxdata.wi_brackets(LAW_YEAR)
 P = taxdata.params(LAW_YEAR)
 
 
-def bracket_top(rate):
+def bracket_top(rate: float) -> int:
     """Taxable income at the top of the federal bracket with this rate."""
     floors = [f for f, r in FED]
     return floors[[r for _, r in FED].index(rate) + 1]
 
 
-def taxable_social_security(ss, other, deflator):
+def taxable_social_security(ss: ndarray, other: ndarray, deflator: float | ndarray) -> ndarray:
     """IRC 86 on a joint return: other is income before Social Security (AGI without it)."""
     b1, b2 = (b / deflator for b in law.SS_TAX_BASE_MFJ)
     prov = other + 0.5 * ss
@@ -36,7 +40,7 @@ def taxable_social_security(ss, other, deflator):
     return np.where(prov <= b1, 0.0, np.where(prov <= b2, mid, high))
 
 
-def deduction(n65, agi, year):
+def deduction(n65: int, agi: ndarray, year: int) -> int | ndarray:
     d = P["standard_deduction_mfj"] + law.AGED_DEDUCTION_MFJ * n65
     if law.SENIOR_YEARS[0] <= year <= law.SENIOR_YEARS[1]:
         d = d + n65 * np.maximum(
@@ -45,7 +49,18 @@ def deduction(n65, agi, year):
     return d
 
 
-def taxes(ordinary, gains, dividends, ss, penalized, excluded, n65, n_people, deflator, year):
+def taxes(
+    ordinary: ndarray,
+    gains: ndarray,
+    dividends: ndarray,
+    ss: ndarray,
+    penalized: ndarray,
+    excluded: ndarray,
+    n65: int,
+    n_people: int,
+    deflator: float | ndarray,
+    year: int,
+) -> tuple[ndarray, ndarray, ndarray, ndarray]:
     """(federal, wisconsin, agi, taxable Social Security) for a year: ordinary income other than Social
     Security, long-term gains, qualified dividends, benefits, the part that pays the 10% early, and the
     retirement income Wisconsin excludes."""
@@ -74,7 +89,7 @@ def taxes(ordinary, gains, dividends, ss, penalized, excluded, n65, n_people, de
     return federal + penalty, wisconsin, agi, ss_taxed
 
 
-def irmaa(magi, enrolled):
+def irmaa(magi: ndarray, enrolled: int) -> tuple[ndarray, ndarray]:
     """Yearly Part B and the Part D surcharge for the people enrolled, by the MAGI two years before."""
     floors = np.array([t[0] for t in law.IRMAA_MFJ])
     tier = np.searchsorted(floors, magi, side="right") - 1

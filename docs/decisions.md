@@ -89,17 +89,23 @@ left as written.
 
 **Cost.** One large commit per formatter, which blame is told to look past.
 
-## 8. Gradual typing, at the boundaries
+## 8. Gradual typing: the boundaries, and the money calculations in full
 
 **Decided.** The functions where one stage hands work to another are annotated, with the shared types in
-`kinds.py`; `tests/test_typed.py` keeps them annotated, and mypy checks every annotated function. Inside a
-module, annotations are welcome but not required. pandas frames are typed as frames, not by their columns.
+`kinds.py`; `tests/test_typed.py` keeps them annotated, and mypy checks every annotated function. The modules
+that do the money arithmetic (`lots`, `allocation`, `tax` and `retirement`) are typed in full: mypy refuses an
+unannotated function there and checks every body (`[[tool.mypy.overrides]]` in pyproject). Their state has
+named shapes rather than dicts of mixed values: the simulation's `Accounts`, `Year`, `Lifetime` and
+`Outcome`, and the retirement inputs' `_Held`, `_Saved` and `_Spent`. Elsewhere, annotations are welcome but
+not required. pandas frames are typed as frames, not by their columns.
 
-**Why.** The contracts between stages are where a mistake spreads furthest, and they are few. Annotating
-every helper would add more noise than safety, since most of the code passes frames whose columns `schema.py`
-already declares.
+**Why.** The contracts between stages are where a mistake spreads furthest, and they are few. The money
+modules are where a wrong type turns into a wrong number without an error. Annotating every helper elsewhere
+would add more noise than safety, since most of the code passes frames whose columns `schema.py` already
+declares.
 
 **Cost.** A frame's columns are not checked by mypy; the schema, the tests and the pinned outputs check them.
+A new helper in a money module needs its types before it passes.
 
 ## 9. TypeScript's unchecked index access stays off
 

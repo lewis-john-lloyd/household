@@ -1,12 +1,19 @@
 """Building the plan's inputs from the ledger and Reports, and the spending budget it uses."""
 
 import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
+from functools import partial
+from typing import Any, Optional
 
 import pandas as pd
+from pandas import DataFrame, Series
 
-from .. import markets, retirelaw as law, settings, valuation
-from .model import DEFAULTS, Household, LAW_YEAR, Person, TRUSTEES_CUT_YEAR
+
+from .. import markets, settings, valuation
+from .. import retirelaw as law
+from .model import DEFAULTS, LAW_YEAR, TRUSTEES_CUT_YEAR, Household, Person
 from .simulation import central
 
 # --- building the inputs from the ledger ------------------------------------------------------------------
@@ -23,12 +30,14 @@ BUCKET_MAP = {
 }
 STOCK_CLASSES = ("SDT", "SDS", "SIT", "SIE", "REIT")
 
+Steps = list[tuple[int | None, float]]  # a spending setting's (from year or None, amount) steps
 
-def _num(s):
+
+def _num(s: Series) -> Series:
     return pd.to_numeric(s if isinstance(s, pd.Series) else pd.Series(s, dtype=object), errors="coerce").fillna(0.0)
 
 
-def _owners(owner, adults):
+def _owners(owner: str, adults: list[str]) -> dict[str, float]:
     o = str(owner).strip().lower()
     if o in adults:
         return {o: 1.0}
@@ -37,10 +46,10 @@ def _owners(owner, adults):
     return {}
 
 
-def spending_steps(text):
+def spending_steps(text: str) -> Steps | None:
     """[(from year or None, amount)] from a retirement_spending value: "12000", "0 from 2032",
     "18000; 9000 from 2040; 0 from 2050". None when it can't be read."""
-    out = []
+    out: Steps = []
     for part in str(text).split(";"):
         m = re.fullmatch(r"\s*(-?[\d,]+(?:\.\d+)?)(?:\s+from\s+(\d{4}))?\s*", part)
         if not m:
@@ -52,7 +61,9 @@ def spending_steps(text):
 LUMPY_MIN, LUMPY_SHARE = 5_000, 0.6
 
 
-def baseline(actuals, categories, today, leave_out=("taxes",)):
+def baseline(
+    actuals: DataFrame | None, categories: DataFrame, today: str, leave_out: Sequence[str] = ("taxes",)
+) -> tuple[dict[str, float], dict[str, str], list[str], dict[str, float]]:
     """(spending by category over the last 12 full months, {category: group}, the months used, {category: the
     share of its spending in its two biggest months} for the lumpy ones)."""
     month = today[:7]
@@ -72,27 +83,33 @@ def baseline(actuals, categories, today, leave_out=("taxes",)):
     by = kept.groupby("category")["spend"].sum()
     scale = 12 / len(months) if months else 1
     # a category whose year came mostly in a month or two (a renovation, a year's tuition) may not recur
-    lumpy = {}
+    lumpy: dict[str, float] = {}
     for c, g in kept.groupby("category"):
         total = g["spend"].sum()
         top = g["spend"].nlargest(2).sum()
         if total > LUMPY_MIN and top > LUMPY_SHARE * total:
-            lumpy[c] = top / total
+            lumpy[str(c)] = top / total
     return {c: float(v) * scale for c, v in by.items()}, groups, months, lumpy
 
 
-def spending_path(base, groups, years, changes, loans):
+def spending_path(
+    base: dict[str, float],
+    groups: dict[str, str],
+    years: range,
+    changes: dict[str, Steps],
+    loans: dict[str, tuple[int, float]],
+) -> tuple[dict[int, float], list[dict[str, Any]]]:
     """({year: spending}, the adjustment rows): each category's last-12-months amount, a category or group
     named in changes replaced by its steps from their years, a new name added, each loan's payments taken
     off after its payoff year."""
-    rows = []
-    path = {}
-    by_group = {}
+    rows: list[dict[str, Any]] = []
+    path: dict[int, float] = {}
+    by_group: dict[str, list[str]] = {}
     for c in base:
         by_group.setdefault(groups.get(c, c), []).append(c)
     for y in years:
         total = 0.0
-        handled = set()
+        handled: set[str] = set()
         for name, steps in changes.items():
             members = [name] if name in base else by_group.get(name, [])
             current = sum(base[c] for c in members) if members else 0.0
@@ -146,12 +163,22 @@ BUDGET_COLUMNS = [
 ]
 
 
-def _step(steps, year, current):
+def _step(steps: Steps, year: int, current: float) -> float:
     amount = current
     for start, value in steps:
         if start is None or year >= start:
             amount = value
     return amount
+
+
+def _group_at(changes: dict[str, Steps], base: dict[str, float], members: list[str], year: int) -> float:
+    """A group's spending in a year: each category as its setting has it, or as it is now."""
+    return sum(_step(changes[c], year, base[c]) if c in changes else base[c] for c in members)
+
+
+def _loan_at(payoff_year: int, yearly: float, year: int) -> float:
+    """A loan's payments taken off spending once it is paid off."""
+    return -yearly if year > payoff_year else 0.0
 
 
 def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
@@ -164,9 +191,9 @@ def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
     base, groups, changes = b.get("base", {}), b.get("groups", {}), b.get("changes", {})
     loans, lumpy, raw = b.get("loans", {}), b.get("lumpy", {}), b.get("settings", {})
     first = h.start
-    rows = []
+    rows: list[dict[str, Any]] = []
 
-    def row(line, group, kind, now, at, note=""):
+    def row(line: str, group: str, kind: str, now: float, at: Callable[[int], float] | None, note: str = "") -> None:
         rows.append(
             {
                 "line": line,
@@ -190,15 +217,9 @@ def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
         members = sorted(by_group[g])
         now = sum(base[c] for c in members)
         if g in changes and g not in base:
-            row(g, g, "group", now, lambda y, g=g, now=now: _step(changes[g], y, now))
+            row(g, g, "group", now, partial(_step, changes[g], current=now))
         else:
-            row(
-                g,
-                g,
-                "group",
-                now,
-                lambda y, ms=members: sum(_step(changes[c], y, base[c]) if c in changes else base[c] for c in ms),
-            )
+            row(g, g, "group", now, partial(_group_at, changes, base, members))
         for c in members:
             if members == [g]:
                 continue  # a group of one category of its name is one line
@@ -208,12 +229,12 @@ def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
                 g,
                 "category",
                 base[c],
-                None if covered else (lambda y, c=c: _step(changes.get(c, []), y, base[c])),
+                None if covered else partial(_step, changes.get(c, []), current=base[c]),
                 "counted in its group's setting" if covered else "",
             )
     for name in sorted(changes):
         if name not in base and name not in by_group:
-            row(name, "", "added", 0.0, lambda y, n=name: _step(changes[n], y, 0.0))
+            row(name, "", "added", 0.0, partial(_step, changes[name], current=0.0))
     for loan_id, (payoff_year, yearly) in sorted(loans.items()):
         if loan_id not in changes:
             row(
@@ -221,7 +242,7 @@ def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
                 "",
                 "loan",
                 0.0,
-                lambda y, p=payoff_year, v=yearly: -v if y > p else 0.0,
+                partial(_loan_at, payoff_year, yearly),
                 f"its payments, {yearly:,.0f} a year, end after {payoff_year}",
             )
     return pd.DataFrame(rows, columns=BUDGET_COLUMNS)
@@ -230,7 +251,7 @@ def budget_table(h: Household, retire_year: int) -> pd.DataFrame:
 class _Settings:
     """The household's settings, read the way the plan reads them."""
 
-    def __init__(self, params: pd.DataFrame):
+    def __init__(self, params: pd.DataFrame) -> None:
         self.params = params
 
     def value(self, key: str, default: str = "") -> str:
@@ -239,9 +260,9 @@ class _Settings:
     def number(self, key: str, default: float) -> float:
         return settings.number(self.params, key, default)
 
-    def keys(self):
+    def keys(self) -> set[str]:
         p = self.params
-        return set(p.loc[p["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(p) else ()
+        return set(p.loc[p["jurisdiction"].astype(str) == "household", "key"].astype(str)) if len(p) else set()
 
     def names(self, key: str, default: str) -> list[str]:
         """A setting that lists names, separated by commas."""
@@ -251,22 +272,30 @@ class _Settings:
 class _Assumptions:
     """The Assumptions tab's rows: every number the plan starts from, where it came from, and its setting."""
 
-    def __init__(self):
-        self.rows: list[dict] = []
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
 
-    def note(self, section, key, label, val, source, setting=""):
+    def note(self, section: str, key: str, label: str, val: float | int | str, source: str, setting: str = "") -> None:
         self.rows.append(
             {"section": section, "key": key, "label": label, "value": val, "source": source, "setting": setting}
         )
 
-    def set_setting(self, section, key, setting):
+    def set_setting(self, section: str, key: str, setting: str) -> None:
         [row for row in self.rows if row["key"] == key and row["section"] == section][0]["setting"] = setting
 
     def frame(self) -> pd.DataFrame:
         return pd.DataFrame(self.rows)
 
 
-def _people(cfg, people_names, statements, estimates, earnings, notes, assume):
+def _people(
+    cfg: _Settings,
+    people_names: Sequence[str],
+    statements: DataFrame | None,
+    estimates: DataFrame | None,
+    earnings: DataFrame | None,
+    notes: list[str],
+    assume: _Assumptions,
+) -> list[Person] | None:
     """Each adult with their birth date, claiming age and Social Security record, or None when one has no birth
     date (a note says how to give it)."""
     st = statements.copy() if statements is not None else pd.DataFrame(columns=["person", "birth_date", "as_of"])
@@ -285,7 +314,7 @@ def _people(cfg, people_names, statements, estimates, earnings, notes, assume):
         as_of = str(mine["as_of"].iloc[-1]) if len(mine) else ""
         e = (
             earnings[(earnings["person"].astype(str) == name) & (earnings["as_of"].astype(str) == as_of)]
-            if len(mine) and earnings is not None and len(earnings)
+            if earnings is not None and len(mine) and len(earnings)
             else pd.DataFrame()
         )
         est = (
@@ -294,7 +323,7 @@ def _people(cfg, people_names, statements, estimates, earnings, notes, assume):
                 & (estimates["as_of"].astype(str) == as_of)
                 & (estimates["kind"].astype(str) == "retirement")
             ]
-            if len(mine) and estimates is not None and len(estimates)
+            if estimates is not None and len(mine) and len(estimates)
             else pd.DataFrame()
         )
         claim = int(cfg.number(f"social_security_claim_age:{name}", DEFAULTS["claim_age"]))
@@ -334,13 +363,23 @@ def _people(cfg, people_names, statements, estimates, earnings, notes, assume):
     return people
 
 
-def _balances(values, lots, adults, today):
+@dataclass
+class _Held:
+    """Today's balances."""
+
+    bal: dict[str, dict[str, float]]  # {pre_plan, pre_ira or roth: {person: amount}}
+    taxable: float
+    basis: float  # the taxable accounts' cost basis
+    hsa: float
+
+
+def _balances(values: DataFrame, lots: DataFrame | None, adults: list[str], today: str) -> _Held:
     """Today's balances: pre-tax (workplace plans and IRAs) and Roth by person, and the household's taxable
     accounts (with their basis) and HSA."""
     v = values[values["date"].astype(str) == today] if len(values) else values
     bal = {k: {a: 0.0 for a in adults} for k in ("pre_plan", "pre_ira", "roth")}
     taxable = hsa = 0.0
-    taxable_accounts = set()
+    taxable_accounts: set[str] = set()
     for r in v.to_dict("records"):
         kind = BUCKET_MAP.get(str(r["bucket"]))
         amount = float(pd.to_numeric(r["value"], errors="coerce") or 0.0)
@@ -362,17 +401,29 @@ def _balances(values, lots, adults, today):
         (float(_num(lot_rows["value"]).sum()), float(_num(lot_rows["basis"]).sum())) if len(lot_rows) else (0.0, 0.0)
     )
     basis = lot_basis + max(taxable - lot_value, 0.0)
-    return {"bal": bal, "taxable": taxable, "basis": basis, "hsa": hsa}
+    return _Held(bal=bal, taxable=taxable, basis=basis, hsa=hsa)
 
 
-def _saving(activity, accounts, adults, today):
+@dataclass
+class _Saved:
+    """What the last 12 months saved, a year."""
+
+    since: str  # the 12 months start after this date
+    contributions: dict[str, dict[str, float]]  # {person: {pre_plan or roth: amount}}
+    roth_basis: dict[str, float]  # each person's Roth money that comes out free before 59 1/2
+    pending: dict[str, dict[int, float]]  # {person: {year: Roth money that comes free that year}}
+    hsa_in: float
+    into_ira_529: float
+
+
+def _saving(activity: DataFrame | None, accounts: DataFrame, adults: list[str], today: str) -> _Saved:
     """What the last 12 months' investment activity says the household saves a year (pre-tax and Roth by person,
     the HSA, what went to IRAs and 529s), and each person's Roth money that comes out free before 59 1/2."""
     accts = accounts.set_index("account_id") if len(accounts) else pd.DataFrame()
     since = (pd.Timestamp(today) - pd.DateOffset(years=1)).date().isoformat()
     contributions = {a: {"pre_plan": 0.0, "roth": 0.0} for a in adults}
     roth_basis = {a: 0.0 for a in adults}
-    pending: dict[str, dict] = {a: {} for a in adults}
+    pending: dict[str, dict[int, float]] = {a: {} for a in adults}
     hsa_in = into_ira_529 = 0.0
     if activity is not None and len(activity):
         act = activity.assign(amount=_num(activity["amount"]), date=activity["date"].astype(str))
@@ -408,17 +459,45 @@ def _saving(activity, accounts, adults, today):
                     contributions[a][key] += r["amount"] * s
             if r["kind"] == "contribution" and kind == "hsa":
                 hsa_in += r["amount"]
-    return {
-        "since": since,
-        "contributions": contributions,
-        "roth_basis": roth_basis,
-        "pending": pending,
-        "hsa_in": hsa_in,
-        "into_ira_529": into_ira_529,
-    }
+    return _Saved(
+        since=since,
+        contributions=contributions,
+        roth_basis=roth_basis,
+        pending=pending,
+        hsa_in=hsa_in,
+        into_ira_529=into_ira_529,
+    )
 
 
-def _spending(cfg, actuals, categories, vests, schedule, today, since, years, notes):
+@dataclass
+class _Spent:
+    """Spending now and as the settings change it, and what came in."""
+
+    base: dict[str, float]  # the last 12 full months, a year, by category
+    groups: dict[str, str]  # {category: group}
+    months: list[str]  # the months base covers
+    lumpy: dict[str, float]  # {category: the share of it in its two biggest months}, for the lumpy ones
+    leave_out: list[str]  # categories and groups not counted as spending
+    came_in: float  # income into the bank, a year
+    left_out: float  # spending on what is left out, a year
+    vested: float  # shares that vested, a year
+    changes: dict[str, Steps]  # the retirement_spending settings
+    loans: dict[str, tuple[int, float]]  # {loan: (payoff year, payments a year)}
+    path: dict[int, float]  # {year: spending}
+    adjust: list[dict[str, Any]]  # the adjustment rows
+
+
+def _spending(
+    cfg: _Settings,
+    actuals: DataFrame | None,
+    categories: DataFrame,
+    vests: Optional[DataFrame],
+    schedule: Optional[DataFrame],
+    today: str,
+    since: str,
+    years: range,
+    notes: list[str],
+) -> _Spent:
     """Spending now (the last 12 full months by category), as the settings change it year by year, less each
     loan's payments once it is paid off; and what came in and vested, for the taxable savings."""
     leave_out = cfg.names("retirement_leave_out", "taxes")
@@ -437,7 +516,7 @@ def _spending(cfg, actuals, categories, vests, schedule, today, since, years, no
     if vests is not None and len(vests):
         vv = vests[vests["vest_date"].astype(str) > since]
         vested = float((_num(vv["net_shares"]) * _num(vv["fmv"])).sum())
-    changes = {}
+    changes: dict[str, Steps] = {}
     for key in cfg.keys():
         base_key, _, name = key.partition(":")
         if base_key == "retirement_spending" and name and str(cfg.value(key)).strip():
@@ -449,7 +528,7 @@ def _spending(cfg, actuals, categories, vests, schedule, today, since, years, no
                 )
             elif steps:
                 changes[name] = steps
-    loans = {}
+    loans: dict[str, tuple[int, float]] = {}
     if schedule is not None and len(schedule):
         s = schedule.assign(
             interest=_num(schedule["interest"]),
@@ -465,23 +544,23 @@ def _spending(cfg, actuals, categories, vests, schedule, today, since, years, no
                     float((last12["interest"] + last12["principal"] - last12["extra"]).sum()),
                 )
     path, adjust = spending_path(base, groups, years, changes, loans)
-    return {
-        "base": base,
-        "groups": groups,
-        "months": months,
-        "lumpy": lumpy,
-        "leave_out": leave_out,
-        "came_in": came_in,
-        "left_out": left_out,
-        "vested": vested,
-        "changes": changes,
-        "loans": loans,
-        "path": path,
-        "adjust": adjust,
-    }
+    return _Spent(
+        base=base,
+        groups=groups,
+        months=months,
+        lumpy=lumpy,
+        leave_out=leave_out,
+        came_in=came_in,
+        left_out=left_out,
+        vested=vested,
+        changes=changes,
+        loans=loans,
+        path=path,
+        adjust=adjust,
+    )
 
 
-def _cagrs(cfg, notes):
+def _cagrs(cfg: _Settings, notes: list[str]) -> tuple[float, ...]:
     """The fixed yearly returns to show, from retirement_cagrs (the default when it can't be read)."""
     cagr_text = cfg.value("retirement_cagrs")
     try:
@@ -495,7 +574,7 @@ def _cagrs(cfg, notes):
 
 def build(
     params: pd.DataFrame,
-    people_names: list[str] | tuple[str, ...],
+    people_names: Sequence[str],
     statements: pd.DataFrame | None,
     estimates: pd.DataFrame | None,
     earnings: pd.DataFrame | None,
@@ -528,37 +607,37 @@ def build(
     saved = _saving(activity, accounts, adults, today)
     start = int(today[:4]) + 1
     end = max(p.born.year for p in people) + int(cfg.number("retirement_plan_to_age", DEFAULTS["plan_to_age"]))
-    sp = _spending(cfg, actuals, categories, vests, schedule, today, saved["since"], range(start, end + 1), notes)
+    sp = _spending(cfg, actuals, categories, vests, schedule, today, saved.since, range(start, end + 1), notes)
     # what working leaves for taxable accounts: pay and other income into the bank and the shares that vest,
     # less spending as the settings have it from next year, the taxes paid and what goes to IRAs and 529s
-    derived = sp["came_in"] + sp["vested"] - sp["path"].get(start, 0.0) - sp["left_out"] - saved["into_ira_529"]
+    derived = sp.came_in + sp.vested - sp.path.get(start, 0.0) - sp.left_out - saved.into_ira_529
     taxable_savings = (
         cfg.number("retirement_taxable_savings", derived) if cfg.value("retirement_taxable_savings") else derived
     )
     taxable_savings = max(taxable_savings, 0.0)
-    contributions = saved["contributions"]
+    contributions = saved.contributions
     for a in adults:
         for kind, key in (("pre_plan", "retirement_pre_tax_contributions"), ("roth", "retirement_roth_contributions")):
             if cfg.value(f"{key}:{a}"):
                 contributions[a][kind] = cfg.number(f"{key}:{a}", contributions[a][kind])
     hsa_names = cfg.names("hsa_spending_categories", "medical")
-    hsa_spending = sum(v for c, v in sp["base"].items() if c in hsa_names or sp["groups"].get(c) in hsa_names)
+    hsa_spending = sum(v for c, v in sp.base.items() if c in hsa_names or sp.groups.get(c) in hsa_names)
     cagrs = _cagrs(cfg, notes)
     stock = cfg.number("retirement_stock_share", allocation_share if allocation_share is not None else 0.7)
     h = Household(
         start=start,
         people=people,
-        pre_plan=held["bal"]["pre_plan"],
-        pre_ira=held["bal"]["pre_ira"],
-        roth=held["bal"]["roth"],
-        roth_basis=saved["roth_basis"],
-        taxable=held["taxable"],
-        basis=held["basis"],
-        hsa=held["hsa"],
+        pre_plan=held.bal["pre_plan"],
+        pre_ira=held.bal["pre_ira"],
+        roth=held.bal["roth"],
+        roth_basis=saved.roth_basis,
+        taxable=held.taxable,
+        basis=held.basis,
+        hsa=held.hsa,
         contributions=contributions,
-        hsa_contribution=saved["hsa_in"],
+        hsa_contribution=saved.hsa_in,
         taxable_savings=taxable_savings,
-        spending=sp["path"],
+        spending=sp.path,
         hsa_spending=hsa_spending,
         health_pre65=cfg.number("retirement_health_pre65", DEFAULTS["health_pre65"]),
         health_supplement=cfg.number("retirement_health_supplement", DEFAULTS["health_supplement"]),
@@ -571,14 +650,14 @@ def build(
         monte_carlo_runs=int(cfg.number("retirement_monte_carlo_runs", DEFAULTS["monte_carlo_runs"])),
         ss_cut=cfg.number("social_security_cut", 0.0),
         ss_cut_from=int(cfg.number("social_security_cut_from", TRUSTEES_CUT_YEAR)),
-        pending=saved["pending"],
+        pending=saved.pending,
         budget={
-            "base": sp["base"],
-            "groups": sp["groups"],
-            "changes": sp["changes"],
-            "loans": sp["loans"],
-            "lumpy": sp["lumpy"],
-            "months": sp["months"],
+            "base": sp.base,
+            "groups": sp.groups,
+            "changes": sp.changes,
+            "loans": sp.loans,
+            "lumpy": sp.lumpy,
+            "months": sp.months,
             "settings": {
                 k.partition(":")[2]: str(cfg.value(k)) for k in cfg.keys() if k.startswith("retirement_spending:")
             },
@@ -591,25 +670,33 @@ def build(
     return h, notes, assume.frame()
 
 
-def _note_balances(assume, adults, held, saved):
+def _note_balances(assume: _Assumptions, adults: list[str], held: _Held, saved: _Saved) -> None:
     for a in adults:
         for kind, label in (("pre_plan", "pre-tax in workplace plans"), ("pre_ira", "pre-tax IRAs"), ("roth", "Roth")):
-            assume.note(
-                "today", f"{kind}:{a}", f"{a}: {label}", round(held["bal"][kind][a], 2), "investment values today"
-            )
+            assume.note("today", f"{kind}:{a}", f"{a}: {label}", round(held.bal[kind][a], 2), "investment values today")
         assume.note(
             "today",
             f"roth_basis:{a}",
             f"{a}: Roth contributions and conversions (free before 59 1/2)",
-            round(saved["roth_basis"][a], 2),
+            round(saved.roth_basis[a], 2),
             "investment activity (conversions taken as backdoor ones, already taxed)",
         )
-    assume.note("today", "taxable", "Taxable accounts", round(held["taxable"], 2), "investment values today")
-    assume.note("today", "basis", "Their cost basis", round(held["basis"], 2), "open lots, and cash at its value")
-    assume.note("today", "hsa", "HSA", round(held["hsa"], 2), "investment values today")
+    assume.note("today", "taxable", "Taxable accounts", round(held.taxable, 2), "investment values today")
+    assume.note("today", "basis", "Their cost basis", round(held.basis, 2), "open lots, and cash at its value")
+    assume.note("today", "hsa", "HSA", round(held.hsa, 2), "investment values today")
 
 
-def _note_saving(assume, cfg, adults, contributions, saved, taxable_savings, derived, sp, start):
+def _note_saving(
+    assume: _Assumptions,
+    cfg: _Settings,
+    adults: list[str],
+    contributions: dict[str, dict[str, float]],
+    saved: _Saved,
+    taxable_savings: float,
+    derived: float,
+    sp: _Spent,
+    start: int,
+) -> None:
     for a in adults:
         for kind, label in (("pre_plan", "pre-tax"), ("roth", "Roth")):
             assume.note(
@@ -620,7 +707,7 @@ def _note_saving(assume, cfg, adults, contributions, saved, taxable_savings, der
                 "investment activity, last 12 months",
             )
     assume.note(
-        "saving", "hsa", "HSA contributions a year", round(saved["hsa_in"], 2), "investment activity, last 12 months"
+        "saving", "hsa", "HSA contributions a year", round(saved.hsa_in, 2), "investment activity, last 12 months"
     )
     for a in adults:
         for kind, key in (("pre_plan", "retirement_pre_tax_contributions"), ("roth", "retirement_roth_contributions")):
@@ -632,16 +719,15 @@ def _note_saving(assume, cfg, adults, contributions, saved, taxable_savings, der
         round(taxable_savings, 2),
         "the setting"
         if cfg.value("retirement_taxable_savings")
-        else f"last 12 months: income {sp['came_in']:,.0f} and shares vested {sp['vested']:,.0f}, less spending as set "
-        f"for {start} {sp['path'].get(start, 0.0):,.0f}, {', '.join(sp['leave_out']) or 'nothing left out'} "
-        f"{sp['left_out']:,.0f}, IRAs and 529s {saved['into_ira_529']:,.0f}"
-        + (" (below zero: none)" if derived < 0 else ""),
+        else f"last 12 months: income {sp.came_in:,.0f} and shares vested {sp.vested:,.0f}, less spending as set "
+        f"for {start} {sp.path.get(start, 0.0):,.0f}, {', '.join(sp.leave_out) or 'nothing left out'} "
+        f"{sp.left_out:,.0f}, IRAs and 529s {saved.into_ira_529:,.0f}" + (" (below zero: none)" if derived < 0 else ""),
         "retirement_taxable_savings",
     )
 
 
-def _note_spending(assume, sp):
-    base, groups, months, lumpy = sp["base"], sp["groups"], sp["months"], sp["lumpy"]
+def _note_spending(assume: _Assumptions, sp: _Spent) -> None:
+    base, groups, months, lumpy = sp.base, sp.groups, sp.months, sp.lumpy
     for c in sorted(base, key=lambda c: (groups.get(c, ""), c)):
         assume.note(
             "spending",
@@ -653,7 +739,7 @@ def _note_spending(assume, sp):
             f"retirement_spending:{c}",
         )
     assume.note("spending", "total", "Spending now, a year", round(sum(base.values()), 2), "the categories above")
-    for r in sp["adjust"]:
+    for r in sp.adjust:
         assume.note(
             "changes",
             r["key"],
@@ -664,7 +750,14 @@ def _note_spending(assume, sp):
         )
 
 
-def _note_model(assume, cfg, h, people, cagrs, hsa_spending):
+def _note_model(
+    assume: _Assumptions,
+    cfg: _Settings,
+    h: Household,
+    people: list[Person],
+    cagrs: tuple[float, ...],
+    hsa_spending: float,
+) -> None:
     assume.note(
         "health",
         "pre65",

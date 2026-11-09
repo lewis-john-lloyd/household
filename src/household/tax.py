@@ -17,17 +17,22 @@ assumption), self-employment, foreign tax, education and child credits (phased
 out at these incomes).
 """
 
+from typing import Any
+
 import pandas as pd
+from pandas import DataFrame
 
 from . import taxdata
 
+Inputs = dict[str, Any]  # a year's inputs by name: amounts, and per-person lists for the inputs that are per person
 
-def whole(x):
+
+def whole(x: float) -> int:
     """Round half away from zero to whole dollars, as the forms do."""
     return int(x + 0.5) if x >= 0 else -int(-x + 0.5)
 
 
-def bracket_tax(taxable, year):
+def bracket_tax(taxable: float, year: int) -> float:
     """Tax on ordinary income under the year's MFJ rate schedule (exact, not rounded)."""
     tax, steps = 0.0, taxdata.brackets(year)
     for i, (floor, rate) in enumerate(steps):
@@ -37,7 +42,7 @@ def bracket_tax(taxable, year):
     return tax
 
 
-def qdcg_tax(taxable, qualified_dividends, net_capital_gain, year):
+def qdcg_tax(taxable: float, qualified_dividends: float, net_capital_gain: float, year: int) -> int:
     """Qualified Dividends and Capital Gain Tax Worksheet (line 16), whole dollars."""
     p = taxdata.params(year)
     preferred = min(taxable, qualified_dividends + max(net_capital_gain, 0))
@@ -52,13 +57,13 @@ def qdcg_tax(taxable, qualified_dividends, net_capital_gain, year):
     return min(worksheet, whole(bracket_tax(taxable, year)))
 
 
-def salt_deduction(state_income_tax, real_estate_tax, magi, year):
+def salt_deduction(state_income_tax: float, real_estate_tax: float, magi: float, year: int) -> int:
     p = taxdata.params(year)
     cap = p["salt_cap"] - p["salt_phase_rate"] * max(magi - p["salt_phase_threshold"], 0)
     return whole(min(state_income_tax + real_estate_tax, max(cap, p["salt_floor"])))
 
 
-def federal_return(i, year):
+def federal_return(i: Inputs, year: int) -> dict[str, int]:
     """Compute the return's lines from inputs i (a dict; missing inputs count as zero)."""
     p = taxdata.params(year)
     g = lambda k: float(i.get(k, 0) or 0)  # noqa: E731
@@ -115,7 +120,7 @@ def federal_return(i, year):
     return {k: (whole(v) if isinstance(v, float) else v) for k, v in lines.items()}
 
 
-def safe_harbor(prior_year_total_tax, prior_agi):
+def safe_harbor(prior_year_total_tax: float, prior_agi: float) -> int:
     """Withholding that avoids the underpayment penalty, from the prior year alone."""
     return whole(prior_year_total_tax * (1.10 if prior_agi > 150_000 else 1.00))
 
@@ -124,7 +129,7 @@ PENALTY_FREE_BALANCE = 1000  # owing less than this after withholding brings no 
 CURRENT_YEAR_SHARE = 0.90  # nor does withholding at least this share of this year's tax
 
 
-def penalty_free(owe, withheld, total_tax, harbor=None):
+def penalty_free(owe: float, withheld: float, total_tax: float, harbor: float | None = None) -> bool:
     """Whether a balance owed escapes the underpayment penalty (Pub 505): under PENALTY_FREE_BALANCE, or
     withholding of at least the smaller of 90% of this year's tax and the prior-year safe harbor."""
     if owe < PENALTY_FREE_BALANCE:
@@ -139,10 +144,11 @@ FILED_LINES = ("11a", "12e", "15", "16", "s2_11", "s2_12", "23", "24", "25c", "3
 PER_PERSON = ("ss_withheld", "employers", "wi_earned_income")  # kept per person, not added up
 
 
-def inputs_from_facts(facts, year, kinds=("input",)):
+def inputs_from_facts(facts: DataFrame, year: int, kinds: tuple[str, ...] = ("input",)) -> Inputs:
     """Build federal_return inputs for one year from return_facts rows."""
     rows = facts[(facts["year"].astype(str) == str(year)) & facts["kind"].isin(kinds)]
-    inputs, by_person = {}, {}
+    inputs: Inputs = {}
+    by_person: dict[str, dict[str, float]] = {}
     for r in rows.to_dict("records"):
         value = float(r["value"])
         if r["key"] in PER_PERSON:
@@ -158,11 +164,11 @@ def inputs_from_facts(facts, year, kinds=("input",)):
     return inputs
 
 
-def has_wisconsin(inputs):
+def has_wisconsin(inputs: Inputs) -> bool:
     return any(k.startswith("wi_") for k in inputs)
 
 
-def check_against_return(facts):
+def check_against_return(facts: DataFrame) -> DataFrame:
     """Recompute every year that has filed lines, and whose tax law is on file, and compare line by line."""
     out = []
     from . import pennsylvania, wisconsin  # both import this module

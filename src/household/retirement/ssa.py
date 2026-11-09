@@ -1,20 +1,21 @@
 """Social Security: each person's benefit at a claiming age, from their earnings record."""
 
 from .. import retirelaw as law
+from .model import Household, Person
 
 # --- Social Security --------------------------------------------------------------------------------------
 
 
-def _claim_year(p, age):
+def _claim_year(p: Person, age: int) -> int:
     return p.born.year + age
 
 
-def _first_year_share(p):
+def _first_year_share(p: Person) -> float:
     """The share of the claiming year a benefit is paid for: from the birthday month on."""
     return (13 - p.born.month) / 12
 
 
-def pia(p, retire_year, today_year):
+def pia(p: Person, retire_year: int, today_year: int) -> tuple[int, float]:
     """(AIME, PIA) for a person who works until retire_year at the last posted year's earnings, figured as the
     statement figures it: earnings indexed to the AWI of two years ago, this year's bend points."""
     if not p.earnings:
@@ -28,7 +29,7 @@ def pia(p, retire_year, today_year):
     return a, law.pia(a, law.bend_points(min(p.born.year + 62, today_year)))
 
 
-def benefits(h, retire_year, claims, today_year):
+def benefits(h: Household, retire_year: int, claims: dict[str, int], today_year: int) -> dict[str, dict[int, float]]:
     """{person: {year: yearly benefit}}, each adult's own benefit or the spouse's half when more, from the
     year they claim (in part for that year), less the cut a setting may assume."""
     pias = {p.name: pia(p, retire_year, today_year)[1] for p in h.people}

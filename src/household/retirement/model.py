@@ -88,11 +88,11 @@ class Household:
     budget: dict = field(default_factory=dict)  # what spending_path was built from, for budget_table
 
     @property
-    def end(self):
+    def end(self) -> int:
         return max(p.born.year for p in self.people) + self.plan_to_age
 
     @property
-    def years(self):
+    def years(self) -> list[int]:
         return list(range(self.start, self.end + 1))
 
 
@@ -105,7 +105,7 @@ class Strategy:
     claims: tuple = ()  # ((person, age), ...) overriding the claiming ages
 
     @property
-    def key(self):
+    def key(self) -> str:
         parts = [self.order, f"to{int(round(self.convert_to * 100))}" if self.convert_to else "noconv", self.rule]
         if self.sepp:
             parts.append("72t")
@@ -113,7 +113,7 @@ class Strategy:
         return "/".join(parts)
 
     @property
-    def label(self):
+    def label(self) -> str:
         bits = [
             ORDER_NAMES[self.order],
             f"convert to the top of {int(round(self.convert_to * 100))}%" if self.convert_to else "no conversions",
@@ -126,7 +126,7 @@ class Strategy:
         return "; ".join(bits)
 
 
-def parse_strategy(text):
+def parse_strategy(text: str) -> Strategy | None:
     """A strategy from its key ("bracket/to22/constant", "proportional/noconv/vpw/72t"), or None."""
     parts = [p.strip().lower() for p in str(text or "").split("/") if p.strip()]
     if len(parts) < 3 or parts[0] not in ORDERS or parts[2] not in RULES:

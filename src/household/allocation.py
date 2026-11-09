@@ -19,9 +19,12 @@ is left in proportion. A class no tradable account can hold is reported: reachin
 """
 
 import re
+from collections.abc import Iterable, Sequence
+from typing import Any, Optional
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 IBOND_CLASS = "BT"
 UNCLASSIFIED = "unclassified"
@@ -100,7 +103,7 @@ SEED = [
 PART = re.compile(r"([A-Za-z_]+)\s*[: ]\s*([0-9.]+)")
 
 
-def blend(asset_class):
+def blend(asset_class: str) -> dict[str, float]:
     """{class: fraction} for a securities asset_class: "SDT", or "SDT 60, SIT 30, BT 10"."""
     text = str(asset_class).strip()
     if not text:
@@ -112,16 +115,19 @@ def blend(asset_class):
     return {k: float(v) / total for k, v in parts} if total > 0 else {}
 
 
-def class_mix(row):
+Node = tuple[str, str, float]  # (node, parent, weight) in the targets tree
+
+
+def class_mix(row: dict[str, Any]) -> dict[str, float]:
     """The class fractions of one valuation row, by the policy above."""
     if row["wrapper"] == "ibonds":
         return {IBOND_CLASS: 1.0}
     if str(row["symbol"]).strip().lower() == "cash":
         return {"BA": 1.0}
-    return blend(row["asset_class"]) or {UNCLASSIFIED: 1.0}
+    return blend(str(row["asset_class"])) or {UNCLASSIFIED: 1.0}
 
 
-def in_scope(vals):
+def in_scope(vals: DataFrame) -> DataFrame:
     """The valuation rows the allocation counts: the latest date, 529s left out."""
     if vals is None or vals.empty:
         return vals
@@ -129,9 +135,9 @@ def in_scope(vals):
     return latest[~latest["wrapper"].isin(LEFT_OUT)].copy()
 
 
-def by_class(rows):
+def by_class(rows: DataFrame) -> dict[str, float]:
     """{class: dollars} for valuation rows."""
-    out = {}
+    out: dict[str, float] = {}
     for r in rows.to_dict("records"):
         v = float(r["value"])
         for c, f in class_mix(r).items():
@@ -139,7 +145,7 @@ def by_class(rows):
     return out
 
 
-def tree(targets, today):
+def tree(targets: DataFrame, today: str) -> list[Node]:
     """The tree in force: a list of (node, parent, weight) in the order given, or the seed when there is none."""
     if targets is None or targets.empty:
         return [(n, p, float(w)) for n, p, w in SEED]
@@ -156,15 +162,15 @@ def tree(targets, today):
     ]
 
 
-def leaf_shares(nodes):
+def leaf_shares(nodes: Sequence[Node]) -> tuple[dict[str, float], dict[str, float]]:
     """{leaf: share of the whole} from a tree: each node's weight normalized among its siblings, times its
     parent's share."""
-    kids = {}
+    kids: dict[str, list[tuple[str, float]]] = {}
     for n, p, w in nodes:
         kids.setdefault(p, []).append((n, w))
-    shares = {}
+    shares: dict[str, float] = {}
 
-    def walk(parent, share):
+    def walk(parent: str, share: float) -> None:
         children = kids.get(parent, [])
         total = sum(w for _, w in children)
         for n, w in children:
@@ -177,23 +183,23 @@ def leaf_shares(nodes):
     return shares, leaves
 
 
-def report(nodes, current, proposed=None):
+def report(nodes: Sequence[Node], current: dict[str, float], proposed: Optional[dict[str, float]] = None) -> DataFrame:
     """TREE_COLUMNS: each node's target and current value and share, depth-first in the tree's order, then any
     class held that the tree doesn't name."""
     shares, leaves = leaf_shares(nodes)
-    kids = {}
+    kids: dict[str, list[str]] = {}
     for n, p, _ in nodes:
         kids.setdefault(p, []).append(n)
     total = sum(current.values())
     proposed = proposed or {}
     rows, order = [], [0]
 
-    def under(node):
+    def under(node: str) -> list[str]:
         if node not in kids:
             return [node]
         return [x for k in kids[node] for x in under(k)]
 
-    def walk(parent, depth):
+    def walk(parent: str, depth: int) -> None:
         for n in kids.get(parent, []):
             mine = under(n)
             cur = sum(current.get(c, 0.0) for c in mine)
@@ -242,7 +248,9 @@ def report(nodes, current, proposed=None):
     return pd.DataFrame(rows, columns=TREE_COLUMNS)
 
 
-def _targets(leaves, total, fixed, unreachable=()):
+def _targets(
+    leaves: dict[str, float], total: float, fixed: dict[str, float], unreachable: Iterable[str] = ()
+) -> dict[str, float]:
     """{class: target dollars}: leaf shares of the total, where a class no trade can change (held only where
     nothing trades and already over its target, or with no fund a tradable account could buy) keeps what it has
     and the rest share what remains in proportion to their weights."""
@@ -260,13 +268,13 @@ def _targets(leaves, total, fixed, unreachable=()):
         pinned |= over
 
 
-def location_kind(bucket):
+def location_kind(bucket: str) -> str:
     """How a bucket's money is taxed, for asset location: pretax, roth or hsa."""
     b = str(bucket)
     return "hsa" if b == "hsa" else "roth" if b.endswith("_roth") else "pretax"
 
 
-def placement(mix, kinds):
+def placement(mix: dict[str, float], kinds: dict[str, float]) -> float:
     """How poorly a fund (its class mix) suits an account (its share of money by kind): 0 where it belongs."""
     return sum(f * share * LOCATION.get(c, {}).get(kind, 0) for c, f in mix.items() for kind, share in kinds.items())
 
@@ -274,7 +282,7 @@ def placement(mix, kinds):
 OWNER_WEIGHT = 30.0  # a dollar of one adult's portfolio off the target mix, beside 1000 for the household's
 
 
-def _owner_shares(owner, people):
+def _owner_shares(owner: str, people: Sequence[str]) -> dict[str, float]:
     """{person: share of an account's money}: all of it to its owner, a joint account's split evenly, nothing
     for the kids' accounts."""
     o = str(owner).strip().lower()
@@ -285,7 +293,7 @@ def _owner_shares(owner, people):
     return {}
 
 
-def _off(held, targets_share, total):
+def _off(held: dict[str, float], targets_share: dict[str, float], total: float) -> float:
     """The share of a portfolio in the wrong classes: half the sum of each class's distance from its target."""
     if total <= 0:
         return 0.0
@@ -293,7 +301,14 @@ def _off(held, targets_share, total):
     return sum(abs(held.get(c, 0.0) - targets_share.get(c, 0.0) * total) for c in keys) / 2 / total
 
 
-def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=()):
+def rebalance(
+    vals: DataFrame,
+    nodes: Sequence[Node],
+    ever_held: Optional[dict[str, set[str]]] = None,
+    location: bool = True,
+    classes: Optional[dict[str, str]] = None,
+    people: Sequence[str] = (),
+) -> tuple[DataFrame, dict[str, float], list[str]]:
     """(TRADE_COLUMNS, {class: proposed dollars}, notes). vals are the in-scope valuation rows; ever_held is
     {account_id: set of symbols} the account has held (holdings and activity), which the proposal may buy.
     With location, among mixes equally near the targets it prefers each class where it is taxed best (LOCATION),
@@ -303,7 +318,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     target mix too, so neither carries a class the other holds none of, where the accounts allow."""
     from scipy.optimize import linprog
 
-    notes = []
+    notes: list[str] = []
     rows = vals.copy()
     rows["value"] = pd.to_numeric(rows["value"], errors="coerce").fillna(0.0)
     rows = rows[rows["value"].abs() >= 0.005]
@@ -311,7 +326,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     total = float(rows["value"].sum())
     mixes = {(r["account_id"], r["bucket"], r["symbol"]): class_mix(r) for r in rows.to_dict("records")}
 
-    def tradable(r):
+    def tradable(r: dict[str, Any]) -> bool:
         if r["wrapper"] in FIXED_WRAPPERS or not str(r["symbol"]).strip():
             return False
         return UNCLASSIFIED not in mixes[(r["account_id"], r["bucket"], r["symbol"])]
@@ -323,14 +338,16 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     # it may hold, and how its money is taxed, for asset location
     tradable_rows = rows[rows["tradable"]]
     accounts = tradable_rows.groupby("account_id", as_index=False)["value"].sum()
-    funds = {}  # symbol -> class mix, for funds that can be bought
+    funds: dict[str, dict[str, float]] = {}  # symbol -> class mix, for funds that can be bought
     for r in tradable_rows.to_dict("records"):
         funds[r["symbol"]] = mixes[(r["account_id"], r["bucket"], r["symbol"])]
     klass = {s: blend(c) for s, c in (classes or {}).items() if blend(c)}
     for r in vals.to_dict("records"):
         if str(r["symbol"]).strip():
             klass[r["symbol"]] = class_mix(r)
-    variables, kinds, labels = [], {}, {}  # variables: (account, symbol, current)
+    variables: list[tuple[str, str, float]] = []  # (account, symbol, current)
+    kinds: dict[str, dict[str, float]] = {}
+    labels: dict[str, str] = {}
     for a in accounts.to_dict("records"):
         mine = tradable_rows[tradable_rows["account_id"] == a["account_id"]]
         held = mine.groupby("symbol")["value"].sum().to_dict()
@@ -347,7 +364,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         for s in sorted(may):
             variables.append((a["account_id"], s, float(held.get(s, 0.0))))
             funds.setdefault(s, klass[s])
-    classes = sorted(set(leaves) | set(fixed) | {c for m in funds.values() for c in m})
+    all_classes = sorted(set(leaves) | set(fixed) | {c for m in funds.values() for c in m})
     reachable = {c for _, s, _ in variables for c, f in funds[s].items() if f > 0}
     unreachable = [c for c in sorted(leaves) if c not in reachable]
     for c in unreachable:
@@ -366,13 +383,13 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         )
     if not variables:
         return pd.DataFrame(columns=TRADE_COLUMNS), dict(fixed), notes + ["rebalance: nothing tradable"]
-    n, m = len(variables), len(classes)
+    n, m = len(variables), len(all_classes)
     people = tuple(people or ())
     owner_of = {r["account_id"]: _owner_shares(r.get("owner", ""), people) for r in rows.to_dict("records")}
     balance = [p for p in people if any(p in owner_of.get(a, {}) for a, _, _ in variables)] if len(people) > 1 else []
     k = len(balance)
-    share = {c: targets.get(c, 0.0) / total if total else 0.0 for c in classes}
-    owner_fixed = {p: {} for p in balance}
+    share = {c: targets.get(c, 0.0) / total if total else 0.0 for c in all_classes}
+    owner_fixed: dict[str, dict[str, float]] = {p: {} for p in balance}
     owner_total = {p: 0.0 for p in balance}
     for r in rows.to_dict("records"):
         mix = mixes[(r["account_id"], r["bucket"], r["symbol"])]
@@ -394,8 +411,9 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     if location:  # each dollar of a class in an account that suits it less costs a little more
         for v_i, (acct, sym, _) in enumerate(variables):
             cost[v_i] = LOCATION_WEIGHT / scale * placement(funds[sym], kinds[acct])
-    a_eq, b_eq = [], []
-    for c_i, c in enumerate(classes):  # fixed + sum x*f - over + under = target
+    a_eq: list[np.ndarray] = []
+    b_eq: list[float] = []
+    for c_i, c in enumerate(all_classes):  # fixed + sum x*f - over + under = target
         row = np.zeros(size)
         for v_i, (_, s, _) in enumerate(variables):
             row[v_i] = funds[s].get(c, 0.0)
@@ -403,7 +421,7 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
         a_eq.append(row)
         b_eq.append(targets.get(c, 0.0) - fixed.get(c, 0.0))
     for p_i, p in enumerate(balance):  # an adult's fixed + their part of sum x*f - over + under = their target
-        for c_i, c in enumerate(classes):
+        for c_i, c in enumerate(all_classes):
             row = np.zeros(size)
             for v_i, (acct, s_, _) in enumerate(variables):
                 row[v_i] = owner_of.get(acct, {}).get(p, 0.0) * funds[s_].get(c, 0.0)
@@ -425,7 +443,8 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     if not result.success:
         return pd.DataFrame(columns=TRADE_COLUMNS), dict(fixed), notes + [f"rebalance: {result.message}"]
     x = result.x[:n]
-    trades, proposed = [], dict(fixed)
+    trades: list[dict[str, Any]] = []
+    proposed = dict(fixed)
     for (acct, s, cur), new in zip(variables, x):
         for c, f in funds[s].items():
             proposed[c] = proposed.get(c, 0.0) + new * f
@@ -465,10 +484,10 @@ def rebalance(vals, nodes, ever_held=None, location=True, classes=None, people=(
     return out, proposed, notes
 
 
-def ever_held(holdings, activity, since=""):
+def ever_held(holdings: DataFrame, activity: DataFrame, since: str = "") -> dict[str, set[str]]:
     """{account_id: symbols} each account has held or traded on or after since (a plan's lineup changes, so a
     fund last seen years ago may no longer be offered)."""
-    out = {}
+    out: dict[str, set[str]] = {}
     for df, day in ((holdings, "as_of"), (activity, "date")):
         if df is None or df.empty:
             continue

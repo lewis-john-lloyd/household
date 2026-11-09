@@ -29,6 +29,8 @@ ALLOWED = {
     "logging",
     "re",
     "time",
+    "functools",  # partial, for typed callbacks
+    "collections",  # its abstract types, for annotations
     "typing",  # annotations only
     "warnings",
     "zipfile",

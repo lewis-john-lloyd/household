@@ -51,3 +51,11 @@ ignore_missing_imports = true
 check_untyped_defs = false
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+# the money that matters most is fully typed: tax lots and wash sales, the allocation and rebalance, the tax
+# return, and the retirement plan
+[[tool.mypy.overrides]]
+module = ["household.lots", "household.allocation", "household.tax", "household.retirement", "household.retirement.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true

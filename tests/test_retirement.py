@@ -106,7 +106,7 @@ def test_every_year_balances_spending_health_and_tax_against_money_in():
     h = household()
     r, i = fixed(h, 0.04)
     res = R.simulate(h, R.Strategy("conventional", 0.0), 2040, r, i, 2026, record=True)
-    for row in [x for x in res["rows"] if x["phase"] == "retired"]:
+    for row in [x for x in res.rows if x["phase"] == "retired"]:
         money_in = (
             row["social_security"]
             + row["rmd"]
@@ -122,7 +122,7 @@ def test_every_year_balances_spending_health_and_tax_against_money_in():
 def test_conventional_order_spends_taxable_first_and_rmds_start_at_75():
     h = household()
     r, i = fixed(h, 0.04)
-    rows = R.simulate(h, R.Strategy("conventional", 0.0), 2045, r, i, 2026, record=True)["rows"]
+    rows = R.simulate(h, R.Strategy("conventional", 0.0), 2045, r, i, 2026, record=True).rows
     first = next(x for x in rows if x["year"] == 2045)
     assert first["from_pre_tax"] == 0 and first["from_taxable"] > 0
     assert next(x for x in rows if x["year"] == 2054)["rmd"] == 0  # alex is 74
@@ -132,8 +132,8 @@ def test_conventional_order_spends_taxable_first_and_rmds_start_at_75():
 def test_conversions_fill_the_bracket_and_move_pre_tax_to_roth():
     h = household()
     r, i = fixed(h, 0.04)
-    none = R.simulate(h, R.Strategy("conventional", 0.0), 2045, r, i, 2026, record=True)["rows"]
-    conv = R.simulate(h, R.Strategy("conventional", 0.12), 2045, r, i, 2026, record=True)["rows"]
+    none = R.simulate(h, R.Strategy("conventional", 0.0), 2045, r, i, 2026, record=True).rows
+    conv = R.simulate(h, R.Strategy("conventional", 0.12), 2045, r, i, 2026, record=True).rows
     year = next(x for x in conv if x["year"] == 2046)
     assert year["converted"] > 0
     # to the top of the 12% bracket, over the standard deduction and the 65-and-over one (alex is 66)
@@ -159,10 +159,10 @@ def test_before_59_and_a_half_the_ten_percent_falls_on_pre_tax_money_unless_a_ru
     r, i = fixed(h, 0.03)
     plain = R.simulate(h, R.Strategy("conventional", 0.0), 2030, r, i, 2026)
     sepp = R.simulate(h, R.Strategy("conventional", 0.0, sepp=True), 2030, r, i, 2026)
-    assert plain["penalty"][0] > 0 and sepp["penalty"][0] < plain["penalty"][0]
+    assert plain.penalty[0] > 0 and sepp.penalty[0] < plain.penalty[0]
     # the plan of an employer left in the year turning 55 is free of it
     h55 = household(**{**only_pre, "pre_plan": {"alex": 1_500_000.0}, "pre_ira": {"alex": 0.0}})
-    assert R.simulate(h55, R.Strategy("conventional", 0.0), 2040, r, i, 2026)["penalty"][0] == 0
+    assert R.simulate(h55, R.Strategy("conventional", 0.0), 2040, r, i, 2026).penalty[0] == 0
 
 
 def test_a_household_without_enough_runs_short_and_one_with_plenty_does_not():
@@ -180,8 +180,8 @@ def test_a_household_without_enough_runs_short_and_one_with_plenty_does_not():
         ),
     )
     r, i = fixed(rich, 0.04)
-    assert not R.simulate(rich, R.Strategy(), 2045, r, i, 2026)["short"][0]
-    assert R.simulate(poor, R.Strategy(), 2030, r, i, 2026)["short"][0]
+    assert not R.simulate(rich, R.Strategy(), 2045, r, i, 2026).short[0]
+    assert R.simulate(poor, R.Strategy(), 2030, r, i, 2026).short[0]
 
 
 def test_guardrails_cut_spending_in_a_bad_sequence_and_vpw_never_runs_short():
@@ -189,15 +189,15 @@ def test_guardrails_cut_spending_in_a_bad_sequence_and_vpw_never_runs_short():
     r, i = fixed(h, -0.03)
     guard = R.simulate(h, R.Strategy("conventional", 0.0, "guardrails"), 2027, r, i, 2026)
     vpw = R.simulate(h, R.Strategy("conventional", 0.0, "vpw"), 2027, r, i, 2026)
-    assert guard["lowest"][0] < 1 and not vpw["short"][0]
+    assert guard.lowest[0] < 1 and not vpw.short[0]
 
 
 def test_the_three_return_models_run_side_by_side():
     h = household()
     got = R.run_all(h, R.Strategy(), 2045, 2026)
     assert set(got) == {"fixed 5%", "fixed 7%", "fixed 9%", "historical", "monte carlo"}
-    assert len(got["historical"]["short"]) == len(got["historical"]["starts"]) >= 30
-    assert len(got["monte carlo"]["short"]) == 200
+    assert len(got["historical"].short) == len(got["historical"].starts) >= 30
+    assert len(got["monte carlo"].short) == 200
     years, _, starts = R.historical_paths(h, 2045)
     assert starts[0] == markets.FIRST
 

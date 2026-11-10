@@ -17,7 +17,7 @@ ledger, matched by amount and date.
            is one payment takes who it went to or came from and its note, as PayPal's; a cash-out
            to the bank matches the transfer's email and takes the payments received since the
            transfer before it, which it carried.
-  Orders   order_items of a service in ORDER_SERVICES (Amazon, Target, and any a household
+  Orders   order_items of a service in ORDER_SERVICES (Amazon, Target, Audible, and any a household
            parameter order_payee:<service> adds, so a local store's name stays out of this code; any
            store whose order history lists items joins by a parser writing
            order_items rows and an entry there): a card charge is one shipment
@@ -60,6 +60,7 @@ DEPARTMENTS = {
     "beer, wine & spirits": "booze",
     "toys & games": "family",
     "books": "media",
+    "audiobooks": "media",
     "charity": "charity",
     "membership": "subscriptions",
 }
@@ -67,7 +68,7 @@ DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
 ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
 # stores whose order history itemizes a charge: service -> the pattern of its lines' payee
-ORDER_SERVICES = {"amazon": "AMAZON|AMZN", "target": r"\bTARGET\b|TARGET\.?COM"}
+ORDER_SERVICES = {"amazon": "AMAZON|AMZN", "target": r"\bTARGET\b|TARGET\.?COM", "audible": r"\bAUDIBLE\b"}
 ORDER_PAYEE = "order_payee:"  # a household parameter "order_payee:<service>" adds a store, its value the payee pattern
 
 

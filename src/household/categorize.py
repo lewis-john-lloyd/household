@@ -69,7 +69,8 @@ SPLIT_PART = re.compile(r"^(?P<category>[a-z][a-z0-9_]*)\s*[:=]?\s*(?:-?\$?-?(?P
 
 # lines an explanation download names; until it arrives they wait
 WAITING = (
-    ("amazon", re.compile(r"AMAZON|AMZN|PRIME VIDEO|AUDIBLE|KINDLE")),
+    # Audible's lines wait for nothing: its order emails name its purchases, and a renewal never has one
+    ("amazon", re.compile(r"AMAZON|AMZN|PRIME VIDEO|KINDLE")),
     ("paypal", re.compile(r"PAYPAL")),
     ("venmo", re.compile(r"VENMO")),
     ("apple", re.compile(r"APPLE\.COM|APPLE COM|ITUNES")),

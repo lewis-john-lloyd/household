@@ -9,10 +9,13 @@ amounts sit near the typical one. Each gets a status:
   price changed  the latest charge differs from the typical amount by more
                  than PRICE_CHANGE (and at least a dollar)
 
-Transfers, paper checks and the old books are left out. This is a report; a
+Transfers, paper checks, the old books and purchases an order history itemizes (an audiobook bought
+beside a membership, say) are left out; a line it itemizes as a membership stays. This is a report; a
 recurring charge with no budget line becomes a proposal once budgets exist.
 """
 
+import json
+import re
 from datetime import date
 
 import numpy as np
@@ -42,6 +45,8 @@ def discover(categorized, today=None):
         return pd.DataFrame(columns=COLUMNS)
     df["amount"] = pd.to_numeric(df["amount"])
     df = df[(df["amount"] < 0) & (df["key"] != "") & ~df["key"].astype(str).str.startswith("CHECK")]
+    if "items" in df:
+        df = df[~df["items"].map(_purchase).astype(bool)]
     rows = []
     for key, g in df.groupby("key"):
         if len(g) < MIN_CHARGES:
@@ -158,10 +163,25 @@ def marks(decisions):
     }
 
 
+MEMBERSHIP = re.compile(r"\bmembership\b|\bpremium plus\b|\bplus\b.*\bcredits?\b", re.I)
+
+
+def _purchase(items):
+    """Whether an order history itemized this line (the categorized items JSON) as goods, not a membership."""
+    try:
+        bought = json.loads(items) if str(items).strip() else []
+    except ValueError:
+        return False
+    return bool(bought) and not any(MEMBERSHIP.search(str(i[1])) for i in bought)
+
+
 def _charges(categorized):
     df = categorized[categorized["era"] != "legacy"].copy()
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-    return df[(df["amount"] < 0) & (df["key"].astype(str) != "")]
+    keep = (df["amount"] < 0) & (df["key"].astype(str) != "")
+    if "items" in df:
+        keep &= ~df["items"].map(_purchase).astype(bool)
+    return df[keep]
 
 
 def _covers(key, line_key):

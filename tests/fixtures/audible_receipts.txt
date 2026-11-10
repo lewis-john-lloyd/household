@@ -1,0 +1,85 @@
+===== RECEIPT m1 =====
+From: Audible <donotreply@audible.com>
+Subject: Thanks, your order is complete
+Date: 2026-03-14T20:35:32.000Z
+
+* Your next listen is ready, alex *
+Order number: D01-1111111-2222222
+Visit library
+Apple In-App Purchase
+The Quiet Harbor
+1 credit
+Author: Sam Writer
+Narrated by: Alex Reader
+Visit library
+
+Summary
+Credit(s) used: 1
+Subtotal: $0.00
+
+Tax:$0.00
+
+Total paid: $0.00
+(c) Audible, Inc. All Rights Reserved.
+===== RECEIPT m2 =====
+From: Audible <donotreply@audible.com>
+Subject: Your order is confirmed
+Date: 2026-03-02T10:23:20.000Z
+
+* Welcome to Audible *
+Here's your order confirmation
+
+Order number: D01-3333333-4444444Apple In-App Purchase
+Audible Premium Plus - 2 Credits$20.00
+
+Summary
+Subtotal: $20.00
+
+Tax:$1.00
+
+Total paid: $21.00
+
+2 credits a month
+(c) Audible, Inc. All Rights Reserved.
+===== RECEIPT m3 =====
+From: Audible <noreply@t.audible.com>
+Subject: Thanks, your order is complete
+Date: 2026-03-20T20:39:33.000Z
+
+Your next listen is ready, alex
+Order number: D01-5555555-6666666
+Visit library
+Title Amount
+Paper Lanterns $6.00
+Author: Sam Writer
+Narrated by: Alex Reader
+Visit library
+The Long Field 1 credit
+Author: Sam Writer
+Summary
+Subtotal: $6.00
+Tax: $0.30
+Total paid: $6.30
+You might like these listens
+(c) Audible, Inc. All Rights Reserved.
+===== RECEIPT m4 =====
+From: Audible <noreply@t.audible.com>
+Subject: Thanks, your order is complete
+Date: 2026-03-20T20:39:33.000Z
+
+Your next listen is ready, alex
+Order number: D01-5555555-6666666
+Visit library
+Title Amount
+Paper Lanterns $6.00
+Author: Sam Writer
+Narrated by: Alex Reader
+Visit library
+The Long Field 1 credit
+Author: Sam Writer
+Summary
+Subtotal: $6.00
+Tax: $0.30
+Total paid: $6.30
+You might like these listens
+(c) Audible, Inc. All Rights Reserved.

@@ -65,10 +65,12 @@ Outfitter receipts (service "outfitter"), in two layouts: the store eReceipt ("I
 item is its name (and for an online order its color or size, in brackets), "Item #", "Qty:", the
 price each and what it came to. Payment details list Subtotal, shipping, tax and the total (label then
 value, or all the labels then all the values), then the member rewards used and what each card paid
-("(ending in ...)"). A store sale is one charge, so tax and rewards are shared by amount; an online
-order is charged as its parts ship, and the rewards come off the first items listed, as charged, so
-each item reads at what its part cost the card and matching can take the parts one by one. A store
-return, or an order the rewards paid in full, is left out.
+("(ending in ...)"). Each item reads at what it cost, its share of the tax with it; what rewards paid
+of it is a row of its own (department "rewards", item id with REWARD after it), so the two add to what
+the card paid for that item and the card line splits into the item and the rewards earned. A store
+sale is one charge, so the rewards are shared by amount; an online order is charged as its parts ship,
+and the rewards come off the first items listed, as charged, so matching can take the parts one by one.
+A store return, or an order the rewards paid in full, is left out: no card line paid for it.
 
 PayPal emails (service "paypal", rows for payment_details, as the QIF download's are): a merchant's
 receipt ("You paid" or "You authorized ... to", with the merchant's name and the transaction date),
@@ -106,6 +108,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from ..explain import REWARD
 from .amazon import COLUMNS
 from .common import ParseError, Result
 from .google_takeout import _item as _app_item
@@ -349,6 +352,19 @@ def _row(service, message_id, n, day, amount, department, name, website):
         "department": department,
         "item": name,
         "website": website,
+    }
+
+
+def _reward(item, cents):
+    """The rewards row for an item rewards paid for (cents, negative): the item's own row reads at what it
+    cost, and this one, under the item's id with REWARD after it, takes off what the rewards paid, so the
+    two add to what the card was charged and the line splits into the item and the rewards earned."""
+    return {
+        **item,
+        "item_id": item["item_id"] + REWARD,
+        "amount": cents / 100,
+        "department": "rewards",
+        "item": "rewards used",
     }
 
 
@@ -754,9 +770,10 @@ def outfitter(message_id, headers, body):
             charged += _cents(DOLLARS.match(totals[i + 1])[2])
     if charged <= 0:
         return []
+    full = _scale([c for _, c in items], total)  # each item at what it cost, its share of the tax with it
     if online:  # shipped in parts, charged as each part ships: rewards come off the first items, as charged
         amounts, left = [], total - charged
-        for amount in _scale([c for _, c in items], total):
+        for amount in full:
             off = min(amount, left)
             amounts.append(amount - off)
             left -= off
@@ -775,11 +792,12 @@ def outfitter(message_id, headers, body):
         if online
         else next((lines[i + 1] for i, line in enumerate(lines[:-1]) if line == "Purchased at:"), OUTFITTER)
     )
-    return [
-        _row(OUTFITTER, order, n, day, amount, "", name, website)
-        for n, ((name, _), amount) in enumerate(zip(items, amounts))
-        if amount > 0
-    ]
+    rows = []
+    for n, ((name, _), cost, amount) in enumerate(zip(items, full, amounts)):
+        rows.append(_row(OUTFITTER, order, n, day, cost, "", name, website))
+        if cost != amount:  # rewards paid part or all of it: their own row, so the item reads at what it cost
+            rows.append(_reward(rows[-1], amount - cost))
+    return rows
 
 
 PAYPAL = "paypal"
@@ -1062,7 +1080,10 @@ def parse(text: str) -> Result:
     df = pd.DataFrame(rows, columns=COLUMNS)
     paid = pd.DataFrame(details, columns=DETAIL_COLUMNS).drop_duplicates("detail_id")
     dates = sorted(d for d in list(df["date"]) + list(paid["date"]) if d)
-    notes = [f"receipts: {df['order_id'].nunique()} read, {len(df)} items"]
+    rewards = df["item_id"].astype(str).str.endswith(REWARD)
+    notes = [f"receipts: {df['order_id'].nunique()} read, {int((~rewards).sum())} items"]
+    if rewards.any():
+        notes.append(f"receipts: rewards paid {-df.loc[rewards, 'amount'].sum():,.2f} of what they bought")
     if len(paid):
         for service, n in paid["service"].value_counts().sort_index().items():
             notes.append(f"{'PayPal' if service == PAYPAL else 'Venmo'}: {n} payments and transfers")

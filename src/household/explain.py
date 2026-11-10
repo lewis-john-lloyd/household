@@ -63,12 +63,14 @@ DEPARTMENTS = {
     "audiobooks": "media",
     "charity": "charity",
     "membership": "subscriptions",
+    "rewards": "rewards",
 }
 DEFAULT = "household"
 WHOLE_FOODS = "wholefoods.com"
 ITEM_CHARS = 80  # an item's name as shown with its charge, cut to this
 # stores whose order history itemizes a charge: service -> the pattern of its lines' payee
 ORDER_SERVICES = {"amazon": "AMAZON|AMZN", "target": r"\bTARGET\b|TARGET\.?COM", "audible": r"\bAUDIBLE\b"}
+REWARD = "-reward"  # after an item's id: the rewards row for what rewards paid of that item (a negative amount)
 ORDER_PAYEE = "order_payee:"  # a household parameter "order_payee:<service>" adds a store, its value the payee pattern
 
 
@@ -160,6 +162,12 @@ def _category(item):
     return DEPARTMENTS.get(str(item["department"]).strip().lower(), DEFAULT)
 
 
+def _item_of(item_id):
+    """The item a row is about: its own id, or for a rewards row the id of the item the rewards paid for."""
+    text = str(item_id)
+    return text[: -len(REWARD)] if text.endswith(REWARD) else text
+
+
 def order_groups(items, cards, service="amazon"):
     """A service's shipments, whole orders and refunds, each with its amount and date, ready to match.
 
@@ -182,8 +190,11 @@ def order_groups(items, cards, service="amazon"):
     refunds = df[df["kind"] == "refund"][["order_id", "date", "amount", "item_id"]].assign(level="refund", rank=0)
     # an item on its own, last: a store that charges each part of a shipment separately (an order history with
     # one date for the whole order cannot say which items went together)
-    several = bought.groupby(["order_id", "date"])["item_id"].transform("size") > 1
-    singles = bought[several][["order_id", "date", "amount", "item_id"]].assign(level="item", rank=2)
+    # (an item and the rewards row for it are one item, at what the card paid for it)
+    each = bought.assign(item_id=bought["item_id"].map(_item_of))
+    each = each.groupby(["order_id", "date", "item_id"], as_index=False)["amount"].sum()
+    several = each.groupby(["order_id", "date"])["item_id"].transform("size") > 1
+    singles = each[several][["order_id", "date", "amount", "item_id"]].assign(level="item", rank=2)
     groups = pd.concat([shipments, orders, refunds, singles], ignore_index=True)
     groups["amount"] = groups["amount"].round(2)
     groups["group"] = (
@@ -243,7 +254,7 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
         if r["level"] == "shipment":
             order = order[order["date"] == r["date_c"]]
         elif r["level"] == "item":
-            order = order[order["item_id"] == r["item_id"]]
+            order = order[order["item_id"].map(_item_of) == r["item_id"]]
         elif r["level"] == "refund":  # an item that cost exactly the refund is the one returned
             same = order[(order["amount"].round(2) - abs(float(r["amt"]))).abs() < 0.005]
             order = same.head(1) if len(same) else order
@@ -258,8 +269,9 @@ def match_orders(lines, items, cards, contents=None, service="amazon", services=
                 for i in order.to_dict("records")
             ]
         weights = order.assign(category=order.apply(_category, axis=1)).groupby("category")["amount"].sum()
-        weights = weights[weights > 0]
-        if weights.empty:
+        # rewards rows weigh against the items they paid for, so the rewards earned are a part of the split
+        weights = weights[weights.abs() >= 0.005]
+        if weights.empty or weights.sum() <= 0:
             weights = pd.Series({DEFAULT: 1.0})
         amount = float(r["amt"])
         shares = (weights / weights.sum() * amount).round(2)
@@ -363,6 +375,7 @@ def amazon_hints(lines, items, matched, service="amazon", services=None):
     if items is None or items.empty:
         return {}
     bought = items[(items["service"] == service) & (items["kind"] == "item")].copy()
+    bought = bought[~bought["item_id"].astype(str).str.endswith(REWARD)]
     if bought.empty:
         return {}
     bought["amount"] = pd.to_numeric(bought["amount"])

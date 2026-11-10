@@ -31,15 +31,19 @@ def test_store_receipts_read_item_by_item_and_paypal_emails_read_as_payment_deta
         ["Donation", 1.0, "charity", "2026-05-02", "WILLOW ST"],
     ]
     store = items[items["order_id"] == "r1"]
-    # rewards paid half: every item comes to half, adding to what the card was charged
-    assert store[["item", "amount", "website"]].values.tolist() == [
-        ["Rain Jacket", 31.5, "ACME GROCER"],
-        ["Wool Socks", 10.5, "ACME GROCER"],
+    # rewards paid half: each item at what it cost, and a rewards row under it for the half they paid
+    assert store[["item", "amount", "department", "website"]].values.tolist() == [
+        ["Rain Jacket", 63.0, "", "ACME GROCER"],
+        ["rewards used", -31.5, "rewards", "ACME GROCER"],
+        ["Wool Socks", 21.0, "", "ACME GROCER"],
+        ["rewards used", -10.5, "rewards", "ACME GROCER"],
     ]
+    assert store["item_id"].iloc[1] == store["item_id"].iloc[0] + explain.REWARD
     online = items[items["order_id"] == "A100"]
     # an online order: the rewards come off the first item, as its parts are charged
     assert online[["item", "amount", "date"]].values.tolist() == [
-        ["Camp Stove (Blue)", 38.5, "2026-08-18"],
+        ["Camp Stove (Blue)", 52.5, "2026-08-18"],
+        ["rewards used", -14.0, "2026-08-18"],
         ["Tent Stakes", 31.5, "2026-08-18"],
     ]
     paid = result.tables["payment_details"].set_index("counterparty")
@@ -51,7 +55,11 @@ def test_store_receipts_read_item_by_item_and_paypal_emails_read_as_payment_deta
         "Half of the camping gear",
         "2026-09-12",
     )
-    assert result.notes[:2] == ["receipts: 3 read, 7 items", "PayPal: 4 payments and transfers"]
+    assert result.notes[:3] == [
+        "receipts: 3 read, 7 items",
+        "receipts: rewards paid 56.00 of what they bought",
+        "PayPal: 4 payments and transfers",
+    ]
     # a return and an order paid in full with rewards charged no card
     assert "receipts: 2 that charged nothing (a return, a free order) left out" in result.notes
 
@@ -94,8 +102,10 @@ def test_the_card_lines_match_a_receipt_each_and_an_order_charged_in_parts_match
         lines, details=result.tables["payment_details"], items=result.tables["order_items"], services=services
     )
     assert found["split"]["t1"] == [("charity", -1.0), ("food", -6.0), ("household", -21.0)]
-    assert found["split"]["t2"] == [("household", -42.0)]
-    assert found["split"]["t3"] == [("household", -38.5)] and found["split"]["t4"] == [("household", -31.5)]
+    # what the rewards paid is a part of the line, as rewards earned: the gear reads at what it cost
+    assert found["split"]["t2"] == [("household", -84.0), ("rewards", 42.0)]
+    assert found["split"]["t3"] == [("household", -52.5), ("rewards", 14.0)]
+    assert found["split"]["t4"] == [("household", -31.5)]
     assert "Camp Stove (Blue)" in found["items"]["t3"] and "Tent Stakes" in found["items"]["t4"]
     assert found["payee"] == {
         "t5": "QUILL & INK Co.",

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- The views' tab icon: a roof over three rising bars, in the page's primary blue. -->
+  <rect width="64" height="64" rx="14" fill="#0b57d0"/>
+  <path d="M11 29 L32 11 L53 29" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="16" y="40" width="8" height="13" rx="2" fill="#ffffff"/>
+  <rect x="28" y="33" width="8" height="20" rx="2" fill="#ffffff"/>
+  <rect x="40" y="26" width="8" height="27" rx="2" fill="#d3e3fd"/>
+</svg>

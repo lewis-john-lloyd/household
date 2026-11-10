@@ -1,1 +1,2 @@
 tests/fixtures/pay_statement.pdf 961f19fcadc71dddfa5f04141d99ac5282e293a38f2dc690d08c5cfaf0033ba8  # made up: the pay statement layout with invented names and amounts
+web/assets/icon.png 3dac5f1a8a62da32904a94a2974196cb5048aa8f810f575ad2ac99cbe6ce24f1  # drawn for the views: the tab icon, rendered from web/assets/icon.svg

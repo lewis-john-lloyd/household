@@ -6,8 +6,12 @@
  * the editing section below and parsers/changes.py).
  */
 
+// The browser tab's icon. Apps Script takes it only as an https address of an image, so it is served from the
+// repo (web/assets/icon.png, drawn from icon.svg beside it).
+const ICON = "https://github.com/lewis-john-lloyd/household/raw/main/web/assets/icon.png";
+
 function doGet(): GoogleAppsScript.HTML.HtmlOutput {
-  return HtmlService.createHtmlOutputFromFile("Index").setTitle("Household views");
+  return HtmlService.createHtmlOutputFromFile("Index").setTitle("Household views").setFaviconUrl(ICON);
 }
 
 function reportsId_(): string {

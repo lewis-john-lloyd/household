@@ -1,6 +1,6 @@
 """Structured log lines: each line the engine prints has a level and a topic, and a run prints it as
 
-    [elapsed][stage][topic][LEVEL] message
+    [elapsed][LEVEL][stage][topic] message
 
 A line is still the plain text it always was (Line is a str), so a stage called on its own with log=print prints
 it unchanged and the views read it as before; the level rides along, kept in Reports' run_notes. The topic is
@@ -56,6 +56,6 @@ def topic_of(text):
 
 
 def structured(text, stage, topic, level, elapsed=""):
-    """The line as a run prints it: [elapsed][stage][topic][LEVEL] message."""
-    head = (f"[{elapsed}]" if elapsed else "") + f"[{stage}][{topic or stage}][{level}]"
+    """The line as a run prints it: [elapsed][LEVEL][stage][topic] message."""
+    head = (f"[{elapsed}]" if elapsed else "") + f"[{level}][{stage}][{topic or stage}]"
     return f"{head} {text}"

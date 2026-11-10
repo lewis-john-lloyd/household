@@ -104,11 +104,11 @@ def test_a_run_goes_through_every_stage_in_order_with_the_settings(monkeypatch):
         "compute_all",
     ]
     assert calls[3][1] == ("c" * 30, {"2000": "G1"}, "grants", "sales") and calls[5][1] == ("b" * 30, 2001)
-    # every line is [elapsed][stage][topic][LEVEL] message
-    assert said[0] == f"[0:00][run][run][INFO] r1, household {__version__}"
-    assert "[0:00][legacy_equity][legacy_equity][INFO] stage 4 of 6, the old stock plan tabs' vests and sales" in said
-    assert "[0:00][compute][compute][INFO] done in 0:00: legacy check PASS; 0 lines open in review" in said
-    assert "[0:00][run][summary][INFO] 6 of 6 stages done in 0:00" in said
+    # every line is [elapsed][LEVEL][stage][topic] message
+    assert said[0] == f"[0:00][INFO][run][run] r1, household {__version__}"
+    assert "[0:00][INFO][legacy_equity][legacy_equity] stage 4 of 6, the old stock plan tabs' vests and sales" in said
+    assert "[0:00][INFO][compute][compute] done in 0:00: legacy check PASS; 0 lines open in review" in said
+    assert "[0:00][INFO][run][summary] 6 of 6 stages done in 0:00" in said
     # the run's own lines, kept for the views, are plain text with their levels, and its table of stages
     assert kept["stage"] == "run" and kept["lines"][0] == "run: r1, household " + __version__
     assert [st["stage"] for st in kept["summary"]["stages"]] == [n for n, _, _ in runner.STAGES]
@@ -123,12 +123,12 @@ def test_a_legacy_stage_that_fails_says_why_where_and_the_rest_still_run(monkeyp
     runner.run(Session(), "folder", log=said.append, run_id="r1")
     failed = [line for line in said if "[ERROR]" in line]
     assert failed[0] == (
-        "[0:00][legacy_investments][legacy_investments][ERROR] failed after 0:00: ValueError: "
+        "[0:00][ERROR][legacy_investments][legacy_investments] failed after 0:00: ValueError: "
         "no such accounts in the ledger: a_ira (add them first)"
     )
-    at = [line for line in failed if "][ERROR]   at " in line]
+    at = [line for line in failed if "]   at " in line]
     assert at and at[-1].endswith(" in call")  # the innermost place it passed through, last
-    assert "[0:00][run][summary][ERROR] 5 of 6 stages done in 0:00; failed: legacy investments" in said
+    assert "[0:00][ERROR][run][summary] 5 of 6 stages done in 0:00; failed: legacy investments" in said
     assert calls[-1][0] == "compute_all" and kept["summary"]["failed"] == ["legacy investments"]
     assert [logs.level_of(line) for line in kept["lines"] if "failed after" in line] == ["ERROR"]
 
@@ -140,7 +140,7 @@ def test_with_no_settings_file_only_the_inbox_prices_and_compute_run(monkeypatch
     assert [c[0] for c in calls] == ["ingest_inbox", "fetch_prices", "compute_all"]
     assert (
         said[1]
-        == "[0:00][run][run][WARN] no engine_settings.json in the household folder: the legacy stages are skipped"
+        == "[0:00][WARN][run][run] no engine_settings.json in the household folder: the legacy stages are skipped"
     )
 
 
@@ -155,4 +155,4 @@ def test_a_line_names_its_topic_and_keeps_its_level():
     log.at("ingest")
     log("inbox: 2 files")
     log("[1/2] a.csv: failed", "WARN")
-    assert said == ["[1:15][ingest][inbox][INFO] 2 files", "[1:16][ingest][inbox][WARN] [1/2] a.csv: failed"]
+    assert said == ["[1:15][INFO][ingest][inbox] 2 files", "[1:16][WARN][ingest][inbox] [1/2] a.csv: failed"]

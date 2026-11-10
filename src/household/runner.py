@@ -151,7 +151,7 @@ def _clock(seconds):
 
 
 class RunLog:
-    """Prints every line as [elapsed][stage][topic][LEVEL] message (logs.py), and keeps the run's own lines (not
+    """Prints every line as [elapsed][LEVEL][stage][topic] message (logs.py), and keeps the run's own lines (not
     ingest's or compute's, which keep theirs) for Reports."""
 
     def __init__(self, log, clock=time.perf_counter):

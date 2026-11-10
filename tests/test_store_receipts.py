@@ -121,3 +121,13 @@ def test_an_order_charged_whole_still_matches_as_one_and_its_items_are_not_match
     )
     found = explain.explain(lines, items=items, services={"outfitter": "ACME GROCER"})
     assert list(found["split"]) == ["t1"]
+
+
+def test_an_item_read_before_rewards_had_rows_is_raised_when_its_rewards_row_comes_in_later():
+    new = email_receipts.parse(only("r1")).tables["order_items"].assign(doc_id="d2")
+    rewards = new["item_id"].str.endswith(explain.REWARD)
+    old = new[~rewards].assign(amount=[31.5, 10.5], doc_id="d1")  # as the earlier reader wrote them: net
+    ledger = pd.concat([old, new[rewards]], ignore_index=True)  # read again, only the rewards rows are new
+    settled = explain.settle_rewards(ledger)
+    assert settled["amount"].tolist() == new["amount"][~rewards].tolist() + new["amount"][rewards].tolist()
+    assert explain.settle_rewards(new)["amount"].tolist() == new["amount"].tolist()  # read together: as is

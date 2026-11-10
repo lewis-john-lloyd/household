@@ -168,6 +168,26 @@ def _item_of(item_id):
     return text[: -len(REWARD)] if text.endswith(REWARD) else text
 
 
+def settle_rewards(items):
+    """order_items with an item read before its rewards row raised to what it cost. A receipt read before
+    rewards had rows of their own wrote the item at what the card paid; read again, only its new rewards row
+    is added (the item's id is already in the ledger), and that row says how much to add back. An item and
+    its rewards row from the same file were read together and are left as they are."""
+    if items is None or items.empty or "doc_id" not in items:
+        return items
+    ids = items["item_id"].astype(str)
+    rewards = items[ids.str.endswith(REWARD)]
+    if rewards.empty:
+        return items
+    out = items.copy()
+    amount = pd.to_numeric(out["amount"])
+    for r in rewards.to_dict("records"):
+        item = (ids == _item_of(r["item_id"])) & (out["doc_id"].astype(str) != str(r["doc_id"]))
+        amount[item] -= float(r["amount"])
+    out["amount"] = amount.round(2)
+    return out
+
+
 def order_groups(items, cards, service="amazon"):
     """A service's shipments, whole orders and refunds, each with its amount and date, ready to match.
 

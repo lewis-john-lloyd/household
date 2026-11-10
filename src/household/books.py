@@ -52,7 +52,9 @@ def read_books(ledger: Spreadsheet) -> dict[str, Any]:
         "categories": compute.latest(read_ledger(ledger, "categories"), ["category"]),
         "parameters": parameters,
         "details": read_ledger(ledger, "payment_details"),
-        "items": with_item_categories(read_ledger(ledger, "order_items"), read_ledger(ledger, "item_categories")),
+        "items": with_item_categories(
+            explain.settle_rewards(read_ledger(ledger, "order_items")), read_ledger(ledger, "item_categories")
+        ),
         "aliases": aliases,
     }
 

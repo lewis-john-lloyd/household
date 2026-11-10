@@ -254,9 +254,9 @@ test("the status page shows each stage's latest run, its lines in order, and wha
   assert.deepEqual(
     status.attention.map((a) => [a.label, a.count, a.action]),
     [
-      ["inbox files were not read", 1, ""],
+      ["inbox file was not read", 1, ""],
       ["lines need a category", 4, "review"],
-      ["downloads due", 1, ""],
+      ["download due", 1, ""],
       ["transfers have no partner", 2, "review"],
     ],
   );

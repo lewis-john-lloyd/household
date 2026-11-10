@@ -154,6 +154,19 @@ test("a load that fails says so instead of showing nothing", async () => {
   await page.close();
 });
 
+test("the status page's cards, the panels below them and the heading above keep apart", async () => {
+  const page = await open(
+    "window.__answers.getStatus.attention = [1, 2, 3, 4].map(function (n) { return { key: 'stubs_missing', " +
+      "label: 'pay deposit has no stub', count: 1, note: 'line ' + n, items: [], detail: [], flags: [], action: 'review' }; });",
+  );
+  await page.waitForSelector("#status-attention .attention");
+  const box = (s) => page.locator(s).first().boundingBox();
+  const [head, cards, panels] = [await box(".status-head"), await box("#status-attention"), await box("#status-overview .two")];
+  assert.ok(cards.y >= head.y + head.height + 16, "the cards sit below the heading");
+  assert.ok(panels.y >= cards.y + cards.height + 16, "the panels sit below the cards");
+  await page.close();
+});
+
 test("a save whose bookkeeping failed reads as saved, with the warning, and clears what it sent", async () => {
   const page = await open(
     "window.__saveWarning = 'Its list of edits for the Saved tab could not be kept (quota); the change set itself is saved.';",

@@ -164,3 +164,10 @@ def test_a_line_names_its_topic_and_keeps_its_level():
     log("inbox: 2 files")
     log("[1/2] a.csv: failed", "WARN")
     assert said == ["[1:15][INFO][ingest][inbox] 2 files", "[1:16][WARN][ingest][inbox] [1/2] a.csv: failed"]
+
+
+def test_a_count_takes_the_noun_in_the_form_it_needs():
+    assert logs.counted(1, "stub") == "1 stub"
+    assert logs.counted(0, "stub") == "0 stubs"
+    assert logs.counted(1200, "pay deposit") == "1,200 pay deposits"
+    assert logs.counted(2, "run of paychecks", "runs of paychecks") == "2 runs of paychecks"

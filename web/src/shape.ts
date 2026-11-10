@@ -367,25 +367,61 @@ interface Status {
 
 const RUN_LOG_COLUMNS = ["run_id", "computed_at", "stage", "detail"];
 const RUN_NOTES_COLUMNS = ["run_id", "stage", "at", "n", "message"];
-// a compute summary count that needs the owner when it is not zero: key, what it counts, the line that says
-// more, the Edit tab that answers it
-const CHECKS: [string, string, string, string][] = [
-  ["review_open_lines", "lines need a category", "categories since", "review"],
-  ["downloads_due", "downloads due", "coverage:", ""],
-  ["balances_off", "balances disagree with the ledger", "balance_check:", ""],
-  ["stubs_missing", "pay deposits have no stub", "paychecks:", ""],
-  ["pay_not_deposited", "pay stubs have no deposit", "paychecks:", ""],
-  ["possible_duplicates", "transactions may be duplicates", "possible_duplicates:", "duplicates"],
-  ["tax_check_mismatches", "filed tax lines disagree", "tax_check:", ""],
-  ["pay_mismatches", "runs of paychecks disagree with your jobs", "pay_check:", "view:jobs"],
-  ["subscription_price_changes", "recurring charges changed price", "recurring charge: ", "view:recurring"],
-  ["tax_sources_unfiled", "tax values have no source PDF filed", "tax_sources:", ""],
-  ["withholding_unexplained", "federal withholding stubs are unexplained", "withholding_backtest:", "withholding"],
-  ["wi_withholding_unexplained", "Wisconsin withholding stubs are unexplained", "wi_withholding_backtest:", "withholding"],
-  ["pa_withholding_unexplained", "Pennsylvania withholding stubs are unexplained", "pa_withholding_backtest:", ""],
-  ["mismatches", "legacy months disagree", "legacy check", ""],
-  ["legacy_uncategorized", "legacy lines have no category", "legacy check", ""],
-  ["transfers_unmatched", "transfers have no partner", "transfers:", "review"],
+// a compute summary count that needs the owner when it is not zero: key, what it counts (for one, then for more),
+// the line that says more, the Edit tab that answers it
+const CHECKS: [string, string, string, string, string][] = [
+  ["review_open_lines", "line needs a category", "lines need a category", "categories since", "review"],
+  ["downloads_due", "download due", "downloads due", "coverage:", ""],
+  ["balances_off", "balance disagrees with the ledger", "balances disagree with the ledger", "balance_check:", ""],
+  ["stubs_missing", "pay deposit has no stub", "pay deposits have no stub", "paychecks:", ""],
+  ["pay_not_deposited", "pay stub has no deposit", "pay stubs have no deposit", "paychecks:", ""],
+  [
+    "possible_duplicates",
+    "transaction may be a duplicate",
+    "transactions may be duplicates",
+    "possible_duplicates:",
+    "duplicates",
+  ],
+  ["tax_check_mismatches", "filed tax line disagrees", "filed tax lines disagree", "tax_check:", ""],
+  [
+    "pay_mismatches",
+    "run of paychecks disagrees with your jobs",
+    "runs of paychecks disagree with your jobs",
+    "pay_check:",
+    "view:jobs",
+  ],
+  [
+    "subscription_price_changes",
+    "recurring charge changed price",
+    "recurring charges changed price",
+    "recurring charge: ",
+    "view:recurring",
+  ],
+  ["tax_sources_unfiled", "tax value has no source PDF filed", "tax values have no source PDF filed", "tax_sources:", ""],
+  [
+    "withholding_unexplained",
+    "federal withholding stub is unexplained",
+    "federal withholding stubs are unexplained",
+    "withholding_backtest:",
+    "withholding",
+  ],
+  [
+    "wi_withholding_unexplained",
+    "Wisconsin withholding stub is unexplained",
+    "Wisconsin withholding stubs are unexplained",
+    "wi_withholding_backtest:",
+    "withholding",
+  ],
+  [
+    "pa_withholding_unexplained",
+    "Pennsylvania withholding stub is unexplained",
+    "Pennsylvania withholding stubs are unexplained",
+    "pa_withholding_backtest:",
+    "",
+  ],
+  ["mismatches", "legacy month disagrees", "legacy months disagree", "legacy check", ""],
+  ["legacy_uncategorized", "legacy line has no category", "legacy lines have no category", "legacy check", ""],
+  ["transfers_unmatched", "transfer has no partner", "transfers have no partner", "transfers:", "review"],
 ];
 const UNREAD = ["error", "unrecognized", "failed"]; // inbox file statuses that leave a file in the inbox
 // who decided a line (categorize.py's decided_by), in the breakdown's words; any other is an order history
@@ -529,7 +565,7 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
     if (unread.length) {
       attention.push({
         key: "inbox_unread",
-        label: "inbox files were not read",
+        label: unread.length === 1 ? "inbox file was not read" : "inbox files were not read",
         count: unread.length,
         note: "",
         detail: [],
@@ -540,7 +576,7 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
     }
   }
   if (compute) {
-    for (const [key, label, prefix, action] of CHECKS) {
+    for (const [key, one, many, prefix, action] of CHECKS) {
       const count = Number(compute.summary[key] ?? 0);
       if (!count) continue;
       const items = key === "downloads_due" ? downloadsDue(coverage) : [];
@@ -553,7 +589,16 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
       }
       const structured = items.length || key === "review_open_lines";
       const lines = compute.lines.filter((l) => l.startsWith(prefix));
-      attention.push({ key, label, count, note, items, action, flags: lines, detail: structured ? [] : lines });
+      attention.push({
+        key,
+        label: count === 1 ? one : many,
+        count,
+        note,
+        items,
+        action,
+        flags: lines,
+        detail: structured ? [] : lines,
+      });
     }
   }
   const projection =

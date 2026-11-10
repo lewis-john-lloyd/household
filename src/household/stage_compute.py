@@ -465,7 +465,11 @@ def _checks(c: Compute, books, effective, categorized):
     sheets.replace_table(reports, schema.table(schema.REPORTS, "paychecks"), unpaired.assign(run_id=run_id))
     forgot = unpaired[unpaired["status"].str.startswith("missing stub")]
     lost = unpaired[unpaired["status"] == "no deposit"]
-    say(log, f"paychecks: {len(forgot)} pay deposits with no stub, {len(lost)} stubs with no deposit")
+    say(
+        log,
+        f"paychecks: {logs.counted(len(forgot), 'pay deposit')} with no stub, "
+        f"{logs.counted(len(lost), 'stub')} with no deposit",
+    )
     for who, g in forgot.groupby("person"):
         say(log, f"  did you forget {who}'s stubs? {len(g)} missing, the latest paid {g['date'].max()}", "WARN")
     for row in lost.to_dict("records"):

@@ -59,3 +59,8 @@ def structured(text, stage, topic, level, elapsed=""):
     """The line as a run prints it: [elapsed][LEVEL][stage][topic] message."""
     head = (f"[{elapsed}]" if elapsed else "") + f"[{level}][{stage}][{topic or stage}]"
     return f"{head} {text}"
+
+
+def counted(n, one, many=None):
+    """n and the noun in the form n takes: "1 stub", "2 stubs" (many defaults to one + "s")."""
+    return f"{n:,} {one if n == 1 else (many or one + 's')}"

@@ -325,7 +325,7 @@ test("a request Sheets refuses for quota waits and is tried again; past the wait
 test("the page has its own tab icon, served from the image kept in the repo", () => {
   const page = server().context.doGet();
   assert.equal(page.file, "Index");
-  assert.equal(page.set.title, "Household views");
+  assert.equal(page.set.title, "The Steward");
   const at = /^https:\/\/github\.com\/[\w.-]+\/household\/raw\/main\/(web\/assets\/icon\.png)$/.exec(page.set.favicon);
   assert.ok(at, page.set.favicon);
   const png = fs.readFileSync(path.join(__dirname, "..", "..", "..", at[1]));

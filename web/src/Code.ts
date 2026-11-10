@@ -11,7 +11,7 @@
 const ICON = "https://github.com/lewis-john-lloyd/household/raw/main/web/assets/icon.png";
 
 function doGet(): GoogleAppsScript.HTML.HtmlOutput {
-  return HtmlService.createHtmlOutputFromFile("Index").setTitle("Household views").setFaviconUrl(ICON);
+  return HtmlService.createHtmlOutputFromFile("Index").setTitle("The Steward").setFaviconUrl(ICON);
 }
 
 function reportsId_(): string {

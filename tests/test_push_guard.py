@@ -196,15 +196,20 @@ def test_a_binary_replaced_before_the_push_is_checked_in_every_version(tmp_path,
     assert len({f.split()[1] for f in found}) == 2  # one finding for each commit's version
 
 
-def test_the_binary_list_allows_only_fixtures_pinned_by_their_hash():
+def test_the_binary_list_allows_only_fixtures_and_web_assets_pinned_by_their_hash():
     good = "a" * 64
     text = (
         f"tests/fixtures/x.png {good}  # made up\n"
-        f"docs/real.png {good}\n"  # outside the fixtures: allows nothing
+        f"web/assets/icon.png {good}  # drawn for the views\n"
+        f"docs/real.png {good}\n"  # outside those folders: allows nothing
+        f"web/real.png {good}\n"
         "tests/fixtures/y.png\n"  # no hash: allows nothing
         f"tests/fixtures/x.png {'b' * 64}\n"
     )  # a second approved version
-    assert push_guard.leak_guard.allowed_binaries(lambda p: text) == {"tests/fixtures/x.png": {good, "b" * 64}}
+    assert push_guard.leak_guard.allowed_binaries(lambda p: text) == {
+        "tests/fixtures/x.png": {good, "b" * 64},
+        "web/assets/icon.png": {good},
+    }
 
 
 def test_whole_hashes_are_not_account_numbers_but_digits_beside_them_are():

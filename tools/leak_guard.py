@@ -6,8 +6,9 @@ common secret formats. A line can opt out with the marker `leak-guard: allow`,
 which should be rare and obvious in review.
 
 Binary files (PDFs, images, office files, archives: anything not UTF-8 text)
-are refused unless listed in tests/fixtures/BINARIES, the made-up fixtures the
-tests need. A line there is a path under tests/fixtures/ and the SHA-256 of the
+are refused unless listed in tests/fixtures/BINARIES: the made-up fixtures the
+tests need, and the views' own images (web/assets/, such as the tab icon). A line
+there is a path under one of those folders and the SHA-256 of the
 contents approved, so a listed name never vouches for other contents (a new
 version needs its own line, or a new hash); a listed PDF has its text checked
 like a fixture's. Pay stubs,
@@ -27,6 +28,7 @@ ALLOW_MARKER = "leak-guard: allow"
 FIXTURE_DIR = "tests/fixtures/"
 SKIP_SUFFIXES = {".lock"}
 ALLOWED_BINARIES = FIXTURE_DIR + "BINARIES"  # made-up binary fixtures: "path sha256", one per line
+BINARY_DIRS = (FIXTURE_DIR, "web/assets/")  # the folders a listed binary may live in
 BINARY_SUFFIXES = {
     ".pdf",
     ".png",
@@ -80,8 +82,8 @@ def tracked_files():
 
 def allowed_binaries(read=None):
     """{path: {sha256}} from tests/fixtures/BINARIES (# starts a comment). A line is a path under
-    tests/fixtures/ and the SHA-256 of its approved contents; a line without a hash, or a path
-    outside the fixtures, allows nothing. read(path) -> text or None."""
+    tests/fixtures/ or web/assets/ and the SHA-256 of its approved contents; a line without a hash,
+    or a path outside those folders, allows nothing. read(path) -> text or None."""
     text = (
         read(ALLOWED_BINARIES)
         if read
@@ -90,7 +92,7 @@ def allowed_binaries(read=None):
     out = {}
     for line in (text or "").splitlines():
         parts = line.split("#", 1)[0].split()
-        if len(parts) == 2 and parts[0].startswith(FIXTURE_DIR) and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+        if len(parts) == 2 and parts[0].startswith(BINARY_DIRS) and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
             out.setdefault(parts[0], set()).add(parts[1])
     return out
 

@@ -252,6 +252,39 @@ def test_the_old_sheets_history_is_added_once_and_only_before_the_plans_own_reco
     assert (first["equity_vests"], first["equity_sales"], again["equity_vests"], again["equity_sales"]) == (1, 1, 0, 0)
 
 
+def test_a_grant_the_plan_no_longer_lists_gets_its_schedule_from_the_old_sheet(session):  # noqa: F811
+    from household import engine, legacy_equity, lots
+    from household.ledgerio import read_ledger
+    from test_sheets import FakeSpreadsheet, FakeWorksheet
+
+    wb = FakeSpreadsheet("taxes")
+    wb.tabs = {
+        "grants": FakeWorksheet(
+            "grants",
+            [["date", "fmv_vest", "shares_net", "2000", "2001"], [36901, 50, 6, 10, ""], [36932, 40, 9, 10, 5]],
+        ),
+        "sales": FakeWorksheet("sales", [["(b) Date acquired", "Shares", "(c) Date Sold"]]),
+    }
+    session.sheets.legacy = wb
+    args = (session, session.root, "workbook", {"2000": "G1", "2001": "G2"}, "grants", "sales")
+    said = []
+    blind = engine.ingest_legacy_equity(*args, log=said.append)
+    assert blind["vest_schedule"] == 0 and any("set legacy_equity.symbol" in str(n) for n in blind["notes"])
+    first = engine.ingest_legacy_equity(*args, log=None, symbol="ACME")
+    again = engine.ingest_legacy_equity(*args, log=None, symbol="ACME")
+    assert (first["vest_schedule"], again["vest_schedule"]) == (3, 0)
+    ledger, _, _ = engine.bootstrap(session, session.root)
+    schedule = read_ledger(ledger, "vest_schedule")
+    assert sorted(zip(schedule["grant_id"], schedule["vest_date"], schedule["shares"].astype(float))) == [
+        ("G1", "2001-01-10", 10.0),
+        ("G1", "2001-02-10", 10.0),
+        ("G2", "2001-02-10", 5.0),
+    ]
+    assert set(schedule["symbol"]) == {"ACME"} and set(schedule["doc_id"]) == {legacy_equity.LEGACY_DOC}
+    acquired, _, notes = lots.equity_lots(read_ledger(ledger, "equity_vests"), None, schedule)
+    assert len(acquired) == 3 and not any("no symbol" in str(n) for n in notes)
+
+
 def test_compute_writes_form_8949_and_the_open_lots(session):  # noqa: F811
     from household import engine, schema, sheets
 

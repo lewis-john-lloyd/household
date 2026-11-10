@@ -2,7 +2,7 @@
 safe to run every time.
 """
 
-from . import backup, ingest, legacy, legacy_equity, legacy_investments, schema, sheets
+from . import backup, ingest, legacy, legacy_equity, legacy_investments, logs, schema, sheets
 from .kinds import Log, Session, StageResult
 from .ledgerio import bootstrap, new_run_id, read_ledger
 from .runlog import say
@@ -110,13 +110,16 @@ def ingest_legacy_equity(
     sales_tab: str,
     run_id: str | None = None,
     log: Log = print,
+    symbol: str | None = None,
 ) -> StageResult:
     """Add the legacy tax workbook's stock-plan vests to `equity_vests` and its sales to `equity_sales`
     (legacy_equity.py), for the dates before the plan's own records begin, backing up the ledger first. Safe to
     run every time: what the ledger already holds is not added again, and with nothing new it writes nothing.
 
     grant_columns maps each grant column of the grants tab (headed by the year it was awarded) to the plan's
-    grant id, as vest_schedule names it ({"<year>": "<grant id>"}).
+    grant id, as vest_schedule names it ({"<year>": "<grant id>"}). A grant vest_schedule doesn't list (the
+    plan's awards page shows only the grants still open) gets its vests as its schedule, as share awards of
+    symbol, the stock plan's symbol; without symbol it is named, since lots can't tell what its shares were.
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
@@ -138,17 +141,32 @@ def ingest_legacy_equity(
 
     new_vests = fresh(new_vests, have_vests, ["vest_date", "grant_id"])
     new_sales = fresh(new_sales, have_sales, ["sale_date", "grant_id", "vest_date"])
+    have_schedule = read_ledger(ledger, "vest_schedule")
+    listed = set(have_schedule["grant_id"].astype(str).str.strip()) if len(have_schedule) else set()
+    unlisted = sorted(set(grant_columns.values()) - listed)
+    new_schedule = legacy_equity.schedule(
+        grants_rows, {c: g for c, g in grant_columns.items() if g in unlisted}, symbol
+    )
+    if unlisted and not symbol:
+        new_schedule = new_schedule.iloc[0:0]
+        notes.append(
+            logs.warn(
+                f"legacy equity: {', '.join(unlisted)} not in vest_schedule, so lots can't tell what their shares "
+                f"were: set legacy_equity.symbol in engine_settings.json to the stock plan's symbol"
+            )
+        )
     for note in notes:
         say(log, note)
-    if new_vests.empty and new_sales.empty:
+    if new_vests.empty and new_sales.empty and new_schedule.empty:
         say(log, f"legacy equity: nothing new ({len(vested)} vests and {len(sold)} sales read)")
-        return {"run_id": run_id, "equity_vests": 0, "equity_sales": 0, "notes": notes}
+        return {"run_id": run_id, "equity_vests": 0, "equity_sales": 0, "vest_schedule": 0, "notes": notes}
     backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
     counts = sheets.append_tables(
         ledger,
         [
             (schema.table(schema.LEDGER, "equity_vests"), new_vests),
             (schema.table(schema.LEDGER, "equity_sales"), new_sales),
+            (schema.table(schema.LEDGER, "vest_schedule"), new_schedule),
         ],
     )
     say(
@@ -156,10 +174,17 @@ def ingest_legacy_equity(
         f"legacy equity: {counts['equity_vests']} vests and {counts['equity_sales']} sales added, from "
         f"before the plan's own records",
     )
+    if counts["vest_schedule"]:
+        grants = ", ".join(sorted(set(new_schedule["grant_id"])))
+        say(
+            log,
+            f"legacy equity: {grants}: {counts['vest_schedule']} vests added to vest_schedule as {symbol} share awards",
+        )
     return {
         "run_id": run_id,
         "equity_vests": counts["equity_vests"],
         "equity_sales": counts["equity_sales"],
+        "vest_schedule": counts["vest_schedule"],
         "notes": notes,
     }
 

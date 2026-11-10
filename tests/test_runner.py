@@ -28,11 +28,19 @@ def test_the_settings_are_checked_part_by_part():
     assert got["legacy_investments"]["net_worth_columns"]["Willow - M"] == ("loan", "acme_loan")
     assert got["legacy_budget"] == {"workbook_id": "b" * 30, "check_year": 2001}
     assert runner.parse_settings(json.dumps({"version": 1})) == {}
+    assert got["legacy_equity"]["symbol"] is None  # optional
+    assert (
+        runner.parse_settings(
+            json.dumps({"version": 1, "legacy_equity": {**SETTINGS["legacy_equity"], "symbol": "ACME"}})
+        )["legacy_equity"]["symbol"]
+        == "ACME"
+    )
     for bad, message in [
         ({"version": 2}, "version 1"),
         ({**SETTINGS, "extra": {}}, "unknown parts"),
         ({"version": 1, "legacy_budget": {"workbook_id": "../x"}}, "Drive file id"),
         ({"version": 1, "legacy_equity": {**SETTINGS["legacy_equity"], "grants_tab": ""}}, "name the tabs"),
+        ({"version": 1, "legacy_equity": {**SETTINGS["legacy_equity"], "symbol": "acme; x"}}, "a stock symbol"),
         (
             {
                 "version": 1,

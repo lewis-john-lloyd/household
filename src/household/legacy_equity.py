@@ -6,6 +6,10 @@ shares left after the shares withheld for tax (shares_gross, shares_net), then a
 the year it was awarded) with the shares that grant vested. The vest's net shares are split among its grants
 in proportion to those columns; grant_columns maps each column header to the plan's grant id.
 
+The grants' columns are also their vesting schedule as it happened (schedule): the shares each grant vested on
+each date, as vest_schedule holds a plan's awards page, so a grant the plan no longer lists (one that ended
+with the job) still has its symbol.
+
 The sales tab is Form 8949 by lot: a row per part of a lot sold, with the date acquired (the vest), the shares,
 the date sold, the price, the basis before any wash sale and the proceeds. The parts the old sheet split a lot
 into for its wash sales are added back together, so each (sale, vest) is one sale of shares; the wash sales
@@ -22,6 +26,17 @@ from .legacy import parse_date, parse_money
 
 LEGACY_DOC = "legacy:equity"
 VEST_COLUMNS = ["vest_date", "grant_id", "award_date", "net_shares", "fmv", "deposit_date", "doc_id"]
+SCHEDULE_COLUMNS = [
+    "grant_id",
+    "award_date",
+    "symbol",
+    "award_type",
+    "grant_price",
+    "expires",
+    "vest_date",
+    "shares",
+    "doc_id",
+]
 SALE_COLUMNS = [
     "sale_date",
     "grant_id",
@@ -102,6 +117,35 @@ def vests(rows, grant_columns):
                     }
                 )
     return pd.DataFrame(out, columns=VEST_COLUMNS), notes
+
+
+def schedule(rows, grant_columns, symbol):
+    """The grants tab's rows (header first) to vest_schedule rows: each grant's shares vested on each date, as
+    share awards of symbol."""
+    out = []
+    if rows:
+        header = [str(h).strip() for h in rows[0]]
+        day = _column(header, "date")
+        gross = {g: header.index(c) for c, g in grant_columns.items() if c in header}
+        for row in rows[1:]:
+            d = _date(_cell(row, day))
+            for g, i in gross.items():
+                n = _money(_cell(row, i))
+                if d and n and n > 0:
+                    out.append(
+                        {
+                            "grant_id": g,
+                            "award_date": "",
+                            "symbol": symbol,
+                            "award_type": "RSU",
+                            "grant_price": 0,
+                            "expires": "",
+                            "vest_date": d,
+                            "shares": n,
+                            "doc_id": LEGACY_DOC,
+                        }
+                    )
+    return pd.DataFrame(out, columns=SCHEDULE_COLUMNS)
 
 
 def sales(rows, vested):

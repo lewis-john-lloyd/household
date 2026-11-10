@@ -14,7 +14,7 @@ stage. Nothing about the household lives in the package or the notebook:
       },
       "legacy_budget": {"workbook_id": "<id>", "check_year": 2023},
       "legacy_equity": {"workbook_id": "<id>", "grant_columns": {"<award year>": "<grant id>"},
-                        "grants_tab": "<tab>", "sales_tab": "<tab>"}
+                        "grants_tab": "<tab>", "sales_tab": "<tab>", "symbol": "<the stock plan's symbol>"}
     }
 
 Every line printed carries the time since the run began ([m:ss]); each stage says when it starts, what it
@@ -41,6 +41,7 @@ SETTINGS_NAME = "engine_settings.json"
 SETTINGS_VERSION = 1
 FILE_ID = re.compile(r"^[A-Za-z0-9_-]{20,100}$")
 TEXT = re.compile(r"^[^\x00-\x1f]{1,100}$")
+SYMBOL = re.compile(r"^[A-Z][A-Z0-9.]{0,9}$")
 
 
 class SettingsError(ValueError):
@@ -105,10 +106,14 @@ def parse_settings(text):
         tabs = {k: part.get(k) for k in ("grants_tab", "sales_tab")}
         if not all(isinstance(v, str) and TEXT.match(v) for v in tabs.values()):
             raise SettingsError(f"{where}: grants_tab and sales_tab name the tabs")
+        symbol = part.get("symbol")
+        if symbol is not None and not (isinstance(symbol, str) and SYMBOL.match(symbol)):
+            raise SettingsError(f"{where}.symbol: a stock symbol, such as ACME")
         out[where] = {
             "workbook_id": _id(part.get("workbook_id"), where),
             "grant_columns": _names(part.get("grant_columns"), where + ".grant_columns"),
             **tabs,
+            "symbol": symbol,
         }
     return out
 
@@ -274,6 +279,7 @@ def run(session: Session, folder_id: str, log: Log = print, run_id: str | None =
                 equity["grants_tab"],
                 equity["sales_tab"],
                 log=say,
+                symbol=equity["symbol"],
             )
         ),
         "prices": lambda: engine.fetch_prices(session, folder_id, log=say),

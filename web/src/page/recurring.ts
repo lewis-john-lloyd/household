@@ -157,8 +157,11 @@ function chargeRow(t: Row) {
   var staged_ =
     stagedText("subscription|" + t.key.toUpperCase()) ||
     stagedText("recurring_merge|" + t.key.toUpperCase()) ||
-    stagedText("recurring_name|" + t.key.toUpperCase());
+    stagedText("recurring_name|" + t.key.toUpperCase()) ||
+    stagedText("recurring_line|" + t.key.toUpperCase());
   if (staged_) left.appendChild(el("span", staged_, "tag warn"));
+  var pays = chargeLine(t.key);
+  if (pays) left.appendChild(el("span", "pays " + pays, "tag"));
   var when = t.status === "stopped" ? "last charged " + t.last : t.next_expected ? "next " + t.next_expected : "";
   left.appendChild(
     el(
@@ -197,14 +200,85 @@ function openCharge(key: string) {
     ["Category", (t && t.category) || r.category],
     ["Spelled", r.example],
     ["Includes", (t && t.includes) || r.includes],
+    ["Pays budget line", chargeLine(key)],
     ["Note", r.note],
   ]);
   var done = function () {
     closeDrawer();
     drawBudgetPage();
   };
+  d.appendChild(paysForm(r, done));
   d.appendChild(subscriptionForm(r, done));
   d.appendChild(mergeForm(r, editor!.subscriptions, done));
+}
+
+// The budget line a charge pays: picking one makes that line's target follow the charge (once its rule is
+// Recurring, which the form offers to set).
+function paysForm(r: Row, done: () => void) {
+  var form = el("form", null, "edit");
+  var lines = editor!.budgetLines
+    .filter(function (l) {
+      return l.in_force === "yes";
+    })
+    .map(function (l) {
+      return l.line;
+    })
+    .sort();
+  var now = chargeLine(r.key);
+  var labels: Record<string, string> = { "": "(no line)" };
+  var pick = field(form, "Pays budget line", choice([""].concat(lines), now, labels));
+  var say = el("div", "", "support");
+  var actions = el("div", null, "actions");
+  var line = function (name: string) {
+    return editor!.budgetLines.filter(function (l) {
+      return l.line === name;
+    })[0];
+  };
+  var explain = function () {
+    var l = pick.value ? line(pick.value) : null;
+    say.textContent = !l
+      ? ""
+      : l.rule === "recurring"
+        ? "Its target follows this charge's price, plus its allowance."
+        : "Its target comes from its " + l.rule + " rule now; keeping this also makes it Recurring, so it follows the charge.";
+  };
+  pick.addEventListener("change", explain);
+  explain();
+  actions.appendChild(
+    button(
+      "Keep",
+      function () {
+        if (pick.value === now) {
+          done();
+          return;
+        }
+        linkCharge(r, pick.value);
+        var l = pick.value ? line(pick.value) : null;
+        if (l && l.rule !== "recurring")
+          stage(
+            {
+              kind: "budget_line",
+              line: l.line,
+              effective: firstOfMonth(),
+              rule: "recurring",
+              category: l.category,
+              account: l.account,
+              priority: l.priority,
+              amount: "",
+              per: "monthly",
+              note: l.note,
+              was: budgetWas(l),
+            },
+            "budget line " + l.line + ": recurring for " + l.category + " from " + firstOfMonth(),
+          );
+        done();
+      },
+      "filled",
+    ),
+  );
+  form.appendChild(say);
+  form.appendChild(actions);
+  return form;
 }
 
 function trackByKey(key: string) {
@@ -301,6 +375,7 @@ function trackAlert(r: Row) {
         (r.category ? " Its lines are in " + r.category + "." : ""),
     ),
   );
+  if (chargeLine(r.key)) text.appendChild(el("span", "pays " + chargeLine(r.key), "tag"));
   box.appendChild(text);
   var actions = el("span", null, "actions");
   var t = "subscription|" + r.key.toUpperCase();
@@ -322,6 +397,15 @@ function trackAlert(r: Row) {
         stage({ kind: "subscription", key: r.key, subscription: "yes" }, r.key + ": track as recurring");
         drawBudgetPage();
       }),
+    );
+    actions.appendChild(
+      button(
+        "Pays a budget line\u2026",
+        function () {
+          openCharge(r.key);
+        },
+        "text",
+      ),
     );
     actions.appendChild(
       button(

@@ -266,8 +266,26 @@ function scheduledOn(line: string, date: string) {
   );
 }
 
-// A budget line's change from a date, its end, or a scheduled amount. A "recurring" line's target is its
-// category's tracked charges plus the amount, an allowance for the rest, shown added up as it is typed.
+// The budget line a recurring charge pays: one waiting to be saved, else the one it is linked to ("" for none).
+function chargeLine(key: string): string {
+  var s = staged["recurring_line|" + key.toUpperCase()];
+  if (s) return (s.edit.line as string) || "";
+  var r = (editor!.subscriptions || []).filter(function (x) {
+    return x.key === key;
+  })[0];
+  return (r && r.line) || "";
+}
+
+// Links a recurring charge to the budget line it pays ("" unlinks it); a charge that pays a line is tracked.
+function linkCharge(r: Row, line: string) {
+  stage({ kind: "recurring_line", key: r.key, line: line }, r.key + (line ? ": pays budget line " + line : ": pays no line"));
+  if (line && r.marked !== "yes" && !staged["subscription|" + r.key.toUpperCase()])
+    stage({ kind: "subscription", key: r.key, subscription: "yes" }, r.key + ": track as recurring");
+}
+
+// A budget line's change from a date, its end, or a scheduled amount. A "recurring" line's target is the
+// charges picked as the ones it pays (else its category's tracked charges) plus the amount, an allowance for
+// the rest, shown added up as it is typed.
 function budgetForm(given: Row | null, done: () => void, preset?: string) {
   var form = el("form", null, "edit");
   var isNew = !given;
@@ -291,29 +309,73 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
   var category = field(form, "Category", categoryChoice(l.category || l.spends_from));
   var charges = el("div", null, "recurring-sum");
   form.appendChild(charges);
+  // the charges this line pays: picked here, or linked already (a recurring line counts these alone)
+  var ongoing = (editor!.subscriptions || []).filter(function (r) {
+    return r.status !== "stopped" && r.marked !== "no";
+  });
+  var paid: Record<string, boolean> = {};
+  ongoing.forEach(function (r) {
+    paid[r.key] = !isNew && chargeLine(r.key) === l.line;
+  });
+  var picked: Record<string, boolean> = Object.assign({}, paid);
   var showCharges = function () {
     var recurring = rule.value === "recurring";
     amount.parentNode!.firstChild!.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
     charges.textContent = "";
     charges.hidden = !recurring;
     if (!recurring) return;
-    var mine = (editor!.subscriptions || []).filter(function (r) {
-      return r.marked === "yes" && r.category === category.value && r.status !== "stopped";
+    var anyPicked = ongoing.some(function (r) {
+      return picked[r.key];
     });
+    var mine = anyPicked
+      ? ongoing.filter(function (r) {
+          return picked[r.key];
+        })
+      : ongoing.filter(function (r) {
+          return r.marked === "yes" && r.category === category.value && !chargeLine(r.key);
+        });
     var total = 0;
     mine.forEach(function (r) {
-      var m = (Number(r.yearly) || 0) / 12;
-      total += m;
-      var row = el("div", null, "sum-row");
-      row.appendChild(el("span", r.key + (r.cadence ? " (" + r.cadence + ")" : "")));
-      row.appendChild(el("span", cents.format(m) + " a month"));
-      charges.appendChild(row);
+      total += (Number(r.yearly) || 0) / 12;
     });
-    if (!mine.length)
+    var pick = el("fieldset", null, "charge-pick");
+    pick.appendChild(el("legend", "Recurring charges this line pays"));
+    ongoing
+      .slice()
+      .sort(function (a, b) {
+        var rank = function (r: Row) {
+          return picked[r.key] ? 0 : r.category === category.value ? 1 : 2;
+        };
+        return rank(a) - rank(b) || chargeName(a).localeCompare(chargeName(b));
+      })
+      .forEach(function (r) {
+        var other = chargeLine(r.key);
+        var box = el("input");
+        box.type = "checkbox";
+        box.checked = !!picked[r.key];
+        box.addEventListener("change", function () {
+          picked[r.key] = box.checked;
+          showCharges();
+        });
+        var label = el("label", null, "sum-row");
+        var name = el("span");
+        name.appendChild(box);
+        name.appendChild(
+          document.createTextNode(" " + chargeName(r) + (other && other !== lineName() ? " (pays " + other + ")" : "")),
+        );
+        label.appendChild(name);
+        label.appendChild(el("span", cents.format((Number(r.yearly) || 0) / 12) + " a month"));
+        pick.appendChild(label);
+      });
+    if (!ongoing.length) pick.appendChild(el("div", "No recurring charges found yet.", "support"));
+    charges.appendChild(pick);
+    if (!anyPicked)
       charges.appendChild(
         el(
           "div",
-          "No tracked recurring charges in " + (category.value || "this category") + " yet: track them on the Recurring tab.",
+          mine.length
+            ? "None picked: the line counts the tracked charges in " + category.value + " that pay no other line."
+            : "None picked, and no tracked charges in " + (category.value || "this category") + ": pick the ones it pays.",
           "support",
         ),
       );
@@ -383,6 +445,10 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
           " from " +
           e.effective,
       );
+      if (e.rule === "recurring")
+        ongoing.forEach(function (r) {
+          if (picked[r.key] !== paid[r.key]) linkCharge(r, picked[r.key] ? e.line : "");
+        });
       done();
     }),
   );

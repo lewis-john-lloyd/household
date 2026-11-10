@@ -18,6 +18,7 @@ from . import (
     inbox,
     investments,
     legacy,
+    logs,
     lots,
     mortgage,
     networth,
@@ -368,6 +369,28 @@ def _investment_flows(c: Compute):
             say(log, f"  {r['year']} {r['account_id']}: {r['kind']} {r['amount']:,.2f}")
 
 
+def _say_links(log, rules, decisions):
+    """A warning for each recurring charge linked to a budget line that is gone or doesn't take its target
+    from its charges (a line's latest row decides)."""
+    paid = recurring.links(decisions)
+    if not paid:
+        return
+    latest = rules.assign(line=rules["line"].astype(str).str.strip()).drop_duplicates("line", keep="last")
+    rule = dict(zip(latest["line"], latest["rule"].astype(str).str.strip()))
+    for key, line in sorted(paid.items()):
+        if line not in rule:
+            say(log, logs.warn(f"recurring: {key} is linked to budget line {line}, which isn't in budget_rules"))
+        elif rule[line] != "recurring":
+            say(
+                log,
+                logs.warn(
+                    f"recurring: {key} is linked to budget line {line}, whose rule is {rule[line]}: set it to "
+                    f"recurring for its target to follow the charge"
+                ),
+            )
+    say(log, f"recurring: {len(paid)} charges linked to budget lines")
+
+
 def _budget(c: Compute, books, categorized, actuals):
     """Budget targets, budget against actual and the sinking funds (budget.py). Returns the rules and the targets."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
@@ -375,7 +398,9 @@ def _budget(c: Compute, books, categorized, actuals):
     planned = pd.DataFrame(columns=budget.TARGET_COLUMNS)
     if not rules.empty:
         expected = recurring.monthly_expected(categorized, books["decisions"], today[:7], today)
-        planned = budget.targets(rules, actuals, today[:7], expected)
+        by_line = recurring.line_expected(categorized, books["decisions"], today[:7])
+        planned = budget.targets(rules, actuals, today[:7], expected, by_line)
+        _say_links(log, rules, books["decisions"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
         compared = budget.versus(planned, actuals, books["categories"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_vs_actual"), compared.assign(run_id=run_id))

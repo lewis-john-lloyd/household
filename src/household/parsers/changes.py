@@ -28,6 +28,9 @@ row a person would otherwise have typed:
   recurring_name   the name to show a merchant key's   -> proposal_decisions (kind
                    recurring charge by, or blank to       subscription_name)
                    go back to the key
+  recurring_line   the budget line a merchant key's    -> proposal_decisions (kind
+                   recurring charge pays, or blank to     subscription_line)
+                   unlink it
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -88,6 +91,7 @@ KINDS = {
     "subscription": ({"key", "subscription"}, {"note"}),
     "recurring_merge": ({"key", "same_as"}, set()),
     "recurring_name": ({"key", "name"}, set()),
+    "recurring_line": ({"key", "line"}, set()),
 }
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
@@ -215,7 +219,7 @@ def _merge_key(text):
 def _values(kind, e):
     """Per-kind checks of values that need no ledger."""
     out = []
-    if kind in ("payee", "subscription", "recurring_merge", "recurring_name") and not e["key"]:
+    if kind in ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line") and not e["key"]:
         out.append("key is empty")
     if kind == "subscription" and e["subscription"] not in ("yes", "no"):
         out.append("subscription must be yes or no")
@@ -315,7 +319,7 @@ def _target(e):
     if kind == "line":
         field = "category" if e["field"] == "split" else e["field"]  # a category and a split replace each other
         return ("line", e["txn_id"], field)
-    if kind in ("payee", "subscription", "recurring_merge", "recurring_name"):
+    if kind in ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line"):
         return (kind, _merge_key(e["key"]))
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
@@ -407,6 +411,8 @@ def _describe(e):
         return f"recurring {e['key']}: " + (f"part of {e['same_as']}" if e["same_as"] else "on its own")
     if kind == "recurring_name":
         return f"recurring {e['key']}: " + (f"shown as {e['name']}" if e["name"].strip() else "shown by its key")
+    if kind == "recurring_line":
+        return f"recurring {e['key']}: " + (f"pays budget line {e['line']}" if e["line"].strip() else "pays no line")
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -496,6 +502,18 @@ def _rows(edits, at):
                     "decided_at": at,
                     "decision": "approve" if name else "reject",
                     "note": name,
+                },
+            )
+        elif kind == "recurring_line":
+            line = e["line"].strip()
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"subscription_line:{_merge_key(e['key'])}",
+                    "kind": "subscription_line",
+                    "decided_at": at,
+                    "decision": "approve" if line else "reject",
+                    "note": line,
                 },
             )
         elif kind == "line":
@@ -682,6 +700,12 @@ def check(edits, read):
             wrong.append("no such pay stub")
         elif kind == "not_duplicate":
             wrong += [f"no such transaction {t}" for t in (e["txn_a"], e["txn_b"]) if t not in amounts]
+        elif kind == "recurring_line" and e["line"].strip():
+            rules = read("budget_rules")
+            lines = set(rules["line"].astype(str).str.strip()) if len(rules) else set()
+            lines |= {x["line"].strip() for x in edits if x["kind"] == "budget_line"}  # added by this change set
+            if e["line"].strip() not in lines:
+                wrong.append(f"no budget line {e['line'].strip()}")
         if kind in REPLACES:
             why = _conflict(e, read)
             if why:

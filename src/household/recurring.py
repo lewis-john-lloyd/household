@@ -139,6 +139,7 @@ EDITOR_COLUMNS = [
     "includes",
     "merged",
     "name",
+    "line",
 ]
 MAX_NAME = 60
 
@@ -196,6 +197,28 @@ def named(df, decisions):
     """df with each row's name: the one you gave its key, else blank (the views show the key)."""
     given = names(decisions)
     return df.assign(name=[given.get(str(k), "") for k in df["key"]]) if len(df) else df.assign(name=[])
+
+
+def links(decisions):
+    """{key: the budget line it pays} from proposal_decisions: the latest "subscription_line" answer per key (a
+    "recurring_line" edit, the line in its note; a reject, or a blank line, unlinks it). A key merged into
+    another links its group."""
+    if decisions is None or decisions.empty:
+        return {}
+    d = decisions[
+        (decisions["kind"] == "subscription_line")
+        & decisions["proposal_key"].astype(str).str.startswith("subscription_line:")
+    ]
+    d = d.sort_values("decided_at", kind="stable")
+    raw = {}
+    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
+        key, line = str(k)[len("subscription_line:") :], str(n if n is not None else "").strip()
+        if v == "approve" and line:
+            raw[key] = line
+        else:
+            raw.pop(key, None)
+    merged = merges(decisions)
+    return {merged.get(k, k): line for k, line in raw.items()}
 
 
 def merges(decisions):
@@ -413,7 +436,9 @@ def editor_rows(subs, found, categorized, decisions, today=None):
         for k, (on, note) in marked.items()
         if not on and k not in seen and k not in merged
     ]
-    out = named(pd.DataFrame(rows, columns=EDITOR_COLUMNS), decisions)
+    out = named(pd.DataFrame([{**r, "line": ""} for r in rows], columns=EDITOR_COLUMNS), decisions)
+    paid = links(decisions)
+    out["line"] = [paid.get(str(k), "") for k in out["key"]]
     return out[[c for c in EDITOR_COLUMNS]]
 
 
@@ -468,31 +493,54 @@ def monthly_expected(categorized, decisions, through, today=None):
     `recurring` rule. A charge counts at its latest price on or before the month's end times its charges a
     year over twelve (a yearly one is a twelfth of its price every month), and only from its first charge
     until it has missed 1.5 cadences; an irregular one counts the twelve months' spending to the month's end
-    over twelve, until it has gone 400 days without a charge. Its category is where its charges mostly go."""
-    merged = merges(decisions)
+    over twelve, until it has gone 400 days without a charge. Its category is where its charges mostly go.
+    A charge linked to a budget line counts toward that line instead (line_expected)."""
+    merged, paid = merges(decisions), links(decisions)
     df = _charges(categorized)
     out = {}
     for key in tracked(decisions):
-        g = group_lines(df, key, merged)
-        if g.empty:
+        if key in paid:
             continue
-        days = pd.to_datetime(g["date"])
-        spend = -g["amount"].to_numpy()
-        name, cadence = _cadence(days.diff().dt.days.dropna().to_numpy()) if len(g) >= 2 else (None, None)
-        category = str(g["category"].mode().iloc[0])
-        for month in pd.period_range(days.iloc[0].strftime("%Y-%m"), through, freq="M"):
-            start, end = month.start_time, month.end_time
-            before = (days <= end).to_numpy()
-            last = days[before].iloc[-1]
-            if name:
-                if (start - last).days > 1.5 * cadence:
-                    continue
-                cost = float(spend[before][-1]) * PER_YEAR[name] / 12
-            else:
-                if (start - last).days > 400:
-                    continue
-                cost = float(spend[before & (days > end - pd.Timedelta(days=365)).to_numpy()].sum()) / 12
-            month = month.strftime("%Y-%m")
+        for category, month, cost in _monthly_costs(df, key, merged, through):
             total, n = out.get((category, month), (0.0, 0))
             out[(category, month)] = (round(total + cost, 2), n + 1)
     return out
+
+
+def line_expected(categorized, decisions, through):
+    """{line: {month: (expected, charges)}}: what the recurring charges linked to each budget line (a
+    "recurring_line" edit) were expected to cost each month, as monthly_expected counts them, tracked or not.
+    A line here takes its `recurring` target from these charges alone."""
+    merged, paid = merges(decisions), links(decisions)
+    df = _charges(categorized)
+    out = {}
+    for key, line in paid.items():
+        months = out.setdefault(line, {})
+        for _, month, cost in _monthly_costs(df, key, merged, through):
+            total, n = months.get(month, (0.0, 0))
+            months[month] = (round(total + cost, 2), n + 1)
+    return out
+
+
+def _monthly_costs(df, key, merged, through):
+    """(category, month, cost) for each month a charge is expected, on a monthly footing (monthly_expected)."""
+    g = group_lines(df, key, merged)
+    if g.empty:
+        return
+    days = pd.to_datetime(g["date"])
+    spend = -g["amount"].to_numpy()
+    name, cadence = _cadence(days.diff().dt.days.dropna().to_numpy()) if len(g) >= 2 else (None, None)
+    category = str(g["category"].mode().iloc[0])
+    for month in pd.period_range(days.iloc[0].strftime("%Y-%m"), through, freq="M"):
+        start, end = month.start_time, month.end_time
+        before = (days <= end).to_numpy()
+        last = days[before].iloc[-1]
+        if name:
+            if (start - last).days > 1.5 * cadence:
+                continue
+            cost = float(spend[before][-1]) * PER_YEAR[name] / 12
+        else:
+            if (start - last).days > 400:
+                continue
+            cost = float(spend[before & (days > end - pd.Timedelta(days=365)).to_numpy()].sum()) / 12
+        yield category, month.strftime("%Y-%m"), cost

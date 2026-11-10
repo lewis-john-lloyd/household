@@ -893,6 +893,7 @@ REPORTS = (
             "includes",
             "merged",
             "name",
+            "line",
             "run_id",
         ),
     ),

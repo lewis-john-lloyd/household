@@ -286,3 +286,70 @@ def test_a_recurring_name_edit_is_an_answer_on_one_line():
     assert back.tables["proposal_decisions"].iloc[0]["decision"] == "reject"
     with pytest.raises(ParseError, match="at most 60 characters"):
         changes.parse(doc % ('{"kind": "recurring_name", "key": "WILLOW ST", "name": "%s"}' % ("x" * 61)))
+
+
+def linked(key, line, at="2026-10-02T00:00:00Z"):
+    return {
+        "proposal_key": f"subscription_line:{key}",
+        "kind": "subscription_line",
+        "decided_at": at,
+        "decision": "approve" if line else "reject",
+        "note": line,
+    }
+
+
+def test_a_charge_linked_to_a_budget_line_sets_that_lines_target_alone():
+    from household import budget
+
+    # PAGE TURNER BOOKS (12.99 a month by October) pays the books line, so the other media line has only QUILL &
+    # INK's twelfth (5.00); WILLOW ST pays lessons though it isn't tracked
+    decisions = pd.concat(
+        [DECISIONS, pd.DataFrame([linked("PAGE TURNER BOOKS", "books"), linked("WILLOW ST", "lessons")])]
+    )
+    assert recurring.links(decisions) == {"PAGE TURNER BOOKS": "books", "WILLOW ST": "lessons"}
+    expected = recurring.monthly_expected(LINES, decisions, "2026-10", TODAY)
+    assert expected[("media", "2026-10")] == (5.0, 1)
+    by_line = recurring.line_expected(LINES, decisions, "2026-10")
+    assert by_line["books"]["2026-10"] == (12.99, 1) and by_line["lessons"]["2026-10"] == (20.0, 1)
+    rules = pd.DataFrame(
+        [
+            ["books", "2026-10-01", "media", "", "", "recurring", "", "monthly", ""],
+            ["other media", "2026-10-01", "media", "", "", "recurring", "20", "monthly", ""],
+        ],
+        columns=["line", "effective", "category", "account", "priority", "rule", "amount", "per", "note"],
+    )
+    out = budget.targets(rules, None, "2026-10", expected, by_line).set_index("line")
+    assert out["target"].to_dict() == {"books": 12.99, "other media": 25.0}
+    assert out.at["books", "basis"] == "recurring: 1 linked charge 12.99 + allowance 0.00"
+    rows = recurring.editor_rows(
+        recurring.subscriptions(LINES, decisions, TODAY), recurring.discover(LINES, TODAY), LINES, decisions, TODAY
+    ).set_index("key")
+    assert rows.at["PAGE TURNER BOOKS", "line"] == "books" and rows.at["QUILL & INK", "line"] == ""
+    unlinked = pd.concat([decisions, pd.DataFrame([linked("PAGE TURNER BOOKS", "", at="2026-10-03T00:00:00Z")])])
+    assert recurring.links(unlinked) == {"WILLOW ST": "lessons"}
+    assert recurring.monthly_expected(LINES, unlinked, "2026-10", TODAY)[("media", "2026-10")] == (17.99, 2)
+
+
+def test_a_recurring_line_edit_names_a_budget_line_that_exists():
+    from test_changes import LEDGER, ledger_reader
+
+    doc = (
+        '{"format": "household_changes", "version": 1, "created_at": "2026-10-20T00:00:00Z", "base_run": "r1", '
+        '"edits": [%s]}'
+    )
+    result = changes.parse(doc % '{"kind": "recurring_line", "key": "acme grocer", "line": "groceries"}')
+    row = result.tables["proposal_decisions"].iloc[0]
+    assert (row["proposal_key"], row["kind"], row["decision"], row["note"]) == (
+        "subscription_line:ACME GROCER",
+        "subscription_line",
+        "approve",
+        "groceries",
+    )
+    result.check(ledger_reader(**LEDGER))
+    off = changes.parse(doc % '{"kind": "recurring_line", "key": "ACME GROCER", "line": ""}')
+    assert off.tables["proposal_decisions"].iloc[0]["decision"] == "reject"
+    off.check(ledger_reader(**LEDGER))
+    with pytest.raises(ParseError, match="no budget line hobby"):
+        changes.parse(doc % '{"kind": "recurring_line", "key": "ACME GROCER", "line": "hobby"}').check(
+            ledger_reader(**LEDGER)
+        )

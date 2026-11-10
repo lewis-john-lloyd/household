@@ -668,12 +668,16 @@ test("the budget compares any period with another, and a line's target can come 
   await page.waitForSelector(".drawer svg.history");
   await page.selectOption(".drawer label:has-text('Target from') select", "recurring");
   await page.fill(".drawer label:has-text('Allowance') input", "20");
-  assert.match(
-    await page.textContent(".drawer .recurring-sum"),
-    /PAGE TURNER BOOKS \(monthly\)\$10\.00 a month.*Monthly target\$30\.00/s, // leak-guard: allow (made up)
-  );
+  // none picked: the tracked charges in its category count
+  assert.match(await page.textContent(".drawer .recurring-sum"), /None picked: the line counts the tracked charges in food/);
+  assert.match(await page.textContent(".drawer .recurring-sum"), /Monthly target\$30\.00/); // leak-guard: allow (made up)
+  await page.check(".drawer .charge-pick label:has-text('PAGE TURNER BOOKS') input");
+  assert.doesNotMatch(await page.textContent(".drawer .recurring-sum"), /None picked/);
+  assert.match(await page.textContent(".drawer .recurring-sum"), /Monthly target\$30\.00/); // leak-guard: allow (made up)
   await page.click(".drawer button:has-text('Keep this change')");
-  assert.match((await staged(page))[0], /^budget line food: recurring 20 monthly for food from /);
+  const kept = await staged(page);
+  assert.match(kept[0], /^budget line food: recurring 20 monthly for food from /);
+  assert.equal(kept[1], "PAGE TURNER BOOKS: pays budget line food"); // already tracked: no track edit
   await page.keyboard.press("Escape");
   assert.equal(await page.$$eval(".drawer", (d) => d.length), 0);
   assert.deepEqual(page.errors, []);
@@ -1232,6 +1236,38 @@ test("investments: accounts name each account's kind in words", async () => {
     c.map((x) => x.textContent),
   );
   assert.equal(kinds[0], "401(k) pre-tax"); // the Form 8949 parts once took this table's names
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("recurring: a charge says the budget line it pays, and paying one makes that line follow the charge", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget', tab: 'recurring' } };" +
+      "window.__answers.getEditor.subscriptions = [{ key: 'WILLOW ST', marked: '', status: 'active', cadence: 'monthly'," +
+      "  charges: '6', last: '2001-06-03', latest: '30', yearly: '360', category: 'family', example: 'WILLOW ST', note: ''," +
+      "  includes: '', merged: '', name: '', line: '' }];" +
+      "window.__answers.getEditor.budgetLines = [{ line: 'lessons', effective: '2001-01-01', category: 'family', account: ''," +
+      "  priority: 'high', rule: 'trailing', amount: '25', per: 'monthly', note: '', in_force: 'yes', in_words: '', this_month: '25'," +
+      "  last_12_months: '0', scheduled: '', spends_from: 'family' }];",
+  );
+  await page.waitForSelector("#budget:not([hidden]) .alert");
+  await page.click(".alert button:has-text('Pays a budget line')"); // not tracked yet: offered from its alert
+  await page.selectOption(".drawer label:has-text('Pays budget line') select", "lessons");
+  assert.match(await page.textContent(".drawer"), /comes from its trailing rule now; keeping this also makes it Recurring/);
+  await page.click(".drawer button:has-text('Keep')");
+  const kept = await staged(page);
+  assert.equal(kept[0], "WILLOW ST: pays budget line lessons");
+  assert.equal(kept[1], "WILLOW ST: track as recurring"); // paying a line tracks the charge
+  assert.match(kept[2], /^budget line lessons: recurring for family from /);
+  assert.match(await page.textContent(".alert:has-text('WILLOW ST')"), /pays lessons.*Waiting to be saved/s);
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent.slice(0, 2), [
+    { kind: "recurring_line", key: "WILLOW ST", line: "lessons" },
+    { kind: "subscription", key: "WILLOW ST", subscription: "yes" },
+  ]);
+  assert.equal(sent[2].rule, "recurring");
   assert.deepEqual(page.errors, []);
   await page.close();
 });

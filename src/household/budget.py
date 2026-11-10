@@ -29,7 +29,7 @@ priority, and a rule:
   scheduled     an explicit amount in the month of `effective`; a line can have
                 any number of these rows (tuition installments), and a later
                 row on the same date replaces the amount (0 cancels it)
-  recurring     the recurring charges you track in the category (recurring.py),
+  recurring     the recurring charges linked to the line, else those you track in its category (recurring.py),
                 each at its latest price on a monthly footing, plus an allowance
                 for the rest of the category's spending: amount per `per`
                 (blank for none); a price change moves the target with it
@@ -95,9 +95,11 @@ def _spend_lookup(actuals):
     return a.groupby(["category", "month"])["spend"].sum().to_dict()
 
 
-def targets(rules, actuals, through, recurring=None):
+def targets(rules, actuals, through, recurring=None, by_line=None):
     """One row per line per month, from each line's first effective month through `through` (YYYY-MM).
-    recurring: {(category, month): (expected, charges)} from recurring.monthly_expected, for `recurring` lines."""
+    recurring: {(category, month): (expected, charges)} from recurring.monthly_expected, for `recurring` lines;
+    by_line: {line: {month: (expected, charges)}} from recurring.line_expected, for the lines charges are
+    linked to, which count those charges alone."""
     if rules is None or rules.empty:
         return pd.DataFrame(columns=TARGET_COLUMNS)
     r = rules.copy()
@@ -124,7 +126,7 @@ def targets(rules, actuals, through, recurring=None):
                 target += float(sum(a for a in amounts if not np.isnan(a)))
                 basis.append("scheduled")
             if active:
-                value, why = _rule_target(state, month, spend, recurring or {})
+                value, why = _rule_target(state, month, spend, recurring or {}, by_line or {})
                 target += value or 0.0
                 basis.append(why)
             src = state if active else due.iloc[-1]
@@ -166,16 +168,22 @@ def _billed(state, month, spend=None):
     return 0.0, f"billed: {amount:.2f} {per}, not due this month ({seen} {anchor})"
 
 
-def _rule_target(state, month, spend, recurring=None):
+def _rule_target(state, month, spend, recurring=None, by_line=None):
     rule = state["rule"]
     if rule == "billed":
         return _billed(state, month, spend)
     if rule == "recurring":
-        expected, n = (recurring or {}).get((str(state["category"]).strip(), month), (0.0, 0))
+        line = str(state.get("line", "")).strip()
+        if line in (by_line or {}):
+            expected, n = by_line[line].get(month, (0.0, 0))
+            whose = "linked "
+        else:
+            expected, n = (recurring or {}).get((str(state["category"]).strip(), month), (0.0, 0))
+            whose = ""
         allowance, _ = _per_month(state) if str(state.get("amount", "")).strip() else (0.0, "")
         allowance = allowance or 0.0
         return expected + allowance, (
-            f"recurring: {n} charge{'' if n == 1 else 's'} {expected:.2f} + allowance {allowance:.2f}"
+            f"recurring: {n} {whose}charge{'' if n == 1 else 's'} {expected:.2f} + allowance {allowance:.2f}"
         )
     if rule in ("fixed", "sinking_fund"):
         value, why = _per_month(state)

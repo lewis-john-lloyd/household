@@ -399,7 +399,12 @@ def _budget(c: Compute, books, categorized, actuals):
     if not rules.empty:
         expected = recurring.monthly_expected(categorized, books["decisions"], today[:7], today)
         by_line = recurring.line_expected(categorized, books["decisions"], today[:7])
-        planned = budget.targets(rules, actuals, today[:7], expected, by_line)
+        loans, splits = books.get("loans"), mortgage.split_settings(books["parameters"])
+        loan = {}
+        if splits and loans is not None and not loans.empty:
+            sched, _ = mortgage.schedule(loans, books.get("loan_events"), None, today[:7])
+            loan = budget.loan_parts(sched, splits)
+        planned = budget.targets(rules, actuals, today[:7], expected, by_line, loan)
         _say_links(log, rules, books["decisions"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
         compared = budget.versus(planned, actuals, books["categories"])

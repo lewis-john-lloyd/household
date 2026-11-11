@@ -239,3 +239,32 @@ def test_a_billed_line_finds_its_months_from_the_bills_paid():
     assert out.loc[out["month"] == "2026-05", "basis"].iloc[0] == (
         "billed: 90.00 quarterly, not due this month (the last bill 2026-04)"
     )
+
+
+def test_a_loan_line_budgets_its_part_of_each_months_scheduled_payment():
+    from household import mortgage
+
+    loan = {"loan_id": "home", "originated": "2019-12-15", "principal": "200000", "rate": "6", "term_months": "360"}
+    sched, _ = mortgage.schedule(pd.DataFrame([loan]), None, None, "2020-03")
+    splits = {"home": [("mortgage_interest", "interest"), ("mortgage_principal", "principal"), ("pmi", 50.0)]}
+    parts = budget.loan_parts(sched, splits)
+    assert parts[("mortgage_interest", "2020-02")] == (1000.0, "interest")
+    assert parts[("mortgage_principal", "2020-03")] == (200.1, "principal")
+    out = by(
+        budget.targets(
+            rules(
+                ["interest", "2020-02-01", "mortgage_interest", "", "high", "loan", "", "monthly", ""],
+                ["principal", "2020-02-01", "mortgage_principal", "", "high", "loan", "", "monthly", ""],
+                ["pmi", "2020-02-01", "pmi", "", "high", "fixed", "50", "monthly", ""],
+                ["odd", "2020-02-01", "food", "", "low", "loan", "", "monthly", ""],
+            ),
+            None,
+            "2020-03",
+            loan=parts,
+        ),
+        "line",
+        "month",
+    )
+    assert out.loc[("interest", "2020-03"), "target"] == 999.0  # the balance fell, so did the interest
+    assert out.loc[("principal", "2020-02"), "basis"] == "loan: scheduled principal 199.10"
+    assert out.loc[("odd", "2020-02"), "target"] == 0.0  # no loan part for its category

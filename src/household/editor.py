@@ -58,6 +58,8 @@ def in_words(row):
         return words + (f"; {each} until there is history" if each else "")
     if rule == "recurring":
         return "its recurring charges" + (f", plus {each}" if each else "")
+    if rule == "loan":
+        return "its part of the loan payment, from the amortization schedule"
     if rule == "end":
         return f"ended {row['effective']}"
     return rule

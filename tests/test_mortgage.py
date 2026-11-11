@@ -105,3 +105,67 @@ def test_loans_can_be_seeded():
     text = "loan_id,lender,originated,principal,rate,term_months,escrow\nhome,Lender,2020-01-15,200000,6,360,300\n"
     result = seed.parse(text)
     assert result.keys == {"loans": ["loan_id"]} and len(result.tables["loans"]) == 1
+
+
+SPLIT = "mortgage_interest=interest, mortgage_principal=principal, pmi=50, property_tax=200, home_insurance=50"
+
+
+def test_a_loan_split_reads_its_parts_and_refuses_what_it_cannot_use():
+    assert mortgage.split_parts(SPLIT) == [
+        ("mortgage_interest", "interest"),
+        ("mortgage_principal", "principal"),
+        ("pmi", 50.0),
+        ("property_tax", 200.0),
+        ("home_insurance", 50.0),
+    ]
+    assert mortgage.split_parts("pmi=50, property_tax=200") == []  # no interest or principal
+    assert mortgage.split_parts("mortgage_interest=interest, mortgage_principal=principal, pmi=fifty") == []
+    params = pd.DataFrame(
+        [
+            {"jurisdiction": "household", "key": "loan_split:home", "value": SPLIT},
+            {"jurisdiction": "household", "key": "loan_split:old", "value": "nonsense"},
+        ]
+    )
+    assert list(mortgage.split_settings(params)) == ["home"]
+
+
+def payment_lines(*rows):
+    return pd.DataFrame(
+        [
+            {"txn_id": t, "date": d, "amount": a, "category": c, "era": "ledger", "splits": "", "decided_by": "rule"}
+            for t, d, a, c in rows
+        ]
+    )
+
+
+def test_a_payment_splits_by_the_schedule_and_the_escrow_parts_share_what_is_left():
+    loan = dict(LOAN, escrow="300")
+    sched, _ = mortgage.schedule(pd.DataFrame([loan]), None, None, "2020-03")
+    lines = payment_lines(
+        ("t1", "2020-02-03", -1499.10, "mortgage"),  # schedule: interest 1000, principal 199.10, escrow 300
+        ("t2", "2020-03-03", -1493.10, "mortgage"),  # the escrow came down by 6
+        ("t3", "2020-03-09", -20.00, "food"),
+    )
+    out = mortgage.split_payments(lines, sched, mortgage.split_settings(_params(SPLIT))).set_index("txn_id")
+    assert out.loc["t1", "splits"] == (
+        "mortgage_interest -1000.00; mortgage_principal -199.10; pmi -50.00; property_tax -200.00; home_insurance -50.00"
+    )
+    assert out.loc["t1", "category"] == "mortgage_interest"
+    assert out.loc["t1", "decided_by"] == "rule, split by the loan schedule"
+    march = dict(piece.rsplit(" ", 1) for piece in out.loc["t2", "splits"].split("; "))
+    assert [march["pmi"], march["property_tax"], march["home_insurance"]] == ["-49.00", "-196.00", "-49.00"]
+    assert sum(float(v) for v in march.values()) == pytest.approx(-1493.10)
+    assert out.loc["t3", "splits"] == ""
+    # the payments still count toward the mortgage beside the schedule
+    assert mortgage.ledger_payments(out.reset_index().assign(era="ledger")) == {"2020-02": 1499.10, "2020-03": 1493.10}
+
+
+def test_a_payment_short_of_principal_and_interest_is_left_whole():
+    sched, _ = mortgage.schedule(pd.DataFrame([dict(LOAN, escrow="300")]), None, None, "2020-02")
+    lines = payment_lines(("t1", "2020-02-03", -900.00, "mortgage"))
+    out = mortgage.split_payments(lines, sched, mortgage.split_settings(_params(SPLIT)))
+    assert out["splits"].tolist() == [""] and out["category"].tolist() == ["mortgage"]
+
+
+def _params(value):
+    return pd.DataFrame([{"jurisdiction": "household", "key": "loan_split:home", "value": value}])

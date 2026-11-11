@@ -121,6 +121,7 @@ LEDGER = (
                 "lookback",
                 "sinking_fund",
                 "recurring",
+                "loan",
                 "scheduled",
                 "end",
             ),

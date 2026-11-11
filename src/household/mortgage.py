@@ -28,6 +28,7 @@ with the schedule; it is filled for a month only when one loan is running.
 Missing loan fields produce a note and no rows, never an error.
 """
 
+import re
 from datetime import date
 
 import pandas as pd
@@ -141,11 +142,101 @@ def amortize(loan, events=None, through_month=None):
     return pd.DataFrame(rows, columns=COLUMNS), []
 
 
+SPLIT_PREFIX = "loan_split:"  # loan_split:<loan_id> = the categories its payment splits into (split_payments)
+SPLIT_BY = "split by the loan schedule"  # what decided_by gains on a payment split_payments split
+
+
+def split_settings(parameters):
+    """{loan_id: [(category, part)]} from the household's loan_split:<loan_id> settings, where part is
+    "interest", "principal", or an escrow amount: "mortgage_interest=interest, mortgage_principal=principal,
+    pmi=50, property_tax=200". A setting that doesn't read that way is left out (settings.check says why)."""
+    out = {}
+    if parameters is None or parameters.empty:
+        return out
+    rows = parameters[parameters["jurisdiction"].astype(str) == "household"].drop_duplicates("key", keep="last")
+    for key, value in zip(rows["key"].astype(str), rows["value"].astype(str)):
+        if key.startswith(SPLIT_PREFIX) and (parts := split_parts(value)):
+            out[key[len(SPLIT_PREFIX) :]] = parts
+    return out
+
+
+def split_parts(value):
+    """[(category, part)] from a loan_split value, or [] when it doesn't read: each part category=interest,
+    category=principal or category=amount, interest and principal once each."""
+    parts = []
+    for piece in str(value).split(","):
+        if not piece.strip():
+            continue
+        if "=" not in piece:
+            return []
+        category, part = (x.strip() for x in piece.split("=", 1))
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", category):
+            return []
+        if part not in ("interest", "principal"):
+            try:
+                part = round(float(part.replace(",", "")), 2)
+            except ValueError:
+                return []
+            if part < 0:
+                return []
+        parts.append((category, part))
+    roles = [p for _, p in parts if isinstance(p, str)]
+    return parts if sorted(roles) == ["interest", "principal"] else []
+
+
+def split_payments(categorized, sched, splits):
+    """categorized with each month's loan payment split: interest and principal as the schedule has them that
+    month (extra principal with principal), and what is left (the escrow) shared across the escrow parts by
+    their amounts, so the parts add to the payment and a change in escrow shows in every part. A month is split
+    only when one loan with a loan_split setting is running and the payment covers its interest and principal;
+    of two payments in a month, the larger is split."""
+    if categorized is None or categorized.empty or sched is None or sched.empty or not splits:
+        return categorized
+    running = sched.groupby("month")["loan_id"].nunique()
+    one = sched[sched["month"].map(running) == 1].set_index("month")
+    out = categorized.copy()
+    pay = out[(out["category"] == "mortgage") & (out["era"] != "legacy") & (out["splits"].astype(str) == "")]
+    amounts = pd.to_numeric(pay["amount"], errors="coerce").fillna(0.0)
+    months = pay["date"].astype(str).str[:7]
+    for month, idx in amounts[amounts < 0].groupby(months).groups.items():
+        if month not in one.index or (loan := str(one.loc[month, "loan_id"])) not in splits:
+            continue
+        row = one.loc[month]
+        i = amounts.loc[idx].idxmin()  # the largest payment
+        paid = round(-float(amounts.loc[i]), 2)
+        interest = round(float(row["interest"]), 2)
+        principal = round(float(row["principal"]) + float(row["extra_principal"] or 0), 2)
+        escrow = round(paid - interest - principal, 2)
+        if escrow < 0:
+            continue
+        parts = splits[loan]
+        weights = [(c, p) for c, p in parts if not isinstance(p, str)]
+        total = sum(p for _, p in weights)
+        shares, given = {}, 0.0
+        for n, (c, p) in enumerate(weights):
+            share = (
+                round(escrow - given, 2) if n == len(weights) - 1 else round(escrow * p / total, 2) if total else 0.0
+            )
+            shares[c] = shares.get(c, 0.0) + share
+            given = round(given + share, 2)
+        if not weights and escrow > 0.004:
+            continue  # nowhere to put the escrow
+        pieces = [(c, interest if p == "interest" else principal if p == "principal" else shares[c]) for c, p in parts]
+        pieces = [(c, a) for c, a in pieces if abs(a) >= 0.005]
+        out.loc[i, "splits"] = "; ".join(f"{c} {-a:.2f}" for c, a in pieces)
+        out.loc[i, "category"] = max(pieces, key=lambda ca: ca[1])[0]
+        out.loc[i, "decided_by"] = f"{out.loc[i, 'decided_by']}, {SPLIT_BY}".lstrip(", ")
+    return out
+
+
 def ledger_payments(categorized):
-    """{month: amount} the household paid toward the mortgage, from its own categorized transactions."""
+    """{month: amount} the household paid toward the mortgage, from its own categorized transactions (a payment
+    split_payments split counts whole)."""
     if categorized is None or categorized.empty:
         return {}
-    df = categorized[(categorized["category"] == "mortgage") & (categorized["era"] != "legacy")]
+    split = categorized.get("decided_by", pd.Series("", index=categorized.index)).astype(str).str.endswith(SPLIT_BY)
+    paid = (categorized["category"] == "mortgage") | split
+    df = categorized[paid & (categorized["era"] != "legacy")]
     amounts = -pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
     return amounts.groupby(df["date"].astype(str).str[:7]).sum().round(2).to_dict()
 

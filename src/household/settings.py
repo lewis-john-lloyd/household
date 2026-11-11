@@ -14,7 +14,7 @@ from datetime import date
 
 import pandas as pd
 
-from . import categorize
+from . import categorize, mortgage
 
 SETTINGS = {
     "target_refund": "The federal and Wisconsin refund to aim withholding at, in dollars (default 2000)",
@@ -43,6 +43,10 @@ SETTINGS = {
     "for what a sale would net (default 0.06)",
     "wash_sale_symbols": "The symbols whose losses are checked for wash sales, separated by commas (default: the "
     "stock plan's, from the vesting schedule); a loss in any other is taken as it is",
+    "loan_split": "What a loan's payment splits into on the budget (loan_split:<loan id>): category=interest and "
+    "category=principal, from the amortization schedule, and each escrow part as category=its monthly amount, "
+    "sharing what the payment leaves after principal and interest (mortgage_interest=interest, "
+    "mortgage_principal=principal, pmi=50, property_tax=200, home_insurance=50)",
     "account_renamed": "An account's new name (account_renamed:<its id> = the new id): the views and reports show "
     "the new one, and a file named with either one finds the account",
     "legacy_account": "The old investments workbook's readings kept under one account that belong to another "
@@ -269,6 +273,8 @@ def check(params):
             out.append((key, v, "is not an account id (lower case letters, digits and _)"))
         elif base == "price_proxy" and not re.fullmatch(r"[A-Z0-9.:^-]{1,20}", v):
             out.append((key, v, "is not a ticker (VFIAX, NYSEARCA:BND)"))
+        elif base == "loan_split" and not mortgage.split_parts(v):
+            out.append((key, v, "is not category=interest, category=principal and category=amount parts"))
         elif base == "birth_date":
             try:
                 date.fromisoformat(v)

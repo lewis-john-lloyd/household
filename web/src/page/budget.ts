@@ -25,6 +25,7 @@ var RULE_NAMES: Record<string, string> = {
   seasonal: "What the same months last year spent",
   sinking_fund: "Set aside, spent from a balance",
   billed: "A bill in the months it comes (quarterly, say)",
+  loan: "Its part of the loan payment (the amortization schedule)",
 };
 var PER_MONTH: Record<string, number> = {
   monthly: 1,
@@ -402,6 +403,7 @@ function trackedByKey(): Record<string, Row> {
 var KIND_OF_RULE: Record<string, string> = {
   recurring: "Recurring",
   billed: "Recurring",
+  loan: "Recurring",
   sinking_fund: "Annual",
   lookback: "Floating",
   trailing: "Floating",

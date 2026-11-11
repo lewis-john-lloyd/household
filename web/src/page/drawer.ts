@@ -131,6 +131,21 @@ function openLine(category: string, v: BudgetView, only?: string) {
     );
     var note = changeNote("budget_line|" + bl.line);
     if (note) d.appendChild(el("p", note, "staged-note"));
+    if (bl.rule === "loan") {
+      // its target is the schedule's: the Home page shows it, month by month
+      var to = el("p", null, "support");
+      to.appendChild(
+        button(
+          "Open the amortization schedule",
+          function () {
+            closeDrawer(true);
+            setView("home");
+          },
+          "text",
+        ),
+      );
+      d.appendChild(to);
+    }
     d.appendChild(budgetForm(bl, redraw, category));
   });
 }

@@ -95,11 +95,12 @@ def _spend_lookup(actuals):
     return a.groupby(["category", "month"])["spend"].sum().to_dict()
 
 
-def targets(rules, actuals, through, recurring=None, by_line=None):
+def targets(rules, actuals, through, recurring=None, by_line=None, loan=None):
     """One row per line per month, from each line's first effective month through `through` (YYYY-MM).
     recurring: {(category, month): (expected, charges)} from recurring.monthly_expected, for `recurring` lines;
     by_line: {line: {month: (expected, charges)}} from recurring.line_expected, for the lines charges are
-    linked to, which count those charges alone."""
+    linked to, which count those charges alone; loan: {(category, month): (amount, part)} from loan_parts, for
+    `loan` lines, whose target is their category's part of that month's scheduled loan payment."""
     if rules is None or rules.empty:
         return pd.DataFrame(columns=TARGET_COLUMNS)
     r = rules.copy()
@@ -126,7 +127,7 @@ def targets(rules, actuals, through, recurring=None, by_line=None):
                 target += float(sum(a for a in amounts if not np.isnan(a)))
                 basis.append("scheduled")
             if active:
-                value, why = _rule_target(state, month, spend, recurring or {}, by_line or {})
+                value, why = _rule_target(state, month, spend, recurring or {}, by_line or {}, loan or {})
                 target += value or 0.0
                 basis.append(why)
             src = state if active else due.iloc[-1]
@@ -168,8 +169,32 @@ def _billed(state, month, spend=None):
     return 0.0, f"billed: {amount:.2f} {per}, not due this month ({seen} {anchor})"
 
 
-def _rule_target(state, month, spend, recurring=None, by_line=None):
+def loan_parts(sched, splits):
+    """{(category, month): (amount, part)}: each month's scheduled interest and principal (extra principal
+    with it), under the categories a loan's loan_split setting names for them (mortgage.split_settings)."""
+    out = {}
+    if sched is None or sched.empty or not splits:
+        return out
+    for row in sched.to_dict("records"):
+        for category, part in splits.get(str(row["loan_id"]), []):
+            if part == "interest":
+                amount = float(row["interest"])
+            elif part == "principal":
+                amount = float(row["principal"]) + float(row["extra_principal"] or 0)
+            else:
+                continue
+            had, _ = out.get((category, row["month"]), (0.0, part))
+            out[(category, row["month"])] = (round(had + amount, 2), part)
+    return out
+
+
+def _rule_target(state, month, spend, recurring=None, by_line=None, loan=None):
     rule = state["rule"]
+    if rule == "loan":
+        amount, part = (loan or {}).get((str(state["category"]).strip(), month), (None, ""))
+        if amount is None:
+            return 0.0, "loan: no scheduled part for this category (set loan_split for the loan)"
+        return amount, f"loan: scheduled {part} {amount:.2f}"
     if rule == "billed":
         return _billed(state, month, spend)
     if rule == "recurring":

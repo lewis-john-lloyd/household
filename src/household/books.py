@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-from . import categorize, compute, explain, ingest, transfers
+from . import categorize, compute, explain, ingest, mortgage, transfers
 from .kinds import Spreadsheet
 from .ledgerio import read_ledger
 
@@ -56,6 +56,8 @@ def read_books(ledger: Spreadsheet) -> dict[str, Any]:
             explain.settle_rewards(read_ledger(ledger, "order_items")), read_ledger(ledger, "item_categories")
         ),
         "aliases": aliases,
+        "loans": read_ledger(ledger, "loans"),
+        "loan_events": read_ledger(ledger, "loan_events"),
     }
 
 
@@ -92,4 +94,12 @@ def categorize_books(books):
         explanations=explained,
         categories=books["categories"]["category"],
     )
-    return categorize.rename(out, books["aliases"])
+    out = categorize.rename(out, books["aliases"])
+    splits = mortgage.split_settings(books["parameters"])
+    loans = books.get("loans")
+    if splits and loans is not None and not loans.empty:  # each loan payment into its parts (mortgage.py)
+        sched, _ = mortgage.schedule(
+            loans, books.get("loan_events"), None, str(effective["date"].astype(str).max())[:7]
+        )
+        out = mortgage.split_payments(out, sched, splits)
+    return out

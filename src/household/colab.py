@@ -33,8 +33,3 @@ def sign_in():
     creds, _ = google.auth.default()
     client = gspread.authorize(creds, http_client=gspread.http_client.BackOffHTTPClient)
     return Session(sheets=client, credentials=creds)
-
-
-def authenticate():
-    """Return just the gspread client (kept for the v0.0.1 scratch notebook)."""
-    return sign_in().sheets

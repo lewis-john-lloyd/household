@@ -52,7 +52,7 @@ class Person:
     claim_age: int = 67
     earnings: dict = field(default_factory=dict)  # {year: FICA earnings}, the statement's record
     statement: dict = field(default_factory=dict)  # {age: monthly}, the statement's estimates
-    statement_year: int = 0
+    statement_year: int = 0  # the year of the statement's estimates
     fra_monthly: float = 0.0  # a benefit to use when there is no statement (social_security_monthly:<name>)
     medicare_wages: float = 0.0  # the last posted year's, for IRMAA while working
 

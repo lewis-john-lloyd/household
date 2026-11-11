@@ -41,7 +41,6 @@ from .parsers import ParseError, identify
 from .parsers import amazon, changes, google_takeout
 
 PDF = "application/pdf"
-DOCS = schema.table(schema.LEDGER, "source_documents")
 
 
 MAX_FILE_BYTES = 200 * 1024 * 1024  # a file bigger than this is left in the inbox, not downloaded

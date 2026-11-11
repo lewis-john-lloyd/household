@@ -79,12 +79,6 @@ function loadBudget() {
   }
 }
 
-function setBudgetTab(tab: string) {
-  budget.tab = tab;
-  budget.open = null;
-  drawBudgetPage();
-}
-
 function drawBudgetPage() {
   if (view !== "budget" || !budget.data || !editor) return;
   document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
@@ -109,9 +103,6 @@ function drawBudgetPage() {
 
 function shortDay(d: string) {
   return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10));
-}
-function shortPeriod(p: string) {
-  return lensOf(p) === "month" ? MONTH_SHORT[Number(p.slice(5, 7)) - 1] + " " + p.slice(0, 4) : periodName(p);
 }
 function signedMoney(n: number) {
   return (n > 0.5 ? "+" : n < -0.5 ? "-" : "") + money.format(Math.abs(n));
@@ -391,35 +382,6 @@ function shortHow(bl: Row) {
       return "Scheduled amounts";
   }
   return String(bl.in_words || "");
-}
-
-// One gauge: spent against budgeted, with a mark at the share of the period gone.
-function fullness(name: string, actual: number, target: number, gone: number, big: boolean) {
-  var row = el("div", null, "bv-gauge" + (big ? " big" : ""));
-  var label = el("div", null, "gauge-label");
-  label.appendChild(el("span", name, "gauge-name"));
-  label.appendChild(
-    el("span", money.format(actual) + (target ? " of " + money.format(target) : " spent, nothing budgeted"), "gauge-num"),
-  );
-  row.appendChild(label);
-  var track = el("div", null, "gauge-track");
-  var share = target > 0 ? actual / target : actual > 0 ? 1 : 0;
-  var fill = el("i", null, share > 1.005 ? "over" : share > gone + 0.005 ? "ahead" : "");
-  fill.style.width = Math.min(100, share * 100) + "%";
-  track.appendChild(fill);
-  if (gone < 1) {
-    var mark = el("b");
-    mark.style.left = gone * 100 + "%";
-    track.appendChild(mark);
-  }
-  track.setAttribute("role", "img");
-  track.setAttribute(
-    "aria-label",
-    name + ": " + Math.round(share * 100) + "% of the budget spent, " + Math.round(gone * 100) + "% of the period gone",
-  );
-  track.title = Math.round(share * 100) + "% spent, " + Math.round(gone * 100) + "% of the period gone";
-  row.appendChild(track);
-  return row;
 }
 
 // A bar for how much of a budget is spent: full and red past it, with a mark where the budget ends.

@@ -103,12 +103,6 @@ function drawEditTabs() {
   });
 }
 
-function setEditTab(tab: string) {
-  editTab = EDIT_HOME[tab] ? tab : "review";
-  drawEditTabs();
-  redrawEditor();
-}
-
 function loadEditor() {
   if (editor) {
     redrawEditor();

@@ -329,14 +329,14 @@ def _people(
         claim = int(cfg.number(f"social_security_claim_age:{name}", DEFAULTS["claim_age"]))
         claim = min(max(claim, 62), 70)
         person = Person(
-            name,
-            born_d,
-            claim,
-            {int(y): float(v) for y, v in zip(e.get("year", []), _num(e.get("fica_earnings", [])))},
-            {int(a): float(v) for a, v in zip(est.get("age", []), _num(est.get("monthly", [])))},
-            int(as_of[:4]) if as_of else 0,
-            cfg.number(f"social_security_monthly:{name}", 0.0),
-            float(_num(e.get("medicare_earnings", pd.Series(dtype=float))).iloc[-1]) if len(e) else 0.0,
+            name=name,
+            born=born_d,
+            claim_age=claim,
+            earnings={int(y): float(v) for y, v in zip(e.get("year", []), _num(e.get("fica_earnings", [])))},
+            statement={int(a): float(v) for a, v in zip(est.get("age", []), _num(est.get("monthly", [])))},
+            statement_year=int(as_of[:4]) if as_of else 0,
+            fra_monthly=cfg.number(f"social_security_monthly:{name}", 0.0),
+            medicare_wages=float(_num(e.get("medicare_earnings", pd.Series(dtype=float))).iloc[-1]) if len(e) else 0.0,
         )
         people.append(person)
         assume.note(

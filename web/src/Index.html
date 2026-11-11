@@ -392,20 +392,6 @@
         background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; }
       .bv-summary b { display: block; font-size: 22px; line-height: 28px; font-weight: 400; font-variant-numeric: tabular-nums; }
       .bv-summary span { color: var(--on-surface-variant); font-size: 13px; }
-      .bv-summary.bv-period { flex-direction: column; flex-wrap: nowrap; gap: 14px; }
-      .bv-figures { display: flex; flex-wrap: wrap; gap: 12px 40px; }
-      .bv-figures .lead b { font-size: 30px; line-height: 38px; }
-      .bv-gauge { display: grid; grid-template-columns: minmax(120px, 220px) 1fr; gap: 12px; align-items: center; }
-      .bv-gauge .gauge-label { display: flex; flex-direction: column; }
-      .bv-gauge .gauge-name { color: var(--on-surface); font-size: 14px; }
-      .bv-gauge .gauge-num { font-variant-numeric: tabular-nums; }
-      .bv-gauge .gauge-track { position: relative; height: 10px; background: var(--track); border-radius: 0 4px 4px 0; }
-      .bv-gauge.big .gauge-track { height: 18px; }
-      .bv-gauge .gauge-track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; }
-      .bv-gauge .gauge-track i.ahead { background: var(--series-4); }
-      .bv-gauge .gauge-track i.over { background: var(--over); }
-      .bv-gauge .gauge-track b { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--on-surface); }
-      .bv-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: 8px 32px; }
       table.bv th button.sort { all: unset; cursor: pointer; font: inherit; color: inherit; }
       table.bv th button.sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
       table.bv { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface-low);
@@ -525,7 +511,6 @@
       .ok-text { color: var(--success); font-size: 13px; }
       table.bv td.status { color: var(--on-surface-variant); font-size: 13px; }
       table.bv td.status.link { color: var(--primary); }
-      .bv-figures .warn b { color: var(--waiting); }
       .kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 6px;
         border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
       .kind-recurring { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }

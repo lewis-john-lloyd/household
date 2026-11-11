@@ -89,7 +89,7 @@ def coverage(details=None, items=None):
     return out
 
 
-def _greedy(lines, candidates, key, group_cols=("group",), exclusive=None):
+def _greedy(lines, candidates, key, exclusive=None):
     """One-to-one matches between lines and candidate groups with the same amount, closest dates first.
 
     exclusive(group_row) -> ids that become unusable once that group is used.
@@ -227,10 +227,6 @@ def order_groups(items, cards, service="amazon"):
         + groups.get("item_id", pd.Series("", index=groups.index)).fillna("").astype(str)
     )
     return groups
-
-
-def amazon_groups(items, cards):
-    return order_groups(items, cards, "amazon")
 
 
 def match_orders(lines, items, cards, contents=None, service="amazon", services=None):

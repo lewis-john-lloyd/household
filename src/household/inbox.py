@@ -521,6 +521,7 @@ def _read_one(
                 result,
                 f["name"],
                 ingest.named_accounts(ledger_tables.read("accounts"), ledger_tables.read("parameters")),
+                received_at,
             )
         if result.check is not None:  # rows that must fit the ledger as it stands (a change set)
             result.check(ledger_tables.read)

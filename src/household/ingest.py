@@ -167,7 +167,7 @@ def resolve_account(hint, file_name, accounts):
     )
 
 
-def finish_investment_rows(result, file_name, accounts):
+def finish_investment_rows(result, file_name, accounts, received_at=""):
     """Fill in an investment history's accounts and activity ids (in place on result).
 
     A file for one account (Fidelity's) finds it from its file name. A file of several (an OFX download)
@@ -192,6 +192,10 @@ def finish_investment_rows(result, file_name, accounts):
         from .parsers import edvest
 
         edvest.date_positions(result, file_name)
+    if result.parser == "treasury_direct":  # its holdings page has no date: the file's name, or the day read
+        from .parsers import treasury_direct
+
+        treasury_direct.date_positions(result, file_name, received_at)
     if not marked and str(result.account_hint).startswith("institution:"):  # a file that names only its custodian
         try:
             account = resolve_account("", file_name, accounts)

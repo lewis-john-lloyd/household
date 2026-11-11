@@ -9,7 +9,7 @@ prints none, by the message id.
 import hashlib
 import re
 
-from .common import line_after, to_cents, parse_day, PAYPAL, Unread
+from .common import forgiving, line_after, parse_day, PAYPAL, to_cents, Unread
 
 PAYPAL_ID = re.compile(r"Transaction ID:?\s*\n?\s*([0-9A-Z]{17})\b")
 
@@ -26,6 +26,7 @@ PAYPAL_REFUND = re.compile(r"^Your Refund of \$([\d,]+\.\d\d) USD from (.+?)\.?$
 PAYPAL_TOTAL = re.compile(r"^\$([\d,]+\.\d\d) USD$")
 
 
+@forgiving(PAYPAL)
 def paypal(message_id, headers, body):
     """One payment_details row for one PayPal email: a payment to a merchant (its receipt, or the merchant's own
     layout), money a person sent, or a refund. The row is shaped as the QIF download's are, keyed by PayPal's

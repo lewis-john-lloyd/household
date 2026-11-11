@@ -6,7 +6,7 @@ explain.match_venmo names after the payments received before it.
 import hashlib
 import re
 
-from .common import line_after, to_cents, parse_day, Unread
+from .common import forgiving, line_after, parse_day, to_cents, Unread
 
 VENMO = "venmo"
 
@@ -20,6 +20,7 @@ VENMO_RECEIVED = re.compile(r"^([^$]+) paid you$")
 VENMO_AMOUNT = re.compile(r"\$([\d,]+\.\d\d)")
 
 
+@forgiving(VENMO)
 def venmo(message_id, headers, body):
     """One payment_details row for one Venmo email: a payment sent ("You paid ..."), one received ("... paid
     you"), each with its note, or a transfer to the bank ("Transfer Amount"). Money out is negative; a transfer

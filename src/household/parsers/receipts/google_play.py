@@ -9,7 +9,7 @@ import hashlib
 import re
 
 from ..google_takeout import _item as _app_item
-from .common import line_after, to_cents, parse_day, Unread
+from .common import forgiving, line_after, parse_day, to_cents, Unread
 
 GOOGLE = "google"
 
@@ -23,6 +23,7 @@ GOOGLE_TAX = re.compile(r"^(?:[A-Za-z ]*\s)?tax:\s*\$([\d,]+\.\d\d)$", re.I)
 GOOGLE_TOTAL = re.compile(r"^Total:\s*\$([\d,]+\.\d\d)(?:/\w+)?$")
 
 
+@forgiving(GOOGLE)
 def google_play(message_id, headers, body):
     """One order_items row for one Google Play receipt, at what was charged, keyed as Takeout keys it."""
     lines = [line.strip() for line in body.splitlines() if line.strip()]

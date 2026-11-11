@@ -14,7 +14,7 @@ A store return, or an order the rewards paid in full, is left out: no card line 
 import re
 
 from ...explain import REWARD
-from .common import to_cents, item_row, scale_to, Unread
+from .common import forgiving, item_row, scale_to, to_cents, Unread
 
 
 def _reward(item, cents):
@@ -58,6 +58,7 @@ def _priced_lines(section):
     return dict(zip(labels, values))
 
 
+@forgiving(OUTFITTER)
 def outfitter(message_id, headers, body):
     """order_items rows for one outfitter store eReceipt or online order confirmation, or [] for a return or one
     paid in full with rewards."""

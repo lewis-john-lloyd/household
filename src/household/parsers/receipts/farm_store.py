@@ -10,7 +10,7 @@ or paid without a card is left out.
 
 import re
 
-from .common import to_cents, money_in, item_row, scale_to, Unread
+from .common import forgiving, item_row, money_in, scale_to, to_cents, Unread
 
 FARM_STORE = "farm_store"
 
@@ -30,6 +30,7 @@ FARM_TENDER = re.compile(r"^(?:Credit|Debit)\s+([\d,]+\.\d\d)$")
 DONATION = re.compile(r"\bdonation\b", re.I)
 
 
+@forgiving(FARM_STORE)
 def farm_store(message_id, headers, body):
     """order_items rows for one farm store register receipt, or [] for a return or one paid in cash."""
     lines = [line.strip() for line in body.splitlines() if line.strip()]

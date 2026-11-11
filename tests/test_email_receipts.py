@@ -151,3 +151,11 @@ def test_a_message_the_exporter_could_not_read_is_noted_and_reads_no_rows():
     )
     alone = email_receipts.parse(text)
     assert alone.tables == {} and "1 the exporter could not read" in alone.notes[-1]
+
+
+def test_the_readers_of_layouts_that_change_without_notice_leave_a_bad_receipt_out_rather_than_the_file():
+    # every reader but the point-of-sale ones (co_op, bookseller) is wrapped by receipts.common.forgiving
+    wrapped = {reader.__name__: getattr(reader, "forgiving", "") for _, reader in email_receipts.READERS}
+    strict = {"co_op", "bookseller", "bookseller_online"}
+    assert {name for name, service in wrapped.items() if not service} == strict
+    assert len(wrapped) == len(strict) + 8

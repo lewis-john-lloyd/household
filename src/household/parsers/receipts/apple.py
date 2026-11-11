@@ -15,7 +15,7 @@ what was charged; the order is keyed by its order id.
 
 import re
 
-from .common import line_after, to_cents, parse_day, item_row, scale_to, Unread
+from .common import forgiving, item_row, line_after, parse_day, scale_to, to_cents, Unread
 
 APPLE = "apple"
 
@@ -73,6 +73,7 @@ def _apple_rows(order, message_id, day, card, items, total):
     ]
 
 
+@forgiving(APPLE)
 def apple_itunes(message_id, headers, body):
     """order_items rows for one Apple receipt in the older layout (ORDER ID, DOCUMENT NO.)."""
     lines = [line.strip() for line in body.splitlines() if line.strip()]
@@ -112,6 +113,7 @@ def apple_itunes(message_id, headers, body):
     )
 
 
+@forgiving(APPLE)
 def apple_receipt(message_id, headers, body):
     """order_items rows for one Apple receipt in the newer layout (Order ID:, Billing and Payment)."""
     lines = [line.strip() for line in body.splitlines() if line.strip()]

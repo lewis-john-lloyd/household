@@ -33,6 +33,7 @@ def forgiving(service):
                 raise Unread(f"{service} {message_id}: {type(e).__name__} {e}".strip()) from e
 
         read.__name__ = reader.__name__
+        read.forgiving = service  # for the test that every such reader is wrapped
         return read
 
     return wrap

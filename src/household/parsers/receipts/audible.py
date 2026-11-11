@@ -9,7 +9,7 @@ twice. A membership's monthly renewal sends no email, so its card lines are left
 
 import re
 
-from .common import to_cents, money_in, item_row, scale_to, Unread
+from .common import forgiving, item_row, money_in, scale_to, to_cents, Unread
 
 AUDIBLE = "audible"
 
@@ -33,6 +33,7 @@ def _audible_lines(body):
     return out
 
 
+@forgiving(AUDIBLE)
 def audible(message_id, headers, body):
     """order_items rows for one Audible order, or [] for one paid wholly in credits."""
     order = AUDIBLE_ORDER.search(body)

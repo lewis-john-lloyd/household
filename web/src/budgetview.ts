@@ -18,6 +18,7 @@ interface BudgetBook {
   lineTargets?: { month: string; line: string; category: string; target: number }[]; // each budget line's (budget_targets)
   income?: { month: string; pay: number; other: number }[]; // what came in each month: take-home pay, other income (flows)
   giving?: Gift[]; // each month's gifts by recipient (the giving report)
+  funds?: { month: string; line: string; category: string; balance: number }[]; // annual lines' balances at each month's end (sinking_funds)
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
@@ -58,6 +59,7 @@ interface ViewLine {
   recurring: RecurringInLine[];
   byLine: { line: string; target: number }[]; // each budget line's part of the target, when there are two or more
   recipients: Recipient[]; // a giving line item's gifts in the period, by recipient
+  balance: number | null; // an annual line item's fund: what is set aside and not spent, at the period's last month so far
 }
 
 interface ViewGroup {
@@ -206,6 +208,7 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
         recurring: [],
         byLine: [],
         recipients: [],
+        balance: null,
       };
       lines.set(category, l);
     }
@@ -258,6 +261,20 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     }
     r.given += gift.given;
     r.gifts += gift.gifts;
+  }
+  // each annual line's balance at the latest month it has on or before the period's last month so far
+  const latestFund = new Map<string, { month: string; balance: number }>(); // line -> its latest month
+  const lastMonth = through.slice(0, 7);
+  const fundCategory = new Map<string, string>();
+  for (const f of book.funds || []) {
+    if (f.month > lastMonth) continue;
+    const had = latestFund.get(f.line);
+    if (!had || f.month > had.month) latestFund.set(f.line, { month: f.month, balance: f.balance });
+    fundCategory.set(f.line, f.category);
+  }
+  for (const [fundLine, f] of latestFund) {
+    const l = lines.get(fundCategory.get(fundLine) || "");
+    if (l) l.balance = toCents((l.balance ?? 0) + f.balance);
   }
   let deductible: BudgetView["deductible"] = null;
   if (book.giving && book.giving.length) {

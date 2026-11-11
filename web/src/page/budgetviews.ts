@@ -13,6 +13,7 @@ interface BudgetItem {
   actual: number;
   category: string; // the category whose drawer it opens, or "" for a loan's parts together
   loan: string; // the loan whose parts it rolls up, or ""
+  balance: number | null; // an annual line item's fund at the period's last month so far
 }
 
 interface BudgetItemGroup {
@@ -64,6 +65,7 @@ function budgetItems(v: BudgetView): BudgetItemGroup[] {
         actual: l.actual,
         category: l.category,
         loan: "",
+        balance: l.balance,
       };
       var id = loanOf[l.category];
       if (id) (parts[id] = parts[id] || []).push(item);
@@ -94,6 +96,7 @@ function budgetItems(v: BudgetView): BudgetItemGroup[] {
         ),
         category: "",
         loan: id,
+        balance: null,
       });
     });
     items.sort(function (a, b) {
@@ -199,7 +202,11 @@ function kindView(v: BudgetView) {
     panel.appendChild(head);
     items.forEach(function (x) {
       var middle: HTMLElement | null = null;
-      if (x.status) middle = el("span", x.status.text, "item-status " + x.status.cls);
+      if (x.balance !== null) {
+        var fund = fundText(x.balance);
+        middle = el("span", fund.text, "item-status " + fund.cls);
+        if (x.status) middle.title = x.status.text;
+      } else if (x.status) middle = el("span", x.status.text, "item-status " + x.status.cls);
       else if (x.kind !== "Recurring" && x.kind !== "Unplanned") middle = spentBar(x.actual, x.target);
       panel.appendChild(itemRow(x, v, middle, x.group + ", " + x.how.charAt(0).toLowerCase() + x.how.slice(1)));
     });
@@ -221,7 +228,7 @@ function cardsView(v: BudgetView) {
     card.appendChild(head);
     card.appendChild(spentBar(g.actual, g.target));
     g.items.forEach(function (x) {
-      var row = itemRow(x, v, null, x.status ? x.status.text : x.how);
+      var row = itemRow(x, v, null, x.balance !== null ? fundText(x.balance).text : x.status ? x.status.text : x.how);
       var mark = el("span", null, "kind-mark mark-" + x.kind.toLowerCase());
       mark.title = x.kind;
       mark.setAttribute("aria-label", x.kind);

@@ -68,6 +68,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
     recurring: [],
     byLine: [],
     recipients: [],
+    balance: null,
   };
   var part = only
     ? line.byLine.filter(function (x) {

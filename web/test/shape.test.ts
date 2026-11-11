@@ -29,6 +29,7 @@ const shape = new Function(
     lines?: unknown[][],
     flows?: unknown[][],
     giving?: unknown[][],
+    funds?: unknown[][],
   ) => BudgetBook;
   budgetView: (book: BudgetBook, period: string, compare: string, sameWeeks: boolean, today: string) => BudgetView;
   periodOf: (date: string, lens: string) => string;
@@ -703,4 +704,34 @@ test("budget view: a giving line item's gifts by recipient, and the year's gifts
   assert.deepEqual(last.deductible, { year: "2025", given: 0, unsaid: 0 });
   const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07");
   assert.equal(none.deductible, null);
+});
+
+test("budget view: an annual line item's fund balance at the period's last month so far", () => {
+  const funds = [
+    ["month", "line", "category", "set_aside", "spent", "balance", "run_id"],
+    ["2026-09", "upkeep", "food", 50, 0, 50, "r1"],
+    ["2026-10", "upkeep", "food", 50, 20, 80, "r1"],
+    ["2026-11", "upkeep", "food", 50, 90, 40, "r1"],
+    ["2026-12", "upkeep", "food", 50, 0, 90, "r1"], // after today: not counted in November so far
+  ];
+  const b = shape.budgetBook(
+    BOOK_VALUES.budget,
+    BOOK_VALUES.daily,
+    BOOK_VALUES.recurring,
+    BOOK_VALUES.categories,
+    [],
+    [],
+    [],
+    funds,
+  );
+  const food = (period: string) =>
+    shape
+      .budgetView(b, period, "2025-11", true, "2026-11-07")
+      .groups.flatMap((g) => g.lines)
+      .find((l) => l.category === "food");
+  assert.equal(food("2026-11")?.balance, 40);
+  assert.equal(food("2026-10")?.balance, 80); // a month that is over: its own end
+  assert.equal(food("2026-Q4")?.balance, 40); // a quarter: its last month so far
+  const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07").groups[0].lines[0];
+  assert.equal(none.balance, null);
 });

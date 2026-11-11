@@ -271,6 +271,7 @@ function budgetBook(
   lineValues: unknown[][] = [],
   flowValues: unknown[][] = [],
   givingValues: unknown[][] = [],
+  fundValues: unknown[][] = [],
 ): BudgetBook {
   const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [], lineTargets: [], income: [] };
   for (const r of parseBudget(budgetValues)) {
@@ -338,6 +339,21 @@ function budgetBook(
           line: String(v[line] ?? ""),
           category: String(v[category] ?? ""),
           target: n,
+        });
+    }
+  }
+  if (fundValues.length) {
+    // each annual (sinking fund) line's running balance at each month's end (budget.sinking_funds)
+    const [month, line, category, balance] = columnsAt(fundValues, ["month", "line", "category", "balance"], "sinking_funds");
+    book.funds = [];
+    for (const v of fundValues.slice(1)) {
+      const m = String(v[month] ?? "");
+      if (/^\d{4}-\d{2}$/.test(m))
+        book.funds.push({
+          month: m,
+          line: String(v[line] ?? ""),
+          category: String(v[category] ?? ""),
+          balance: Number(v[balance]) || 0,
         });
     }
   }

@@ -567,6 +567,13 @@ function redrawKeeping(key: string) {
   });
 }
 
+// An annual line's fund in words: what is set aside and not yet spent, or how far it is overdrawn.
+function fundText(balance: number): { text: string; cls: string } {
+  return balance < -0.5
+    ? { text: "Overdrawn " + money.format(-balance), cls: "over-text" }
+    : { text: "Balance " + money.format(balance), cls: "" };
+}
+
 function countOf(n: number, one: string, many: string) {
   return n + " " + (n === 1 ? one : many);
 }
@@ -778,6 +785,10 @@ function budgetTable(v: BudgetView) {
         st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, cls: "" };
       var sc = cell(row, "", "text status");
       if (st) sc.appendChild(el("span", st.text, st.cls));
+      if (l.balance !== null) {
+        var fund = fundText(l.balance);
+        sc.appendChild(el("span", fund.text, "fund-balance " + fund.cls));
+      }
       var open = function () {
         budget.open = { category: l.category };
         openLine(l.category, v);

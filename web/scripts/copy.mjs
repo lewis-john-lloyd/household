@@ -8,6 +8,7 @@ export const PAGE = [
   "shell",
   "cashflow",
   "budget",
+  "budgetviews",
   "drawer",
   "recurring",
   "jobs",

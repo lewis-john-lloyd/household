@@ -836,6 +836,37 @@ test("groups open and shut, a loan's parts roll up into one row, and neither cli
   await page.close();
 });
 
+test("the Lines tab's three views: by group, by kind and a card per group, each opening the same drawer", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living', hobby: 'living', media: 'fun' }, recurring: []," +
+      "    days: [[d, 'food', 40], [d, 'hobby', 5], [d, 'media', 9]]," +
+      "    targets: [{ month: m, category: 'food', priority: 'high', target: 60 }, { month: m, category: 'hobby', priority: 'low', target: 20 }] } };" +
+      "  var bl = function (line, category, rule, amount) { return { line: line, effective: '2001-01-01', category: category, account: '', priority: 'high'," +
+      "    rule: rule, amount: amount, per: 'monthly', note: '', in_force: 'yes', in_words: 'x', this_month: '', last_12_months: '0', scheduled: '', spends_from: category }; };" +
+      "  window.__answers.getEditor.budgetLines = [bl('groceries', 'food', 'trailing', '60'), bl('hobby', 'hobby', 'fixed', '20')];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv");
+  assert.equal(await page.getAttribute(".layout-switch button:has-text('By group')", "aria-pressed"), "true");
+  await page.click(".layout-switch button:has-text('By kind')");
+  await page.waitForSelector(".kind-view");
+  const panels = await page.$$eval(".kind-view .item-panel h3", (hs) => hs.map((h) => h.textContent));
+  assert.deepEqual(panels, ["Floating", "Fixed", "Unplanned"]);
+  assert.match(await page.textContent(".kind-panel-floating"), /Groceries\s*Living, from the last 4 months/);
+  assert.match(await page.textContent(".a2-cards"), /Floating\$40 of \$60/); // leak-guard: allow (made up)
+  await page.click(".layout-switch button:has-text('Cards')");
+  await page.waitForSelector(".group-cards");
+  const cards = await page.$$eval(".group-card h3", (hs) => hs.map((h) => h.textContent));
+  assert.deepEqual(cards, ["Living", "Fun"]);
+  assert.equal(await page.getAttribute(".group-card .item-row:has-text('Hobby') .kind-mark", "title"), "Fixed");
+  await page.click(".group-card .item-row:has-text('Groceries')");
+  await page.waitForSelector(".drawer h2:has-text('food')");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("giving: each recipient under its line item, marked deductible here, and the year's deductible gifts", async () => {
   const page = await open(
     "window.__location = { parameter: { view: 'budget' } };" +

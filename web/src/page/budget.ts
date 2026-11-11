@@ -16,6 +16,7 @@ var budget: {
   sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
   unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
   shut?: Record<string, boolean>; // the groups shut ("group:<name>"); every group is open at first
+  layout?: string; // the Lines tab's view: "group" (A, the default), "kind" (B) or "cards" (C)
   opened?: Record<string, boolean>; // the breakdowns open ("line:<category>", "loan:<loan id>"); shut at first
 } = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
 var LENS_NAMES: Record<string, string> = { month: "Month", quarter: "Quarter", year: "Year" };
@@ -153,8 +154,10 @@ function drawLinesTab(body: HTMLElement) {
   if (!book.targets.length && !book.days.length) {
     body.appendChild(el("p", "No budget yet: add a budget line, then run ingest and compute.", "support"));
   } else {
+    body.appendChild(layoutSwitch());
     body.appendChild(budgetSummary(v));
-    body.appendChild(budgetTable(v));
+    var layout = budget.layout || "group";
+    body.appendChild(layout === "kind" ? kindView(v) : layout === "cards" ? cardsView(v) : budgetTable(v));
   }
   var add = el("div", null, "actions");
   add.appendChild(
@@ -336,7 +339,7 @@ function budgetSummary(v: BudgetView) {
       v.actual > came + 0.5 ? "warn" : "ok",
     );
   else card("Recurring", money.format(v.recurring), "What the recurring charges took");
-  box.appendChild(cards);
+  box.appendChild(budget.layout === "kind" ? kindCards(budgetItems(v)) : cards);
   return box;
 }
 

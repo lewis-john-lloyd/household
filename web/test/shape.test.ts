@@ -28,6 +28,7 @@ const shape = new Function(
     categories: unknown[][],
     lines?: unknown[][],
     flows?: unknown[][],
+    giving?: unknown[][],
   ) => BudgetBook;
   budgetView: (book: BudgetBook, period: string, compare: string, sameWeeks: boolean, today: string) => BudgetView;
   periodOf: (date: string, lens: string) => string;
@@ -671,4 +672,35 @@ test("budget view: what came in, from the flows report's months, summed over the
   assert.deepEqual([month.pay, month.otherIncome], [60, 5]);
   const quarter = shape.budgetView(b, "2026-Q4", "2025-Q4", false, "2026-11-07");
   assert.deepEqual([quarter.pay, quarter.otherIncome], [110, 5]);
+});
+
+test("budget view: a giving line item's gifts by recipient, and the year's gifts to deductible recipients", () => {
+  const giving = [
+    ["month", "key", "name", "category", "given", "gifts", "deductible", "run_id"],
+    ["2026-03", "QUILL & INK", "Quill & Ink", "gifts", 50, 2, "yes", "r1"],
+    ["2026-11", "QUILL & INK", "Quill & Ink", "gifts", 20, 1, "yes", "r1"],
+    ["2026-11", "WILLOW ST", "", "gifts", 40, 1, "", "r1"],
+    ["2026-12", "WILLOW ST", "", "gifts", 10, 1, "", "r1"], // after today: not in the month so far
+    ["2025-11", "WILLOW ST", "", "gifts", 30, 1, "no", "r1"],
+  ];
+  const b = shape.budgetBook(
+    BOOK_VALUES.budget,
+    BOOK_VALUES.daily,
+    BOOK_VALUES.recurring,
+    BOOK_VALUES.categories,
+    [],
+    [],
+    giving,
+  );
+  const month = shape.budgetView(b, "2026-11", "2025-11", true, "2026-11-07");
+  const gifts = month.groups.flatMap((g) => g.lines).find((l) => l.category === "gifts");
+  assert.deepEqual(gifts?.recipients, [
+    { key: "WILLOW ST", name: "WILLOW ST", given: 40, gifts: 1, deductible: "" },
+    { key: "QUILL & INK", name: "Quill & Ink", given: 20, gifts: 1, deductible: "yes" },
+  ]);
+  assert.deepEqual(month.deductible, { year: "2026", given: 70, unsaid: 1 }); // March and November so far
+  const last = shape.budgetView(b, "2025", "2024", false, "2026-11-07");
+  assert.deepEqual(last.deductible, { year: "2025", given: 0, unsaid: 0 });
+  const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07");
+  assert.equal(none.deductible, null);
 });

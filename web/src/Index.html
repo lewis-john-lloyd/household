@@ -421,6 +421,11 @@
       table.bv td.over { color: var(--error); font-weight: 500; }
       table.bv tr.rec td { font-size: 13px; color: var(--on-surface-variant); padding-top: 2px; padding-bottom: 6px; }
       table.bv tr.rec td:first-child { padding-left: 32px; }
+      table.bv tr.deductible td { color: var(--on-surface); font-weight: 500; border-top: 1px solid var(--outline-variant); }
+      table.bv tr.deductible td.rule { font-weight: 400; }
+      select.deductible-pick { font: inherit; font-size: 13px; padding: 0 4px; min-height: 0; height: 26px; width: auto; border-radius: 6px;
+        border: 1px solid var(--outline-variant); background: var(--surface); color: var(--on-surface); }
+      table.bv tr.unsaid select.deductible-pick { border-color: var(--primary); color: var(--primary); }
       .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
         background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
       .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }

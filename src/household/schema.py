@@ -769,6 +769,8 @@ REPORTS = (
             "run_id",
         ),
     ),
+    # each month's gifts by recipient (giving.py): what was given, and whether the recipient is deductible
+    Table("giving", ("month", "key", "name", "category", "given", "gifts", "deductible", "run_id")),
     Table("flows", ("period", "level", "source", "target", "amount", "run_id"), {"level": ("category", "group")}),
     Table(
         "categorized",

@@ -14,6 +14,7 @@ from . import (
     compute,
     editor,
     flows,
+    giving,
     house,
     inbox,
     investments,
@@ -424,6 +425,21 @@ def _budget(c: Compute, books, categorized, actuals):
     else:
         say(log, "budget: no budget_rules yet")
     return {"rules": rules, "planned": planned}
+
+
+def _giving(c: Compute, books, categorized):
+    """Each month's gifts by recipient, and whether each recipient is deductible (giving.py)."""
+    reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
+    gifts = giving.by_recipient(categorized, books["categories"], books["decisions"])
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "giving"), gifts.assign(run_id=run_id))
+    if len(gifts):
+        year = gifts[gifts["month"].str[:4] == today[:4]]
+        unsaid = year.loc[year["deductible"] == "", "key"].nunique()
+        say(
+            log,
+            f"giving: {year['key'].nunique()} recipients this year, "
+            f"{giving.deductible_total(gifts, today[:4]):,.0f} deductible, {unsaid} not marked yet",
+        )
 
 
 def _editor(c: Compute, books, rules, planned, actuals):
@@ -900,6 +916,7 @@ def compute_all(
     worth.update(_retirement(c, books, actuals, sched))
     changed = _recurring(c, books, categorized)
     _flows(c, books, categorized)
+    _giving(c, books, categorized)
     dupes = _duplicates(c, books, effective)
 
     paired, lonely, waiting = moved["paired"], moved["lonely"], moved["waiting"]

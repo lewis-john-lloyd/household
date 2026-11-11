@@ -17,9 +17,28 @@ interface BudgetBook {
   targets: { month: string; category: string; priority: string; target: number }[];
   lineTargets?: { month: string; line: string; category: string; target: number }[]; // each budget line's (budget_targets)
   income?: { month: string; pay: number; other: number }[]; // what came in each month: take-home pay, other income (flows)
+  giving?: Gift[]; // each month's gifts by recipient (the giving report)
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
+}
+
+interface Gift {
+  month: string;
+  key: string;
+  name: string;
+  category: string;
+  given: number;
+  gifts: number;
+  deductible: string; // "yes", "no", or "" when not said
+}
+
+interface Recipient {
+  key: string;
+  name: string;
+  given: number;
+  gifts: number;
+  deductible: string;
 }
 
 interface RecurringInLine {
@@ -38,6 +57,7 @@ interface ViewLine {
   compared: number;
   recurring: RecurringInLine[];
   byLine: { line: string; target: number }[]; // each budget line's part of the target, when there are two or more
+  recipients: Recipient[]; // a giving line item's gifts in the period, by recipient
 }
 
 interface ViewGroup {
@@ -64,6 +84,7 @@ interface BudgetView {
   recurring: number; // what the recurring charges in it spent
   pay: number; // take-home pay in the period's months (both paychecks, after tax and payroll deductions)
   otherIncome: number; // other money in: interest, rewards, refunds
+  deductible: { year: string; given: number; unsaid: number } | null; // gifts to deductible recipients in the period's last year, through `through`, and the recipients not marked yet
   groups: ViewGroup[];
 }
 
@@ -184,6 +205,7 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
         compared: 0,
         recurring: [],
         byLine: [],
+        recipients: [],
       };
       lines.set(category, l);
     }
@@ -225,6 +247,32 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     }
     if (then) e.compared += r.actual;
   }
+  for (const gift of book.giving || []) {
+    const [mFrom, mEnd] = periodDays(gift.month);
+    if (mEnd < from || mFrom > through) continue;
+    const l = line(gift.category);
+    let r = l.recipients.find((x) => x.key === gift.key);
+    if (!r) {
+      r = { key: gift.key, name: gift.name, given: 0, gifts: 0, deductible: gift.deductible };
+      l.recipients.push(r);
+    }
+    r.given += gift.given;
+    r.gifts += gift.gifts;
+  }
+  let deductible: BudgetView["deductible"] = null;
+  if (book.giving && book.giving.length) {
+    const year = through.slice(0, 4);
+    const keys = new Set<string>(),
+      unsaid = new Set<string>();
+    let given = 0;
+    for (const gift of book.giving) {
+      if (gift.month.slice(0, 4) !== year || gift.month + "-01" > through) continue;
+      keys.add(gift.key);
+      if (gift.deductible === "yes") given += gift.given;
+      if (!gift.deductible) unsaid.add(gift.key);
+    }
+    if (keys.size) deductible = { year, given: toCents(given), unsaid: unsaid.size };
+  }
   const groups = new Map<string, ViewGroup>();
   for (const l of lines.values()) {
     const byLine = parts.get(l.category);
@@ -244,7 +292,10 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
       }))
       .filter((e) => e.actual || e.expected || e.compared)
       .sort((a, b) => b.actual - a.actual || a.key.localeCompare(b.key));
-    if (!l.target && !l.actual && !l.compared && !l.recurring.length) continue;
+    l.recipients = l.recipients
+      .map((r) => ({ ...r, given: toCents(r.given) }))
+      .sort((a, b) => b.given - a.given || a.name.localeCompare(b.name));
+    if (!l.target && !l.actual && !l.compared && !l.recurring.length && !l.recipients.length) continue;
     const name = l.group || "Other";
     let g = groups.get(name);
     if (!g) {
@@ -298,6 +349,7 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     recurring: toCents(recurring),
     pay: toCents(pay),
     otherIncome: toCents(otherIncome),
+    deductible,
     groups: sorted,
   };
 }

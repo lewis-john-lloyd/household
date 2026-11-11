@@ -787,6 +787,41 @@ test("a category with two budget lines shows each as its own row, to open and ch
   await page.close();
 });
 
+test("giving: each recipient under its line item, marked deductible here, and the year's deductible gifts", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { gifts: 'giving', food: 'living' }, recurring: []," +
+      "    days: [[d, 'gifts', 70], [d, 'food', 20]]," +
+      "    targets: [{ month: m, category: 'gifts', priority: 'low', target: 50 }, { month: m, category: 'food', priority: 'high', target: 60 }]," +
+      "    giving: [{ month: m, key: 'QUILL & INK', name: 'Quill & Ink', category: 'gifts', given: 40, gifts: 2, deductible: 'yes' }," +
+      "      { month: m, key: 'WILLOW ST', name: 'WILLOW ST', category: 'gifts', given: 30, gifts: 1, deductible: '' }] } };" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.recipient");
+  const rows = await page.$$eval("table.bv tr.recipient", (rs) =>
+    rs.map((r) => {
+      const td = Array.from(r.querySelectorAll("td")).map((c) => c.textContent);
+      return [td[0], td[1], td[4], r.querySelector("select").value];
+    }),
+  );
+  assert.deepEqual(rows, [
+    ["Quill & Ink", "2 gifts", "$40", "yes"], // leak-guard: allow (made up)
+    ["WILLOW ST", "1 gift", "$30", ""], // leak-guard: allow (made up)
+  ]);
+  const total = await page.$$eval("table.bv tr.deductible td", (tds) => tds.map((td) => td.textContent));
+  assert.match(total[0], /^Deductible in \d{4}$/);
+  assert.match(total[1], /1 recipient this year not marked yet/);
+  assert.equal(total[4], "$40"); // leak-guard: allow (made up)
+  await page.selectOption("table.bv tr.recipient:has-text('WILLOW ST') select", "no");
+  assert.deepEqual(await staged(page), ["WILLOW ST: not deductible"]);
+  await page.waitForSelector("table.bv tr.recipient:has-text('WILLOW ST') .tag.warn");
+  assert.equal(await page.$eval("table.bv tr.recipient:has-text('WILLOW ST') select", (s) => s.value), "no");
+  assert.equal(await page.locator(".drawer").count(), 0); // choosing does not open the line's drawer
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("jobs: choosing a stretch of a pay line shows it, and a correction is staged like any change", async () => {
   const j = (effective, employer, salary, fte) => ({
     effective,

@@ -475,6 +475,55 @@ function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): { text: string; c
   return null;
 }
 
+function countOf(n: number, one: string, many: string) {
+  return n + " " + (n === 1 ? one : many);
+}
+
+// A recipient of gifts under its giving line item: what it was given in the period, and whether gifts to
+// it count toward the deduction, marked here (a recipient edit, saved like any other).
+function recipientRow(r: Recipient) {
+  var t = "recipient|" + r.key.toUpperCase();
+  var e = edited(t);
+  var said = e ? String((e.edit as Record<string, string>).deductible || "") : r.deductible;
+  var row = el("tr", null, "rec recipient");
+  var name = cell(row, r.name);
+  if (changedText(t)) name.appendChild(el("span", "changed", "tag warn"));
+  cell(row, countOf(r.gifts, "gift", "gifts"), "text");
+  cell(row, "", "text");
+  cell(row, "");
+  cell(row, money.format(r.given));
+  cell(row, "");
+  var sc = cell(row, "", "text status");
+  var pick = el("select", null, "deductible-pick") as HTMLSelectElement;
+  pick.setAttribute("aria-label", "Whether gifts to " + r.name + " are deductible");
+  [
+    ["", "Deductible?"],
+    ["yes", "Deductible"],
+    ["no", "Not deductible"],
+  ].forEach(function (o) {
+    if (o[0] === "" && said) return; // once said, it is yes or no
+    var opt = el("option", o[1]) as HTMLOptionElement;
+    opt.value = o[0];
+    opt.selected = o[0] === said;
+    pick.appendChild(opt);
+  });
+  pick.onclick = function (ev) {
+    ev.stopPropagation();
+  };
+  pick.onchange = function () {
+    if (pick.value === r.deductible && staged[t]) unstage(t);
+    else if (pick.value)
+      stage(
+        { kind: "recipient", key: r.key, deductible: pick.value },
+        r.name + ": " + (pick.value === "yes" ? "deductible" : "not deductible"),
+      );
+    drawBudgetPage();
+  };
+  sc.appendChild(pick);
+  if (said === "") row.classList.add("unsaid");
+  return row;
+}
+
 function budgetTable(v: BudgetView) {
   var wrap = el("div", null, "scroll");
   var table = el("table", null, "bv");
@@ -643,6 +692,9 @@ function budgetTable(v: BudgetView) {
         cell(rec, r.actual > 0 ? "Paid" : r.expected ? "Not seen yet" : "", "text status");
         body.appendChild(rec);
       });
+      l.recipients.forEach(function (r) {
+        body.appendChild(recipientRow(r));
+      });
     };
     order(planned).forEach(function (l) {
       lineRow(l, "line");
@@ -683,6 +735,29 @@ function budgetTable(v: BudgetView) {
         order(unplanned).forEach(function (l) {
           lineRow(l, "line unplanned-item");
         });
+    }
+    var gave = g.lines.some(function (l) {
+      return l.recipients.length;
+    });
+    if (gave && v.deductible) {
+      // the year's gifts that count toward the deduction, beside the recipients that make it up
+      var dr = el("tr", null, "rec deductible");
+      cell(dr, "Deductible in " + v.deductible.year);
+      cell(
+        dr,
+        "Gifts to recipients marked deductible" +
+          (v.deductible.year === v.through.slice(0, 4) && v.partial ? " so far" : "") +
+          (v.deductible.unsaid
+            ? "; " + countOf(v.deductible.unsaid, "recipient", "recipients") + " this year not marked yet"
+            : ""),
+        "text rule",
+      );
+      cell(dr, "", "text");
+      cell(dr, "");
+      cell(dr, money.format(v.deductible.given));
+      cell(dr, "");
+      cell(dr, "", "text status");
+      body.appendChild(dr);
     }
   });
   table.appendChild(body);

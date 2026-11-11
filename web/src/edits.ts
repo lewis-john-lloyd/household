@@ -69,6 +69,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   recurring_merge: [["key", "same_as"], []],
   recurring_name: [["key", "name"], []],
   recurring_line: [["key", "line"], []],
+  recipient: [["key", "deductible"], []],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -194,6 +195,8 @@ function editTarget(edit: Edit): string {
       return `recurring_name|${f("key").toUpperCase()}`;
     case "recurring_line":
       return `recurring_line|${f("key").toUpperCase()}`;
+    case "recipient":
+      return `recipient|${f("key").toUpperCase()}`;
     default:
       return `${edit.kind}|${JSON.stringify(edit)}`;
   }

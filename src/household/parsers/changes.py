@@ -28,6 +28,9 @@ row a person would otherwise have typed:
   recurring_name   the name to show a merchant key's   -> proposal_decisions (kind
                    recurring charge by, or blank to       subscription_name)
                    go back to the key
+  recipient        whether gifts to a merchant key     -> proposal_decisions (kind
+                   count toward the deduction (yes       deductible)
+                   or no), from the Budget page
   recurring_line   the budget line a merchant key's    -> proposal_decisions (kind
                    recurring charge pays, or blank to     subscription_line)
                    unlink it
@@ -57,7 +60,7 @@ from datetime import date, datetime, timezone
 import pandas as pd
 
 from .common import ParseError, Result
-from .. import categorize, compute, schema
+from .. import categorize, compute, giving, schema
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -92,7 +95,9 @@ KINDS = {
     "recurring_merge": ({"key", "same_as"}, set()),
     "recurring_name": ({"key", "name"}, set()),
     "recurring_line": ({"key", "line"}, set()),
+    "recipient": ({"key", "deductible"}, set()),
 }
+MERCHANT_KINDS = ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient")
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
 REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter"}  # edits that carry `was`
@@ -219,8 +224,10 @@ def _merge_key(text):
 def _values(kind, e):
     """Per-kind checks of values that need no ledger."""
     out = []
-    if kind in ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line") and not e["key"]:
+    if kind in MERCHANT_KINDS and not e["key"]:
         out.append("key is empty")
+    if kind == "recipient" and e["deductible"] not in ("yes", "no"):
+        out.append(f"deductible {e['deductible']!r} is not yes or no")
     if kind == "subscription" and e["subscription"] not in ("yes", "no"):
         out.append("subscription must be yes or no")
     if kind == "recurring_merge" and _merge_key(e["same_as"]) == _merge_key(e["key"]):
@@ -319,7 +326,7 @@ def _target(e):
     if kind == "line":
         field = "category" if e["field"] == "split" else e["field"]  # a category and a split replace each other
         return ("line", e["txn_id"], field)
-    if kind in ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line"):
+    if kind in MERCHANT_KINDS:
         return (kind, _merge_key(e["key"]))
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
@@ -411,6 +418,8 @@ def _describe(e):
         return f"recurring {e['key']}: " + (f"part of {e['same_as']}" if e["same_as"] else "on its own")
     if kind == "recurring_name":
         return f"recurring {e['key']}: " + (f"shown as {e['name']}" if e["name"].strip() else "shown by its key")
+    if kind == "recipient":
+        return f"recipient {e['key']}: " + ("deductible" if e["deductible"] == "yes" else "not deductible")
     if kind == "recurring_line":
         return f"recurring {e['key']}: " + (f"pays budget line {e['line']}" if e["line"].strip() else "pays no line")
     if kind == "line":
@@ -514,6 +523,17 @@ def _rows(edits, at):
                     "decided_at": at,
                     "decision": "approve" if line else "reject",
                     "note": line,
+                },
+            )
+        elif kind == "recipient":
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"{giving.PREFIX}{_merge_key(e['key'])}",
+                    "kind": giving.KIND,
+                    "decided_at": at,
+                    "decision": "approve" if e["deductible"] == "yes" else "reject",
+                    "note": "",
                 },
             )
         elif kind == "line":

@@ -270,6 +270,7 @@ function budgetBook(
   categoryValues: unknown[][],
   lineValues: unknown[][] = [],
   flowValues: unknown[][] = [],
+  givingValues: unknown[][] = [],
 ): BudgetBook {
   const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [], lineTargets: [], income: [] };
   for (const r of parseBudget(budgetValues)) {
@@ -338,6 +339,28 @@ function budgetBook(
           category: String(v[category] ?? ""),
           target: n,
         });
+    }
+  }
+  if (givingValues.length) {
+    // each month's gifts by recipient (giving.py), and whether the recipient is deductible
+    const [month, key, name, category, given, gifts, deductible] = columnsAt(
+      givingValues,
+      ["month", "key", "name", "category", "given", "gifts", "deductible"],
+      "giving",
+    );
+    book.giving = [];
+    for (const v of givingValues.slice(1)) {
+      const n = Number(v[given]) || 0;
+      if (!n) continue;
+      book.giving.push({
+        month: String(v[month] ?? ""),
+        key: String(v[key] ?? ""),
+        name: String(v[name] ?? "") || String(v[key] ?? ""),
+        category: String(v[category] ?? ""),
+        given: n,
+        gifts: Number(v[gifts]) || 0,
+        deductible: String(v[deductible] ?? ""),
+      });
     }
   }
   return book;

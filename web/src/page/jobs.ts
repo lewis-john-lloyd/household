@@ -135,7 +135,7 @@ function showJob(box: HTMLElement, name: string, r: PayStretch, next: PayStretch
     ],
   ]);
   var t = "job|" + r.person + "|" + r.at + "|" + r.employer;
-  if (stagedText(t)) box.appendChild(el("p", "Waiting to be saved: " + stagedText(t), "staged-note"));
+  if (changeNote(t)) box.appendChild(el("p", changeNote(t), "staged-note"));
   var actions = el("div", null, "actions");
   actions.appendChild(
     button("Correct this", function () {

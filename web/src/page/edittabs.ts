@@ -10,7 +10,7 @@ function splitAnswered(r: Row) {
     ids &&
     ids.length &&
     ids.every(function (id) {
-      return staged["line|" + id + "|category"];
+      return edited("line|" + id + "|category");
     })
   );
 }
@@ -36,7 +36,7 @@ function drawReview(body: HTMLElement) {
       );
     },
     staged: function (r) {
-      return stagedText(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase());
+      return changedText(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase());
     },
     empty:
       "Choose a question on the left to answer it. A merchant is answered once for all its lines; a single line can also be split.",
@@ -56,7 +56,7 @@ function drawReview(body: HTMLElement) {
       ]);
       if (r.note) panel.appendChild(el("p", r.note, "error"));
       var target = "payee|" + r.key.toUpperCase();
-      var now = staged[target] ? staged[target].edit : null;
+      var now = edited(target) ? edited(target)!.edit : null;
       var form = el("form", null, "edit");
       var key = field(
         form,
@@ -152,7 +152,7 @@ function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
         cell(row, l.payee);
         cell(row, l.account);
         cell(row, cents.format(l.amount), "num");
-        var now = staged["line|" + l.id + "|category"];
+        var now = edited("line|" + l.id + "|category");
         var pick = categoryChoice(now ? (now.edit.value as string) : r.guess || "");
         pick.setAttribute("aria-label", "Category for " + l.payee + " on " + l.date);
         row.appendChild(el("td")).appendChild(pick);
@@ -214,7 +214,7 @@ function drawRules(body: HTMLElement) {
       return r.status === "stopped" ? "Stopped" : "In force";
     },
     staged: function (r) {
-      return stagedText("payee_rule|" + r.pattern);
+      return changedText("payee_rule|" + r.pattern);
     },
     empty: "Choose a payee rule to change or stop it.",
     add: [
@@ -264,7 +264,7 @@ function drawCategories(body: HTMLElement) {
       return i.kind === "category" ? "Categories" : "Old names";
     },
     staged: function (i) {
-      return stagedText(i.kind === "category" ? "category|" + i.row.category : "alias|" + i.row.alias);
+      return changedText(i.kind === "category" ? "category|" + i.row.category : "alias|" + i.row.alias);
     },
     empty: "Choose a category to regroup it, or an old name to point it elsewhere.",
     add: [
@@ -313,7 +313,7 @@ function drawSettings(body: HTMLElement) {
       return p.source === "not set" ? "not set: " + p.about : p.value;
     },
     staged: function (p) {
-      return stagedText("parameter|" + p.key);
+      return changedText("parameter|" + p.key);
     },
     empty:
       "Household settings, such as the account transfers come from, the links in the weekly email and " +
@@ -365,7 +365,7 @@ function drawWithholding(body: HTMLElement) {
       );
     },
     staged: function (w) {
-      return stagedText("explanation|" + w.jurisdiction + "|" + w.stub_id);
+      return changedText("explanation|" + w.jurisdiction + "|" + w.stub_id);
     },
     empty: "Choose a stub to say why its withholding differs from the tables (an extra amount asked for, a bonus).",
     none: "Every stub's withholding is explained.",
@@ -383,7 +383,7 @@ function drawWithholding(body: HTMLElement) {
       var why = field(
         form,
         "Why",
-        textInput(staged[target] ? (staged[target].edit.note as string) : "", "wide", "extra withholding asked for"),
+        textInput(edited(target) ? (edited(target)!.edit.note as string) : "", "wide", "extra withholding asked for"),
       );
       var error = el("div", "", "error");
       var actions = el("div", null, "actions");
@@ -531,9 +531,9 @@ function drawDuplicates(body: HTMLElement) {
     },
     staged: function (d) {
       return [
-        stagedText("not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|")),
-        stagedText("line|" + d.txn_a + "|void"),
-        stagedText("line|" + d.txn_b + "|void"),
+        changedText("not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|")),
+        changedText("line|" + d.txn_a + "|void"),
+        changedText("line|" + d.txn_b + "|void"),
       ]
         .filter(Boolean)
         .join("; ");

@@ -463,7 +463,8 @@ function budgetTable(v: BudgetView) {
         })
       )
         name.appendChild(el("span", "recurring", "tag"));
-      if (stagedText("budget_line|" + (lines[0] ? lines[0].line : "\u0000"))) name.appendChild(el("span", "changed", "tag warn"));
+      if (changedText("budget_line|" + (lines[0] ? lines[0].line : "\u0000")))
+        name.appendChild(el("span", "changed", "tag warn"));
       cell(
         row,
         lines.length

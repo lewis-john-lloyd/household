@@ -12,6 +12,7 @@ interface ServerCalls {
   saveChanges: typeof saveChanges;
   findSave: typeof findSave;
   getWaiting: typeof getWaiting;
+  getWaitingEdits: typeof getWaitingEdits;
   discardWaiting: typeof discardWaiting;
   getAppliedAnyway: typeof getAppliedAnyway;
   forgetDiscarded: typeof forgetDiscarded;

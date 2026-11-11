@@ -155,10 +155,10 @@ function chargeRow(t: Row) {
   left.appendChild(chargeTitle(t, drawBudgetPage, "span"));
   if (t.status === "price changed") left.appendChild(el("span", "price changed", "tag warn"));
   var staged_ =
-    stagedText("subscription|" + t.key.toUpperCase()) ||
-    stagedText("recurring_merge|" + t.key.toUpperCase()) ||
-    stagedText("recurring_name|" + t.key.toUpperCase()) ||
-    stagedText("recurring_line|" + t.key.toUpperCase());
+    changedText("subscription|" + t.key.toUpperCase()) ||
+    changedText("recurring_merge|" + t.key.toUpperCase()) ||
+    changedText("recurring_name|" + t.key.toUpperCase()) ||
+    changedText("recurring_line|" + t.key.toUpperCase());
   if (staged_) left.appendChild(el("span", staged_, "tag warn"));
   var pays = chargeLine(t.key);
   if (pays) left.appendChild(el("span", "pays " + pays, "tag"));
@@ -316,7 +316,7 @@ function priceAlert(t: Row) {
     words +=
       line.line + "'s target is " + cents.format(now) + " " + per + "; at the new price it would be " + cents.format(next) + ".";
     var t_ = "budget_line|" + line.line;
-    if (stagedText(t_)) actions.appendChild(el("span", "Waiting to be saved: " + stagedText(t_), "support"));
+    if (changeNote(t_)) actions.appendChild(el("span", changeNote(t_), "support"));
     else
       actions.appendChild(
         button(
@@ -379,18 +379,19 @@ function trackAlert(r: Row) {
   box.appendChild(text);
   var actions = el("span", null, "actions");
   var t = "subscription|" + r.key.toUpperCase();
-  if (stagedText(t)) {
-    actions.appendChild(el("span", "Waiting to be saved: " + stagedText(t), "support"));
-    actions.appendChild(
-      button(
-        "Undo",
-        function () {
-          unstage(t);
-          drawBudgetPage();
-        },
-        "text",
-      ),
-    );
+  if (changeNote(t)) {
+    actions.appendChild(el("span", changeNote(t), "support"));
+    if (staged[t])
+      actions.appendChild(
+        button(
+          "Undo",
+          function () {
+            unstage(t);
+            drawBudgetPage();
+          },
+          "text",
+        ),
+      );
   } else {
     actions.appendChild(
       button("Track it", function () {

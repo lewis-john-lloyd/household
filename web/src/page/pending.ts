@@ -17,6 +17,54 @@ interface SentEdit {
 }
 var staged: Record<string, StagedEdit> = {},
   stagedOrder: string[] = [];
+/** A saved edit no run has applied yet, and the change set it is in. */
+interface SavedEdit extends StagedEdit {
+  set: string;
+}
+// What was saved and is waiting for ingest and compute: shown as saved, not as unchanged, until a run applies
+// it and the page reads the result (a staged edit of the same setting comes first).
+var savedEdits: Record<string, SavedEdit> = {};
+
+/** The edit in hand for a setting: one waiting to be saved, else one saved and not yet applied, else null. */
+function edited(t: string): StagedEdit | null {
+  return staged[t] || savedEdits[t] || null;
+}
+
+/** Keep a saved change set's edits until a run applies them (a later save of the same setting wins). */
+function keepSaved(set: string, entries: { target: string; entry: StagedEdit }[]) {
+  entries.forEach(function (e) {
+    savedEdits[e.target] = { edit: e.entry.edit, text: e.entry.text, set: set };
+  });
+}
+
+/** Forget a discarded change set's edits. */
+function forgetSaved(set: string) {
+  Object.keys(savedEdits).forEach(function (t) {
+    if (savedEdits[t].set === set) delete savedEdits[t];
+  });
+}
+
+/** The change sets saved and waiting, read once as the page opens; then the page shows them as saved. */
+function loadSavedEdits() {
+  ask(
+    "getWaitingEdits",
+    [],
+    function (sets) {
+      (sets || []).forEach(function (w) {
+        keepSaved(
+          w.id,
+          w.edits.map(function (edit, n) {
+            return { target: editTarget(edit), entry: { edit: edit, text: w.texts[n] || editTarget(edit) } };
+          }),
+        );
+      });
+      if (sets && sets.length) redrawPage();
+    },
+    function (error) {
+      console.log("saved changes could not be read: " + ((error && error.message) || error));
+    },
+  );
+}
 var RULES = ["fixed", "billed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund"];
 var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
 var PRIORITIES = ["", "high", "medium", "low"];
@@ -250,6 +298,8 @@ function discardStaged() {
               "discardWaiting",
               [r.id],
               function (d) {
+                forgetSaved(r.id);
+                redrawPage();
                 msg.className = d && d.remembered ? "" : "error";
                 msg.textContent =
                   "Discarded " +
@@ -292,6 +342,7 @@ function discardStaged() {
 
 function saved(sent: SentEdit[], r: SaveResult, lead: string) {
   var msg = byId("pending-msg");
+  keepSaved(r.id, sent);
   sent.forEach(function (s) {
     if (staged[s.target] === s.entry) unstage(s.target);
   });
@@ -315,7 +366,7 @@ function saved(sent: SentEdit[], r: SaveResult, lead: string) {
     (r.madeFolder ? " This first save made the folder web_edits in My Drive: move it into the household inbox once." : "") +
     (r.warning ? " " + r.warning : "");
   drawPending();
-  redrawEditor();
+  redrawPage();
 }
 
 // Small builders for the editor's forms.

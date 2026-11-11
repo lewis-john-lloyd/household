@@ -187,6 +187,7 @@ google.charts.setOnLoadCallback(function () {
   byId("category").addEventListener("click", function () {
     setLevel("category");
   });
+  loadSavedEdits(); // what was saved and no run has applied yet shows as saved, not as unchanged
   // A link can open a page: ?view=taxes, or ?view=edit&tab=review (the weekly email's links do).
   if (google.script.url && google.script.url.getLocation) google.script.url.getLocation(openFrom);
   else load();

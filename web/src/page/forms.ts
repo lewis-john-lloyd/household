@@ -154,9 +154,9 @@ function redrawEditor() {
   )[editTab](body);
 }
 
-// The name a recurring charge shows by: one waiting to be saved, else the one you gave it, else its key.
+// The name a recurring charge shows by: one saved or waiting to be saved, else the one you gave it, else its key.
 function chargeName(r: Row): string {
-  var s = staged["recurring_name|" + String(r.key).toUpperCase()];
+  var s = edited("recurring_name|" + String(r.key).toUpperCase());
   if (s) return (s.edit.name as string) || r.key;
   return r.name || r.key;
 }
@@ -239,6 +239,33 @@ function stagedText(t: string) {
     .join("; ");
 }
 
+// What is saved for a setting (and everything under it) that no run has applied yet, in words; a setting
+// with a newer edit waiting to be saved is left to stagedText.
+function savedText(t: string) {
+  return Object.keys(savedEdits)
+    .filter(function (k) {
+      return (k === t || k.indexOf(t + "|") === 0) && !staged[k];
+    })
+    .map(function (k) {
+      return savedEdits[k].text;
+    })
+    .join("; ");
+}
+
+// Whether a setting has a change in hand, saved or not, in words: what marks it changed on the page.
+function changedText(t: string) {
+  return [stagedText(t), savedText(t)].filter(Boolean).join("; ");
+}
+
+// A setting's change in hand as a note: what waits to be saved, and what is saved and waits for a run.
+function changeNote(t: string) {
+  var waiting = stagedText(t),
+    saved = savedText(t);
+  return [waiting && "Waiting to be saved: " + waiting, saved && "Saved, applies at the next run: " + saved]
+    .filter(Boolean)
+    .join(" ");
+}
+
 // Every field an edit can change, as the page showed it (WAS_FIELDS in edits.ts and changes.py).
 function budgetWas(l: Row) {
   return l.in_force === "scheduled only" ? null : rowWas(l);
@@ -266,9 +293,9 @@ function scheduledOn(line: string, date: string) {
   );
 }
 
-// The budget line a recurring charge pays: one waiting to be saved, else the one it is linked to ("" for none).
+// The budget line a recurring charge pays: one saved or waiting to be saved, else the one it is linked to ("" for none).
 function chargeLine(key: string): string {
-  var s = staged["recurring_line|" + key.toUpperCase()];
+  var s = edited("recurring_line|" + key.toUpperCase());
   if (s) return (s.edit.line as string) || "";
   var r = (editor!.subscriptions || []).filter(function (x) {
     return x.key === key;
@@ -279,7 +306,7 @@ function chargeLine(key: string): string {
 // Links a recurring charge to the budget line it pays ("" unlinks it); a charge that pays a line is tracked.
 function linkCharge(r: Row, line: string) {
   stage({ kind: "recurring_line", key: r.key, line: line }, r.key + (line ? ": pays budget line " + line : ": pays no line"));
-  if (line && r.marked !== "yes" && !staged["subscription|" + r.key.toUpperCase()])
+  if (line && r.marked !== "yes" && !edited("subscription|" + r.key.toUpperCase()))
     stage({ kind: "subscription", key: r.key, subscription: "yes" }, r.key + ": track as recurring");
 }
 

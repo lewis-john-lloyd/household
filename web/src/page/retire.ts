@@ -708,7 +708,7 @@ function drawRetireBudget(body: HTMLElement, d: RetirementPage) {
   var t = wTable(p, ["Line", "Last 12 months", "In " + start, "In " + y, "Setting", ""], [1, 2, 3]);
   var cols = 6;
   lines.forEach(function (b) {
-    var pending = staged[editTarget({ kind: "parameter", key: "retirement_spending:" + b.line })];
+    var pending = edited(editTarget({ kind: "parameter", key: "retirement_spending:" + b.line }));
     var name = el("span", b.kind === "category" ? b.line : b.line);
     var cellName = el("span");
     cellName.appendChild(name);

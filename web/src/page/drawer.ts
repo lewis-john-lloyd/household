@@ -118,8 +118,8 @@ function openLine(category: string, v: BudgetView) {
         ? "Ended " + bl.effective + "."
         : "Since " + bl.effective + ": " + bl.in_words + "." + (bl.scheduled ? " Scheduled: " + bl.scheduled + "." : ""),
     );
-    var staged_ = stagedText("budget_line|" + bl.line);
-    if (staged_) d.appendChild(el("p", "Waiting to be saved: " + staged_, "staged-note"));
+    var note = changeNote("budget_line|" + bl.line);
+    if (note) d.appendChild(el("p", note, "staged-note"));
     d.appendChild(budgetForm(bl, redraw, category));
   });
 }
@@ -164,7 +164,7 @@ function transactionTable(txns: Txn[]) {
     );
     open.title = "Edit this transaction: its category, split, note and flags";
     cell(r, "", "text").appendChild(open);
-    if (stagedText("line|" + t.id)) r.className = "staged";
+    if (changedText("line|" + t.id)) r.className = "staged";
     table.appendChild(r);
   });
   return table;

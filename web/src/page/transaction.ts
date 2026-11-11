@@ -46,7 +46,7 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   ]);
   // each item's category as it stands, a change not yet saved included; the split below follows them
   var itemCats = t.items.map(function (i) {
-    var s = i.id && staged["item|" + i.id];
+    var s = i.id && edited("item|" + i.id);
     return s ? (s.edit.category as string) : i.category;
   });
   var splitter: { fromItems(): void } | null = null;
@@ -87,8 +87,10 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
     });
     bought.appendChild(list);
   }
-  var pending = stagedText("line|" + t.id);
+  var pending = stagedText("line|" + t.id),
+    kept = savedText("line|" + t.id);
   if (pending) panel.appendChild(el("p", "Not saved yet: " + pending, "staged-banner"));
+  if (kept) panel.appendChild(el("p", "Saved, applies at the next run: " + kept, "staged-banner saved"));
 
   var one = section(panel, "One category");
   var oneForm = el("form", null, "edit");
@@ -175,7 +177,7 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
 // Rows of category and amount, adding up live against the line.
 function splitEditor(box: HTMLElement, t: Line, said: string, done: () => void, itemCategories?: () => string[]) {
   var total = Math.round(Math.abs(t.amount) * 100);
-  var current = staged["line|" + t.id + "|category"];
+  var current = edited("line|" + t.id + "|category");
   var start =
     current && current.edit.field === "split"
       ? (current.edit.value as string).split("; ").map(function (p) {

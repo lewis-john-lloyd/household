@@ -40,6 +40,7 @@ function drawWaiting(body: HTMLElement) {
                 "discardWaiting",
                 [w.id],
                 function (d) {
+                  forgetSaved(w.id);
                   drawWaiting(body);
                   if (d && !d.remembered) {
                     // discarded, but the status page won't be able to tell if it was written anyway

@@ -18,6 +18,7 @@ window.__answers = {
   getStatus: { stages: [{ stage: "compute", runId: "r1", at: "2001-03-02T07:00:00Z", summary: {}, lines: ["run r1"] }],
                attention: [], stale: false, projection: [], projectionYear: "", wiProjection: null, categories: null },
   getWaiting: [],
+  getWaitingEdits: [],
   getAppliedAnyway: [],
   discardWaiting: { remembered: true, warning: "" },
   findSave: null,
@@ -641,6 +642,31 @@ test("recurring: a charge that comes back is offered to track, and one that stop
     { kind: "subscription", key: "WILLOW ST", subscription: "yes" },
     { kind: "recurring_merge", key: "BLUE PUMP FUEL", same_as: "WILLOW ST" },
   ]);
+  // saved, the page says so until a run applies it, instead of going back to how it was
+  await page.waitForSelector(".alert:has-text('Saved, applies at the next run')");
+  assert.match(await page.textContent(".alert"), /Saved, applies at the next run: WILLOW ST: track as recurring/);
+  assert.equal(await page.locator(".alert button:has-text('Undo')").count(), 0); // saved is not undone here
+  assert.equal(await page.locator(".alert button:has-text('Track it')").count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a change saved earlier and not yet applied reads as saved when the page opens, until a discard", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget', tab: 'recurring' } };" +
+      "window.__answers.getEditor.subscriptions = [{ key: 'WILLOW ST', marked: '', status: 'active', cadence: 'monthly', " +
+      "charges: '4', last: '2001-06-03', latest: '30', yearly: '360', category: 'petrol', example: 'WILLOW ST', note: '', " +
+      "includes: '', merged: '' }];" +
+      "window.__answers.getWaitingEdits = [{ id: 'f9', savedAt: '2001-06-04T00:00:00Z', " +
+      "edits: [{ kind: 'subscription', key: 'WILLOW ST', subscription: 'yes' }], texts: ['WILLOW ST: track as recurring'] }];",
+  );
+  await page.waitForSelector(".alert:has-text('Saved, applies at the next run: WILLOW ST: track as recurring')");
+  assert.deepEqual(await staged(page), []); // nothing waits to be saved: it is saved
+  await page.evaluate(() => {
+    forgetSaved("f9");
+    redrawPage();
+  });
+  await page.waitForSelector(".alert button:has-text('Track it')");
   assert.deepEqual(page.errors, []);
   await page.close();
 });

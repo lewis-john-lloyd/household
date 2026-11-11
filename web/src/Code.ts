@@ -399,6 +399,35 @@ function getWaiting(): Waiting[] {
   return waitingChangeSets(files, saved, readTabIfAny_("run_log"));
 }
 
+/**
+ * The edits of every change set still waiting (saved, not yet taken in by ingest), oldest first, so the page can
+ * show what was saved until a run applies it. A change set ingest refused is left out: it will not apply as it is.
+ */
+function getWaitingEdits(): WaitingEdits[] {
+  const out: WaitingEdits[] = [];
+  const waiting = getWaiting()
+    .filter((w) => !w.refused)
+    .sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+  for (const w of waiting) {
+    try {
+      const set = JSON.parse(fileText_(w.id)) as { edits?: Edit[] };
+      const edits = Array.isArray(set.edits) ? set.edits : [];
+      out.push({ id: w.id, savedAt: w.savedAt, edits, texts: edits.map((_, n) => w.edits[n] || "") });
+    } catch (e) {
+      console.log(`waiting change set ${w.name} could not be read: ${e}`);
+    }
+  }
+  return out;
+}
+
+/** A file's text, through the Drive advanced service (it hands back a string, or the bytes). */
+function fileText_(id: string): string {
+  const got = drive_().Files.get(id, { alt: "media" }) as unknown;
+  if (typeof got === "string") return got;
+  if (Array.isArray(got)) return Utilities.newBlob(got as number[]).getDataAsString();
+  throw new Error("Drive gave no text for " + id);
+}
+
 const DISCARDED_PREFIX = "DISCARDED_"; // one user property per discarded change set, its edits in words
 const DISCARDED_KEEP = 20;
 const DISCARDED_DAYS = 30; // long enough for the next ingest to say whether it had read the file already

@@ -327,6 +327,14 @@ function waitingChangeSets(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** A waiting change set's edits as saved, each with its words, for the page to show as saved until applied. */
+interface WaitingEdits {
+  id: string;
+  savedAt: string;
+  edits: Edit[];
+  texts: string[]; // each edit in words, as it was described at Save ("" past the ones the record kept)
+}
+
 interface Discarded extends Saved {
   discardedAt: string;
 }

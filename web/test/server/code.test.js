@@ -117,10 +117,11 @@ function server({
             files.push({ id, name: meta.name, text: blob.text, parents: meta.parents, appProperties: meta.appProperties || {} });
           return { id };
         },
-        get: (id) => {
+        get: (id, opts) => {
           if (id === "folder") return { id, trashed: false };
           const f = files.find((x) => x.id === id);
           if (!f || f.deleted) throw new Error("File not found: " + id);
+          if (opts && opts.alt === "media") return f.text;
           return { id, trashed: !!f.trashed, parents: f.parents, name: f.name };
         },
         list: ({ q }) => {
@@ -330,4 +331,27 @@ test("the page has its own tab icon, served from the image kept in the repo", ()
   assert.ok(at, page.set.favicon);
   const png = fs.readFileSync(path.join(__dirname, "..", "..", "..", at[1]));
   assert.equal(png.subarray(1, 4).toString(), "PNG");
+});
+
+test("the edits of change sets still waiting come back with their words, oldest first, and leave once filed", () => {
+  const s = server();
+  const second = { kind: "parameter", key: "views_url", value: "https://example.test/", was: null };
+  s.context.saveChanges([EDIT], ["transfer account: savings"], "req-a");
+  s.context.saveChanges([second, EDIT], ["views link", "transfer account: savings"], "req-b");
+  const waiting = JSON.parse(JSON.stringify(s.context.getWaitingEdits()));
+  assert.deepEqual(
+    waiting.map((w) => [w.id, w.edits.map((e) => e.value), w.texts]),
+    [
+      ["f1", ["savings"], ["transfer account: savings"]],
+      ["f2", ["https://example.test/", "savings"], ["views link", "transfer account: savings"]],
+    ],
+  );
+  s.files[0].filed = true; // ingest took the first in
+  assert.equal(
+    s.context
+      .getWaitingEdits()
+      .map((w) => w.id)
+      .join(),
+    "f2",
+  );
 });

@@ -451,15 +451,20 @@ function budgetTable(v: BudgetView) {
     });
   };
   order(v.groups).forEach(function (g) {
-    var gr = el("tr", null, "group");
-    cell(gr, g.name);
-    cell(gr, "", "text");
-    cell(gr, g.target ? money.format(g.target) : "");
-    cell(gr, money.format(g.actual));
-    cell(gr, "");
-    cell(gr, money.format(g.compared));
-    cell(gr, signedMoney(g.actual - g.compared));
-    body.appendChild(gr);
+    // A group of one category is that category's row alone (its totals would only repeat it); a group of
+    // more says how many it adds up, so a category named like its group reads as one of them.
+    var alone = g.lines.length === 1;
+    if (!alone) {
+      var gr = el("tr", null, "group");
+      cell(gr, g.name);
+      cell(gr, g.lines.length + " categories", "text rule");
+      cell(gr, g.target ? money.format(g.target) : "");
+      cell(gr, money.format(g.actual));
+      cell(gr, "");
+      cell(gr, money.format(g.compared));
+      cell(gr, signedMoney(g.actual - g.compared));
+      body.appendChild(gr);
+    }
     order(g.lines).forEach(function (l) {
       var lines = linesFor(l.category).filter(function (x) {
         return x.in_force !== "ended";
@@ -471,6 +476,7 @@ function budgetTable(v: BudgetView) {
       );
       row.tabIndex = 0;
       var name = cell(row, l.category);
+      if (alone && g.name && g.name !== l.category) name.appendChild(el("span", g.name, "tag"));
       if (
         lines.some(function (x) {
           return x.rule === "recurring";

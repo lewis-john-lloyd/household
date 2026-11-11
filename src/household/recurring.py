@@ -21,6 +21,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from . import decisions as decisions_
+
 MIN_CHARGES = 3
 CADENCES = (("weekly", 7), ("biweekly", 14), ("monthly", 30.4), ("quarterly", 91.3), ("yearly", 365.25))
 GAP_TOLERANCE = 0.2  # a gap within 20% of the cadence counts as on time
@@ -151,16 +153,7 @@ MAX_NAME = 60
 
 def marks(decisions):
     """{key: (True or False, note)} from proposal_decisions: the latest subscription answer per key."""
-    if decisions is None or decisions.empty:
-        return {}
-    d = decisions[
-        (decisions["kind"] == "subscription") & decisions["proposal_key"].astype(str).str.startswith("subscription:")
-    ]
-    d = d.sort_values("decided_at", kind="stable")
-    return {
-        str(k)[len("subscription:") :]: (v == "approve", str(n or ""))
-        for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index)))
-    }
+    return decisions_.latest(decisions, "subscription")
 
 
 MEMBERSHIP = re.compile(r"\bmembership\b|\bpremium plus\b|\bplus\b.*\bcredits?\b", re.I)
@@ -196,21 +189,7 @@ def _example(g):
 def names(decisions):
     """{key: the name to show it by} from proposal_decisions: the latest "subscription_name" answer per key
     (a "recurring_name" edit, the name in its note; a reject, or a blank name, goes back to the key)."""
-    if decisions is None or decisions.empty:
-        return {}
-    d = decisions[
-        (decisions["kind"] == "subscription_name")
-        & decisions["proposal_key"].astype(str).str.startswith("subscription_name:")
-    ]
-    d = d.sort_values("decided_at", kind="stable")
-    out = {}
-    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
-        key, name = str(k)[len("subscription_name:") :], str(n if n is not None else "").strip()
-        if v == "approve" and name:
-            out[key] = name[:MAX_NAME]
-        else:
-            out.pop(key, None)
-    return out
+    return {k: name[:MAX_NAME] for k, name in decisions_.approved_notes(decisions, "subscription_name").items()}
 
 
 def named(df, decisions):
@@ -223,20 +202,7 @@ def links(decisions):
     """{key: the budget line it pays} from proposal_decisions: the latest "subscription_line" answer per key (a
     "recurring_line" edit, the line in its note; a reject, or a blank line, unlinks it). A key merged into
     another links its group."""
-    if decisions is None or decisions.empty:
-        return {}
-    d = decisions[
-        (decisions["kind"] == "subscription_line")
-        & decisions["proposal_key"].astype(str).str.startswith("subscription_line:")
-    ]
-    d = d.sort_values("decided_at", kind="stable")
-    raw = {}
-    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
-        key, line = str(k)[len("subscription_line:") :], str(n if n is not None else "").strip()
-        if v == "approve" and line:
-            raw[key] = line
-        else:
-            raw.pop(key, None)
+    raw = decisions_.approved_notes(decisions, "subscription_line")
     merged = merges(decisions)
     return {merged.get(k, k): line for k, line in raw.items()}
 
@@ -245,20 +211,11 @@ def merges(decisions):
     """{key: the key it is part of} from proposal_decisions: the latest merge answer per key (a
     "subscription_merge" edit, the key it joins in its note; a reject separates it again), a chain followed
     to its end. A key in a cycle stays on its own."""
-    if decisions is None or decisions.empty:
-        return {}
-    d = decisions[
-        (decisions["kind"] == "subscription_merge")
-        & decisions["proposal_key"].astype(str).str.startswith("subscription_merge:")
-    ]
-    d = d.sort_values("decided_at", kind="stable")
-    raw = {}
-    for k, v, n in zip(d["proposal_key"], d["decision"], d.get("note", pd.Series([""] * len(d), index=d.index))):
-        key, into = str(k)[len("subscription_merge:") :], str(n if n is not None else "").strip().upper()
-        if v == "approve" and into and into != key:
-            raw[key] = into
-        else:
-            raw.pop(key, None)
+    raw = {
+        k: into
+        for k, into in decisions_.approved_notes(decisions, "subscription_merge", upper=True).items()
+        if into != k
+    }
     out = {}
     for key, into in raw.items():
         seen = [key]

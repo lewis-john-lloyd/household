@@ -19,6 +19,7 @@ from datetime import date
 
 import pandas as pd
 
+from . import decisions as decisions_
 from . import tax, taxdata
 
 FLAT_RATES = (0.22, 0.35, 0.37)
@@ -80,14 +81,7 @@ def explained_by_people(decisions, prefix):
     "<prefix>:<stub_id>" (prefix "federal" or "wi") explains that stub; its note
     becomes the explanation.
     """
-    if decisions is None or decisions.empty:
-        return {}
-    rows = decisions[(decisions["kind"] == "withholding") & (decisions["decision"] == "approve")]
-    out = {}
-    for key, note in zip(rows["proposal_key"].astype(str), rows["note"].astype(str)):
-        if key.startswith(prefix + ":"):
-            out[key[len(prefix) + 1 :]] = note
-    return out
+    return {k: note for k, (approved, note) in decisions_.latest(decisions, "withholding", prefix).items() if approved}
 
 
 def _apply_explained(df, explained):

@@ -8,8 +8,10 @@ git runs this from .githooks/pre-push (turned on once per clone with
   2. the same text against a private denylist of the household's real values, kept
      outside the repo (DENYLIST, or the path in $HOUSEHOLD_DENYLIST). An entry is a
      word or phrase (names, streets, employers, account digits; matched as whole words,
-     ignoring case) or an amount with cents, matched however it is written: 1234.56,
+     ignoring case), an amount with cents, matched however it is written: 1234.56,
      1,234.56, a dollar sign before it, or the digit groups of a PDF's text, "1 234 56";
+     or a whole-dollar figure of five digits or more (a salary, a price paid, a loan),
+     matched with or without commas or ".00" (123456 or 123,456, say);
   3. binary files (PDFs, images, archives, office files): refused unless listed in
      tests/fixtures/BINARIES by path and sha256 (as the push leaves it or the checkout has it), and a
      listed PDF's text goes
@@ -41,8 +43,11 @@ import leak_guard  # noqa: E402
 DENYLIST = Path.home() / ".config" / "household" / "denylist.txt"
 ZERO = "0" * 40
 AMOUNT_ENTRY = re.compile(r"^-?\d+\.\d\d$")
+WHOLE_ENTRY = re.compile(r"^\d{5,}$")  # a whole-dollar figure; four digits or fewer is a word (account digits)
 # 1234.56, 1,234.56, -1 234 56, with or without a dollar sign: a dollar part (digits, or groups of three) and two cents digits
 AMOUNT_TEXT = re.compile(r"(?<![\w.])-?\$?(\d{1,3}(?:[, ]\d{3})+|\d+)[. ](\d{2})(?![\d])")
+# 123456, 123,456, $123,456.00: a whole number of five digits or more, not part of a longer number or a decimal  # leak-guard: allow (made up)
+WHOLE_TEXT = re.compile(r"(?<![\w.,])-?\$?(\d{1,3}(?:,\d{3})+|\d{5,})(?:\.00)?(?![\d,]|\.\d)")
 GITHUB = re.compile(r"(?:https?://)?github\.com/[\w.-]+(?:/[\w.-]+)?")
 
 
@@ -66,6 +71,8 @@ def load_denylist(path):
             continue
         if AMOUNT_ENTRY.match(entry):
             amounts.add(f"{abs(float(entry)):.2f}")
+        elif WHOLE_ENTRY.match(entry):
+            amounts.add(str(int(entry)))
         else:
             words.append((entry, re.compile(rf"(?<!\w){re.escape(entry)}(?!\w)", re.IGNORECASE)))
     return amounts, words
@@ -79,11 +86,16 @@ def amounts_in(text):
     return out
 
 
+def wholes_in(text):
+    """Every whole number of five digits or more in the text, as "123456"."""
+    return {str(int(m.group(1).replace(",", ""))) for m in WHOLE_TEXT.finditer(text)}
+
+
 def denied(text, amounts, words):
     """The denylist entries this text contains."""
     text = GITHUB.sub(" ", text)
     hits = [entry for entry, pattern in words if pattern.search(text)]
-    return hits + sorted(amounts_in(text) & amounts)
+    return hits + sorted((amounts_in(text) | wholes_in(text)) & amounts)
 
 
 def known(sha):

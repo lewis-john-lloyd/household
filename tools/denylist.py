@@ -6,7 +6,10 @@
 Tables are CSV files, or JSON files of the shape {"values": [[...], ...]} (what the Sheets
 API returns for a range). Every cell of the tables that reads as an amount with cents (not a round dollar
 figure, which a made-up test value could equal, and at least MIN_AMOUNT) goes
-in as an amount; the words file (names, streets, cities, employers, account
+in as an amount, and every whole-dollar figure from MIN_WHOLE up to MAX_WHOLE that is not a multiple of
+ROUND_WHOLE (a salary, a price paid, a loan; a made-up value is rounder) goes in as a whole figure. Pass
+every table that holds the household's money: paystubs, transactions, budget_rules, comp_events, loans,
+loan_facts, properties, property_taxes, property_values, improvements, return_facts. The words file (names, streets, cities, employers, account
 digits: one per line) goes in as it is. From the ledger's categories table, each
 category in a group of PERSONAL_GROUPS goes in too: those categories are named
 for people ("alex", a relative's support), so an example that borrows one is
@@ -22,7 +25,13 @@ import re
 import sys
 
 MIN_AMOUNT = 100.0  # smaller amounts collide with made-up test values too often to be worth it
-MONEY = re.compile(r"^\(?-?\$?-?[\d,]*\d\.\d\d\)?$")
+MONEY = re.compile(
+    r"^\(?-?\$?\s*-?[\d,]*\d\.\d\d\)?$"
+)  # a Sheets cell may read " $ 1,234.00 "; leak-guard: allow (made up)
+WHOLE = re.compile(r"^-?\$?\s*-?\d{1,3}(?:,\d{3})+(?:\.00)?$|^-?\$?\s*-?\d+(?:\.00)?$")
+MIN_WHOLE = 10_000
+MAX_WHOLE = 99_999_999  # longer digit strings are ids, not money
+ROUND_WHOLE = 10_000
 PERSONAL_GROUPS = ("personal", "family_support")  # categories named for a person
 SHARED = ("joint",)  # a personal-group category that names no one
 
@@ -45,6 +54,21 @@ def amounts(paths):
                 value = abs(float(re.sub(r"[^\d.]", "", text)))
                 if value >= MIN_AMOUNT and not text.endswith(".00"):
                     out.add(f"{value:.2f}")
+    return out
+
+
+def wholes(paths):
+    """Whole-dollar figures: five digits or more, under MAX_WHOLE, not a multiple of ROUND_WHOLE."""
+    out = set()
+    for path in paths:
+        for row in rows(path):
+            for cell in row:
+                text = str(cell).strip()
+                if not WHOLE.match(text):
+                    continue
+                value = int(float(re.sub(r"[^\d.]", "", text)))
+                if MIN_WHOLE <= value <= MAX_WHOLE and value % ROUND_WHOLE:
+                    out.add(str(value))
     return out
 
 
@@ -78,6 +102,7 @@ def main(argv):
     if args.categories:
         lines += sorted(personal_categories(args.categories))
     lines += sorted(amounts(args.csvs), key=float)
+    lines += sorted(wholes(args.csvs), key=int)
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 

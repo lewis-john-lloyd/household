@@ -25,9 +25,13 @@ PDF, a log or the conversation.
    first push:
    - download `push-denylist-words.txt` from the household Drive folder (names, places, employers,
      account digits);
-   - read the ledger's `paystubs`, `transactions` and `categories` tabs through the Sheets connector into
-     JSON files (the shape the connector returns, `{"values": [...]}`), outside the repo;
-   - `python tools/denylist.py --words push-denylist-words.txt --categories categories.json paystubs.json transactions.json > ~/.config/household/denylist.txt`.
+   - read the ledger's tabs that hold the household's money through the Sheets connector into JSON files
+     (the shape the connector returns, `{"values": [...]}`), outside the repo: `paystubs`, `transactions`,
+     `budget_rules`, `comp_events`, `loans`, `loan_facts`, `properties`, `property_taxes`,
+     `property_values`, `improvements`, `return_facts`, and `categories`;
+   - `python tools/denylist.py --words push-denylist-words.txt --categories categories.json paystubs.json transactions.json budget_rules.json ... > ~/.config/household/denylist.txt`.
+   The denylist can't hold amounts under 100 (made-up values collide with them), so never copy a figure
+   from the ledger, a report or the conversation into the repo, even a small one.
 3. When the push guard reports a household value, change the value to a made-up one and amend the commit.
    A real value is never marked `leak-guard: allow`. When it finds a word that belongs on the list and
    isn't there, add it to the Drive words file.

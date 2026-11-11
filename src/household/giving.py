@@ -13,23 +13,17 @@ recipients under it show where it went.
 import pandas as pd
 
 from . import categorize, recurring
+from . import decisions as decisions_
 
 GROUP = "giving"
 KIND = "deductible"
-PREFIX = KIND + ":"
+PREFIX = KIND + ":"  # proposal_decisions keys: deductible:<merchant key>
 COLUMNS = ["month", "key", "name", "category", "given", "gifts", "deductible"]
 
 
 def deductible(decisions):
     """{key: "yes" or "no"} from proposal_decisions: the latest "deductible" answer per key (approve is yes)."""
-    if decisions is None or decisions.empty:
-        return {}
-    d = decisions[(decisions["kind"] == KIND) & decisions["proposal_key"].astype(str).str.startswith(PREFIX)]
-    d = d.sort_values("decided_at", kind="stable")
-    out = {}
-    for k, v in zip(d["proposal_key"], d["decision"]):
-        out[str(k)[len(PREFIX) :]] = "yes" if v == "approve" else "no"
-    return out
+    return {k: "yes" if approved else "no" for k, (approved, _) in decisions_.latest(decisions, KIND).items()}
 
 
 def _key(row):

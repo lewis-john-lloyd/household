@@ -27,6 +27,16 @@ def test_denylist_words_match_whole_words_and_amounts_any_form(tmp_path):
     assert push_guard.denied("1234.57 and acmewidgets", *deny) == []
 
 
+def test_whole_dollar_figures_match_with_or_without_commas(tmp_path):
+    path = tmp_path / "deny.txt"
+    path.write_text("4321\n123456\n")
+    deny = push_guard.load_denylist(path)
+    for text in ("salary 123456", "price $123,456", "loan 123,456.00", "-123456"):  # leak-guard: allow (made up)
+        assert push_guard.denied(text, *deny) == ["123456"], text
+    for text in ("id 1234567", "rate 123456.5", "v123456", "0.123456", "123,4567"):
+        assert push_guard.denied(text, *deny) == [], text
+
+
 def test_added_lines_and_outgoing_ranges():
     diff = "+++ b/src/x.py\n@@ -1 +1 @@\n-old\n+new line\n+++ /dev/null\n+gone\n"
     assert push_guard.added_lines(diff) == [("src/x.py", "new line"), ("", "gone")]
@@ -45,6 +55,16 @@ def test_denylist_builder_keeps_amounts_with_cents(tmp_path):
     (tmp_path / "t.csv").write_text("amount,note\n1234.56,x\n-250.10,y\n500.00,round\n12.34,small\n")
     (tmp_path / "t.json").write_text('{"values": [["amount"], ["4,321.09"]]}')
     assert denylist.amounts([str(tmp_path / "t.csv"), str(tmp_path / "t.json")]) == {"1234.56", "250.10", "4321.09"}
+
+
+def test_denylist_builder_keeps_whole_figures_that_are_not_round(tmp_path):
+    made_up = (
+        'v\n123456\n" $ 12,345.00 "\n50000\n9999\n123456789\n2025\n" $ 1,234.56 "\n'  # leak-guard: allow (made up)
+    )
+    (tmp_path / "t.csv").write_text(made_up)
+    paths = [str(tmp_path / "t.csv")]
+    assert denylist.wholes(paths) == {"123456", "12345"}
+    assert denylist.amounts(paths) == {"1234.56"}
 
 
 def git(cwd, *args):

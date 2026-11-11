@@ -132,3 +132,64 @@ like a household value to the push guard.
 
 **Cost.** A change meant to change an output re-pins the digests (`HOUSEHOLD_GOLDEN=update`) and says in its
 commit what changed; a failure names the table, not the row.
+
+## 11. A budget is groups of line items, and a line item is a category
+
+**Decided.** The Budget page has three levels. A group (`categories.group`) is a high-level description:
+home, media, giving. A line item is one category, the level spending is categorized at. A budget line
+(`budget_rules`) says how a line item's budget is set; most line items have one, and one with several (a
+camp per child) shows each as its own row. A line item's kind comes from its budget lines' rules: Recurring
+(`recurring`, `billed`, `loan`), Annual (`sinking_fund`, judged on the year so far), Floating (`trailing`,
+`lookback`, `seasonal`) or Fixed; a line item with no budget line in force is Unplanned and folds into one
+row at its group's foot. Recurring charges, a giving line's recipients and a category's budget lines are a
+line item's breakdown, never line items of their own.
+
+**Why.** A subscription is a line item of the media group, not the other way round, and spending is only
+ever categorized one level deep, so the budget can't be finer than a category without guessing. Keeping the
+kind derived from the rule means there is nothing new to keep in step.
+
+**Cost.** Anything that wants its own line item needs its own category (each streaming service, each part
+of the mortgage), so categories multiply; a group is a label, with no budget of its own beyond the sum.
+
+## 12. A loan payment is split as it is categorized, by the schedule
+
+**Decided.** A loan's monthly payment is one bank line. With a `loan_split:<loan id>` setting, categorizing
+the books splits it: interest and principal from the amortization schedule that month, and what is left,
+the escrow, shared across the escrow parts by their amounts (`mortgage.split_payments`). The ledger keeps the
+payment as it came; the split is derived every compute. A `loan` budget rule budgets a part from the same
+schedule.
+
+**Why.** The schedule already knows each month's interest and principal, and the escrow moves at each
+review: deriving the split means a recast, an extra payment or an escrow change is right everywhere at the
+next compute, with nothing to re-enter. A split kept in the ledger would go stale.
+
+**Cost.** A month with two running loans that both have the setting, or a payment that doesn't cover the
+schedule's principal and interest, is left whole. The escrow parts' amounts are estimates, so their shares
+are only as good as the setting.
+
+## 13. Answers about merchants are proposal_decisions, read one way
+
+**Decided.** An answer a person gives about a merchant key or a stub (its category, whether its charges
+recur, its name, the budget line it pays, whether gifts to it are deductible, why a stub's withholding is
+off) is a `proposal_decisions` row of its own kind, keyed `<kind>:<key>`. The latest row per key is in force.
+Every reader goes through `decisions.latest`; the module that uses a kind says what it means.
+
+**Why.** One table and one rule (latest wins, the ledger keeps both) make a new kind of answer a few lines in
+the change set reader and one reader call, with no schema change, and the history of every answer is kept.
+
+**Cost.** The table is untyped: a kind's note means different things for different kinds, and nothing but
+the reader enforces it. A kind with more than one value to keep would need its own table.
+
+## 14. The views and ingest share the edit contract by test
+
+**Decided.** A change set's edit kinds, their fields, the fields `was` carries and which edits replace each
+other are written twice: in `web/src/edits.ts` for the views and in `parsers/changes.py` for ingest.
+`tests/test_edit_contract.py` runs the built `edits.js` under Node beside the Python and fails when they
+differ.
+
+**Why.** Apps Script can't import Python and the engine can't run the page's code, so one of them would have
+to be generated from the other; a test is simpler, and a drift is caught when it is made rather than when
+someone saves.
+
+**Cost.** A new kind is written in both places. The test needs Node and the built web app, so it runs in
+CI's end-to-end job, not the Python job.

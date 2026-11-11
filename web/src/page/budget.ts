@@ -284,77 +284,110 @@ function compareName(v: BudgetView) {
 
 // The period at a glance: what is budgeted, what is spent, and a gauge of how full the budget is against
 // how far through the period it is, then the same for each group.
+// The period at the top, as the A2 design has it: what went out and what came in, the kinds a line item can
+// be, and four cards: take-home pay, the plan, what went out, and what the period drew from (or left in) cash.
 function budgetSummary(v: BudgetView) {
-  var box = el("div", null, "bv-summary bv-period");
-  var figures = el("div", null, "bv-figures");
-  var stat = function (big: string, small: string, cls?: string) {
-    var s = el("div", null, cls);
-    s.appendChild(el("b", big));
-    s.appendChild(el("span", small));
-    figures.appendChild(s);
-  };
+  var box = el("section", null, "a2-head");
+  var top = el("div", null, "a2-top");
+  var titles = el("div", null, "a2-titles");
+  titles.appendChild(el("span", "After the paycheck, " + periodName(v.period) + (v.sameWeeks ? " so far" : ""), "a2-eyebrow"));
   var came = v.pay + v.otherIncome;
-  if (came > 0)
-    stat(
-      money.format(came),
-      "came in: take-home pay" + (v.otherIncome >= 0.5 ? " and " + money.format(v.otherIncome) + " other income" : ""),
-      "lead",
-    );
-  stat(money.format(v.target), "budgeted for " + periodName(v.period), "lead");
-  stat(
-    money.format(v.actual),
-    "spent" + (v.target ? ", " + Math.round((100 * v.actual) / v.target) + "% of the budget" : ""),
-    "lead",
+  titles.appendChild(
+    el("h2", money.format(v.actual) + " went out" + (came > 0 ? ", " + money.format(came) + " came in" : ""), "a2-headline"),
   );
-  stat(
-    money.format(Math.max(v.target - v.actual, 0)),
-    v.actual > v.target + 0.5 ? "left: over by " + money.format(v.actual - v.target) : "left",
+  top.appendChild(titles);
+  var legend = el("div", null, "a2-legend");
+  ["Recurring", "Floating", "Annual", "Fixed"].forEach(function (k) {
+    legend.appendChild(el("span", k, "kind kind-" + k.toLowerCase()));
+  });
+  top.appendChild(legend);
+  box.appendChild(top);
+  var cards = el("div", null, "a2-cards");
+  var card = function (label: string, big: string, small: string, cls?: string) {
+    var c = el("div", null, "a2-card" + (cls ? " " + cls : ""));
+    c.appendChild(el("span", label, "a2-label"));
+    c.appendChild(el("span", big, "a2-big"));
+    c.appendChild(el("span", small, "a2-small"));
+    cards.appendChild(c);
+  };
+  card(
+    "Take-home pay",
+    money.format(v.pay),
+    came > 0
+      ? "Both paychecks, after tax and payroll deductions; " + money.format(v.otherIncome) + " other income"
+      : "No pay in this period's flows yet",
   );
+  card("Planned", money.format(v.target), "Every line item's budget, savings included");
+  var over = v.actual - v.target;
   var d = v.actual - v.compared;
-  stat(
-    Math.abs(d) < 0.5 ? money.format(0) : signedMoney(d),
-    (Math.abs(d) < 0.5 ? "the same as " : d > 0 ? "more than " : "less than ") +
-      compareName(v) +
-      " (" +
-      money.format(v.compared) +
-      ")",
+  card(
+    "Went out",
+    money.format(v.actual),
+    (Math.abs(over) < 0.5 ? "As planned" : money.format(Math.abs(over)) + (over > 0 ? " more than planned" : " under plan")) +
+      "; " +
+      (Math.abs(d) < 0.5 ? "the same as " : signedMoney(d) + " against ") +
+      compareName(v),
   );
   if (came > 0)
-    stat(
-      v.actual > came + 0.5 ? money.format(v.actual - came) : money.format(came - v.actual),
-      v.actual > came + 0.5 ? "drawn from cash balances: more went out than came in" : "not spent: what came in and stayed",
-      v.actual > came + 0.5 ? "warn" : "",
+    card(
+      v.actual > came + 0.5 ? "From cash balances" : "Kept",
+      money.format(Math.abs(v.actual - came)),
+      v.actual > came + 0.5 ? "What the period drew down beyond its income" : "What came in and stayed",
+      v.actual > came + 0.5 ? "warn" : "ok",
     );
-  if (v.recurring && v.actual > 0)
-    stat(money.format(v.recurring), "of it recurring (" + Math.round((100 * v.recurring) / v.actual) + "%)");
-  box.appendChild(figures);
-  var days = periodDays(v.period),
-    now = today();
-  var span = (Date.parse(days[1]) - Date.parse(days[0])) / (24 * 3600 * 1000) + 1;
-  var gone = v.partial ? Math.min(span, Math.max(0, (Date.parse(now) - Date.parse(days[0])) / (24 * 3600 * 1000) + 1)) / span : 1;
-  box.appendChild(fullness("All lines", v.actual, v.target, gone, true));
-  var groups = el("div", null, "bv-groups");
-  v.groups
-    .filter(function (g) {
-      return g.target > 0 || g.actual > 0;
-    })
-    .forEach(function (g) {
-      groups.appendChild(fullness(g.name, g.actual, g.target, gone, false));
-    });
-  box.appendChild(groups);
-  if (v.partial)
-    box.appendChild(
-      el(
-        "p",
-        "The mark is how far through " +
-          periodName(v.period) +
-          " today is (" +
-          Math.round(gone * 100) +
-          "%): spending to its left is on pace.",
-        "support small-print",
-      ),
-    );
+  else card("Recurring", money.format(v.recurring), "What the recurring charges took");
+  box.appendChild(cards);
   return box;
+}
+
+// A name to show for a ledger id: "food_and_dining" as "Food and dining", "subscription: netflix" as "Netflix".
+function pretty(id: string) {
+  var s = String(id || "");
+  if (s.indexOf(": ") >= 0) s = s.slice(s.lastIndexOf(": ") + 2);
+  s = s.replace(/_/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+var PER_WORDS: Record<string, string> = {
+  monthly: "a month",
+  weekly: "a week",
+  biweekly: "every two weeks",
+  semi_monthly: "twice a month",
+  quarterly: "a quarter",
+  semi_annually: "every six months",
+  annually: "a year",
+  "": "a month",
+};
+
+function plainAmount(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+}
+
+// How a budget line is set, in a few words (the A2 design's column); the full rule is its tooltip.
+function shortHow(bl: Row) {
+  var n = Number(String(bl.amount || "").replace(/[^\d.-]/g, "")) || 0;
+  var per = PER_WORDS[String(bl.per || "")] || String(bl.per || "");
+  switch (bl.rule) {
+    case "fixed":
+      return n ? plainAmount(n) + " " + per : "A fixed amount";
+    case "sinking_fund":
+      return n ? plainAmount(Math.round(n * 12 * (PER_MONTH[String(bl.per || "")] || 1))) + " a year, set aside" : "Set aside";
+    case "billed":
+      return n ? plainAmount(n) + " " + per + ", when the bill comes" : "When the bill comes";
+    case "recurring":
+      return "Its recurring charges" + (n ? ", plus " + plainAmount(n) + " " + per : "");
+    case "trailing":
+      return "From the last 4 months";
+    case "lookback":
+      return "From the last 12 months";
+    case "seasonal":
+      return "From the same months last year";
+    case "loan":
+      return "From the amortization schedule";
+    case "scheduled":
+      return "Scheduled amounts";
+  }
+  return String(bl.in_words || "");
 }
 
 // One gauge: spent against budgeted, with a mark at the share of the period gone.
@@ -660,7 +693,7 @@ function budgetTable(v: BudgetView) {
     var gOpen = alone || !(budget.shut && budget.shut[gKey]);
     if (!alone) {
       var gr = el("tr", null, "group fold");
-      foldName(cell(gr, ""), g.name, gOpen);
+      foldName(cell(gr, ""), pretty(g.name), gOpen);
       cell(gr, g.lines.length + " line item" + (g.lines.length > 1 ? "s" : ""), "text rule");
       cell(gr, "", "text");
       cell(gr, g.target ? money.format(g.target) : "");
@@ -679,9 +712,16 @@ function budgetTable(v: BudgetView) {
       var lines = inForce(l.category);
       var several = lines.length > 1; // each line its own row below, to open and change by itself
       var lKey = "line:" + l.category;
+      var nest = alone ? "" : " nested"; // a row inside a group: drawn on the group's guide line
       var broken = several || l.recurring.length > 0 || l.recipients.length > 0;
       var lOpen = broken && !!(budget.opened && budget.opened[lKey]);
-      var row = el("tr", null, cls + (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""));
+      var row = el(
+        "tr",
+        null,
+        cls +
+          (alone ? "" : " nested") +
+          (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""),
+      );
       row.tabIndex = 0;
       var name = cell(row, "");
       if (broken) {
@@ -702,8 +742,10 @@ function budgetTable(v: BudgetView) {
         if (lOpen) chev.classList.add("open");
         name.appendChild(chev);
       } else name.appendChild(el("span", null, "chev-space"));
-      name.appendChild(document.createTextNode(l.category));
-      if (alone && g.name && g.name !== l.category) name.appendChild(el("span", g.name, "tag"));
+      var shown = lines.length === 1 ? pretty(lines[0].line) : pretty(l.category);
+      name.appendChild(document.createTextNode(shown));
+      if (shown.toLowerCase() !== pretty(l.category).toLowerCase()) name.title = l.category;
+      if (alone && g.name && g.name !== l.category) name.appendChild(el("span", pretty(g.name), "tag"));
       if (
         lines.some(function (x) {
           return changedText("budget_line|" + x.line);
@@ -712,10 +754,14 @@ function budgetTable(v: BudgetView) {
         name.appendChild(el("span", "changed", "tag warn"));
       var parts: string[] = [];
       if (several) parts.push(lines.length + " budget lines");
-      else parts.push(lines.length ? lines[0].in_words : l.target ? "scheduled" : "no budget line");
-      if (l.recurring.length) parts.push(countOf(l.recurring.length, "recurring charge", "recurring charges"));
+      else if (lines.length === 1 && lines[0].rule === "recurring" && l.recurring.length)
+        parts.push(countOf(l.recurring.length, "recurring charge", "recurring charges")); // the rule is its charges
+      else parts.push(lines.length ? shortHow(lines[0]) : l.target ? "Scheduled" : "No budget line");
+      if (l.recurring.length && !(lines.length === 1 && lines[0].rule === "recurring"))
+        parts.push(countOf(l.recurring.length, "recurring charge", "recurring charges"));
       if (l.recipients.length) parts.push(countOf(l.recipients.length, "recipient", "recipients"));
-      cell(row, parts.join("; "), "text rule");
+      var how = cell(row, parts.join("; "), "text rule");
+      if (lines.length === 1) how.title = String(lines[0].in_words || "");
       var kind = kindOf(lines);
       var kc = cell(row, "", "text");
       kc.appendChild(el("span", kind || "Unplanned", "kind kind-" + (kind || "Unplanned").toLowerCase()));
@@ -745,12 +791,15 @@ function budgetTable(v: BudgetView) {
           var sub = el(
             "tr",
             null,
-            "rec subline" + (budget.open && budget.open.category === l.category && budget.open.line === bl.line ? " chosen" : ""),
+            "rec subline" +
+              nest +
+              (budget.open && budget.open.category === l.category && budget.open.line === bl.line ? " chosen" : ""),
           );
           sub.tabIndex = 0;
-          var subName = cell(sub, bl.line);
+          var subName = cell(sub, pretty(bl.line));
+          subName.title = bl.line;
           if (changedText("budget_line|" + bl.line)) subName.appendChild(el("span", "changed", "tag warn"));
-          cell(sub, bl.in_words, "text rule");
+          cell(sub, shortHow(bl), "text rule").title = String(bl.in_words || "");
           var skc = cell(sub, "", "text");
           var sk = KIND_OF_RULE[bl.rule] || "Fixed";
           skc.appendChild(el("span", sk, "kind kind-" + sk.toLowerCase()));
@@ -769,7 +818,7 @@ function budgetTable(v: BudgetView) {
         });
       l.recurring.forEach(function (r) {
         var t = tracked[r.key] || {};
-        var rec = el("tr", null, "rec");
+        var rec = el("tr", null, "rec" + nest);
         cell(rec, chargeName({ key: r.key, name: t.name }));
         var about = [
           t.cadence,
@@ -786,12 +835,14 @@ function budgetTable(v: BudgetView) {
         body.appendChild(rec);
       });
       l.recipients.forEach(function (r) {
-        body.appendChild(recipientRow(r));
+        var rr = recipientRow(r);
+        if (nest) rr.classList.add("nested");
+        body.appendChild(rr);
       });
       if (l.recipients.length && v.deductible && !deductibleShown) {
         // the year's gifts that count toward the deduction, beside the recipients that make it up
         deductibleShown = true;
-        var dr = el("tr", null, "rec deductible");
+        var dr = el("tr", null, "rec deductible" + nest);
         cell(dr, "Deductible in " + v.deductible.year);
         cell(
           dr,
@@ -839,8 +890,8 @@ function budgetTable(v: BudgetView) {
         actual = sum(function (x) {
           return x.actual;
         });
-      var lr = el("tr", null, "line fold loan");
-      foldName(cell(lr, ""), id.replace(/_/g, " ") + " payment", lOpen);
+      var lr = el("tr", null, "line fold loan nested");
+      foldName(cell(lr, ""), pretty(id), lOpen);
       cell(lr, parts.length + " parts: principal and interest from the amortization schedule, and the escrow", "text rule");
       var lk = cell(lr, "", "text");
       lk.appendChild(el("span", "Recurring", "kind kind-recurring"));
@@ -865,7 +916,7 @@ function budgetTable(v: BudgetView) {
         return t + l.actual;
       }, 0);
       var uKey = "unplanned:" + g.name;
-      var u = el("tr", null, "line unplanned fold");
+      var u = el("tr", null, "line unplanned fold nested");
       foldName(cell(u, ""), "Unplanned", shown);
       cell(
         u,

@@ -15,6 +15,7 @@ function toCents(n: number): number {
 
 interface BudgetBook {
   targets: { month: string; category: string; priority: string; target: number }[];
+  lineTargets?: { month: string; line: string; category: string; target: number }[]; // each budget line's (budget_targets)
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
@@ -35,6 +36,7 @@ interface ViewLine {
   actual: number;
   compared: number;
   recurring: RecurringInLine[];
+  byLine: { line: string; target: number }[]; // each budget line's part of the target, when there are two or more
 }
 
 interface ViewGroup {
@@ -170,7 +172,16 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
   const line = (category: string): ViewLine => {
     let l = lines.get(category);
     if (!l) {
-      l = { category, group: book.groups[category] || "", priority: "", target: 0, actual: 0, compared: 0, recurring: [] };
+      l = {
+        category,
+        group: book.groups[category] || "",
+        priority: "",
+        target: 0,
+        actual: 0,
+        compared: 0,
+        recurring: [],
+        byLine: [],
+      };
       lines.set(category, l);
     }
     return l;
@@ -181,6 +192,14 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     const l = line(t.category);
     l.target += t.target;
     if ((BUDGET_RANK[t.priority] ?? 3) < (BUDGET_RANK[l.priority] ?? 3)) l.priority = t.priority;
+  }
+  const parts = new Map<string, Map<string, number>>(); // category -> line -> its targets in the period
+  for (const t of book.lineTargets || []) {
+    const [mFrom, mEnd] = periodDays(t.month);
+    if (mEnd < from || mFrom > end) continue;
+    if (!parts.has(t.category)) parts.set(t.category, new Map());
+    const byLine = parts.get(t.category)!;
+    byLine.set(t.line, (byLine.get(t.line) || 0) + t.target);
   }
   for (const [date, category, spend] of book.days) {
     if (date >= from && date <= through) line(category).actual += spend;
@@ -205,6 +224,11 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
   }
   const groups = new Map<string, ViewGroup>();
   for (const l of lines.values()) {
+    const byLine = parts.get(l.category);
+    if (byLine && byLine.size > 1)
+      l.byLine = Array.from(byLine, ([line, target]) => ({ line, target: toCents(target) })).sort(
+        (a, b) => b.target - a.target || a.line.localeCompare(b.line),
+      );
     l.target = toCents(l.target);
     l.actual = toCents(l.actual);
     l.compared = toCents(l.compared);

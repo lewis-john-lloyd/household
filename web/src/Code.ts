@@ -145,9 +145,22 @@ function getTransactions(period: string, categories: string[], through?: string)
  * spending, the recurring charges' months, and the recurring charges you track.
  */
 function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] } {
-  const tabs = readTabsIfAny_(["budget_vs_actual", "daily_actuals", "subscription_months", "editor_categories", "subscriptions"]);
+  const tabs = readTabsIfAny_([
+    "budget_vs_actual",
+    "daily_actuals",
+    "subscription_months",
+    "editor_categories",
+    "subscriptions",
+    "budget_targets",
+  ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
-  const book = budgetBook(tabs.budget_vs_actual, tabs.daily_actuals, tabs.subscription_months, tabs.editor_categories);
+  const book = budgetBook(
+    tabs.budget_vs_actual,
+    tabs.daily_actuals,
+    tabs.subscription_months,
+    tabs.editor_categories,
+    tabs.budget_targets,
+  );
   console.log(`budget book: ${book.targets.length} targets, ${book.days.length} days, ${book.recurring.length} recurring months`);
   return { book, tracked: subscriptionsPage(tabs.subscriptions).subscriptions };
 }

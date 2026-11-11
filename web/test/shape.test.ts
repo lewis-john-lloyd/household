@@ -21,7 +21,13 @@ const shape = new Function(
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
   reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
-  budgetBook: (budget: unknown[][], daily: unknown[][], recurring: unknown[][], categories: unknown[][]) => BudgetBook;
+  budgetBook: (
+    budget: unknown[][],
+    daily: unknown[][],
+    recurring: unknown[][],
+    categories: unknown[][],
+    lines?: unknown[][],
+  ) => BudgetBook;
   budgetView: (book: BudgetBook, period: string, compare: string, sameWeeks: boolean, today: string) => BudgetView;
   periodOf: (date: string, lens: string) => string;
   periodDays: (period: string) => [string, string];
@@ -620,4 +626,32 @@ test("the run as a whole comes first with each line's level, and a failed stage 
   // Reports from before levels: every line INFO
   const old = shape.parseStatus(log.slice(0, 1).concat([log[2]]), [notes[0].slice(0, 5), notes[3].slice(0, 5)]);
   assert.deepEqual(old.stages[0].levels, ["INFO"]);
+});
+
+test("budget view: a category's budget lines each keep their part of its target, when it has two or more", () => {
+  const lineTargets = [
+    ["month", "line", "category", "target"],
+    ["2026-10", "camp alex", "kids", 30],
+    ["2026-11", "camp alex", "kids", 30],
+    ["2026-11", "camp sam", "kids", 20],
+    ["2026-11", "food", "food", 60],
+  ];
+  const budget = BOOK_VALUES.budget.concat([
+    ["2026-10", "kids", "family", "high", 30, 0],
+    ["2026-11", "kids", "family", "high", 50, 0],
+  ]);
+  const b = shape.budgetBook(budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, BOOK_VALUES.categories, lineTargets);
+  const lines = (period: string) => {
+    const out: Record<string, { line: string; target: number }[]> = {};
+    for (const g of shape.budgetView(b, period, "2025-11", false, "2026-11-07").groups)
+      for (const l of g.lines) out[l.category] = l.byLine;
+    return out;
+  };
+  const month = lines("2026-11");
+  assert.deepEqual(month.kids, [
+    { line: "camp alex", target: 30 },
+    { line: "camp sam", target: 20 },
+  ]);
+  assert.deepEqual(month.food, []); // one line: the category's row is the line
+  assert.deepEqual(lines("2026-Q4").kids[0], { line: "camp alex", target: 60 }); // summed over the period
 });

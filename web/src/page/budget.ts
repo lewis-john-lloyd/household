@@ -115,6 +115,16 @@ function setLens(lens: string) {
 }
 
 // The budget lines in force (or ended) that pay for a category, from the editor's budget lines.
+// A key handler that runs act on Enter or Space, as a click would.
+function onEnter(act: () => void) {
+  return function (e: KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      act();
+    }
+  };
+}
+
 function linesFor(category: string) {
   return editor!.budgetLines.filter(function (l) {
     return (l.category || l.spends_from) === category;
@@ -147,7 +157,7 @@ function drawLinesTab(body: HTMLElement) {
   body.appendChild(
     el("div", "Choose a line for its months, its transactions and its budget line. Transfers and income are left out.", "note"),
   );
-  if (budget.open && budget.open.category) openLine(budget.open.category, v);
+  if (budget.open && budget.open.category) openLine(budget.open.category, v, budget.open.line);
   else if (budget.open && budget.open.line === "") openNewLine();
 }
 
@@ -454,7 +464,11 @@ function budgetTable(v: BudgetView) {
       var lines = linesFor(l.category).filter(function (x) {
         return x.in_force !== "ended";
       });
-      var row = el("tr", null, "line" + (budget.open && budget.open.category === l.category ? " chosen" : ""));
+      var row = el(
+        "tr",
+        null,
+        "line" + (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""),
+      );
       row.tabIndex = 0;
       var name = cell(row, l.category);
       if (
@@ -463,19 +477,16 @@ function budgetTable(v: BudgetView) {
         })
       )
         name.appendChild(el("span", "recurring", "tag"));
-      if (changedText("budget_line|" + (lines[0] ? lines[0].line : "\u0000")))
+      var several = lines.length > 1; // each line its own row below, to open and change by itself
+      if (
+        lines.some(function (x) {
+          return changedText("budget_line|" + x.line);
+        })
+      )
         name.appendChild(el("span", "changed", "tag warn"));
       cell(
         row,
-        lines.length
-          ? lines
-              .map(function (x) {
-                return x.in_words;
-              })
-              .join("; ")
-          : l.target
-            ? "scheduled"
-            : "no budget line",
+        several ? lines.length + " budget lines" : lines.length ? lines[0].in_words : l.target ? "scheduled" : "no budget line",
         "text rule",
       );
       cell(row, l.target ? money.format(l.target) : "");
@@ -491,13 +502,37 @@ function budgetTable(v: BudgetView) {
         openLine(l.category, v);
       };
       row.onclick = open;
-      row.onkeydown = function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          open();
-        }
-      };
+      row.onkeydown = onEnter(open);
       body.appendChild(row);
+      if (several)
+        lines.forEach(function (bl) {
+          var part = (l.byLine || []).filter(function (x) {
+            return x.line === bl.line;
+          })[0];
+          var sub = el(
+            "tr",
+            null,
+            "rec subline" + (budget.open && budget.open.category === l.category && budget.open.line === bl.line ? " chosen" : ""),
+          );
+          sub.tabIndex = 0;
+          var subName = cell(sub, bl.line);
+          if (bl.rule === "recurring") subName.appendChild(el("span", "recurring", "tag"));
+          if (changedText("budget_line|" + bl.line)) subName.appendChild(el("span", "changed", "tag warn"));
+          cell(sub, bl.in_words, "text rule");
+          cell(sub, part ? money.format(part.target) : "");
+          cell(sub, "");
+          cell(sub, "");
+          cell(sub, "");
+          cell(sub, "");
+          var openOne = function (e?: Event) {
+            if (e) e.stopPropagation();
+            budget.open = { category: l.category, line: bl.line };
+            openLine(l.category, v, bl.line);
+          };
+          sub.onclick = openOne;
+          sub.onkeydown = onEnter(openOne);
+          body.appendChild(sub);
+        });
       l.recurring.forEach(function (r) {
         var t = tracked[r.key] || {};
         var rec = el("tr", null, "rec");

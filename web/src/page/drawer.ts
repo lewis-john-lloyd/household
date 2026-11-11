@@ -48,7 +48,9 @@ function drawer(title: string, sub?: string) {
   return d;
 }
 
-function openLine(category: string, v: BudgetView) {
+// A category's drawer: its spending and history, and its budget lines to change. With only, one budget line
+// of a category that has several: its own section, under its name (spending is the category's, shared).
+function openLine(category: string, v: BudgetView, only?: string) {
   var l: ViewLine | null = null;
   v.groups.forEach(function (g) {
     g.lines.forEach(function (x) {
@@ -64,10 +66,17 @@ function openLine(category: string, v: BudgetView) {
     actual: 0,
     compared: 0,
     recurring: [],
+    byLine: [],
   };
+  var part = only
+    ? line.byLine.filter(function (x) {
+        return x.line === only;
+      })[0]
+    : null;
   var d = drawer(
-    category,
-    (line.group ? line.group + ". " : "") +
+    only ? only : category,
+    (only ? category + (part ? ", its target " + money.format(part.target) + " of the category's" : "") + ". " : "") +
+      (line.group ? line.group + ". " : "") +
       periodName(v.period) +
       (v.sameWeeks ? " so far" : "") +
       ": " +
@@ -101,7 +110,9 @@ function openLine(category: string, v: BudgetView) {
   );
   txns.appendChild(show);
   d.appendChild(txns);
-  var lines = linesFor(category);
+  var lines = linesFor(category).filter(function (bl) {
+    return !only || bl.line === only;
+  });
   var redraw = function () {
     drawBudgetPage();
   };
@@ -113,7 +124,7 @@ function openLine(category: string, v: BudgetView) {
   lines.forEach(function (bl) {
     section(
       d,
-      lines.length > 1 ? "Budget line: " + bl.line : "Budget line",
+      lines.length > 1 || only ? "Budget line: " + bl.line : "Budget line",
       bl.in_force === "ended"
         ? "Ended " + bl.effective + "."
         : "Since " + bl.effective + ": " + bl.in_words + "." + (bl.scheduled ? " Scheduled: " + bl.scheduled + "." : ""),

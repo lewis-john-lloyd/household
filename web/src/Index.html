@@ -413,9 +413,10 @@
       table.bv th, table.bv td { padding-left: 12px; }
       table.bv th.text { text-align: left; }
       table.bv tr.group td { background: var(--surface-container); font-weight: 500; }
-      table.bv tr.line { cursor: pointer; }
-      table.bv tr.line:hover td, table.bv tr.line.chosen td { background: var(--surface-container); }
-      table.bv tr.line:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+      table.bv tr.line, table.bv tr.subline { cursor: pointer; }
+      table.bv tr.line:hover td, table.bv tr.line.chosen td,
+      table.bv tr.subline:hover td, table.bv tr.subline.chosen td { background: var(--surface-container); }
+      table.bv tr.line:focus-visible, table.bv tr.subline:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
       table.bv td.rule { color: var(--on-surface-variant); font-size: 13px; white-space: normal; max-width: 280px; }
       table.bv td.over { color: var(--error); font-weight: 500; }
       table.bv tr.rec td { font-size: 13px; color: var(--on-surface-variant); padding-top: 2px; padding-bottom: 6px; }

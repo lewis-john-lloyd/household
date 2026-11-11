@@ -268,8 +268,9 @@ function budgetBook(
   dailyValues: unknown[][],
   recurringValues: unknown[][],
   categoryValues: unknown[][],
+  lineValues: unknown[][] = [],
 ): BudgetBook {
-  const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [] };
+  const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [], lineTargets: [] };
   for (const r of parseBudget(budgetValues)) {
     if (r.group) book.groups[r.category] = r.group;
     if (r.target) book.targets.push({ month: r.month, category: r.category, priority: r.priority, target: r.target });
@@ -305,6 +306,19 @@ function budgetBook(
         expected: want === "" ? null : Number(want),
         actual: Number(v[actual]) || 0,
       });
+    }
+  }
+  if (lineValues.length) {
+    const [month, line, category, target] = columnsAt(lineValues, ["month", "line", "category", "target"], "budget_targets");
+    for (const v of lineValues.slice(1)) {
+      const n = Number(v[target]) || 0;
+      if (n)
+        book.lineTargets!.push({
+          month: String(v[month] ?? ""),
+          line: String(v[line] ?? ""),
+          category: String(v[category] ?? ""),
+          target: n,
+        });
     }
   }
   return book;

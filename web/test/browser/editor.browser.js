@@ -723,6 +723,63 @@ test("the budget compares any period with another, and a line's target can come 
   await page.close();
 });
 
+test("a category with two budget lines shows each as its own row, to open and change by itself", async () => {
+  const bl = (line, amount) => ({
+    line,
+    effective: "2001-01-01",
+    category: "kids",
+    account: "",
+    priority: "high",
+    rule: "fixed",
+    amount: String(amount),
+    per: "annually",
+    note: "",
+    in_force: "yes",
+    in_words: amount + ".00 a year",
+    this_month: "",
+    last_12_months: "0",
+    scheduled: "",
+    spends_from: "kids",
+  });
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7);" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family' }, recurring: [], days: []," +
+      "    targets: [{ month: m, category: 'kids', priority: 'high', target: 50 }]," +
+      "    lineTargets: [{ month: m, line: 'camp alex', category: 'kids', target: 30 }, { month: m, line: 'camp sam', category: 'kids', target: 20 }] } };" +
+      "  window.__answers.getEditor.budgetLines = " +
+      JSON.stringify([bl("camp alex", 360), bl("camp sam", 240)]) +
+      ";" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.subline");
+  const row = await page.$$eval("table.bv tr.line:has-text('kids') td", (tds) => tds.map((td) => td.textContent));
+  assert.deepEqual([row[0], row[1], row[2]], ["kids", "2 budget lines", "$50"]); // leak-guard: allow (made up)
+  const subs = await page.$$eval("table.bv tr.subline", (rows) =>
+    rows.map((r) =>
+      Array.from(r.querySelectorAll("td"))
+        .map((td) => td.textContent)
+        .slice(0, 3),
+    ),
+  );
+  assert.deepEqual(subs, [
+    ["camp alex", "360.00 a year", "$30"], // leak-guard: allow (made up)
+    ["camp sam", "240.00 a year", "$20"], // leak-guard: allow (made up)
+  ]);
+  await page.click("table.bv tr.subline:has-text('camp sam')");
+  await page.waitForSelector(".drawer h2:has-text('camp sam')");
+  assert.equal(await page.locator(".drawer form.edit").count(), 1); // only this line's form
+  assert.match(await page.textContent(".drawer"), /Budget line: camp sam/);
+  assert.doesNotMatch(await page.textContent(".drawer"), /Budget line: camp alex/);
+  await page.fill(".drawer label:has-text('Amount') input", "300");
+  await page.click(".drawer button:has-text('Keep this change')");
+  assert.match((await staged(page))[0], /^budget line camp sam: fixed 300 annually for kids from /);
+  await page.waitForSelector("table.bv tr.subline:has-text('camp sam') .tag.warn");
+  assert.equal(await page.locator("table.bv tr.subline:has-text('camp alex') .tag.warn").count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("jobs: choosing a stretch of a pay line shows it, and a correction is staged like any change", async () => {
   const j = (effective, employer, salary, fte) => ({
     effective,

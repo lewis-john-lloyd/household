@@ -801,8 +801,8 @@ test("groups open and shut, a loan's parts roll up into one row, and neither cli
       JSON.stringify(cats) +
       ".forEach(function (c) { groups[c] = 'home'; targets.push({ month: m, category: c, priority: 'high', target: 20 }); });" +
       "  for (var i = 0; i < 40; i++) { groups['c' + i] = 'g' + (i >> 1); targets.push({ month: m, category: 'c' + i, priority: 'low', target: 10 }); }" +
-      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: groups, recurring: [], days: [[d, 'interest', 15]], targets: targets } };" +
-      "  window.__answers.getEditor.parameters = [{ key: 'loan_split:acme_loan', value: 'interest=interest, principal=principal, pmi=20', source: '', about: '' }];" +
+      "  var loans = { interest: 'acme_loan', principal: 'acme_loan', pmi: 'acme_loan' };" + // compute says which are a loan's
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: groups, loans: loans, recurring: [], days: [[d, 'interest', 15]], targets: targets } };" +
       "})();",
   );
   await page.waitForSelector("table.bv tr.loan");

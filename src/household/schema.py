@@ -821,7 +821,8 @@ REPORTS = (
         ("line", "effective", "category", "account", "priority", "rule", "amount", "per", "note", "run_id"),
     ),
     Table("editor_payee_rules", ("pattern", "category", "precedence", "effective", "ask", "status", "run_id")),
-    Table("editor_categories", ("category", "group", "priority", "run_id")),
+    # each category in force; loan names the loan whose payment splits into it (its loan_split setting)
+    Table("editor_categories", ("category", "group", "priority", "loan", "run_id")),
     Table("editor_aliases", ("alias", "category", "note", "run_id")),
     Table("editor_parameters", ("key", "value", "source", "about", "run_id")),
     Table(

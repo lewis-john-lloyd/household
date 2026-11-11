@@ -21,6 +21,7 @@ interface BudgetBook {
   funds?: { month: string; line: string; category: string; balance: number }[]; // annual lines' balances at each month's end (sinking_funds)
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
+  loans?: Record<string, string>; // category -> the loan whose payment splits into it (editor_categories)
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
 }
 

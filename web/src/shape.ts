@@ -284,6 +284,14 @@ function budgetBook(
       const c = String(v[category] ?? "").trim();
       if (c && String(v[group] ?? "").trim()) book.groups[c] = String(v[group]).trim();
     }
+    const loan = categoryValues[0].indexOf("loan"); // a Reports tab from before 0.60 has no loan column
+    if (loan >= 0) {
+      book.loans = {};
+      for (const v of categoryValues.slice(1)) {
+        const c = String(v[category] ?? "").trim();
+        if (c && String(v[loan] ?? "").trim()) book.loans[c] = String(v[loan]).trim();
+      }
+    }
   }
   if (dailyValues.length) {
     const [date, category, spend] = columnsAt(dailyValues, ["date", "category", "spend"], "daily_actuals");

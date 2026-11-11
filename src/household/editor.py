@@ -9,7 +9,7 @@ so these tables carry each row's fields exactly as the ledger holds them.
 
 import pandas as pd
 
-from . import budget, compute, schema, settings
+from . import budget, compute, mortgage, schema, settings
 
 PER_WORDS = {
     "monthly": "a month",
@@ -122,6 +122,14 @@ def in_force(df, keys, name):
     return compute.latest(df, keys).reindex(columns=columns, fill_value="")
 
 
+def categories(cats, params):
+    """Each category in force, with the loan whose payment splits into it (mortgage.split_settings), so the
+    views can show a loan's parts together without reading the setting themselves."""
+    out = in_force(cats, ["category"], "editor_categories")
+    loan_of = {c: loan for loan, parts in mortgage.split_settings(params).items() for c, _ in parts}
+    return out.assign(loan=[loan_of.get(str(c).strip(), "") for c in out["category"]]) if len(out) else out
+
+
 def payee_rules(rules):
     """The row in force per pattern (the latest effective, then the later row), stopped rules included
     so they can be started again."""
@@ -161,7 +169,7 @@ def publish(books, review, rules, targets, actuals, month):
         "editor_budget_lines": budget_lines(rules, targets, actuals, month),
         "editor_scheduled": scheduled(rules),
         "editor_payee_rules": payee_rules(books["rules"]),
-        "editor_categories": in_force(books["categories"], ["category"], "editor_categories"),
+        "editor_categories": categories(books["categories"], books["parameters"]),
         "editor_aliases": in_force(books["aliases"], ["alias"], "editor_aliases"),
         "editor_parameters": parameters(books["parameters"]),
         "editor_review": review_queue(review),

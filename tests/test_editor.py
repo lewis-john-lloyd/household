@@ -109,3 +109,26 @@ def test_each_scheduled_amount_in_force_is_published_once_per_line_and_date():
         ["camp", "2026-07-01", "40"],
     ]
     assert list(out.columns) == [c for c in schema.table(schema.REPORTS, "editor_scheduled").columns if c != "run_id"]
+
+
+def test_each_category_names_the_loan_whose_payment_splits_into_it():
+    cats = pd.DataFrame(
+        [{"category": c, "group": "home", "priority": "high"} for c in ("interest", "principal", "hobby")]
+    )
+    params = pd.DataFrame(
+        [
+            {
+                "jurisdiction": "household",
+                "key": "loan_split:acme_loan",
+                "value": "interest=interest, principal=principal, hobby=20",
+                "source": "web",
+            }
+        ]
+    )
+    out = editor.categories(cats, params)
+    assert dict(zip(out["category"], out["loan"])) == {
+        "hobby": "acme_loan",
+        "interest": "acme_loan",
+        "principal": "acme_loan",
+    }
+    assert set(editor.categories(cats, None)["loan"]) == {""}

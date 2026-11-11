@@ -32,7 +32,7 @@ var LAYOUTS: [string, string][] = [
 // Every line item in the period, by group, as the three views show them. A loan's parts (its loan_split
 // setting's categories) are one item when two or more are in the period.
 function budgetItems(v: BudgetView): BudgetItemGroup[] {
-  var loanOf = loanCategories();
+  var loanOf = budget.data!.book.loans || {}; // category -> loan id, from compute
   return v.groups.map(function (g) {
     var items: BudgetItem[] = [];
     var parts: Record<string, BudgetItem[]> = {};

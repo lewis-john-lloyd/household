@@ -735,3 +735,14 @@ test("budget view: an annual line item's fund balance at the period's last month
   const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07").groups[0].lines[0];
   assert.equal(none.balance, null);
 });
+
+test("budget book: each category's loan comes from editor_categories, and an older tab without the column has none", () => {
+  const cats = [
+    ["category", "group", "priority", "loan", "run_id"],
+    ["food", "living", "high", "", "r1"],
+    ["interest", "home", "high", "acme_loan", "r1"],
+  ];
+  const b = shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, cats);
+  assert.deepEqual(b.loans, { interest: "acme_loan" });
+  assert.equal(book().loans, undefined);
+});

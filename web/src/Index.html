@@ -446,7 +446,20 @@
       .spent-bar i.over { background: var(--error); }
       .spent-bar i.unbudgeted { background: var(--outline); }
       .spent-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--on-surface); }
-      .over-text { color: var(--error); font-weight: 500; font-size: 13px; margin-left: 8px; }
+      .over-text { color: var(--error); font-weight: 500; font-size: 13px; }
+      .warn-text { color: var(--waiting); font-size: 13px; }
+      .ok-text { color: var(--success); font-size: 13px; }
+      table.bv td.status { color: var(--on-surface-variant); font-size: 13px; }
+      table.bv td.status.link { color: var(--primary); }
+      .bv-figures .warn b { color: var(--waiting); }
+      .kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 6px;
+        border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
+      .kind-recurring { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+      .kind-annual { background: var(--success-container); color: var(--on-success-container); border-color: transparent; }
+      .kind-unplanned { border-style: dashed; }
+      table.bv tr.unplanned { cursor: pointer; }
+      table.bv tr.unplanned td, table.bv tr.unplanned-item td { color: var(--on-surface-variant); }
+      table.bv tr.unplanned-item td:first-child { padding-left: 32px; }
       .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.32); z-index: 4; }
       .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%); z-index: 4; overflow-y: auto;
         background: var(--surface-low); box-shadow: var(--shadow); padding: 20px 24px 120px; }

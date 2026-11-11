@@ -16,6 +16,7 @@ function toCents(n: number): number {
 interface BudgetBook {
   targets: { month: string; category: string; priority: string; target: number }[];
   lineTargets?: { month: string; line: string; category: string; target: number }[]; // each budget line's (budget_targets)
+  income?: { month: string; pay: number; other: number }[]; // what came in each month: take-home pay, other income (flows)
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
@@ -61,6 +62,8 @@ interface BudgetView {
   actual: number;
   compared: number;
   recurring: number; // what the recurring charges in it spent
+  pay: number; // take-home pay in the period's months (both paychecks, after tax and payroll deductions)
+  otherIncome: number; // other money in: interest, rewards, refunds
   groups: ViewGroup[];
 }
 
@@ -271,6 +274,14 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
   const sum = (f: (g: ViewGroup) => number): number => toCents(sorted.reduce((t, g) => t + f(g), 0));
   let recurring = 0;
   for (const g of sorted) for (const l of g.lines) for (const e of l.recurring) recurring += e.actual;
+  let pay = 0,
+    otherIncome = 0;
+  for (const i of book.income || []) {
+    const [mFrom, mEnd] = periodDays(i.month);
+    if (mEnd < from || mFrom > end) continue;
+    pay += i.pay;
+    otherIncome += i.other;
+  }
   return {
     lens: lensOf(period),
     period,
@@ -285,6 +296,8 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     actual: sum((g) => g.actual),
     compared: sum((g) => g.compared),
     recurring: toCents(recurring),
+    pay: toCents(pay),
+    otherIncome: toCents(otherIncome),
     groups: sorted,
   };
 }

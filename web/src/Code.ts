@@ -152,6 +152,7 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] 
     "editor_categories",
     "subscriptions",
     "budget_targets",
+    "flows",
   ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
   const book = budgetBook(
@@ -160,6 +161,7 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] 
     tabs.subscription_months,
     tabs.editor_categories,
     tabs.budget_targets,
+    tabs.flows,
   );
   console.log(`budget book: ${book.targets.length} targets, ${book.days.length} days, ${book.recurring.length} recurring months`);
   return { book, tracked: subscriptionsPage(tabs.subscriptions).subscriptions };

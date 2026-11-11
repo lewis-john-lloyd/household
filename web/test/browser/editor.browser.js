@@ -689,15 +689,19 @@ test("the budget compares any period with another, and a line's target can come 
   await page.waitForSelector("table.bv");
   const food = await page.$$eval("table.bv tr.line:has-text('food') td", (tds) => tds.map((td) => td.textContent));
   // food is living's one category: its row alone, the group's name a tag on it
-  assert.deepEqual([food[0], food[1], food[3], food[5], food[6]], ["foodliving", "60.00 a month", "$12", "$8", "+$4"]); // leak-guard: allow (made up)
-  assert.match(await page.textContent("table.bv thead"), /same weeks/);
+  assert.deepEqual([food[0], food[1], food[2], food[3], food[4]], ["foodliving", "60.00 a month", "Fixed", "$60", "$12"]); // leak-guard: allow (made up)
+  assert.match(await page.textContent(".bv-summary"), /more than the same weeks of /); // the other period, in the summary
   assert.match(await page.textContent(".bv-summary"), /\$60budgeted for .*\$17spent, 28% of the budget/); // leak-guard: allow (made up)
   await page.click("table.bv th button.sort:has-text('Spent')"); // sorts by spent, largest first; again reverses
-  assert.equal(await page.getAttribute("table.bv th:nth-child(4)", "aria-sort"), "descending");
+  assert.equal(await page.getAttribute("table.bv th:nth-child(5)", "aria-sort"), "descending");
   await page.click("table.bv th button.sort:has-text('Spent')");
-  assert.equal(await page.getAttribute("table.bv th:nth-child(4)", "aria-sort"), "ascending");
+  assert.equal(await page.getAttribute("table.bv th:nth-child(5)", "aria-sort"), "ascending");
   assert.equal((await page.locator(".bv-gauge").count()) >= 2, true); // the whole budget and each group
-  assert.equal(await page.$$eval("table.bv tr.group", (rows) => rows.length), 0); // living and fun: one category each
+  // living's one line item stands alone; fun's only one, media, has no budget line, so it folds under fun as unplanned
+  assert.equal(await page.$$eval("table.bv tr.group", (rows) => rows.length), 1);
+  assert.match(await page.textContent("table.bv tr.unplanned"), /Unplanned\s*media.*\$5.*Show 1/); // leak-guard: allow (made up)
+  await page.click("table.bv tr.unplanned");
+  await page.waitForSelector("table.bv tr.unplanned-item:has-text('media')");
   await page.click(".bv-controls button:has-text('Year')");
   const year = String(new Date().getFullYear());
   assert.equal(await page.inputValue(".bv-picker select"), year);
@@ -755,19 +759,19 @@ test("a category with two budget lines shows each as its own row, to open and ch
   );
   await page.waitForSelector("table.bv tr.subline");
   const row = await page.$$eval("table.bv tr.line:has-text('kids') td", (tds) => tds.map((td) => td.textContent));
-  assert.deepEqual([row[0], row[1], row[2]], ["kids", "2 budget lines", "$50"]); // leak-guard: allow (made up)
+  assert.deepEqual([row[0], row[1], row[2], row[3]], ["kids", "2 budget lines", "Fixed", "$50"]); // leak-guard: allow (made up)
   const group = await page.$$eval("table.bv tr.group td", (tds) => tds.map((td) => td.textContent));
-  assert.deepEqual([group[0], group[1], group[2]], ["family", "2 categories", "$60"]); // leak-guard: allow (made up)
+  assert.deepEqual([group[0], group[1], group[3]], ["family", "2 line items", "$60"]); // leak-guard: allow (made up)
   const subs = await page.$$eval("table.bv tr.subline", (rows) =>
     rows.map((r) =>
       Array.from(r.querySelectorAll("td"))
         .map((td) => td.textContent)
-        .slice(0, 3),
+        .slice(0, 4),
     ),
   );
   assert.deepEqual(subs, [
-    ["camp alex", "360.00 a year", "$30"], // leak-guard: allow (made up)
-    ["camp sam", "240.00 a year", "$20"], // leak-guard: allow (made up)
+    ["camp alex", "360.00 a year", "Fixed", "$30"], // leak-guard: allow (made up)
+    ["camp sam", "240.00 a year", "Fixed", "$20"], // leak-guard: allow (made up)
   ]);
   await page.click("table.bv tr.subline:has-text('camp sam')");
   await page.waitForSelector(".drawer h2:has-text('camp sam')");

@@ -269,8 +269,9 @@ function budgetBook(
   recurringValues: unknown[][],
   categoryValues: unknown[][],
   lineValues: unknown[][] = [],
+  flowValues: unknown[][] = [],
 ): BudgetBook {
-  const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [], lineTargets: [] };
+  const book: BudgetBook = { targets: [], days: [], groups: {}, recurring: [], lineTargets: [], income: [] };
   for (const r of parseBudget(budgetValues)) {
     if (r.group) book.groups[r.category] = r.group;
     if (r.target) book.targets.push({ month: r.month, category: r.category, priority: r.priority, target: r.target });
@@ -307,6 +308,24 @@ function budgetBook(
         actual: Number(v[actual]) || 0,
       });
     }
+  }
+  if (flowValues.length) {
+    // what came in each month, from the flows report's group level: net pay, and other income
+    const [period, level, source, target, amount] = columnsAt(
+      flowValues,
+      ["period", "level", "source", "target", "amount"],
+      "flows",
+    );
+    const byMonth = new Map<string, { month: string; pay: number; other: number }>();
+    for (const v of flowValues.slice(1)) {
+      const month = String(v[period] ?? "");
+      if (!/^\d{4}-\d{2}$/.test(month) || v[level] !== "group" || v[target] !== "accounts") continue;
+      const kind = v[source] === "net pay" ? "pay" : v[source] === "other income" ? "other" : "";
+      if (!kind) continue;
+      if (!byMonth.has(month)) byMonth.set(month, { month, pay: 0, other: 0 });
+      byMonth.get(month)![kind] += Number(v[amount]) || 0;
+    }
+    book.income = Array.from(byMonth.values());
   }
   if (lineValues.length) {
     const [month, line, category, target] = columnsAt(lineValues, ["month", "line", "category", "target"], "budget_targets");

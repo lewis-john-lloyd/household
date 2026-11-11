@@ -14,6 +14,7 @@ var budget: {
   data: Answer<"getBudgetBook"> | null;
   open: { category?: string; line?: string } | null; // the drawer open: a line's category, or a new line
   sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
+  unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
 } = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
 var LENS_NAMES: Record<string, string> = { month: "Month", quarter: "Quarter", year: "Year" };
 var RULE_NAMES: Record<string, string> = {
@@ -279,6 +280,13 @@ function budgetSummary(v: BudgetView) {
     s.appendChild(el("span", small));
     figures.appendChild(s);
   };
+  var came = v.pay + v.otherIncome;
+  if (came > 0)
+    stat(
+      money.format(came),
+      "came in: take-home pay" + (v.otherIncome >= 0.5 ? " and " + money.format(v.otherIncome) + " other income" : ""),
+      "lead",
+    );
   stat(money.format(v.target), "budgeted for " + periodName(v.period), "lead");
   stat(
     money.format(v.actual),
@@ -298,6 +306,12 @@ function budgetSummary(v: BudgetView) {
       money.format(v.compared) +
       ")",
   );
+  if (came > 0)
+    stat(
+      v.actual > came + 0.5 ? money.format(v.actual - came) : money.format(came - v.actual),
+      v.actual > came + 0.5 ? "drawn from cash balances: more went out than came in" : "not spent: what came in and stayed",
+      v.actual > came + 0.5 ? "warn" : "",
+    );
   if (v.recurring && v.actual > 0)
     stat(money.format(v.recurring), "of it recurring (" + Math.round((100 * v.recurring) / v.actual) + "%)");
   box.appendChild(figures);
@@ -384,16 +398,95 @@ function trackedByKey(): Record<string, Row> {
   return by;
 }
 
+// The kind of a budget line, by how its budget is set: what the page calls it.
+var KIND_OF_RULE: Record<string, string> = {
+  recurring: "Recurring",
+  billed: "Recurring",
+  sinking_fund: "Annual",
+  lookback: "Floating",
+  trailing: "Floating",
+  seasonal: "Floating",
+  fixed: "Fixed",
+};
+
+// A line item's kind: its budget lines' (or "Mixed"), or "" when it has none in force.
+function kindOf(lines: Row[]) {
+  var kinds = lines
+    .map(function (x) {
+      return KIND_OF_RULE[x.rule] || "Fixed";
+    })
+    .filter(function (k, i, all) {
+      return all.indexOf(k) === i;
+    });
+  return kinds.length > 1 ? "Mixed" : kinds[0] || "";
+}
+
+// An annual line, judged on its year: spent from January 1 to the period's last day against an even pace.
+function annualStatus(v: BudgetView, category: string, lines: Row[]): { text: string; cls: string } | null {
+  var year = lines
+    .filter(function (x) {
+      return x.rule === "sinking_fund";
+    })
+    .reduce(function (t, x) {
+      return t + (Number(x.amount) || 0) * (PER_MONTH[x.per] || 1) * 12;
+    }, 0);
+  if (!year) return null;
+  var through = v.through,
+    from = through.slice(0, 4) + "-01-01";
+  var spent = budget
+    .data!.book.days.filter(function (d) {
+      return d[1] === category && d[0] >= from && d[0] <= through;
+    })
+    .reduce(function (t, d) {
+      return t + d[2];
+    }, 0);
+  var days = (Date.parse(through) - Date.parse(from)) / 864e5 + 1,
+    inYear = (Date.parse(through.slice(0, 4) + "-12-31") - Date.parse(from)) / 864e5 + 1;
+  var pace = (year * days) / inYear;
+  var share = Math.round((100 * spent) / year) + "% of the year";
+  if (spent > year + 0.5)
+    return { text: (spent / year).toFixed(1) + " times the year's " + money.format(year), cls: "over-text" };
+  if (spent > pace + 0.5) return { text: share + ", " + money.format(spent - pace) + " ahead of pace", cls: "warn-text" };
+  return { text: share + ", on pace", cls: "ok-text" };
+}
+
+// What a line item's row says in its status column.
+function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): { text: string; cls: string } | null {
+  var annual = lines.some(function (x) {
+    return x.rule === "sinking_fund";
+  })
+    ? annualStatus(v, l.category, lines)
+    : null;
+  if (annual) return annual;
+  if (l.recurring.length) {
+    var paid = l.recurring.filter(function (r) {
+      return r.actual > 0;
+    }).length;
+    var due = l.recurring.filter(function (r) {
+      return r.expected && r.actual <= 0;
+    }).length;
+    if (due) return { text: due + " charge" + (due > 1 ? "s" : "") + " not seen yet", cls: "" };
+    if (paid) return { text: "Paid", cls: "ok-text" };
+  }
+  if (l.target > 0 && l.actual > l.target + 0.5)
+    return { text: "Over by " + money.format(l.actual - l.target), cls: "over-text" };
+  return null;
+}
+
 function budgetTable(v: BudgetView) {
   var wrap = el("div", null, "scroll");
   var table = el("table", null, "bv");
   var head = el("tr");
-  // each column but "Target from" sorts the groups, and the lines within each, by it; again reverses
+  var kindKey = function (x: ViewGroup | ViewLine) {
+    return (x as ViewLine).category ? kindOf(linesFor((x as ViewLine).category)) : "";
+  };
+  // each column but "How the budget is set" and "Status" sorts the groups, and the line items within each
   var keys: (((x: ViewGroup | ViewLine) => string | number) | null)[] = [
     function (x) {
       return ((x as ViewGroup).name || (x as ViewLine).category || "").toLowerCase();
     },
     null,
+    kindKey,
     function (x) {
       return x.target || 0;
     },
@@ -403,24 +496,11 @@ function budgetTable(v: BudgetView) {
     function (x) {
       return x.target > 0 ? x.actual / x.target : x.actual > 0 ? Infinity : 0;
     },
-    function (x) {
-      return x.compared || 0;
-    },
-    function (x) {
-      return (x.actual || 0) - (x.compared || 0);
-    },
+    null,
   ];
-  var sort = budget.sort || { col: -1, dir: 1 };
-  [
-    "Line",
-    "Target from",
-    "Budget",
-    "Spent",
-    "Used",
-    shortPeriod(v.compare) + (v.sameWeeks ? ", same weeks" : ""),
-    "Change",
-  ].forEach(function (h, i) {
-    var th = el("th", null, i === 1 ? "text" : "");
+  var sort = budget.sort && budget.sort.col < keys.length ? budget.sort : { col: -1, dir: 1 };
+  ["Line item", "How the budget is set", "Kind", "Budget", "Spent", "Used", "Status"].forEach(function (h, i) {
+    var th = el("th", null, i === 1 || i === 2 || i === 5 || i === 6 ? "text" : "");
     if (!keys[i]) {
       th.textContent = h;
       head.appendChild(th);
@@ -429,7 +509,7 @@ function budgetTable(v: BudgetView) {
     var b = button(
       h + (sort.col === i ? (sort.dir > 0 ? " \u2191" : " \u2193") : ""),
       function () {
-        budget.sort = sort.col === i ? { col: i, dir: -sort.dir } : { col: i, dir: i === 0 ? 1 : -1 };
+        budget.sort = sort.col === i ? { col: i, dir: -sort.dir } : { col: i, dir: i === 0 || i === 2 ? 1 : -1 };
         drawBudgetPage();
       },
       "sort",
@@ -450,39 +530,39 @@ function budgetTable(v: BudgetView) {
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
   };
+  var inForce = function (category: string) {
+    return linesFor(category).filter(function (x) {
+      return x.in_force !== "ended";
+    });
+  };
   order(v.groups).forEach(function (g) {
-    // A group of one category is that category's row alone (its totals would only repeat it); a group of
-    // more says how many it adds up, so a category named like its group reads as one of them.
-    var alone = g.lines.length === 1;
+    // A line item with no budget line in force is unplanned: a group's unplanned ones fold into one row at its
+    // foot (they count in its spending), opened by a click. A group of one row is that row alone.
+    var planned = g.lines.filter(function (l) {
+      return inForce(l.category).length || l.target;
+    });
+    var unplanned = g.lines.filter(function (l) {
+      return planned.indexOf(l) < 0;
+    });
+    var alone = planned.length + (unplanned.length ? 1 : 0) === 1 && !unplanned.length;
     if (!alone) {
       var gr = el("tr", null, "group");
       cell(gr, g.name);
-      cell(gr, g.lines.length + " categories", "text rule");
+      cell(gr, g.lines.length + " line item" + (g.lines.length > 1 ? "s" : ""), "text rule");
+      cell(gr, "", "text");
       cell(gr, g.target ? money.format(g.target) : "");
       cell(gr, money.format(g.actual));
-      cell(gr, "");
-      cell(gr, money.format(g.compared));
-      cell(gr, signedMoney(g.actual - g.compared));
+      var gUsed = cell(gr, "", "text");
+      gUsed.appendChild(spentBar(g.actual, g.target));
+      cell(gr, "", "text");
       body.appendChild(gr);
     }
-    order(g.lines).forEach(function (l) {
-      var lines = linesFor(l.category).filter(function (x) {
-        return x.in_force !== "ended";
-      });
-      var row = el(
-        "tr",
-        null,
-        "line" + (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""),
-      );
+    var lineRow = function (l: ViewLine, cls: string) {
+      var lines = inForce(l.category);
+      var row = el("tr", null, cls + (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""));
       row.tabIndex = 0;
       var name = cell(row, l.category);
       if (alone && g.name && g.name !== l.category) name.appendChild(el("span", g.name, "tag"));
-      if (
-        lines.some(function (x) {
-          return x.rule === "recurring";
-        })
-      )
-        name.appendChild(el("span", "recurring", "tag"));
       var several = lines.length > 1; // each line its own row below, to open and change by itself
       if (
         lines.some(function (x) {
@@ -495,14 +575,17 @@ function budgetTable(v: BudgetView) {
         several ? lines.length + " budget lines" : lines.length ? lines[0].in_words : l.target ? "scheduled" : "no budget line",
         "text rule",
       );
+      var kind = kindOf(lines);
+      var kc = cell(row, "", "text");
+      kc.appendChild(el("span", kind || "Unplanned", "kind kind-" + (kind || "Unplanned").toLowerCase()));
       cell(row, l.target ? money.format(l.target) : "");
       var over = l.target > 0 && l.actual > l.target + 0.5;
       cell(row, money.format(l.actual), over ? "over" : "");
       var used = cell(row, "", "text");
       used.appendChild(spentBar(l.actual, l.target));
-      if (over) used.appendChild(el("span", "over " + money.format(l.actual - l.target), "over-text"));
-      cell(row, money.format(l.compared));
-      cell(row, signedMoney(l.actual - l.compared));
+      var st = lineStatus(v, l, lines);
+      var sc = cell(row, "", "text status");
+      if (st) sc.appendChild(el("span", st.text, st.cls));
       var open = function () {
         budget.open = { category: l.category };
         openLine(l.category, v);
@@ -522,11 +605,12 @@ function budgetTable(v: BudgetView) {
           );
           sub.tabIndex = 0;
           var subName = cell(sub, bl.line);
-          if (bl.rule === "recurring") subName.appendChild(el("span", "recurring", "tag"));
           if (changedText("budget_line|" + bl.line)) subName.appendChild(el("span", "changed", "tag warn"));
           cell(sub, bl.in_words, "text rule");
+          var skc = cell(sub, "", "text");
+          var sk = KIND_OF_RULE[bl.rule] || "Fixed";
+          skc.appendChild(el("span", sk, "kind kind-" + sk.toLowerCase()));
           cell(sub, part ? money.format(part.target) : "");
-          cell(sub, "");
           cell(sub, "");
           cell(sub, "");
           cell(sub, "");
@@ -550,14 +634,54 @@ function budgetTable(v: BudgetView) {
             : "",
         ];
         cell(rec, about.filter(Boolean).join(", "), "text");
+        cell(rec, "", "text");
         cell(rec, r.expected === null ? "" : money.format(r.expected));
         cell(rec, money.format(r.actual));
         cell(rec, "");
-        cell(rec, money.format(r.compared));
-        cell(rec, "");
+        cell(rec, r.actual > 0 ? "Paid" : r.expected ? "Not seen yet" : "", "text status");
         body.appendChild(rec);
       });
+    };
+    order(planned).forEach(function (l) {
+      lineRow(l, "line");
     });
+    if (unplanned.length) {
+      var shown = !!(budget.unplanned && budget.unplanned[g.name]);
+      var spent = unplanned.reduce(function (t, l) {
+        return t + l.actual;
+      }, 0);
+      var u = el("tr", null, "line unplanned");
+      u.tabIndex = 0;
+      cell(u, "Unplanned");
+      cell(
+        u,
+        unplanned
+          .map(function (l) {
+            return l.category;
+          })
+          .join(", "),
+        "text rule",
+      );
+      var uk = cell(u, "", "text");
+      uk.appendChild(el("span", "No budget", "kind kind-unplanned"));
+      cell(u, "");
+      cell(u, money.format(spent));
+      cell(u, "");
+      cell(u, shown ? "Hide" : "Show " + unplanned.length, "text status link");
+      u.setAttribute("aria-expanded", shown ? "true" : "false");
+      var toggle = function () {
+        budget.unplanned = budget.unplanned || {};
+        budget.unplanned[g.name] = !shown;
+        drawBudgetPage();
+      };
+      u.onclick = toggle;
+      u.onkeydown = onEnter(toggle);
+      body.appendChild(u);
+      if (shown)
+        order(unplanned).forEach(function (l) {
+          lineRow(l, "line unplanned-item");
+        });
+    }
   });
   table.appendChild(body);
   wrap.appendChild(table);

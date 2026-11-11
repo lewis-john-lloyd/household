@@ -27,6 +27,7 @@ const shape = new Function(
     recurring: unknown[][],
     categories: unknown[][],
     lines?: unknown[][],
+    flows?: unknown[][],
   ) => BudgetBook;
   budgetView: (book: BudgetBook, period: string, compare: string, sameWeeks: boolean, today: string) => BudgetView;
   periodOf: (date: string, lens: string) => string;
@@ -654,4 +655,20 @@ test("budget view: a category's budget lines each keep their part of its target,
   ]);
   assert.deepEqual(month.food, []); // one line: the category's row is the line
   assert.deepEqual(lines("2026-Q4").kids[0], { line: "camp alex", target: 60 }); // summed over the period
+});
+
+test("budget view: what came in, from the flows report's months, summed over the period", () => {
+  const flows = [
+    ["period", "level", "source", "target", "amount", "run_id"],
+    ["2026-10", "group", "net pay", "accounts", 50, "r1"],
+    ["2026-11", "group", "net pay", "accounts", 60, "r1"],
+    ["2026-11", "group", "other income", "accounts", 5, "r1"],
+    ["2026-11", "category", "net pay", "accounts", 60, "r1"], // the category level repeats it: left out
+    ["2026", "group", "net pay", "accounts", 110, "r1"], // a year: left out, the months add up
+  ];
+  const b = shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, BOOK_VALUES.categories, [], flows);
+  const month = shape.budgetView(b, "2026-11", "2025-11", false, "2026-11-07");
+  assert.deepEqual([month.pay, month.otherIncome], [60, 5]);
+  const quarter = shape.budgetView(b, "2026-Q4", "2025-Q4", false, "2026-11-07");
+  assert.deepEqual([quarter.pay, quarter.otherIncome], [110, 5]);
 });

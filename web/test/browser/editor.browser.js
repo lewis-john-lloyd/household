@@ -757,7 +757,11 @@ test("a category with two budget lines shows each as its own row, to open and ch
       ";" +
       "})();",
   );
+  await page.waitForSelector("table.bv tr.line:has-text('kids')");
+  assert.equal(await page.locator("table.bv tr.subline").count(), 0); // a line item's breakdown is shut at first
+  await page.click("table.bv tr.line:has-text('kids') button.chev");
   await page.waitForSelector("table.bv tr.subline");
+  assert.equal(await page.locator(".drawer").count(), 0); // opening it does not open the drawer
   const row = await page.$$eval("table.bv tr.line:has-text('kids') td", (tds) => tds.map((td) => td.textContent));
   assert.deepEqual([row[0], row[1], row[2], row[3]], ["kids", "2 budget lines", "Fixed", "$50"]); // leak-guard: allow (made up)
   const group = await page.$$eval("table.bv tr.group td", (tds) => tds.map((td) => td.textContent));
@@ -787,17 +791,63 @@ test("a category with two budget lines shows each as its own row, to open and ch
   await page.close();
 });
 
+test("groups open and shut, a loan's parts roll up into one row, and neither click moves the page", async () => {
+  const cats = ["interest", "principal", "pmi", "household"];
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01', groups = { food: 'living' }, targets = [];" +
+      JSON.stringify(cats) +
+      ".forEach(function (c) { groups[c] = 'home'; targets.push({ month: m, category: c, priority: 'high', target: 20 }); });" +
+      "  for (var i = 0; i < 40; i++) { groups['c' + i] = 'g' + (i >> 1); targets.push({ month: m, category: 'c' + i, priority: 'low', target: 10 }); }" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: groups, recurring: [], days: [[d, 'interest', 15]], targets: targets } };" +
+      "  window.__answers.getEditor.parameters = [{ key: 'loan_split:acme_loan', value: 'interest=interest, principal=principal, pmi=20', source: '', about: '' }];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.loan");
+  const loan = await page.$$eval("table.bv tr.loan td", (tds) => tds.map((td) => td.textContent));
+  assert.deepEqual([loan[0], loan[3], loan[4]], ["acme loan payment", "$60", "$15"]); // leak-guard: allow (made up)
+  assert.equal(await page.locator("table.bv tr.part").count(), 0);
+  assert.equal(await page.locator("table.bv tr.line:has-text('household')").count(), 1);
+  await page.click("table.bv tr.loan");
+  assert.deepEqual(await page.$$eval("table.bv tr.part td:first-child", (tds) => tds.map((td) => td.textContent)), [
+    "interest",
+    "pmi",
+    "principal",
+  ]);
+  assert.equal(await page.locator(".drawer").count(), 0);
+  await page.click("table.bv tr.group:has-text('home')");
+  assert.equal(await page.locator("table.bv tr.loan").count(), 0); // the group shut: none of its rows
+  assert.equal(await page.$eval("table.bv tr.group:has-text('home')", (r) => r.getAttribute("aria-expanded")), "false");
+  await page.click("table.bv tr.group:has-text('home')");
+  await page.waitForSelector("table.bv tr.part"); // open again, as it was
+  const last = "table.bv tr.group:has-text('g19')";
+  await page.$eval(last, (r) => r.scrollIntoView({ block: "center" })); // clear of the sticky bar, so the click needs no scroll
+  const before = await page.evaluate(() => window.scrollY);
+  assert.ok(before > 0);
+  await page.click(last);
+  assert.equal(await page.evaluate(() => window.scrollY), before);
+  assert.equal(
+    await page.evaluate(() => document.activeElement && document.activeElement.textContent),
+    await page.textContent(last),
+  );
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("giving: each recipient under its line item, marked deductible here, and the year's deductible gifts", async () => {
   const page = await open(
     "window.__location = { parameter: { view: 'budget' } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { gifts: 'giving', food: 'living' }, recurring: []," +
       "    days: [[d, 'gifts', 70], [d, 'food', 20]]," +
-      "    targets: [{ month: m, category: 'gifts', priority: 'low', target: 50 }, { month: m, category: 'food', priority: 'high', target: 60 }]," +
+      "    targets: [{ month: m, category: 'gifts', priority: 'low', target: 100 }, { month: m, category: 'food', priority: 'high', target: 60 }]," +
       "    giving: [{ month: m, key: 'QUILL & INK', name: 'Quill & Ink', category: 'gifts', given: 40, gifts: 2, deductible: 'yes' }," +
       "      { month: m, key: 'WILLOW ST', name: 'WILLOW ST', category: 'gifts', given: 30, gifts: 1, deductible: '' }] } };" +
       "})();",
   );
+  await page.waitForSelector("table.bv tr.line:has-text('gifts')");
+  assert.match(await page.textContent("table.bv tr.line:has-text('gifts') td.status"), /^\$40 deductible in \d{4}$/); // leak-guard: allow (made up)
+  await page.click("table.bv tr.line:has-text('gifts') button.chev");
   await page.waitForSelector("table.bv tr.recipient");
   const rows = await page.$$eval("table.bv tr.recipient", (rs) =>
     rs.map((r) => {

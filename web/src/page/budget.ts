@@ -15,6 +15,8 @@ var budget: {
   open: { category?: string; line?: string } | null; // the drawer open: a line's category, or a new line
   sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
   unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
+  shut?: Record<string, boolean>; // the groups shut ("group:<name>"); every group is open at first
+  opened?: Record<string, boolean>; // the breakdowns open ("line:<category>", "loan:<loan id>"); shut at first
 } = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
 var LENS_NAMES: Record<string, string> = { month: "Month", quarter: "Quarter", year: "Year" };
 var RULE_NAMES: Record<string, string> = {
@@ -87,11 +89,21 @@ function drawBudgetPage() {
   document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.tab === budget.tab));
   });
+  // redrawn where it is: emptying the page would otherwise drop the window back to the top
+  var x = window.scrollX,
+    y = window.scrollY;
+  var wide = document.querySelector<HTMLElement>("#budget-body .scroll");
+  var left = wide ? wide.scrollLeft : 0;
   var body = byId("budget-body");
+  body.style.minHeight = body.offsetHeight + "px";
   body.textContent = "";
   closeDrawer(true);
   if (budget.tab === "recurring") drawRecurring(body);
   else drawLinesTab(body);
+  body.style.minHeight = "";
+  var again = document.querySelector<HTMLElement>("#budget-body .scroll");
+  if (again) again.scrollLeft = left;
+  window.scrollTo(x, y);
 }
 
 function shortDay(d: string) {
@@ -475,6 +487,50 @@ function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): { text: string; c
   return null;
 }
 
+// The categories each loan's payment splits into (its loan_split:<loan id> setting): category -> loan id.
+function loanCategories() {
+  var out: Record<string, string> = {};
+  (editor ? editor.parameters : []).forEach(function (p) {
+    var key = String(p.key || "");
+    if (key.indexOf("loan_split:") !== 0 || !String(p.value || "").trim()) return;
+    String(p.value)
+      .split(",")
+      .forEach(function (part) {
+        var c = part.split("=")[0].trim();
+        if (c) out[c] = key.slice("loan_split:".length);
+      });
+  });
+  return out;
+}
+
+// A row that opens and shuts what is under it: its name with a chevron, and a click or Enter to toggle.
+function foldName(td: HTMLElement, name: string, open: boolean) {
+  var chev = el("span", null, "chev" + (open ? " open" : ""));
+  chev.appendChild(icon("chevron"));
+  td.appendChild(chev);
+  td.appendChild(document.createTextNode(name));
+}
+
+function foldRow(row: HTMLElement, key: string, open: boolean, flip: () => void) {
+  row.tabIndex = 0;
+  row.dataset.fold = key;
+  row.setAttribute("aria-expanded", open ? "true" : "false");
+  var go = function () {
+    flip();
+    redrawKeeping(key);
+  };
+  row.onclick = go;
+  row.onkeydown = onEnter(go);
+}
+
+// Redraw the page (where it is) with the focus back on the row or button that was used.
+function redrawKeeping(key: string) {
+  drawBudgetPage();
+  document.querySelectorAll<HTMLElement>("#budget-body [data-fold]").forEach(function (n) {
+    if (n.dataset.fold === key) n.focus({ preventScroll: true });
+  });
+}
+
 function countOf(n: number, one: string, many: string) {
   return n + " " + (n === 1 ? one : many);
 }
@@ -496,6 +552,7 @@ function recipientRow(r: Recipient) {
   var sc = cell(row, "", "text status");
   var pick = el("select", null, "deductible-pick") as HTMLSelectElement;
   pick.setAttribute("aria-label", "Whether gifts to " + r.name + " are deductible");
+  pick.dataset.fold = t;
   [
     ["", "Deductible?"],
     ["yes", "Deductible"],
@@ -517,7 +574,7 @@ function recipientRow(r: Recipient) {
         { kind: "recipient", key: r.key, deductible: pick.value },
         r.name + ": " + (pick.value === "yes" ? "deductible" : "not deductible"),
       );
-    drawBudgetPage();
+    redrawKeeping(t);
   };
   sc.appendChild(pick);
   if (said === "") row.classList.add("unsaid");
@@ -586,9 +643,12 @@ function budgetTable(v: BudgetView) {
       return x.in_force !== "ended";
     });
   };
+  var loanOf = loanCategories();
+  var deductibleShown = false;
   order(v.groups).forEach(function (g) {
     // A line item with no budget line in force is unplanned: a group's unplanned ones fold into one row at its
-    // foot (they count in its spending), opened by a click. A group of one row is that row alone.
+    // foot (they count in its spending), opened by a click. A group of one row is that row alone. A group's
+    // header opens and shuts it (open at first); a line item's breakdown, and a loan's parts, open on a click.
     var planned = g.lines.filter(function (l) {
       return inForce(l.category).length || l.target;
     });
@@ -596,9 +656,11 @@ function budgetTable(v: BudgetView) {
       return planned.indexOf(l) < 0;
     });
     var alone = planned.length + (unplanned.length ? 1 : 0) === 1 && !unplanned.length;
+    var gKey = "group:" + g.name;
+    var gOpen = alone || !(budget.shut && budget.shut[gKey]);
     if (!alone) {
-      var gr = el("tr", null, "group");
-      cell(gr, g.name);
+      var gr = el("tr", null, "group fold");
+      foldName(cell(gr, ""), g.name, gOpen);
       cell(gr, g.lines.length + " line item" + (g.lines.length > 1 ? "s" : ""), "text rule");
       cell(gr, "", "text");
       cell(gr, g.target ? money.format(g.target) : "");
@@ -606,26 +668,54 @@ function budgetTable(v: BudgetView) {
       var gUsed = cell(gr, "", "text");
       gUsed.appendChild(spentBar(g.actual, g.target));
       cell(gr, "", "text");
+      foldRow(gr, gKey, gOpen, function () {
+        budget.shut = budget.shut || {};
+        budget.shut[gKey] = gOpen;
+      });
       body.appendChild(gr);
     }
+    if (!gOpen) return;
     var lineRow = function (l: ViewLine, cls: string) {
       var lines = inForce(l.category);
+      var several = lines.length > 1; // each line its own row below, to open and change by itself
+      var lKey = "line:" + l.category;
+      var broken = several || l.recurring.length > 0 || l.recipients.length > 0;
+      var lOpen = broken && !!(budget.opened && budget.opened[lKey]);
       var row = el("tr", null, cls + (budget.open && budget.open.category === l.category && !budget.open.line ? " chosen" : ""));
       row.tabIndex = 0;
-      var name = cell(row, l.category);
+      var name = cell(row, "");
+      if (broken) {
+        var chev = button(
+          "",
+          function (e) {
+            e.stopPropagation();
+            budget.opened = budget.opened || {};
+            budget.opened[lKey] = !lOpen;
+            redrawKeeping(lKey);
+          },
+          "chev",
+        );
+        chev.appendChild(icon("chevron"));
+        chev.setAttribute("aria-expanded", lOpen ? "true" : "false");
+        chev.setAttribute("aria-label", (lOpen ? "Hide " : "Show ") + l.category + "'s breakdown");
+        chev.dataset.fold = lKey;
+        if (lOpen) chev.classList.add("open");
+        name.appendChild(chev);
+      } else name.appendChild(el("span", null, "chev-space"));
+      name.appendChild(document.createTextNode(l.category));
       if (alone && g.name && g.name !== l.category) name.appendChild(el("span", g.name, "tag"));
-      var several = lines.length > 1; // each line its own row below, to open and change by itself
       if (
         lines.some(function (x) {
           return changedText("budget_line|" + x.line);
         })
       )
         name.appendChild(el("span", "changed", "tag warn"));
-      cell(
-        row,
-        several ? lines.length + " budget lines" : lines.length ? lines[0].in_words : l.target ? "scheduled" : "no budget line",
-        "text rule",
-      );
+      var parts: string[] = [];
+      if (several) parts.push(lines.length + " budget lines");
+      else parts.push(lines.length ? lines[0].in_words : l.target ? "scheduled" : "no budget line");
+      if (l.recurring.length) parts.push(countOf(l.recurring.length, "recurring charge", "recurring charges"));
+      if (l.recipients.length) parts.push(countOf(l.recipients.length, "recipient", "recipients"));
+      cell(row, parts.join("; "), "text rule");
       var kind = kindOf(lines);
       var kc = cell(row, "", "text");
       kc.appendChild(el("span", kind || "Unplanned", "kind kind-" + (kind || "Unplanned").toLowerCase()));
@@ -635,6 +725,8 @@ function budgetTable(v: BudgetView) {
       var used = cell(row, "", "text");
       used.appendChild(spentBar(l.actual, l.target));
       var st = lineStatus(v, l, lines);
+      if (!st && l.recipients.length && v.deductible)
+        st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, cls: "" };
       var sc = cell(row, "", "text status");
       if (st) sc.appendChild(el("span", st.text, st.cls));
       var open = function () {
@@ -644,6 +736,7 @@ function budgetTable(v: BudgetView) {
       row.onclick = open;
       row.onkeydown = onEnter(open);
       body.appendChild(row);
+      if (!lOpen) return;
       if (several)
         lines.forEach(function (bl) {
           var part = (l.byLine || []).filter(function (x) {
@@ -695,18 +788,85 @@ function budgetTable(v: BudgetView) {
       l.recipients.forEach(function (r) {
         body.appendChild(recipientRow(r));
       });
+      if (l.recipients.length && v.deductible && !deductibleShown) {
+        // the year's gifts that count toward the deduction, beside the recipients that make it up
+        deductibleShown = true;
+        var dr = el("tr", null, "rec deductible");
+        cell(dr, "Deductible in " + v.deductible.year);
+        cell(
+          dr,
+          "Gifts to recipients marked deductible" +
+            (v.deductible.year === v.through.slice(0, 4) && v.partial ? " so far" : "") +
+            (v.deductible.unsaid
+              ? "; " + countOf(v.deductible.unsaid, "recipient", "recipients") + " this year not marked yet"
+              : ""),
+          "text rule",
+        );
+        cell(dr, "", "text");
+        cell(dr, "");
+        cell(dr, money.format(v.deductible.given));
+        cell(dr, "");
+        cell(dr, "", "text status");
+        body.appendChild(dr);
+      }
     };
+    // a loan's parts (its loan_split setting's categories) roll up into one row, opened to show each part
+    var rolled: Record<string, ViewLine[]> = {};
+    planned.forEach(function (l) {
+      var id = loanOf[l.category];
+      if (id) (rolled[id] = rolled[id] || []).push(l);
+    });
+    var drawn: Record<string, boolean> = {};
     order(planned).forEach(function (l) {
-      lineRow(l, "line");
+      var id = loanOf[l.category];
+      if (!id || rolled[id].length < 2) {
+        lineRow(l, "line");
+        return;
+      }
+      if (drawn[id]) return;
+      drawn[id] = true;
+      var parts = order(rolled[id]);
+      var key = "loan:" + id;
+      var lOpen = !!(budget.opened && budget.opened[key]);
+      var sum = function (f: (x: ViewLine) => number) {
+        return parts.reduce(function (t, x) {
+          return t + f(x);
+        }, 0);
+      };
+      var target = sum(function (x) {
+          return x.target;
+        }),
+        actual = sum(function (x) {
+          return x.actual;
+        });
+      var lr = el("tr", null, "line fold loan");
+      foldName(cell(lr, ""), id.replace(/_/g, " ") + " payment", lOpen);
+      cell(lr, parts.length + " parts: principal and interest from the amortization schedule, and the escrow", "text rule");
+      var lk = cell(lr, "", "text");
+      lk.appendChild(el("span", "Recurring", "kind kind-recurring"));
+      cell(lr, target ? money.format(target) : "");
+      cell(lr, money.format(actual), target > 0 && actual > target + 0.5 ? "over" : "");
+      var lu = cell(lr, "", "text");
+      lu.appendChild(spentBar(actual, target));
+      cell(lr, "", "text status");
+      foldRow(lr, key, lOpen, function () {
+        budget.opened = budget.opened || {};
+        budget.opened[key] = !lOpen;
+      });
+      body.appendChild(lr);
+      if (lOpen)
+        parts.forEach(function (x) {
+          lineRow(x, "line part");
+        });
     });
     if (unplanned.length) {
       var shown = !!(budget.unplanned && budget.unplanned[g.name]);
       var spent = unplanned.reduce(function (t, l) {
         return t + l.actual;
       }, 0);
-      var u = el("tr", null, "line unplanned");
-      u.tabIndex = 0;
-      cell(u, "Unplanned");
+      var uKey = "unplanned:" + g.name;
+      var u = el("tr", null, "line unplanned fold");
+      foldName(cell(u, ""), "Unplanned", shown);
       cell(
         u,
         unplanned
@@ -722,42 +882,15 @@ function budgetTable(v: BudgetView) {
       cell(u, money.format(spent));
       cell(u, "");
       cell(u, shown ? "Hide" : "Show " + unplanned.length, "text status link");
-      u.setAttribute("aria-expanded", shown ? "true" : "false");
-      var toggle = function () {
+      foldRow(u, uKey, shown, function () {
         budget.unplanned = budget.unplanned || {};
         budget.unplanned[g.name] = !shown;
-        drawBudgetPage();
-      };
-      u.onclick = toggle;
-      u.onkeydown = onEnter(toggle);
+      });
       body.appendChild(u);
       if (shown)
         order(unplanned).forEach(function (l) {
           lineRow(l, "line unplanned-item");
         });
-    }
-    var gave = g.lines.some(function (l) {
-      return l.recipients.length;
-    });
-    if (gave && v.deductible) {
-      // the year's gifts that count toward the deduction, beside the recipients that make it up
-      var dr = el("tr", null, "rec deductible");
-      cell(dr, "Deductible in " + v.deductible.year);
-      cell(
-        dr,
-        "Gifts to recipients marked deductible" +
-          (v.deductible.year === v.through.slice(0, 4) && v.partial ? " so far" : "") +
-          (v.deductible.unsaid
-            ? "; " + countOf(v.deductible.unsaid, "recipient", "recipients") + " this year not marked yet"
-            : ""),
-        "text rule",
-      );
-      cell(dr, "", "text");
-      cell(dr, "");
-      cell(dr, money.format(v.deductible.given));
-      cell(dr, "");
-      cell(dr, "", "text status");
-      body.appendChild(dr);
     }
   });
   table.appendChild(body);

@@ -420,7 +420,19 @@
       table.bv td.rule { color: var(--on-surface-variant); font-size: 13px; white-space: normal; max-width: 280px; }
       table.bv td.over { color: var(--error); font-weight: 500; }
       table.bv tr.rec td { font-size: 13px; color: var(--on-surface-variant); padding-top: 2px; padding-bottom: 6px; }
-      table.bv tr.rec td:first-child { padding-left: 32px; }
+      table.bv tr.rec td:first-child { padding-left: 56px; }
+      table.bv tr.part td:first-child { padding-left: 40px; }
+      table.bv tr.fold { cursor: pointer; user-select: none; }
+      table.bv tr.fold:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+      table.bv .chev { display: inline-grid; place-items: center; width: 24px; height: 24px; margin: -2px 4px -2px -4px;
+        vertical-align: middle; color: var(--on-surface-variant); border-radius: 50%; }
+      table.bv button.chev { min-height: 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+      table.bv button.chev:hover { background: var(--surface-container-high); }
+      table.bv button.chev:focus-visible { outline: 2px solid var(--primary); }
+      table.bv .chev svg { width: 18px; height: 18px; fill: currentColor; transition: transform 120ms ease; }
+      table.bv .chev.open svg { transform: rotate(90deg); }
+      table.bv .chev-space { display: inline-block; width: 24px; margin: 0 4px 0 -4px; }
+      @media (prefers-reduced-motion: reduce) { table.bv .chev svg { transition: none; } }
       table.bv tr.deductible td { color: var(--on-surface); font-weight: 500; border-top: 1px solid var(--outline-variant); }
       table.bv tr.deductible td.rule { font-weight: 400; }
       select.deductible-pick { font: inherit; font-size: 13px; padding: 0 4px; min-height: 0; height: 26px; width: auto; border-radius: 6px;

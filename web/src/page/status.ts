@@ -217,6 +217,7 @@ function when(at: string) {
 
 // Material icons (Apache 2.0), drawn inline so they need no font.
 var ICONS: Record<string, string> = {
+  chevron: "M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
   add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
   edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
   download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",

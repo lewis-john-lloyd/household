@@ -29,7 +29,8 @@ def forgiving(service):
                 return reader(message_id, headers, body)
             except Unread:
                 raise
-            except (StopIteration, IndexError, ValueError) as e:
+            # a layout that moved: a line or field missing, a number that won't read, a value of the wrong shape
+            except (StopIteration, LookupError, ValueError, TypeError, AttributeError) as e:
                 raise Unread(f"{service} {message_id}: {type(e).__name__} {e}".strip()) from e
 
         read.__name__ = reader.__name__

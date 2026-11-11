@@ -55,7 +55,7 @@ ledger's usual rule, and a change set read twice adds nothing.
 
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -100,6 +100,7 @@ KINDS = {
 MERCHANT_KINDS = ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient")
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
+FUTURE_SLACK = timedelta(days=1)  # clocks disagree a little; a change set from further ahead is refused
 REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter"}  # edits that carry `was`
 # every field such an edit can change: `was` gives them all, so a change made since to any of them is seen
 WAS_FIELDS = {
@@ -358,6 +359,11 @@ def parse(text: str) -> Result:
     at = _instant(doc["created_at"]) if isinstance(doc.get("created_at"), str) else None
     if at is None:
         problems.append("created_at must be a date and time with its zone (2026-01-31T12:00:00Z)")
+    elif datetime.fromisoformat(at) > datetime.now(timezone.utc) + FUTURE_SLACK:
+        # its rows are recorded at created_at, and the latest row wins: one from the future would outrank every
+        # real edit of the same settings until then
+        problems.append(f"created_at {doc['created_at']} is in the future: save it again from the views")
+        at = None
     if not isinstance(doc.get("base_run", ""), str):
         problems.append("base_run must be a string")
     edits = doc.get("edits")

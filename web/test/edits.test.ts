@@ -323,3 +323,11 @@ test("a subscription edit marks a merchant yes or no, one change per merchant", 
   assert.deepEqual(edits.editProblems({ kind: "subscription", key: "WILLOW ST" }), ["missing subscription"]);
   assert.equal(edits.editTarget(yes), edits.editTarget({ ...yes, key: "willow st", subscription: "no" }));
 });
+
+test("the views catch the values ingest would refuse a whole change set for", () => {
+  assert.deepEqual(edits.editProblems({ kind: "recipient", key: "", deductible: "yes" }), ["key is empty"]);
+  assert.deepEqual(edits.editProblems({ kind: "recipient", key: "WILLOW ST", deductible: "maybe" }), [
+    'deductible "maybe" is not yes or no',
+  ]);
+  assert.deepEqual(edits.editProblems({ kind: "subscription", key: "PAGE TURNER BOOKS", subscription: "yes" }), []);
+});

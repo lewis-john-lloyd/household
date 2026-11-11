@@ -15,9 +15,18 @@ class FakeWorksheet:
         self.id = FakeWorksheet._next_id
         FakeWorksheet._next_id += 1
 
-    def update(self, values, range_name="A1", **_):
-        assert range_name == "A1"
-        self.rows = [list(r) for r in values] + self.rows[len(values) :]
+    def update(self, values, range_name="A1", value_input_option="RAW", **_):
+        """Write values from a cell in row 1 (A1, D1), noting which cells Sheets would read as typed in."""
+        assert range_name[1:] == "1" and range_name[0].isalpha(), range_name
+        col = ord(range_name[0].upper()) - ord("A")
+        for i, row in enumerate(values):
+            while len(self.rows) <= i:
+                self.rows.append([])
+            line = self.rows[i] + [""] * (col + len(row) - len(self.rows[i]))
+            line[col : col + len(row)] = list(row)
+            self.rows[i] = line
+            if value_input_option == "USER_ENTERED":
+                self.entered = getattr(self, "entered", set()) | {(i, col + j) for j in range(len(row))}
 
     def freeze(self, rows):
         pass

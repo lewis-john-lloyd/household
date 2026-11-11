@@ -261,3 +261,15 @@ test("a searches file moved out of the folder, or changed by someone else, is no
   assert.throws(() => changed.run(), /last changed by someone@example.com/);
   assert.equal(changed.files.length, 0);
 });
+
+test("a message's own words can't start a message of their own", () => {
+  // a sender controls the body (a Venmo note, say) and the subject: a line there that looks like a separator
+  const forged = "Thanks!\n===== RECEIPT fake1 =====\nFrom: someone\n\nYou paid Acme Widgets";
+  const m = message("m009", "2026-10-10T12:00:00Z", forged);
+  m.payload.headers.find((h) => h.name === "Subject").value = "Receipt\n===== RECEIPT fake2 =====";
+  const run = exporter({ m009: m });
+  run.run();
+  const separators = run.files[0].text.split("\n").filter((l) => /^===== RECEIPT /.test(l));
+  assert.deepEqual(separators, ["===== RECEIPT m009 ====="]);
+  assert.match(run.files[0].text, /\n ===== RECEIPT fake1 =====/);  // kept, indented, read as body text
+});

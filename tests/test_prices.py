@@ -8,6 +8,7 @@ import pytest
 from household import engine, prices, schema, sheets, stage_ingest
 from household.legacy_investments import LEGACY_DOC
 from test_engine import session  # noqa: F401  (the fixture)
+from test_sheets import FakeSpreadsheet
 
 SECURITIES = pd.DataFrame(
     [
@@ -101,6 +102,18 @@ def test_a_request_is_written_as_a_formula_only_from_a_checked_quote_and_date():
     for quote, day in (('ACMEX")&IMPORTXML("x', "2001-03-03"), ("ACMEX", "=NOW()")):
         with pytest.raises(ValueError, match="price request refused"):
             sheets.rewrite_price_requests(None, t, pd.DataFrame([{"symbol": "ACMEX", "quote": quote, "date": day}]))
+
+
+def test_only_the_formula_column_is_written_as_typed_in():
+    # a symbol is the ledger's own text: one that starts with "=" must stay text, not become a formula
+    book = FakeSpreadsheet("ledger")
+    book.add_worksheet("price_requests", 10, 4)
+    t = schema.table(schema.LEDGER, "price_requests")
+    rows = pd.DataFrame([{"symbol": "=HYPERLINK(1)", "quote": "ACMEX", "date": "2001-03-03"}])
+    sheets.rewrite_price_requests(book, t, rows)
+    ws = book.worksheet("price_requests")
+    assert ws.rows[1][0] == "=HYPERLINK(1)" and ws.rows[1][3].startswith("=IFERROR(")
+    assert ws.entered == {(0, 3), (1, 3)}  # the result column alone
 
 
 def test_ingest_asks_then_reads_the_answers_into_the_ledger_and_asks_for_the_rest(session):  # noqa: F811

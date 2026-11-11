@@ -107,3 +107,9 @@ def test_a_recipient_edit_must_say_yes_or_no():
         assert "deductible 'maybe' is not yes or no" in str(e)
     else:
         raise AssertionError("refused")
+
+
+def test_a_gift_with_no_payee_is_kept_under_no_payee():
+    blank = pd.DataFrame([line("t9", "2026-05-01", -20.0, "", "gifts")])
+    out = giving.by_recipient(blank, CATEGORIES, None)
+    assert out[["key", "name", "given"]].values.tolist() == [["", "No payee", 20.0]]

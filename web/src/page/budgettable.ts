@@ -45,6 +45,11 @@ function recipientRow(r: Recipient) {
   cell(row, money.format(r.given));
   cell(row, "");
   var sc = cell(row, "", "text status");
+  if (!r.key) {
+    // a gift whose line names no payee (a check, say): there is no one to mark
+    sc.appendChild(el("span", "No payee to mark", "muted"));
+    return row;
+  }
   var pick = el("select", null, "deductible-pick") as HTMLSelectElement;
   pick.setAttribute("aria-label", "Whether gifts to " + r.name + " are deductible");
   pick.dataset.fold = t;

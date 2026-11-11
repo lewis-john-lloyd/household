@@ -37,6 +37,23 @@ def test_whole_dollar_figures_match_with_or_without_commas(tmp_path):
         assert push_guard.denied(text, *deny) == [], text
 
 
+def test_a_word_split_by_an_invisible_character_or_written_wide_is_still_found(tmp_path):
+    path = tmp_path / "deny.txt"
+    path.write_text("Acme Widgets\n")
+    deny = push_guard.load_denylist(path)
+    assert push_guard.denied("by Acme Wid\u200bgets", *deny) == ["Acme Widgets"]
+    assert push_guard.denied("by \uff21cme Widgets", *deny) == ["Acme Widgets"]  # a fullwidth A
+
+
+def test_a_file_named_for_a_household_value_is_a_finding(tmp_path):
+    path = tmp_path / "deny.txt"
+    path.write_text("Willow St\nwillow\n")
+    deny = push_guard.load_denylist(path)
+    assert push_guard.path_findings(["docs/willow_notes.md", "src/ok.py"], deny) == [
+        "docs/willow_notes.md: household value 'willow' in the file's name"
+    ]
+
+
 def test_added_lines_and_outgoing_ranges():
     diff = "+++ b/src/x.py\n@@ -1 +1 @@\n-old\n+new line\n+++ /dev/null\n+gone\n"
     assert push_guard.added_lines(diff) == [("src/x.py", "new line"), ("", "gone")]

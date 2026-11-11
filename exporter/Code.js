@@ -289,19 +289,30 @@ function installTrigger() {
   log_("installed: " + TRIGGER_HANDLER + " runs every day around 5am" + (removed ? " (replaced " + removed + " older)" : ""));
 }
 
-/** One message as text: a separator line with its id, the headers the reader needs, then the body. */
+/** One message as text: a separator line with its id, the headers the reader needs, then the body. The body and
+ * headers are the sender's own words, so a line in them that looks like a separator (a Venmo note, say) is
+ * indented and a header is kept to one line: no message can start another of its own. */
 function render_(message) {
   const headers = message.payload.headers || [];
-  const header = (name) => (headers.find((h) => h.name.toLowerCase() === name) || {}).value || "";
+  const header = (name) => oneLine_((headers.find((h) => h.name.toLowerCase() === name) || {}).value || "");
   return [
     SEPARATOR + message.id + " =====",
     "From: " + header("from"),
     "Subject: " + header("subject"),
     "Date: " + new Date(Number(message.internalDate)).toISOString(),
     "",
-    body_(message.payload),
+    defused_(body_(message.payload)),
     "",
   ].join("\n");
+}
+
+/** Text whose lines can't be taken for a message separator. */
+function defused_(text) {
+  return String(text).replace(/^(\s*)(=+ ?RECEIPT )/gim, (_, lead, mark) => lead + " " + mark);
+}
+
+function oneLine_(text) {
+  return String(text).replace(/[\r\n]+/g, " ");
 }
 
 /** A part's body as text. The Gmail service hands it over as bytes, or as base64url that may lack its

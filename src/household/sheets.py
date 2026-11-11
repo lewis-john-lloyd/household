@@ -313,7 +313,10 @@ def rewrite_price_requests(spreadsheet, t, df):
     ws.clear()
     values = [list(t.columns)] + rows
     ws.resize(rows=max(len(values), 2), cols=len(t.columns))
-    ws.update(values=values, range_name="A1", value_input_option="USER_ENTERED")
+    # everything but the formula column is written as it is: a symbol is the ledger's text, never a formula
+    ws.update(values=[r[:-1] for r in values], range_name="A1", value_input_option="RAW")
+    last = chr(ord("A") + len(t.columns) - 1)
+    ws.update(values=[[r[-1]] for r in values], range_name=f"{last}1", value_input_option="USER_ENTERED")
     return len(rows)
 
 

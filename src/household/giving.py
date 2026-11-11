@@ -58,7 +58,7 @@ def by_recipient(categorized, categories, decisions):
         given=("amount", lambda s: round(-s.sum(), 2)), gifts=("amount", lambda s: int((s < 0).sum()))
     )
     out = out[out["given"] != 0]
-    out["name"] = [given.get(k) or seen.get(k, k) for k in out["key"]]
+    out["name"] = [given.get(k) or seen.get(k, k) or "No payee" for k in out["key"]]
     out["deductible"] = [said.get(k, "") for k in out["key"]]
     return out[COLUMNS].sort_values(["month", "given"], ascending=[True, False]).reset_index(drop=True)
 

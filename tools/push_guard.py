@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -48,6 +49,8 @@ WHOLE_ENTRY = re.compile(r"^\d{5,}$")  # a whole-dollar figure; four digits or f
 AMOUNT_TEXT = re.compile(r"(?<![\w.])-?\$?(\d{1,3}(?:[, ]\d{3})+|\d+)[. ](\d{2})(?![\d])")
 # 123456, 123,456, $123,456.00: a whole number of five digits or more, not part of a longer number or a decimal  # leak-guard: allow (made up)
 WHOLE_TEXT = re.compile(r"(?<![\w.,])-?\$?(\d{1,3}(?:,\d{3})+|\d{5,})(?:\.00)?(?![\d,]|\.\d)")
+# characters that don't show but split a word ("Tug\u200bgle"): dropped before the denylist is matched
+INVISIBLE = dict.fromkeys(map(ord, "\u00ad\u200b\u200c\u200d\u2060\ufeff"))
 GITHUB = re.compile(r"(?:https?://)?github\.com/[\w.-]+(?:/[\w.-]+)?")
 
 
@@ -74,7 +77,8 @@ def load_denylist(path):
         elif WHOLE_ENTRY.match(entry):
             amounts.add(str(int(entry)))
         else:
-            words.append((entry, re.compile(rf"(?<!\w){re.escape(entry)}(?!\w)", re.IGNORECASE)))
+            # a word ends at anything but a letter or digit, "_" included, so snake_case names and files count
+            words.append((entry, re.compile(rf"(?<![^\W_]){re.escape(entry)}(?![^\W_])", re.IGNORECASE)))
     return amounts, words
 
 
@@ -93,7 +97,7 @@ def wholes_in(text):
 
 def denied(text, amounts, words):
     """The denylist entries this text contains."""
-    text = GITHUB.sub(" ", text)
+    text = GITHUB.sub(" ", unicodedata.normalize("NFKC", text).translate(INVISIBLE))
     hits = [entry for entry, pattern in words if pattern.search(text)]
     return hits + sorted((amounts_in(text) | wholes_in(text)) & amounts)
 
@@ -213,6 +217,8 @@ def check(ranges, denylist):
         for path, line in added_lines(git("log", "-p", "--format=", "--unified=0", *args)):
             if not is_binary_path(path):  # binary files are checked whole, below
                 findings += line_findings(path, line, denylist)
+        named = git("log", "--name-only", "--diff-filter=ACR", "--format=", *args).split()
+        findings += path_findings(sorted(set(named)), denylist)
         for message in git("log", "--format=%H%n%B%x1e", *args).split("\x1e"):
             sha, _, body = message.strip().partition("\n")
             findings += message_findings(f"commit {sha[:7]} message", body, denylist)
@@ -233,9 +239,16 @@ def check(ranges, denylist):
     return findings
 
 
+def path_findings(paths, denylist):
+    """Findings for file names: a file named for a household value is a leak whatever it holds."""
+    if not denylist:
+        return []
+    return [f"{p}: household value {hit!r} in the file's name" for p in paths for hit in denied(p, *denylist)]
+
+
 def check_staged(denylist):
     """Findings for the changes staged for the next commit."""
-    findings = []
+    findings = path_findings(git("diff", "--cached", "--name-only", "--diff-filter=ACR").split(), denylist)
     for path, line in added_lines(git("diff", "--cached", "--unified=0")):
         findings += line_findings(path, line, denylist)
     paths = binary_paths(git("diff", "--cached", "--numstat"))

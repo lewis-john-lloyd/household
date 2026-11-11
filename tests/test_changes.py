@@ -744,3 +744,10 @@ def test_a_job_becomes_a_comp_events_row_and_is_checked():
     assert "no pay stubs or jobs for sam" in refused(doc({**job, "person": "sam"}))
     # two edits for one person, date and employer are one change made twice
     assert "edits the same thing as edit 1" in refused(doc(job, {**job, "salary": "95000"}))
+
+
+def test_a_change_set_from_the_future_is_refused():
+    # its rows would outrank every real edit of the same settings until that day
+    later = doc({"kind": "payee", "key": "ACME GROCER", "category": "food"}, created_at="2999-01-01T00:00:00Z")
+    with pytest.raises(ParseError, match="is in the future"):
+        changes.parse(later)

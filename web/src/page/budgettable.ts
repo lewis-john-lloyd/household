@@ -212,7 +212,7 @@ function budgetTable(v: BudgetView) {
       var shown = lines.length === 1 ? pretty(lines[0].line) : pretty(l.category);
       name.appendChild(document.createTextNode(shown));
       if (shown.toLowerCase() !== pretty(l.category).toLowerCase()) name.title = l.category;
-      if (alone && g.name && g.name !== l.category) name.appendChild(el("span", pretty(g.name), "tag"));
+      if (alone && g.name && g.name !== l.category) name.appendChild(el("span", pretty(g.name), "tag group-tag"));
       if (
         lines.some(function (x) {
           return changedText("budget_line|" + x.line);
@@ -231,7 +231,7 @@ function budgetTable(v: BudgetView) {
       if (lines.length === 1) how.title = String(lines[0].in_words || "");
       var kind = kindOf(lines);
       var kc = cell(row, "", "text");
-      kc.appendChild(el("span", kind || "Unplanned", "kind kind-" + (kind || "Unplanned").toLowerCase()));
+      kc.appendChild(kindChip(kind));
       cell(row, l.target ? money.format(l.target) : "");
       var over = l.target > 0 && l.actual > l.target + 0.5;
       cell(row, money.format(l.actual), over ? "over" : "");
@@ -243,6 +243,8 @@ function budgetTable(v: BudgetView) {
       var sc = cell(row, "", "text status");
       if (st) sc.appendChild(statusTag(st, st.tone === "check" ? checkAction(st, l.category, v) : undefined));
       if (l.balance !== null) sc.appendChild(statusTag(fundText(l.balance)));
+      row.setAttribute("aria-haspopup", "dialog");
+      sc.appendChild(openHint());
       var open = function () {
         budget.open = { category: l.category };
         openLine(l.category, v);
@@ -270,7 +272,7 @@ function budgetTable(v: BudgetView) {
           cell(sub, shortHow(bl), "text rule").title = String(bl.in_words || "");
           var skc = cell(sub, "", "text");
           var sk = KIND_OF_RULE[bl.rule] || "Fixed";
-          skc.appendChild(el("span", sk, "kind kind-" + sk.toLowerCase()));
+          skc.appendChild(kindChip(sk));
           cell(sub, part ? money.format(part.target) : "");
           cell(sub, "");
           cell(sub, "");
@@ -299,7 +301,9 @@ function budgetTable(v: BudgetView) {
         cell(rec, r.expected === null ? "" : money.format(r.expected));
         cell(rec, money.format(r.actual));
         cell(rec, "");
-        cell(rec, r.actual > 0 ? "Paid" : r.expected ? "Not seen yet" : "", "text status");
+        var rs = cell(rec, "", "text status");
+        if (r.actual > 0) rs.appendChild(statusTag({ text: "Paid", tone: "ok" }));
+        else if (r.expected) rs.appendChild(statusTag({ text: "Not seen yet", tone: "watch" }));
         body.appendChild(rec);
       });
       if (l.recipients.length && v.deductible && !deductibleShown) {
@@ -363,7 +367,7 @@ function budgetTable(v: BudgetView) {
       foldName(cell(lr, ""), pretty(id), lOpen);
       cell(lr, parts.length + " parts: principal and interest from the amortization schedule, and the escrow", "text rule");
       var lk = cell(lr, "", "text");
-      lk.appendChild(el("span", "Recurring", "kind kind-recurring"));
+      lk.appendChild(kindChip("Recurring"));
       cell(lr, target ? money.format(target) : "");
       cell(lr, money.format(actual), target > 0 && actual > target + 0.5 ? "over" : "");
       var lu = cell(lr, "", "text");
@@ -397,7 +401,9 @@ function budgetTable(v: BudgetView) {
         "text rule",
       );
       var uk = cell(u, "", "text");
-      uk.appendChild(el("span", "No budget", "kind kind-unplanned"));
+      var none = kindChip("Unplanned");
+      none.lastChild!.textContent = "No budget";
+      uk.appendChild(none);
       cell(u, "");
       cell(u, money.format(spent));
       cell(u, "");

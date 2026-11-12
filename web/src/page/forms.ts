@@ -328,6 +328,16 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
   var amount = field(form, "Amount", textInput(l.amount, "amount"));
   var per = field(form, "Per", choice(PERS, l.per || "monthly"));
   var category = field(form, "Category", categoryChoice(l.category || l.spends_from));
+  var named = l.category || l.spends_from;
+  if (
+    named &&
+    !(editor!.categories || []).some(function (c) {
+      return c.category === named;
+    })
+  )
+    form.appendChild(
+      el("p", named + " isn't a category: pick one, or add it under Categories, before keeping a change.", "error field-note"),
+    );
   var charges = el("div", null, "recurring-sum");
   form.appendChild(charges);
   // the charges this line pays: picked here, or linked already (a recurring line counts these alone)
@@ -474,10 +484,19 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
     }),
   );
   if (!isNew && l.in_force === "yes") {
-    actions.appendChild(
-      button("End line", function () {
+    // ending a line is the one step here that stops a budget, so it is quiet and asks once, in place
+    var asked = false;
+    var end = button(
+      "End line",
+      function () {
         if (!isDate(effective.value)) {
           error.textContent = "Pick the date it ends.";
+          return;
+        }
+        if (!asked) {
+          asked = true;
+          end.textContent = "End it on " + longDay(effective.value) + "?";
+          end.classList.add("asking");
           return;
         }
         stage(
@@ -485,16 +504,24 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
           "budget line " + l.line + ": ends " + effective.value,
         );
         done();
-      }),
+      },
+      "text danger",
     );
+    actions.appendChild(end);
   }
   form.appendChild(actions);
   if (!isNew) {
+    var part = el("div", null, "form-part");
+    part.appendChild(el("h4", "Schedule an amount"));
+    part.appendChild(
+      el("p", "One amount in one month, on top of the line's own; 0 on a date cancels the amount there.", "support"),
+    );
+    form.appendChild(part);
     var on = field(form, "Scheduled on", dateInput(""));
-    var much = field(form, "Scheduled amount (0 cancels)", textInput("", "amount"));
+    var much = field(form, "Amount that month", textInput("", "amount"));
     var add = el("div", null, "actions");
     add.appendChild(
-      button("Add scheduled amount", function () {
+      button("Schedule it", function () {
         if (!isDate(on.value) || !isAmount(much.value.trim())) {
           error.textContent = "A scheduled amount needs a date and an amount.";
           return;

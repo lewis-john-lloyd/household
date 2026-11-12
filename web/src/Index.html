@@ -12,6 +12,7 @@
         --primary: #0b57d0; --on-primary: #ffffff; --primary-container: #d3e3fd; --on-primary-container: #041e49;
         --secondary-container: #c2e7ff; --on-secondary-container: #001d35;
         --surface: #f8fafd; --surface-low: #ffffff; --surface-container: #f0f4f9; --surface-high: #e9eef6;
+        --surface-container-high: #e2e7ee;
         --on-surface: #1f1f1f; --on-surface-variant: #444746; --outline: #747775; --outline-variant: #c4c7c5;
         --error: #b3261e; --error-container: #f9dedc; --on-error-container: #410e0b;
         --success: #146c2e; --success-container: #c4eed0; --on-success-container: #072711;
@@ -29,6 +30,7 @@
           --primary: #a8c7fa; --on-primary: #062e6f; --primary-container: #0842a0; --on-primary-container: #d3e3fd;
           --secondary-container: #004a77; --on-secondary-container: #c2e7ff;
           --surface: #131314; --surface-low: #1b1b1c; --surface-container: #1e1f20; --surface-high: #282a2c;
+          --surface-container-high: #333537;
           --on-surface: #e3e3e3; --on-surface-variant: #c4c7c5; --outline: #8e918f; --outline-variant: #444746;
           --error: #f2b8b5; --error-container: #8c1d18; --on-error-container: #f9dedc;
           --success: #6dd58c; --success-container: #0f5223; --on-success-container: #c4eed0;
@@ -362,6 +364,11 @@
       .staged-banner { padding: 8px 12px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); }
       .staged-banner.saved { background: var(--secondary-container); color: var(--on-secondary-container); }
       button.danger { color: var(--error); }
+      button.danger.asking { background: var(--error-container); color: var(--on-error-container); }
+      form .form-part { flex-basis: 100%; border-top: 1px solid var(--outline-variant); margin-top: 12px; padding-top: 12px; }
+      form .form-part h4 { margin: 0; font-size: 14px; font-weight: 500; }
+      form .form-part .support { margin: 2px 0 0; }
+      form .field-note { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; }
       .txn-page { max-width: 880px; }
       @media (max-width: 800px) {
         .md { grid-template-columns: 1fr; }
@@ -421,7 +428,7 @@
       .a2-titles { display: flex; flex-direction: column; gap: 6px; }
       .a2-eyebrow { font-size: 14px; color: var(--on-surface-variant); }
       .a2-headline { font-size: 28px; line-height: 36px; font-weight: 400; margin: 0; font-variant-numeric: tabular-nums; }
-      .a2-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+      .a2-legend { display: flex; gap: 6px 16px; flex-wrap: wrap; }
       .a2-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
       .a2-card { background: var(--surface-container); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
       .a2-label { font-size: 13px; color: var(--on-surface-variant); }
@@ -451,7 +458,6 @@
       .item-names { display: flex; flex-direction: column; min-width: 0; }
       .item-name { font-size: 14px; }
       .item-sub { font-size: 12px; color: var(--on-surface-variant); }
-      .item-status { font-size: 13px; color: var(--on-surface-variant); }
       /* a status: a tone as an icon and words, the same in every view (budgetwords.ts, statusTag) */
       .st { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px;
         color: var(--on-surface-variant); vertical-align: middle; }
@@ -466,19 +472,28 @@
       button.st:hover { background: var(--waiting-container); color: var(--on-surface); }
       button.st:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
       td.status .st { display: flex; }
+      table.bv td.status { position: relative; padding-right: 32px; }
+      .open-hint { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: grid; color: var(--on-surface-variant);
+        opacity: 0; transition: opacity 120ms ease; }
+      tr:hover .open-hint, tr:focus-visible .open-hint, tr.chosen .open-hint { opacity: 0.8; }
+      @media (prefers-reduced-motion: reduce) { .open-hint { transition: none; } }
+      @media (hover: none) { .open-hint { opacity: 0.5; } }
       td.status .st + .st { margin-top: 2px; }
       .item-names .st { margin-top: 2px; }
       .item-mid .spent-bar { width: 100%; }
       .item-num { text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
       .item-num.muted { color: var(--on-surface-variant); font-size: 13px; }
       .item-num.over { color: var(--error); }
-      .kind-mark { width: 10px; height: 10px; border-radius: 50%; justify-self: center; }
+      /* a kind's mark: told apart by shape, so color stays free to mean a status (kindMark in budgetwords.ts) */
+      .kind-mark { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; justify-self: center; }
       .mark-recurring { background: var(--primary); }
-      .mark-floating { border: 2px solid var(--outline); }
-      .mark-annual { border: 2px solid var(--success); border-radius: 2px; }
+      .mark-floating { border: 2px solid var(--primary); }
+      .mark-annual { border: 2px solid var(--primary); border-radius: 2px; }
       .mark-fixed { background: var(--outline); border-radius: 2px; }
       .mark-mixed { background: linear-gradient(90deg, var(--primary) 50%, var(--outline) 50%); }
       .mark-unplanned { border: 2px dashed var(--outline); }
+      .item-panel-head h3 .kind-mark { margin-right: 8px; vertical-align: 1px; }
+      .a2-legend .key-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--on-surface-variant); }
       table.bv tr.fold { cursor: pointer; user-select: none; }
       table.bv tr.fold:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
       table.bv .chev { display: inline-grid; place-items: center; width: 24px; height: 24px; margin: -2px 4px -2px -4px;
@@ -498,6 +513,7 @@
       .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
         background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
       .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }
+      .tag.group-tag { background: transparent; border: 1px solid var(--outline-variant); color: var(--on-surface-variant); line-height: 16px; }
       dl.loan-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px 24px; margin: 12px 0 0; }
       dl.loan-facts dt { font-size: 12px; color: var(--on-surface-variant); }
       dl.loan-facts dd { margin: 2px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -520,15 +536,10 @@
       .spent-bar i.over { background: var(--error); }
       .spent-bar i.unbudgeted { background: var(--outline); }
       .spent-bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--on-surface); }
-      .over-text { color: var(--error); font-weight: 500; font-size: 13px; }
-      .warn-text { color: var(--waiting); font-size: 13px; }
-      .ok-text { color: var(--success); font-size: 13px; }
       table.bv td.status { color: var(--on-surface-variant); font-size: 13px; }
       table.bv td.status.link { color: var(--primary); }
-      .kind { display: inline-block; font-size: 12px; line-height: 20px; padding: 0 8px; border-radius: 6px;
-        border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
-      .kind-recurring { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
-      .kind-annual { background: var(--success-container); color: var(--on-success-container); border-color: transparent; }
+      .kind { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 20px; padding: 0 8px 0 6px;
+        border-radius: 6px; border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
       .kind-unplanned { border-style: dashed; }
       table.bv tr.unplanned { cursor: pointer; }
       table.bv tr.unplanned td, table.bv tr.unplanned-item td { color: var(--on-surface-variant); }

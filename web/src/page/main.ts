@@ -60,6 +60,11 @@ function load() {
     );
     return;
   }
+  if (!periodsLoaded.flows.length) {
+    // an empty list is still an answer: coming back to the page says so again rather than asking for no period
+    byId("chart").textContent = "No flows yet: run compute.";
+    return;
+  }
   fillPeriods(periodsLoaded.flows);
   byId("chart").textContent = "Loading…";
   call("getFlows", [chosen.flows, level], drawFlows, "chart");

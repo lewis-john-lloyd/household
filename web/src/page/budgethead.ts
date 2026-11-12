@@ -15,9 +15,14 @@ function budgetSummary(v: BudgetView) {
     el("h2", money.format(v.actual) + " went out" + (came > 0 ? ", " + money.format(came) + " came in" : ""), "a2-headline"),
   );
   top.appendChild(titles);
+  // a key to the kinds' marks, not controls: plain words beside each mark
   var legend = el("div", null, "a2-legend");
+  legend.setAttribute("aria-hidden", "true");
   ["Recurring", "Floating", "Annual", "Fixed"].forEach(function (k) {
-    legend.appendChild(el("span", k, "kind kind-" + k.toLowerCase()));
+    var item = el("span", null, "key-item");
+    item.appendChild(kindMark(k));
+    item.appendChild(document.createTextNode(k));
+    legend.appendChild(item);
   });
   top.appendChild(legend);
   box.appendChild(top);

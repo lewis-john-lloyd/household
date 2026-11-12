@@ -76,9 +76,9 @@ function openLine(category: string, v: BudgetView, only?: string) {
       })[0]
     : null;
   var d = drawer(
-    only ? only : category,
-    (only ? category + (part ? ", its target " + money.format(part.target) + " of the category's" : "") + ". " : "") +
-      (line.group ? line.group + ". " : "") +
+    pretty(only ? only : category),
+    (only ? pretty(category) + (part ? ", its target " + money.format(part.target) + " of the category's" : "") + ". " : "") +
+      (line.group ? pretty(line.group) + ". " : "") +
       periodName(v.period) +
       (v.sameWeeks ? " so far" : "") +
       ": " +
@@ -130,7 +130,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
       lines.length > 1 || only ? "Budget line: " + bl.line : "Budget line",
       bl.in_force === "ended"
         ? "Ended " + bl.effective + "."
-        : "Since " + bl.effective + ": " + bl.in_words + "." + (bl.scheduled ? " Scheduled: " + bl.scheduled + "." : ""),
+        : "Since " + longDay(bl.effective) + ": " + bl.in_words + "." + (bl.scheduled ? " Scheduled: " + bl.scheduled + "." : ""),
     );
     var note = changeNote("budget_line|" + bl.line);
     if (note) d.appendChild(el("p", note, "staged-note"));

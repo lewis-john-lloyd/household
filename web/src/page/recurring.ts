@@ -57,7 +57,9 @@ function drawRecurring(body: HTMLElement) {
     .sort()
     .forEach(function (category) {
       var card = el("section", null, "panel rec-card");
-      var h = el("h3", (budget.data!.book.groups[category] ? budget.data!.book.groups[category] + ": " : "") + category);
+      var h = el("h3", pretty(category));
+      if (budget.data!.book.groups[category])
+        h.appendChild(el("span", pretty(budget.data!.book.groups[category]), "tag group-tag"));
       var lines = linesFor(category).filter(function (l) {
         return l.in_force !== "ended";
       });
@@ -69,13 +71,11 @@ function drawRecurring(body: HTMLElement) {
               .map(function (l) {
                 return l.in_words;
               })
-              .join("; "),
-            "tag" +
-              (lines.some(function (l) {
-                return l.rule === "recurring";
-              })
-                ? ""
-                : " plain"),
+              .join("; ")
+              .replace(/^./, function (c) {
+                return c.toUpperCase();
+              }),
+            "tag plain",
           ),
         );
       else h.appendChild(el("span", "no budget line", "tag plain"));
@@ -153,7 +153,7 @@ function chargeRow(t: Row) {
   row.tabIndex = 0;
   var left = el("div");
   left.appendChild(chargeTitle(t, drawBudgetPage, "span"));
-  if (t.status === "price changed") left.appendChild(el("span", "price changed", "tag warn"));
+  if (t.status === "price changed") left.appendChild(statusTag({ text: priceWords(t), tone: "check" }));
   var staged_ =
     changedText("subscription|" + t.key.toUpperCase()) ||
     changedText("recurring_merge|" + t.key.toUpperCase()) ||
@@ -161,16 +161,11 @@ function chargeRow(t: Row) {
     changedText("recurring_line|" + t.key.toUpperCase());
   if (staged_) left.appendChild(el("span", staged_, "tag warn"));
   var pays = chargeLine(t.key);
-  if (pays) left.appendChild(el("span", "pays " + pays, "tag"));
-  var when = t.status === "stopped" ? "last charged " + t.last : t.next_expected ? "next " + t.next_expected : "";
+  if (pays) left.appendChild(el("span", "Pays " + pretty(pays), "tag plain"));
+  var when =
+    t.status === "stopped" ? "last charged " + longDay(t.last) : t.next_expected ? "next " + longDay(t.next_expected) : "";
   left.appendChild(
-    el(
-      "div",
-      [t.cadence, t.status === "price changed" ? t.change : "", when, t.includes ? "includes " + t.includes : ""]
-        .filter(Boolean)
-        .join(", "),
-      "support",
-    ),
+    el("div", [t.cadence, when, t.includes ? "includes " + t.includes : ""].filter(Boolean).join(", "), "support"),
   );
   row.appendChild(left);
   var perMonth = Number(t.yearly) / 12;
@@ -195,9 +190,9 @@ function openCharge(key: string) {
   facts(d, [
     ["Every", (t && t.cadence) || r.cadence],
     ["Latest", t && t.latest ? cents.format(Number(t.latest)) : r.latest ? cents.format(Number(r.latest)) : ""],
-    ["Last charged", (t && t.last) || r.last],
+    ["Last charged", longDay((t && t.last) || r.last)],
     ["A year", (t && t.yearly) || r.yearly ? cents.format(Number((t && t.yearly) || r.yearly)) : ""],
-    ["Category", (t && t.category) || r.category],
+    ["Category", pretty((t && t.category) || r.category)],
     ["Spelled", r.example],
     ["Includes", (t && t.includes) || r.includes],
     ["Pays budget line", chargeLine(key)],
@@ -401,26 +396,34 @@ function priceAlert(t: Row) {
     " " +
     t.cadence +
     " on " +
-    t.last +
+    longDay(t.last) +
     ". ";
   var actions = el("span", null, "actions");
   var perYear = ({ weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 } as Record<string, number>)[t.cadence] || 0;
   var delta = ((Number(t.latest) - Number(t.previous)) * perYear) / 12;
   var line = lines[0];
-  if (!line) words += "No budget line pays for " + t.category + ".";
-  else if (line.rule === "recurring") words += line.line + " takes its target from its charges, so the target moves with it.";
+  if (!line) words += "No budget line pays for " + pretty(t.category) + ".";
+  else if (line.rule === "recurring")
+    words += pretty(line.line) + " takes its target from its charges, so the target moves with it.";
   else if (line.rule === "fixed" && perYear) {
     var per = line.per || "monthly";
     var now = Number(String(line.amount).replace(/,/g, "")) || 0;
     var next = Math.round((now + delta / PER_MONTH[per]) * 100) / 100;
     words +=
-      line.line + "'s target is " + cents.format(now) + " " + per + "; at the new price it would be " + cents.format(next) + ".";
+      pretty(line.line) +
+      "'s target is " +
+      cents.format(now) +
+      " " +
+      (PER_WORDS[per] || per) +
+      "; at the new price it would be " +
+      cents.format(next) +
+      ".";
     var t_ = "budget_line|" + line.line;
     if (changeNote(t_)) actions.appendChild(el("span", changeNote(t_), "support"));
     else
       actions.appendChild(
         button(
-          "Update " + line.line + " to " + cents.format(next),
+          "Update " + pretty(line.line) + " to " + cents.format(next),
           function () {
             stage(
               {
@@ -453,7 +456,7 @@ function priceAlert(t: Row) {
           "filled",
         ),
       );
-  } else words += line.line + "'s target follows its spending on its own (" + line.in_words + ").";
+  } else words += pretty(line.line) + "'s target follows its spending on its own (" + line.in_words + ").";
   // the price comes from its lines: one that isn't part of the charge can be left out there
   actions.appendChild(
     button(
@@ -482,7 +485,7 @@ function trackAlert(r: Row) {
         " for about " +
         cents.format(Number(r.latest)) +
         " and isn't tracked." +
-        (r.category ? " Its lines are in " + r.category + "." : ""),
+        (r.category ? " Its lines are in " + pretty(r.category) + "." : ""),
     ),
   );
   if (chargeLine(r.key)) text.appendChild(el("span", "pays " + chargeLine(r.key), "tag"));

@@ -88,6 +88,22 @@ var KIND_OF_RULE: Record<string, string> = {
   fixed: "Fixed",
 };
 
+// A kind as a chip: its mark (a shape, the same in every view) and its name. Kinds are told apart by shape,
+// so color stays free to mean a status.
+function kindChip(kind: string) {
+  var k = kind || "Unplanned";
+  var chip = el("span", null, "kind kind-" + k.toLowerCase());
+  chip.appendChild(kindMark(k));
+  chip.appendChild(document.createTextNode(k));
+  return chip;
+}
+
+function kindMark(kind: string) {
+  var mark = el("span", null, "kind-mark mark-" + kind.toLowerCase());
+  mark.setAttribute("aria-hidden", "true");
+  return mark;
+}
+
 // A line item's kind: its budget lines' (or "Mixed"), or "" when it has none in force.
 function kindOf(lines: Row[]) {
   var kinds = lines
@@ -133,6 +149,13 @@ function statusTag(st: LineStatus, act?: () => void): HTMLElement {
     });
   }
   return tag;
+}
+
+// The mark at a row's end that says a click opens its drawer (shown on hover and focus).
+function openHint() {
+  var hint = el("span", null, "open-hint");
+  hint.appendChild(icon("open"));
+  return hint;
 }
 
 // The tracked charges of a line item whose latest charge changed price: worth a look before trusting the line,

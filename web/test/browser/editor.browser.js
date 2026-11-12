@@ -380,8 +380,8 @@ test("a scheduled amount on a date that has one says what it replaces, so ingest
   ]) {
     // the drawer stays open between them
     await page.fill(".drawer label:has-text('Scheduled on') input", date);
-    await page.fill(".drawer label:has-text('Scheduled amount') input", amount);
-    await page.click(".drawer button:has-text('Add scheduled amount')");
+    await page.fill(".drawer label:has-text('Amount that month') input", amount);
+    await page.click(".drawer button:has-text('Schedule it')");
   }
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.saved");
@@ -629,7 +629,7 @@ test("recurring: a charge that comes back is offered to track, and one that stop
   );
   await page.waitForSelector("#budget:not([hidden]) .alert");
   assert.match(await page.textContent(".alert"), /WILLOW ST comes back monthly for about \$30.00 and isn't tracked/); // leak-guard: allow (made up)
-  assert.match(await page.textContent(".rec-card.wide"), /Seem to have stopped.*BLUE PUMP FUEL.*last charged 2001-01-03/s);
+  assert.match(await page.textContent(".rec-card.wide"), /Seem to have stopped.*BLUE PUMP FUEL.*last charged Jan 3, 2001/s);
   await page.click(".alert button:has-text('Track it')");
   await page.click(".rec-row:has-text('BLUE PUMP FUEL')");
   await page.selectOption(".drawer label:has-text('Merge into') select", "WILLOW ST");
@@ -1586,6 +1586,43 @@ test("a line whose charge changed price says Check, and the check opens the char
   await page.waitForSelector(".group-card button.st-check");
   await page.click(".layout-switch button:has-text('By kind')");
   await page.waitForSelector(".kind-view button.st-check");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("ending a budget line asks once in place, and a line naming no category says so", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], charges: [], book: { groups: { hobby: 'fun' }, recurring: []," +
+      "    days: [[d, 'hobby', 20]], targets: [{ month: m, category: 'hobby', priority: 'low', target: 40 }] } };" +
+      "  window.__answers.getEditor.categories = [{ category: 'food', group: 'living', priority: 'high' }];" +
+      "  window.__answers.getEditor.budgetLines = [{ line: 'hobby', effective: '2001-01-01', category: 'hobby', account: ''," +
+      "    priority: 'low', rule: 'fixed', amount: '40', per: 'monthly', note: '', in_force: 'yes', in_words: '40.00 a month'," +
+      "    this_month: '40', last_12_months: '0', scheduled: '', spends_from: 'hobby' }];" +
+      "})();",
+  );
+  await page.click("table.bv tr.line:has-text('Hobby') td:nth-child(2)");
+  await page.waitForSelector(".drawer form");
+  assert.match(await page.textContent(".drawer .field-note"), /hobby isn't a category: pick one, or add it under Categories/);
+  await page.fill(".drawer label:has-text('From') input", "2001-06-01");
+  await page.click(".drawer button:has-text('End line')");
+  assert.deepEqual(await staged(page), []); // the first click only asks
+  assert.equal(await page.textContent(".drawer button.danger.asking"), "End it on Jun 1, 2001?");
+  await page.click(".drawer button.danger.asking");
+  assert.deepEqual(await staged(page), ["budget line hobby: ends 2001-06-01"]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("with no flows yet, coming back to Cashflow says so again and asks for no period", async () => {
+  const page = await open("");
+  await page.click("#view-flows");
+  await page.waitForSelector("#chart:has-text('No flows yet')");
+  await page.click("#view-budget");
+  await page.click("#view-flows");
+  await page.waitForSelector("#chart:has-text('No flows yet')");
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getFlows").length), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

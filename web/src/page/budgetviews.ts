@@ -197,7 +197,10 @@ function kindView(v: BudgetView) {
     if (!items.length) return;
     var panel = el("section", null, "item-panel kind-panel-" + k[0].toLowerCase());
     var head = el("div", null, "item-panel-head");
-    head.appendChild(el("h3", k[1]));
+    var title = el("h3");
+    title.appendChild(kindMark(k[0]));
+    title.appendChild(document.createTextNode(k[1]));
+    head.appendChild(title);
     head.appendChild(el("span", k[2], "item-sub"));
     panel.appendChild(head);
     items.forEach(function (x) {
@@ -242,7 +245,8 @@ function cardsView(v: BudgetView) {
       );
       if (x.status && x.status.tone === "check")
         row.querySelector(".item-names")!.appendChild(statusTag(x.status, checkAction(x.status, x.category, v)));
-      var mark = el("span", null, "kind-mark mark-" + x.kind.toLowerCase());
+      var mark = kindMark(x.kind);
+      mark.removeAttribute("aria-hidden");
       mark.title = x.kind;
       mark.setAttribute("aria-label", x.kind);
       row.insertBefore(mark, row.firstChild);

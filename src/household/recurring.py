@@ -43,6 +43,7 @@ def _cadence(gaps):
 def discover(categorized, today=None):
     today = pd.Timestamp(today or date.today())
     df = categorized[(categorized["era"] != "legacy") & (categorized["category"] != "transfer")].copy()
+    df = df[~one_off(df)]  # a line marked one-off is never part of a recurring charge
     if df.empty:  # no transactions yet (a fresh ledger): nothing recurs
         return pd.DataFrame(columns=COLUMNS)
     df["amount"] = pd.to_numeric(df["amount"])
@@ -168,13 +169,71 @@ def _purchase(items):
     return bool(bought) and not any(MEMBERSHIP.search(str(i[1])) for i in bought)
 
 
-def _charges(categorized):
+def one_off(df):
+    """Which lines a person marked one-off (a line edit): left out of recurring charges and budget averages."""
+    if "one_off" not in df:
+        return pd.Series(False, index=df.index)
+    return df["one_off"].astype(str).str.strip().str.upper() == "TRUE"
+
+
+def _spent(categorized):
+    """The lines that could be a recurring charge: since the legacy books, money out, with a merchant key."""
     df = categorized[categorized["era"] != "legacy"].copy()
     df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-    keep = (df["amount"] < 0) & (df["key"].astype(str) != "")
-    if "items" in df:
-        keep &= ~df["items"].map(_purchase).astype(bool)
-    return df[keep]
+    return df[(df["amount"] < 0) & (df["key"].astype(str) != "")]
+
+
+def _bought(df):
+    return df["items"].map(_purchase).astype(bool) if "items" in df else pd.Series(False, index=df.index)
+
+
+def _charges(categorized):
+    """The lines a recurring charge counts: not a purchase an order history itemized, not marked one-off."""
+    df = _spent(categorized)
+    return df[~_bought(df) & ~one_off(df)]
+
+
+HISTORY_COLUMNS = ["key", "txn_id", "date", "spend", "payee", "counts", "why"]
+
+
+def charge_history(categorized, decisions, keys):
+    """Every line ascribed to each of keys (a key and the keys merged into it), newest first, and whether it
+    counts toward the charge's price, cadence and status: a line marked one-off, or a purchase an order history
+    itemized, is listed but doesn't count. The newest line that counts sets the latest price. This is what the
+    Recurring editor shows, so a person can see why a charge looks the way it does and take a line out."""
+    merged = merges(decisions)
+    df = _spent(categorized)
+    bought, marked = _bought(df), one_off(df)
+    rows = []
+    for key in dict.fromkeys(str(k) for k in keys if str(k)):
+        g = group_lines(df, key, merged)
+        newest = None
+        for i in g.index[::-1]:
+            if not (bought[i] or marked[i]):
+                newest = i
+                break
+        for i, r in g.iloc[::-1].iterrows():
+            why = (
+                "marked one-off"
+                if marked[i]
+                else "an order history shows goods bought"
+                if bought[i]
+                else "sets the latest price"
+                if i == newest
+                else ""
+            )
+            rows.append(
+                {
+                    "key": key,
+                    "txn_id": r["txn_id"],
+                    "date": str(r["date"])[:10],
+                    "spend": round(-float(r["amount"]), 2),
+                    "payee": str(r.get("payee_text", "") or r.get("payee_raw", "")),
+                    "counts": "no" if (marked[i] or bought[i]) else "yes",
+                    "why": why,
+                }
+            )
+    return pd.DataFrame(rows, columns=HISTORY_COLUMNS)
 
 
 def _covers(key, line_key):

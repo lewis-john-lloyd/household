@@ -847,6 +847,8 @@ REPORTS = (
     Table(
         "editor_jobs", ("effective", "person", "employer", "salary", "band", "rating", "fte", "note", "stubs", "run_id")
     ),
+    # every line ascribed to each charge in the Recurring editor, and whether it counts (recurring.charge_history)
+    Table("recurring_charges", ("key", "txn_id", "date", "spend", "payee", "counts", "why", "run_id")),
     # recurring charges you track (recurring.subscriptions), and the Recurring editor's rows
     Table(
         "subscriptions",

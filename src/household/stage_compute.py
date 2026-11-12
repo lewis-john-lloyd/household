@@ -405,7 +405,9 @@ def _budget(c: Compute, books, categorized, actuals):
         if splits and loans is not None and not loans.empty:
             sched, _ = mortgage.schedule(loans, books.get("loan_events"), None, today[:7])
             loan = budget.loan_parts(sched, splits)
-        planned = budget.targets(rules, actuals, today[:7], expected, by_line, loan)
+        # the averaging rules learn from the months without the lines marked one-off; actual spending keeps them
+        usual = compute.monthly_actuals(categorize.actual_rows(categorized[~recurring.one_off(categorized)]))
+        planned = budget.targets(rules, usual, today[:7], expected, by_line, loan)
         _say_links(log, rules, books["decisions"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
         compared = budget.versus(planned, actuals, books["categories"])
@@ -539,11 +541,12 @@ def _recurring(c: Compute, books, categorized):
     )
     subs = recurring.subscriptions(categorized, books["decisions"], today)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "subscriptions"), subs.assign(run_id=run_id))
-    sheets.replace_table(
-        reports,
-        schema.table(schema.REPORTS, "editor_subscriptions"),
-        recurring.editor_rows(subs, subscriptions, categorized, books["decisions"], today).assign(run_id=run_id),
-    )
+    rows = recurring.editor_rows(subs, subscriptions, categorized, books["decisions"], today)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "editor_subscriptions"), rows.assign(run_id=run_id))
+    history = recurring.charge_history(categorized, books["decisions"], rows["key"])
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "recurring_charges"), history.assign(run_id=run_id))
+    said = history[history["counts"] == "no"]
+    say(log, f"recurring_charges: {len(history)} lines for {rows['key'].nunique()} charges, {len(said)} left out")
     sheets.replace_table(
         reports,
         schema.table(schema.REPORTS, "subscription_months"),

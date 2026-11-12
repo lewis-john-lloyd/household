@@ -353,3 +353,58 @@ def test_a_recurring_line_edit_names_a_budget_line_that_exists():
         changes.parse(doc % '{"kind": "recurring_line", "key": "ACME GROCER", "line": "hobby"}').check(
             ledger_reader(**LEDGER)
         )
+
+
+# a monthly charge with a cheap one-time purchase from the same merchant just before its latest renewal
+ONCE = pd.DataFrame(
+    [charge(i, f"2026-{m:02d}-12", "WILLOW ST", 20.0) for i, m in enumerate(range(1, 11))]
+    + [charge(50, "2026-10-01", "WILLOW ST", 4.0, text="WILLOW ST one book")]
+)
+TRACK_WILLOW = pd.DataFrame([answer("WILLOW ST", True)])
+
+
+def test_a_line_marked_one_off_leaves_the_charge_and_its_history_says_so():
+    # counted, the purchase is the price before the renewal: a +400% "price change" that isn't one
+    before = recurring.subscriptions(ONCE.sort_values("date"), TRACK_WILLOW, TODAY).iloc[0]
+    assert before["status"] == "price changed" and before["previous"] == 4.0
+    marked = ONCE.assign(one_off=["TRUE" if t == "t50" else "FALSE" for t in ONCE["txn_id"]])
+    after = recurring.subscriptions(marked, TRACK_WILLOW, TODAY).iloc[0]
+    assert after["status"] == "active" and after["previous"] == 20.0 and after["charges"] == 10
+    history = recurring.charge_history(marked, TRACK_WILLOW, ["WILLOW ST"])
+    assert history[["txn_id", "counts", "why"]].head(3).values.tolist() == [
+        ["t9", "yes", "sets the latest price"],  # newest first
+        ["t50", "no", "marked one-off"],
+        ["t8", "yes", ""],
+    ]
+    assert len(history) == 11 and (history["spend"] > 0).all()
+
+
+def test_budget_averages_learn_from_months_without_one_off_lines():
+    from household import budget, categorize, compute
+
+    lines = pd.DataFrame(
+        [
+            {**charge(i, f"2026-0{m}-03", "ACME GROCER", 50.0, category="food"), "splits": "", "one_off": "FALSE"}
+            for i, m in enumerate(range(1, 5))
+        ]
+        + [{**charge(9, "2026-04-20", "ACME GROCER", 90.0, category="food"), "splits": "", "one_off": "TRUE"}]
+    )
+    rules = pd.DataFrame(
+        [
+            {
+                "line": "food",
+                "effective": "2026-01-01",
+                "category": "food",
+                "priority": "high",
+                "rule": "trailing",
+                "amount": "50",
+                "per": "monthly",
+                "note": "",
+            }
+        ]
+    )
+    usual = compute.monthly_actuals(categorize.actual_rows(lines[~recurring.one_off(lines)]))
+    every = compute.monthly_actuals(categorize.actual_rows(lines))
+    may = lambda actuals: budget.targets(rules, actuals, "2026-05").query("month == '2026-05'")["target"].iloc[0]  # noqa: E731
+    assert may(usual) < may(every)  # the one-off raised April's spending, so it would have raised the average
+    assert every.query("month == '2026-04'")["spend"].iloc[0] == 140.0  # and it still counts as spent

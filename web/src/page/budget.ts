@@ -109,6 +109,11 @@ function shortDay(d: string) {
   return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10));
 }
 
+// A day in a sentence: "Nov 1, 2026" (an ISO date belongs in a table, not in prose).
+function longDay(d: string) {
+  return /^\d{4}-\d{2}-\d{2}/.test(d || "") ? shortDay(d) + ", " + d.slice(0, 4) : d;
+}
+
 function signedMoney(n: number) {
   return (n > 0.5 ? "+" : n < -0.5 ? "-" : "") + money.format(Math.abs(n));
 }

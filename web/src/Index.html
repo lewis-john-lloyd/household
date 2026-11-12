@@ -452,8 +452,22 @@
       .item-name { font-size: 14px; }
       .item-sub { font-size: 12px; color: var(--on-surface-variant); }
       .item-status { font-size: 13px; color: var(--on-surface-variant); }
-      td.status .fund-balance { display: block; font-size: 12px; color: var(--on-surface-variant); }
-      td.status .fund-balance.over-text, .item-status.over-text { color: var(--error); }
+      /* a status: a tone as an icon and words, the same in every view (budgetwords.ts, statusTag) */
+      .st { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; line-height: 18px;
+        color: var(--on-surface-variant); vertical-align: middle; }
+      .st svg.icon { width: 16px; height: 16px; }
+      .st-ok { color: var(--success); }
+      .st-watch { color: var(--waiting); }
+      .st-over { color: var(--error); font-weight: 500; }
+      .st-check { color: var(--waiting); font-weight: 500; }
+      button.st { all: unset; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;
+        line-height: 18px; padding: 2px 8px 2px 6px; margin-left: -6px; border-radius: 8px; color: var(--waiting); font-weight: 500; }
+      button.st > span { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+      button.st:hover { background: var(--waiting-container); color: var(--on-surface); }
+      button.st:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+      td.status .st { display: flex; }
+      td.status .st + .st { margin-top: 2px; }
+      .item-names .st { margin-top: 2px; }
       .item-mid .spent-bar { width: 100%; }
       .item-num { text-align: right; font-variant-numeric: tabular-nums; font-size: 14px; }
       .item-num.muted { color: var(--on-surface-variant); font-size: 13px; }
@@ -549,6 +563,8 @@
       .alert { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
         padding: 12px 16px; border-radius: 12px; margin-bottom: 12px; background: var(--surface-container); }
       .alert.changed { background: var(--waiting-container); color: var(--on-surface); }
+      .alert.check { background: var(--waiting-container); color: var(--on-surface); margin: 8px 0 12px; }
+      .alert.check > span:first-child svg.icon { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
       .alert .actions { margin: 0; }
       .rec-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
       .rec-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }

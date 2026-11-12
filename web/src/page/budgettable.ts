@@ -239,13 +239,10 @@ function budgetTable(v: BudgetView) {
       used.appendChild(spentBar(l.actual, l.target));
       var st = lineStatus(v, l, lines);
       if (!st && l.recipients.length && v.deductible)
-        st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, cls: "" };
+        st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, tone: "" };
       var sc = cell(row, "", "text status");
-      if (st) sc.appendChild(el("span", st.text, st.cls));
-      if (l.balance !== null) {
-        var fund = fundText(l.balance);
-        sc.appendChild(el("span", fund.text, "fund-balance " + fund.cls));
-      }
+      if (st) sc.appendChild(statusTag(st, st.tone === "check" ? checkAction(st, l.category, v) : undefined));
+      if (l.balance !== null) sc.appendChild(statusTag(fundText(l.balance)));
       var open = function () {
         budget.open = { category: l.category };
         openLine(l.category, v);

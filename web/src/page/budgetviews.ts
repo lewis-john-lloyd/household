@@ -8,7 +8,7 @@ interface BudgetItem {
   groupId: string; // its name in the ledger
   kind: string; // Recurring, Floating, Annual, Fixed, Mixed or Unplanned
   how: string; // how its budget is set, in a few words
-  status: { text: string; cls: string } | null;
+  status: LineStatus | null;
   target: number;
   actual: number;
   category: string; // the category whose drawer it opens, or "" for a loan's parts together
@@ -53,7 +53,7 @@ function budgetItems(v: BudgetView): BudgetItemGroup[] {
                 : "Not budgeted";
       var st = lineStatus(v, l, lines);
       if (!st && l.recipients.length && v.deductible)
-        st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, cls: "" };
+        st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, tone: "" };
       var item: BudgetItem = {
         name: lines.length === 1 ? pretty(lines[0].line) : pretty(l.category),
         group: pretty(g.name),
@@ -202,11 +202,11 @@ function kindView(v: BudgetView) {
     panel.appendChild(head);
     items.forEach(function (x) {
       var middle: HTMLElement | null = null;
-      if (x.balance !== null) {
-        var fund = fundText(x.balance);
-        middle = el("span", fund.text, "item-status " + fund.cls);
+      if (x.status && x.status.tone === "check") middle = statusTag(x.status, checkAction(x.status, x.category, v));
+      else if (x.balance !== null) {
+        middle = statusTag(fundText(x.balance));
         if (x.status) middle.title = x.status.text;
-      } else if (x.status) middle = el("span", x.status.text, "item-status " + x.status.cls);
+      } else if (x.status) middle = statusTag(x.status);
       else if (x.kind !== "Recurring" && x.kind !== "Unplanned") middle = spentBar(x.actual, x.target);
       panel.appendChild(itemRow(x, v, middle, x.group + ", " + x.how.charAt(0).toLowerCase() + x.how.slice(1)));
     });
@@ -228,7 +228,20 @@ function cardsView(v: BudgetView) {
     card.appendChild(head);
     card.appendChild(spentBar(g.actual, g.target));
     g.items.forEach(function (x) {
-      var row = itemRow(x, v, null, x.balance !== null ? fundText(x.balance).text : x.status ? x.status.text : x.how);
+      var row = itemRow(
+        x,
+        v,
+        null,
+        x.status && x.status.tone === "check"
+          ? ""
+          : x.balance !== null
+            ? fundText(x.balance).text
+            : x.status
+              ? x.status.text
+              : x.how,
+      );
+      if (x.status && x.status.tone === "check")
+        row.querySelector(".item-names")!.appendChild(statusTag(x.status, checkAction(x.status, x.category, v)));
       var mark = el("span", null, "kind-mark mark-" + x.kind.toLowerCase());
       mark.title = x.kind;
       mark.setAttribute("aria-label", x.kind);

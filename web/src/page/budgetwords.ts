@@ -100,8 +100,75 @@ function kindOf(lines: Row[]) {
   return kinds.length > 1 ? "Mixed" : kinds[0] || "";
 }
 
+// A line item's status, in one grammar for every view: a tone, shown as an icon and words (never color alone).
+//   ok     as planned: paid, on pace
+//   watch  worth knowing: ahead of pace, a charge not seen yet
+//   check  a number that may rest on a wrong input: look at what it came from (`charge`, when it is a charge's)
+//   over   past its budget
+//   ""     a plain fact
+interface LineStatus {
+  text: string;
+  tone: string;
+  charge?: string; // the charge whose lines to look at, for a check
+}
+
+var TONE_ICON: Record<string, string> = { ok: "check", watch: "trending", check: "warning", over: "error" };
+var TONE_NAME: Record<string, string> = { ok: "On track", watch: "Watch", check: "Check", over: "Over" };
+
+// A status as a tag: its icon and words; with `act`, a button that opens what it is about.
+function statusTag(st: LineStatus, act?: () => void): HTMLElement {
+  var tag = act ? button("", act, "st st-" + (st.tone || "fact")) : el("span", null, "st st-" + (st.tone || "fact"));
+  if (TONE_ICON[st.tone]) {
+    var i = icon(TONE_ICON[st.tone]);
+    tag.appendChild(i);
+    tag.setAttribute("aria-label", TONE_NAME[st.tone] + ": " + st.text);
+  }
+  tag.appendChild(el("span", st.text));
+  if (act) {
+    tag.addEventListener("click", function (e) {
+      e.stopPropagation(); // the row's own click opens the line's drawer
+    });
+    tag.addEventListener("keydown", function (e) {
+      e.stopPropagation();
+    });
+  }
+  return tag;
+}
+
+// The tracked charges of a line item whose latest charge changed price: worth a look before trusting the line,
+// since a one-time purchase from the same merchant reads as a new price. A charge belongs to the budget line it
+// pays, else to its line item's recurring charges or its category.
+function priceChecks(l: ViewLine, lines: Row[]): Row[] {
+  var names = lines.map(function (x) {
+    return x.line;
+  });
+  var keys = l.recurring.map(function (r) {
+    return r.key;
+  });
+  return (budget.data!.tracked || []).filter(function (t) {
+    if (t.status !== "price changed") return false;
+    var pays = chargeLine(t.key);
+    return pays ? names.indexOf(pays) >= 0 : keys.indexOf(t.key) >= 0 || t.category === l.category;
+  });
+}
+
+// What a check opens: the one charge's lines, or the line item's drawer, which lists each charge to look at.
+function checkAction(st: LineStatus, category: string, v: BudgetView) {
+  return function () {
+    if (st.charge) openCharge(st.charge);
+    else {
+      budget.open = { category: category };
+      openLine(category, v);
+    }
+  };
+}
+
+function priceWords(t: Row) {
+  return cents.format(Number(t.previous)) + " \u2192 " + cents.format(Number(t.latest));
+}
+
 // An annual line, judged on its year: spent from January 1 to the period's last day against an even pace.
-function annualStatus(v: BudgetView, category: string, lines: Row[]): { text: string; cls: string } | null {
+function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus | null {
   var year = lines
     .filter(function (x) {
       return x.rule === "sinking_fund";
@@ -123,14 +190,17 @@ function annualStatus(v: BudgetView, category: string, lines: Row[]): { text: st
     inYear = (Date.parse(through.slice(0, 4) + "-12-31") - Date.parse(from)) / 864e5 + 1;
   var pace = (year * days) / inYear;
   var share = Math.round((100 * spent) / year) + "% of the year";
-  if (spent > year + 0.5)
-    return { text: (spent / year).toFixed(1) + " times the year's " + money.format(year), cls: "over-text" };
-  if (spent > pace + 0.5) return { text: share + ", " + money.format(spent - pace) + " ahead of pace", cls: "warn-text" };
-  return { text: share + ", on pace", cls: "ok-text" };
+  if (spent > year + 0.5) return { text: (spent / year).toFixed(1) + " times the year's " + money.format(year), tone: "over" };
+  if (spent > pace + 0.5) return { text: share + ", " + money.format(spent - pace) + " ahead of pace", tone: "watch" };
+  return { text: share + ", on pace", tone: "ok" };
 }
 
 // What a line item's row says in its status column.
-function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): { text: string; cls: string } | null {
+function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): LineStatus | null {
+  var checks = priceChecks(l, lines);
+  if (checks.length === 1)
+    return { text: chargeName(checks[0]) + " " + priceWords(checks[0]), tone: "check", charge: checks[0].key };
+  if (checks.length) return { text: checks.length + " charges changed price", tone: "check" };
   var annual = lines.some(function (x) {
     return x.rule === "sinking_fund";
   })
@@ -144,19 +214,18 @@ function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): { text: string; c
     var due = l.recurring.filter(function (r) {
       return r.expected && r.actual <= 0;
     }).length;
-    if (due) return { text: due + " charge" + (due > 1 ? "s" : "") + " not seen yet", cls: "" };
-    if (paid) return { text: "Paid", cls: "ok-text" };
+    if (due) return { text: due + " charge" + (due > 1 ? "s" : "") + " not seen yet", tone: "watch" };
+    if (paid) return { text: "Paid", tone: "ok" };
   }
-  if (l.target > 0 && l.actual > l.target + 0.5)
-    return { text: "Over by " + money.format(l.actual - l.target), cls: "over-text" };
+  if (l.target > 0 && l.actual > l.target + 0.5) return { text: "Over by " + money.format(l.actual - l.target), tone: "over" };
   return null;
 }
 
 // An annual line's fund in words: what is set aside and not yet spent, or how far it is overdrawn.
-function fundText(balance: number): { text: string; cls: string } {
+function fundText(balance: number): LineStatus {
   return balance < -0.5
-    ? { text: "Overdrawn " + money.format(-balance), cls: "over-text" }
-    : { text: "Balance " + money.format(balance), cls: "" };
+    ? { text: "Overdrawn " + money.format(-balance), tone: "over" }
+    : { text: "Balance " + money.format(balance), tone: "" };
 }
 
 function countOf(n: number, one: string, many: string) {

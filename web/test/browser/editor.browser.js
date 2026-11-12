@@ -1550,3 +1550,42 @@ test("recurring: a charge lists its lines, and one that isn't part of it is left
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("a line whose charge changed price says Check, and the check opens the charge's lines", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  var sub = { key: 'PAGE TURNER BOOKS', marked: 'yes', status: 'price changed', cadence: 'monthly', charges: '3'," +
+      "    last: d, latest: '24', previous: '4', yearly: '288', category: 'media', example: 'PAGE TURNER BOOKS'," +
+      "    note: '', includes: '', merged: '', name: 'Books', line: '' };" +
+      "  window.__answers.getEditor.subscriptions = [sub];" +
+      "  window.__answers.getBudgetBook = { tracked: [sub], charges: [{ key: 'PAGE TURNER BOOKS', txn_id: 't1', date: d, spend: 24," +
+      "    payee: 'PAGE TURNER BOOKS', counts: true, why: 'sets the latest price' }]," +
+      "    book: { groups: { media: 'fun', food: 'living' }, recurring: [], days: [[d, 'media', 24], [d, 'food', 20]]," +
+      "      targets: [{ month: m, category: 'media', priority: 'low', target: 30 }, { month: m, category: 'food', priority: 'high', target: 60 }] } };" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line:has-text('Media')");
+  const check = "table.bv tr.line:has-text('Media') td.status button.st-check";
+  assert.equal(await page.textContent(check), "Books $4.00 → $24.00"); // leak-guard: allow (made up)
+  assert.equal(await page.getAttribute(check, "aria-label"), "Check: Books $4.00 → $24.00"); // leak-guard: allow (made up)
+  assert.equal(await page.locator("table.bv tr.line:has-text('Food') td.status .st-check").count(), 0);
+  await page.click(check);
+  await page.waitForSelector(".drawer table.charge-lines");
+  assert.match(await page.textContent(".drawer h2"), /Books/); // the charge's drawer, not the line's
+  await page.keyboard.press("Escape");
+  // the line's own drawer says the same first, and leads to the same lines
+  await page.click("table.bv tr.line:has-text('Media') td:nth-child(2)");
+  await page.waitForSelector(".drawer .alert.check");
+  assert.match(await page.textContent(".drawer .alert.check"), /Books went from \$4\.00 → \$24\.00 at its latest charge/); // leak-guard: allow (made up)
+  await page.click(".drawer .alert.check button:has-text('See its charges')");
+  await page.waitForSelector(".drawer table.charge-lines");
+  // and the other views show it too
+  await page.keyboard.press("Escape");
+  await page.click(".layout-switch button:has-text('Cards')");
+  await page.waitForSelector(".group-card button.st-check");
+  await page.click(".layout-switch button:has-text('By kind')");
+  await page.waitForSelector(".kind-view button.st-check");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

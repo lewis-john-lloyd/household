@@ -90,6 +90,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
       money.format(line.compared) +
       ".",
   );
+  lineChecks(d, line);
   lineHistory(d, category, v);
   var txns = el("div", null, "drawer-section");
   var show = button(
@@ -304,4 +305,38 @@ function lineHistory(d: HTMLElement, category: string, v: BudgetView) {
     add("text", { x: W, y: y(lastTarget) - 6, "text-anchor": "end", class: "axis strong" }, "target " + money.format(lastTarget));
   svg.setAttribute("height", String(H));
   d.appendChild(svg);
+}
+
+// What may be wrong with a line item's numbers, first in its drawer: each charge whose price changed, the change
+// in words, and its lines to look at (a one-time purchase reads as a new price until it is marked one-off).
+function lineChecks(d: HTMLElement, l: ViewLine) {
+  var checks = priceChecks(l, linesFor(l.category));
+  checks.forEach(function (t) {
+    var box = el("div", null, "alert check");
+    var text = el("span");
+    text.appendChild(icon("warning"));
+    text.appendChild(el("strong", chargeName(t)));
+    text.appendChild(
+      document.createTextNode(
+        " went from " +
+          priceWords(t) +
+          " at its latest charge (" +
+          longDay(t.last) +
+          "). If that charge isn't part of it, mark it so and the price goes back.",
+      ),
+    );
+    box.appendChild(text);
+    var actions = el("span", null, "actions");
+    actions.appendChild(
+      button(
+        "See its charges",
+        function () {
+          openCharge(t.key);
+        },
+        "text",
+      ),
+    );
+    box.appendChild(actions);
+    d.appendChild(box);
+  });
 }

@@ -42,6 +42,9 @@ PDF, a log or the conversation.
 
 Ordinary commits leave the version alone. A release is its own commit that sets the version in
 `pyproject.toml` and `src/household/__init__.py`; the owner tags it.
+Versions are semantic before 1.0: minor for anything new to use (a reader, view, table or column, edit
+kind, setting, or a change in what the engine computes), patch for fixes, hardening, tooling, CI and docs
+(docs/development.md).
 
 ## Style
 

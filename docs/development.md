@@ -38,3 +38,9 @@ The engine notebook installs a release tag: by default the newest one (`git ls-r
 The notebook holds only the household folder's id. It calls `runner.run(session, folder_id)`, which runs every stage in order: the legacy investments workbook, ingest, the legacy Net Worth tab, the legacy stock plan tabs, prices and compute. The old workbooks and how their tabs map onto the ledger come from `engine_settings.json` in the household folder (see `runner.py` for its parts; each is optional, and a part left out skips its stage), so a new legacy import needs a settings change, not a notebook change. A legacy stage that fails says why and the run goes on.
 
 Ordinary commits leave the version number alone. When work is ready to run, one release commit sets the version in `pyproject.toml` and `household/__init__.py`, and the owner tags that commit.
+
+Versions are semantic, before 1.0 (the ledger's layout may still change between minor releases):
+
+- **Minor (0.X.0):** a release that adds something to use: a reader, a page or view, a ledger or Reports table or column, an edit kind or a setting, or a change in what the engine computes.
+- **Patch (0.X.Y):** fixes and hardening that add nothing new, and tooling, CI and docs.
+- A release holding both is a minor one. Release notes cover everything since the last tag.

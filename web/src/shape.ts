@@ -811,6 +811,39 @@ function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
   return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
 }
 
+interface ChargeLine {
+  key: string; // the recurring charge's merchant key
+  txn_id: string;
+  date: string;
+  spend: number; // what the line spent, positive
+  payee: string;
+  counts: boolean; // whether it counts toward the charge's price and cadence
+  why: string; // why it does not count, or that it sets the latest price; "" otherwise
+}
+
+const CHARGE_COLUMNS = ["key", "txn_id", "date", "spend", "payee", "counts", "why"];
+
+/** Every line each recurring charge was matched with, newest first (the Reports recurring_charges tab). */
+function chargeLines(values: unknown[][]): ChargeLine[] {
+  if (!values.length) return [];
+  const at = columnsAt(values, CHARGE_COLUMNS, "recurring_charges");
+  return values
+    .slice(1)
+    .map((v) => {
+      const [key, txn, date, spend, payee, counts, why] = at.map((i) => String(v[i] ?? "").trim());
+      return {
+        key,
+        txn_id: txn,
+        date: date.slice(0, 10),
+        spend: Number(spend) || 0,
+        payee,
+        counts: counts.toLowerCase() === "yes",
+        why,
+      };
+    })
+    .filter((r) => r.key && r.txn_id);
+}
+
 /**
  * The flow chart's nodes by what they are to the household, for the summary beside the chart:
  *   income   what was earned: pay (vested shares at their value included), other income, and the net gain on

@@ -144,7 +144,7 @@ function getTransactions(period: string, categories: string[], through?: string)
  * The Budget page's data (shape.ts budgetView shapes it in the page): each month's targets, every day's
  * spending, the recurring charges' months, and the recurring charges you track.
  */
-function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] } {
+function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[]; charges: ChargeLine[] } {
   const tabs = readTabsIfAny_([
     "budget_vs_actual",
     "daily_actuals",
@@ -155,6 +155,7 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] 
     "flows",
     "giving",
     "sinking_funds",
+    "recurring_charges",
   ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
   const book = budgetBook(
@@ -168,7 +169,11 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[] 
     tabs.sinking_funds,
   );
   console.log(`budget book: ${book.targets.length} targets, ${book.days.length} days, ${book.recurring.length} recurring months`);
-  return { book, tracked: subscriptionsPage(tabs.subscriptions).subscriptions };
+  return {
+    book,
+    tracked: subscriptionsPage(tabs.subscriptions).subscriptions,
+    charges: chargeLines(tabs.recurring_charges), // each recurring charge's lines, for the Recurring drawer
+  };
 }
 
 /**

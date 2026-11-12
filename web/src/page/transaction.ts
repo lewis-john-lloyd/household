@@ -141,7 +141,7 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   var oneOff = document.createElement("input");
   oneOff.type = "checkbox";
   oneOff.checked = t.oneOff;
-  field(moreForm, "One-off (left out of averages)", oneOff);
+  field(moreForm, "One-off (left out of budget averages and recurring charges)", oneOff);
   var moreActions = el("div", null, "actions");
   moreActions.appendChild(
     button("Keep note and flags", function () {

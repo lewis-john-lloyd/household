@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -21,6 +21,7 @@ const shape = new Function(
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
   reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
+  chargeLines: (values: unknown[][]) => ChargeLine[];
   budgetBook: (
     budget: unknown[][],
     daily: unknown[][],
@@ -696,14 +697,22 @@ test("budget view: a giving line item's gifts by recipient, and the year's gifts
   const month = shape.budgetView(b, "2026-11", "2025-11", true, "2026-11-07");
   const gifts = month.groups.flatMap((g) => g.lines).find((l) => l.category === "gifts");
   assert.deepEqual(gifts?.recipients, [
+    // the year's so far, not only the month's: deductibility is a question of the tax year
+    { key: "QUILL & INK", name: "Quill & Ink", given: 70, gifts: 3, deductible: "yes" },
     { key: "WILLOW ST", name: "WILLOW ST", given: 40, gifts: 1, deductible: "" },
-    { key: "QUILL & INK", name: "Quill & Ink", given: 20, gifts: 1, deductible: "yes" },
   ]);
   assert.deepEqual(month.deductible, { year: "2026", given: 70, unsaid: 1 }); // March and November so far
   const last = shape.budgetView(b, "2025", "2024", false, "2026-11-07");
   assert.deepEqual(last.deductible, { year: "2025", given: 0, unsaid: 0 });
   const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07");
   assert.equal(none.deductible, null);
+  // a month with no gifts still lists the year's recipients under the giving line item
+  const quiet = shape.budgetView(b, "2026-10", "2025-10", true, "2026-11-07");
+  const october = quiet.groups.flatMap((g) => g.lines).find((l) => l.category === "gifts");
+  assert.deepEqual(
+    october?.recipients.map((r) => [r.key, r.given]),
+    [["QUILL & INK", 50]], // March's; November's are after October
+  );
 });
 
 test("budget view: an annual line item's fund balance at the period's last month so far", () => {
@@ -745,4 +754,35 @@ test("budget book: each category's loan comes from editor_categories, and an old
   const b = shape.budgetBook(BOOK_VALUES.budget, BOOK_VALUES.daily, BOOK_VALUES.recurring, cats);
   assert.deepEqual(b.loans, { interest: "acme_loan" });
   assert.equal(book().loans, undefined);
+});
+
+test("charge lines: each recurring charge's lines, with whether each counts and why not", () => {
+  const values = [
+    ["key", "txn_id", "date", "spend", "payee", "counts", "why", "run_id"],
+    ["PAGE TURNER BOOKS", "t2", "2026-10-03", "15", "PAGE TURNER BOOKS", "yes", "sets the latest price", "r1"],
+    ["PAGE TURNER BOOKS", "t1", "2026-09-03 00:00:00", "4", "PAGE TURNER BOOKS", "no", "marked one-off", "r1"],
+    ["", "t0", "2026-08-03", "15", "", "yes", "", "r1"], // no key: dropped
+  ];
+  assert.deepEqual(shape.chargeLines(values), [
+    {
+      key: "PAGE TURNER BOOKS",
+      txn_id: "t2",
+      date: "2026-10-03",
+      spend: 15,
+      payee: "PAGE TURNER BOOKS",
+      counts: true,
+      why: "sets the latest price",
+    },
+    {
+      key: "PAGE TURNER BOOKS",
+      txn_id: "t1",
+      date: "2026-09-03",
+      spend: 4,
+      payee: "PAGE TURNER BOOKS",
+      counts: false,
+      why: "marked one-off",
+    },
+  ]);
+  assert.deepEqual(shape.chargeLines([]), []);
+  assert.throws(() => shape.chargeLines([["key", "date"]]), /recurring_charges tab is missing columns/);
 });

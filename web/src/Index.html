@@ -527,6 +527,13 @@
       .drawer-section { margin: 8px 0 4px; }
       .drawer table.txns { width: 100%; font-size: 13px; }
       .drawer table.txns td { padding: 6px 8px 6px 0; }
+      .drawer table.charge-lines td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+      .drawer table.charge-lines td.spend { text-align: right; white-space: nowrap; }
+      .drawer table.charge-lines td.about { width: 100%; }
+      .drawer table.charge-lines td.about .tag { margin-left: 0; }
+      .drawer table.charge-lines td:last-child { text-align: right; white-space: nowrap; }
+      .drawer table.charge-lines tr.left-out td:not(:last-child) { color: var(--on-surface-variant); }
+      .drawer table.charge-lines tr.left-out td.spend { text-decoration: line-through; }
       svg.history { display: block; width: 100%; margin: 12px 0 4px; }
       svg.history .axis { font-size: 11px; fill: var(--on-surface-variant); }
       svg.history .axis.strong { fill: var(--on-surface); }

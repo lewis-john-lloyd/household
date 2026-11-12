@@ -207,9 +207,109 @@ function openCharge(key: string) {
     closeDrawer();
     drawBudgetPage();
   };
+  chargeHistory(d, key, chargeName(t || r));
   d.appendChild(paysForm(r, done));
   d.appendChild(subscriptionForm(r, done));
   d.appendChild(mergeForm(r, editor!.subscriptions, done));
+}
+
+var CHARGE_LINES_SHOWN = 12; // the newest, before "Show all"
+var chargeLinesAll: Record<string, boolean> = {}; // charges whose every line is shown
+
+// The lines matched with a charge, newest first, each saying whether it counts toward the price and cadence.
+// One that is not part of it (a one-time purchase from the same merchant, say) is marked one-off here, a line
+// edit like the transaction drawer's; the next run works the charge out again without it.
+function chargeHistory(d: HTMLElement, key: string, name: string) {
+  var all = ((budget.data && budget.data.charges) || []).filter(function (c) {
+    return c.key === key;
+  });
+  var s = section(
+    d,
+    "Its charges",
+    all.length
+      ? "Every line matched with this charge, newest first. Mark one that isn't part of it, and the next run " +
+          "works out the price and how often without it."
+      : "No lines yet: the next run lists them here.",
+  );
+  if (!all.length) return;
+  var shown = chargeLinesAll[key] ? all : all.slice(0, CHARGE_LINES_SHOWN);
+  var table = el("table", null, "txns charge-lines");
+  var reopen = function () {
+    var at = (document.querySelector(".drawer") as HTMLElement | null)?.scrollTop || 0;
+    openCharge(key);
+    var now = document.querySelector(".drawer") as HTMLElement | null;
+    if (now) now.scrollTop = at;
+  };
+  // the payee as most lines spell it goes unsaid; a line spelled otherwise says so
+  var spelled: Record<string, number> = {};
+  all.forEach(function (c) {
+    spelled[c.payee] = (spelled[c.payee] || 0) + 1;
+  });
+  var usual = Object.keys(spelled).sort(function (x, y) {
+    return spelled[y] - spelled[x];
+  })[0];
+  shown.forEach(function (c) {
+    var t = "line|" + c.txn_id + "|one_off";
+    var e = edited(t);
+    var marked = c.why === "marked one-off"; // as of the last run
+    var oneOff = e ? String((e.edit as Record<string, string>).value).toUpperCase() === "TRUE" : marked;
+    var row = el("tr", null, oneOff || (!c.counts && !marked) ? "left-out" : ""); // left out once this is run
+    row.dataset.txn = c.txn_id;
+    cell(row, c.date, "text");
+    cell(row, cents.format(c.spend), "spend");
+    var said =
+      oneOff !== marked
+        ? oneOff
+          ? "Left out after the next run"
+          : "Counts again after the next run"
+        : c.why
+          ? c.why.charAt(0).toUpperCase() + c.why.slice(1)
+          : "";
+    var about = cell(row, "", "text about");
+    if (c.payee !== usual) about.appendChild(el("div", c.payee));
+    if (said) about.appendChild(el("div", said, "support"));
+    if (changedText(t)) about.appendChild(el("span", "changed", "tag warn"));
+    var act = cell(row, "", "text");
+    var text = name + ": the " + cents.format(c.spend) + " line of " + c.date;
+    if (oneOff)
+      act.appendChild(
+        button(
+          "Count it",
+          function () {
+            if (staged[t] && !marked)
+              unstage(t); // undo a change not saved yet
+            else stage({ kind: "line", txn_id: c.txn_id, field: "one_off", value: "FALSE" }, text + " counts again");
+            reopen();
+          },
+          "text",
+        ),
+      );
+    else if (c.counts || marked)
+      act.appendChild(
+        button(
+          "Not part of it",
+          function () {
+            if (staged[t] && marked) unstage(t);
+            else stage({ kind: "line", txn_id: c.txn_id, field: "one_off", value: "TRUE" }, text + " is not part of it");
+            reopen();
+          },
+          "text",
+        ),
+      );
+    table.appendChild(row);
+  });
+  s.appendChild(table);
+  if (shown.length < all.length)
+    s.appendChild(
+      button(
+        "Show all " + all.length,
+        function () {
+          chargeLinesAll[key] = true;
+          reopen();
+        },
+        "text",
+      ),
+    );
 }
 
 // The budget line a charge pays: picking one makes that line's target follow the charge (once its rule is
@@ -354,6 +454,16 @@ function priceAlert(t: Row) {
         ),
       );
   } else words += line.line + "'s target follows its spending on its own (" + line.in_words + ").";
+  // the price comes from its lines: one that isn't part of the charge can be left out there
+  actions.appendChild(
+    button(
+      "See its charges",
+      function () {
+        openCharge(t.key);
+      },
+      "text",
+    ),
+  );
   text.appendChild(document.createTextNode(words));
   box.appendChild(text);
   box.appendChild(actions);

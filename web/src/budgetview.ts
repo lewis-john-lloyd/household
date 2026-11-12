@@ -59,7 +59,7 @@ interface ViewLine {
   compared: number;
   recurring: RecurringInLine[];
   byLine: { line: string; target: number }[]; // each budget line's part of the target, when there are two or more
-  recipients: Recipient[]; // a giving line item's gifts in the period, by recipient
+  recipients: Recipient[]; // a giving line item's gifts in the period's last year so far, by recipient
   balance: number | null; // an annual line item's fund: what is set aside and not spent, at the period's last month so far
 }
 
@@ -251,9 +251,12 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     }
     if (then) e.compared += r.actual;
   }
+  // A giving line item's recipients are the year's so far (the period's last year, through `through`), whatever
+  // the period: whether a gift is deductible is a question of the tax year, so a month with no gifts still lists
+  // who was given to this year and lets each be marked.
+  const giftYear = through.slice(0, 4);
   for (const gift of book.giving || []) {
-    const [mFrom, mEnd] = periodDays(gift.month);
-    if (mEnd < from || mFrom > through) continue;
+    if (gift.month.slice(0, 4) !== giftYear || gift.month + "-01" > through) continue;
     const l = line(gift.category);
     let r = l.recipients.find((x) => x.key === gift.key);
     if (!r) {
@@ -313,7 +316,7 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     l.recipients = l.recipients
       .map((r) => ({ ...r, given: toCents(r.given) }))
       .sort((a, b) => b.given - a.given || a.name.localeCompare(b.name));
-    if (!l.target && !l.actual && !l.compared && !l.recurring.length && !l.recipients.length) continue;
+    if (!l.target && !l.actual && !l.compared && !l.recurring.length && !l.recipients.length) continue; // a giving line item shows all year
     const name = l.group || "Other";
     let g = groups.get(name);
     if (!g) {

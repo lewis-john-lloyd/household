@@ -30,16 +30,16 @@ function redrawKeeping(key: string) {
   });
 }
 
-// A recipient of gifts under its giving line item: what it was given in the period, and whether gifts to
-// it count toward the deduction, marked here (a recipient edit, saved like any other).
-function recipientRow(r: Recipient) {
+// A recipient of gifts under its giving line item: what it was given in the year so far, and whether gifts
+// to it count toward the deduction, marked here (a recipient edit, saved like any other).
+function recipientRow(r: Recipient, year: string) {
   var t = "recipient|" + r.key.toUpperCase();
   var e = edited(t);
   var said = e ? String((e.edit as Record<string, string>).deductible || "") : r.deductible;
   var row = el("tr", null, "rec recipient");
   var name = cell(row, r.name);
   if (changedText(t)) name.appendChild(el("span", "changed", "tag warn"));
-  cell(row, countOf(r.gifts, "gift", "gifts"), "text");
+  cell(row, countOf(r.gifts, "gift", "gifts") + " in " + year, "text");
   cell(row, "", "text");
   cell(row, "");
   cell(row, money.format(r.given));
@@ -305,23 +305,19 @@ function budgetTable(v: BudgetView) {
         cell(rec, r.actual > 0 ? "Paid" : r.expected ? "Not seen yet" : "", "text status");
         body.appendChild(rec);
       });
-      l.recipients.forEach(function (r) {
-        var rr = recipientRow(r);
-        if (nest) rr.classList.add("nested");
-        body.appendChild(rr);
-      });
       if (l.recipients.length && v.deductible && !deductibleShown) {
-        // the year's gifts that count toward the deduction, beside the recipients that make it up
+        // the head of the giving list: the year's gifts that count toward the deduction, then the recipients that
+        // make it up, each marked here
         deductibleShown = true;
         var dr = el("tr", null, "rec deductible" + nest);
         cell(dr, "Deductible in " + v.deductible.year);
         cell(
           dr,
-          "Gifts to recipients marked deductible" +
+          "Gifts in " +
+            v.deductible.year +
             (v.deductible.year === v.through.slice(0, 4) && v.partial ? " so far" : "") +
-            (v.deductible.unsaid
-              ? "; " + countOf(v.deductible.unsaid, "recipient", "recipients") + " this year not marked yet"
-              : ""),
+            " to recipients marked deductible" +
+            (v.deductible.unsaid ? "; " + countOf(v.deductible.unsaid, "recipient", "recipients") + " not marked yet" : ""),
           "text rule",
         );
         cell(dr, "", "text");
@@ -331,6 +327,11 @@ function budgetTable(v: BudgetView) {
         cell(dr, "", "text status");
         body.appendChild(dr);
       }
+      l.recipients.forEach(function (r) {
+        var rr = recipientRow(r, v.through.slice(0, 4));
+        if (nest) rr.classList.add("nested");
+        body.appendChild(rr);
+      });
     };
     // a loan's parts (its loan_split setting's categories) roll up into one row, opened to show each part
     var rolled: Record<string, ViewLine[]> = {};

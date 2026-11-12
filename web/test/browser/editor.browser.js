@@ -23,7 +23,7 @@ window.__answers = {
   discardWaiting: { remembered: true, warning: "" },
   findSave: null,
   getPeriods: [],
-  getBudgetBook: { book: { targets: [], days: [], groups: {}, recurring: [] }, tracked: [] },
+  getBudgetBook: { book: { targets: [], days: [], groups: {}, recurring: [] }, tracked: [], charges: [] },
   getEditor: { baseRun: "r1", budgetLines: [], payeeRules: [], aliases: [], review: [], duplicates: [], withholding: [],
     categories: [{ category: "food", group: "living", priority: "high" }, { category: "kids", group: "family", priority: "" }],
     parameters: [{ key: "transfer_account", value: "checking", source: "seed" }, { key: "target_refund", value: "2000", source: "web" }] },
@@ -894,12 +894,17 @@ test("giving: each recipient under its line item, marked deductible here, and th
     }),
   );
   assert.deepEqual(rows, [
-    ["Quill & Ink", "2 gifts", "$40", "yes"], // leak-guard: allow (made up)
-    ["WILLOW ST", "1 gift", "$30", ""], // leak-guard: allow (made up)
+    ["Quill & Ink", "2 gifts in " + new Date().getFullYear(), "$40", "yes"], // leak-guard: allow (made up)
+    ["WILLOW ST", "1 gift in " + new Date().getFullYear(), "$30", ""], // leak-guard: allow (made up)
   ]);
   const total = await page.$$eval("table.bv tr.deductible td", (tds) => tds.map((td) => td.textContent));
   assert.match(total[0], /^Deductible in \d{4}$/);
-  assert.match(total[1], /1 recipient this year not marked yet/);
+  assert.match(total[1], /1 recipient not marked yet/);
+  // the total heads the list: it comes before the recipients
+  assert.deepEqual(
+    await page.$$eval("table.bv tr.deductible, table.bv tr.recipient", (rs) => rs.map((r) => r.className.split(" ")[1])),
+    ["deductible", "recipient", "recipient"],
+  );
   assert.equal(total[4], "$40"); // leak-guard: allow (made up)
   await page.selectOption("table.bv tr.recipient:has-text('WILLOW ST') select", "no");
   assert.deepEqual(await staged(page), ["WILLOW ST: not deductible"]);
@@ -1494,6 +1499,54 @@ test("recurring: a charge says the budget line it pays, and paying one makes tha
     { kind: "subscription", key: "WILLOW ST", subscription: "yes" },
   ]);
   assert.equal(sent[2].rule, "recurring");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("recurring: a charge lists its lines, and one that isn't part of it is left out from its drawer", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget', tab: 'recurring' } };" +
+      "var sub = { key: 'PAGE TURNER BOOKS', marked: 'yes', status: 'price changed', cadence: 'monthly', charges: '3'," +
+      "  last: '2001-06-03', latest: '15', previous: '4', yearly: '180', category: 'media', example: 'PAGE TURNER BOOKS'," +
+      "  note: '', includes: '', merged: '', name: 'Books', line: '' };" +
+      "window.__answers.getEditor.subscriptions = [sub];" +
+      "window.__answers.getBudgetBook.tracked = [sub];" +
+      "var c = function (id, date, spend, counts, why) {" +
+      "  return { key: 'PAGE TURNER BOOKS', txn_id: id, date: date, spend: spend, payee: 'PAGE TURNER BOOKS', counts: counts, why: why }; };" +
+      "window.__answers.getBudgetBook.charges = [c('t4', '2001-06-03', 15, true, 'sets the latest price')," +
+      "  c('t3', '2001-05-20', 4, true, ''), c('t2', '2001-05-03', 15, true, ''), c('t1', '2001-04-03', 9, false, 'marked one-off')," +
+      "  { key: 'WILLOW ST', txn_id: 't0', date: '2001-04-01', spend: 5, payee: 'WILLOW ST', counts: true, why: '' }];",
+  );
+  await page.waitForSelector("#budget:not([hidden]) .alert.changed");
+  await page.click(".alert.changed button:has-text('See its charges')"); // the price alert leads to the lines behind it
+  await page.waitForSelector(".drawer table.charge-lines");
+  const rows = () =>
+    page.$$eval(".drawer table.charge-lines tr", (rs) =>
+      rs.map((r) => [
+        r.dataset.txn,
+        r.className,
+        r.querySelector("td.about").textContent,
+        r.querySelector("button")?.textContent || "",
+      ]),
+    );
+  assert.deepEqual(await rows(), [
+    ["t4", "", "Sets the latest price", "Not part of it"],
+    ["t3", "", "", "Not part of it"],
+    ["t2", "", "", "Not part of it"],
+    ["t1", "left-out", "Marked one-off", "Count it"],
+  ]); // only this charge's lines, newest first
+  await page.click(".drawer tr[data-txn='t3'] button");
+  assert.deepEqual(await staged(page), ["Books: the $4.00 line of 2001-05-20 is not part of it"]); // leak-guard: allow (made up)
+  assert.deepEqual((await rows())[1], ["t3", "left-out", "Left out after the next runchanged", "Count it"]);
+  await page.click(".drawer tr[data-txn='t3'] button"); // changed my mind: the staged change goes
+  assert.deepEqual(await staged(page), []);
+  await page.click(".drawer tr[data-txn='t1'] button"); // and a line marked before counts again
+  assert.deepEqual(await staged(page), ["Books: the $9.00 line of 2001-04-03 counts again"]); // leak-guard: allow (made up)
+  assert.deepEqual((await rows())[3], ["t1", "", "Counts again after the next runchanged", "Not part of it"]); // and can go back
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "line", txn_id: "t1", field: "one_off", value: "FALSE" }]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

@@ -11,6 +11,7 @@ the ledger keeps both. Each kind's meaning stays with the module that uses it:
   subscription_name    recurring.py    the name to show a recurring charge by
   subscription_line    recurring.py    the budget line a recurring charge pays
   deductible           giving.py       whether gifts to a recipient count toward the deduction
+  looks_right          budget_checks   a budget check looked at and right, by its fingerprint
   withholding          withholding.py  why a stub's withholding is off
   duplicate            checks          two lines that are both real
 """

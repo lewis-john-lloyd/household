@@ -9,6 +9,7 @@ import pandas as pd
 from . import (
     allocation,
     budget,
+    budget_checks,
     categorize,
     checks,
     compute,
@@ -559,7 +560,23 @@ def _recurring(c: Compute, books, categorized):
     say(log, f"tracked recurring charges: {len(subs)}, {yearly:,.0f} a year, {len(changed)} changed price lately")
     for r in changed.to_dict("records"):
         say(log, f"recurring charge: {r['key']} now {r['change']}")
-    return changed
+    return {"changed": changed, "subs": subs}
+
+
+def _budget_checks(c: Compute, books, categorized, plan, subs):
+    """What looks off in the budget, for the views to say Check where the number is (budget_checks.py)."""
+    reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
+    found = budget_checks.build(subs, plan["planned"], categorized, books["decisions"], today[:7], plan["rules"])
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_checks"), found.assign(run_id=run_id))
+    kinds = found["kind"].value_counts().to_dict()
+    say(
+        log,
+        f"budget_checks: {len(found)} to look at"
+        + (" (" + ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in sorted(kinds.items())) + ")" if kinds else ""),
+    )
+    for r in found.to_dict("records"):
+        say(log, f"  check {r['category']}: {r['label']}")
+    return found
 
 
 def _flows(c: Compute, books, categorized):
@@ -836,7 +853,7 @@ def _settings_and_receipts(c: Compute, params):
         say(log, f"receipt_searches: could not write the exporter's searches file: {e}", "WARN")
 
 
-def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan, tax_elections, changed):
+def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan, tax_elections, changed, found):
     """FSA balances and the weekly email's to-dos."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
     day = date.fromisoformat(today)
@@ -849,7 +866,7 @@ def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan
             f"reimbursed, {r['left']:,.2f} left"
             + (f", claims due {r['claim_deadline']}" if r["claim_deadline"] else ""),
         )
-    todo = nudges.build(day, params, due, editor_review, tax_plan, tax_elections, stubs, fsa, changed)
+    todo = nudges.build(day, params, due, editor_review, tax_plan, tax_elections, stubs, fsa, changed, found)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "nudges"), todo.assign(run_id=run_id))
     showing = todo[(todo["show_from"] <= today) & ((todo["show_until"] == "") | (todo["show_until"] >= today))]
     say(log, f"nudges: {len(todo)} for the weekly email, {len(showing)} of them due in it as of today")
@@ -917,7 +934,9 @@ def compute_all(
     form_8949, lot_result = _lots(c, books)
     worth.update(lot_result)
     worth.update(_retirement(c, books, actuals, sched))
-    changed = _recurring(c, books, categorized)
+    found = _recurring(c, books, categorized)
+    changed = found["changed"]
+    looked = _budget_checks(c, books, categorized, plan, found["subs"])
     _flows(c, books, categorized)
     _giving(c, books, categorized)
     dupes = _duplicates(c, books, effective)
@@ -955,7 +974,18 @@ def compute_all(
         _withholding_backtests(c, result, stubs, decisions)
         tax_plan, tax_elections = _projection(c, result, books, stubs, jobs, facts, form_8949)
     _settings_and_receipts(c, params)
-    _nudges(c, params, stubs, categorized, checked["due"], published["editor_review"], tax_plan, tax_elections, changed)
+    _nudges(
+        c,
+        params,
+        stubs,
+        categorized,
+        checked["due"],
+        published["editor_review"],
+        tax_plan,
+        tax_elections,
+        changed,
+        looked,
+    )
     if legacy_id and legacy_year:
         _legacy_check(c, result, legacy_id, legacy_year, legacy_actuals, legacy_blank)
 

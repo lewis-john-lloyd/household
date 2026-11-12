@@ -849,6 +849,7 @@ REPORTS = (
     ),
     # every line ascribed to each charge in the Recurring editor, and whether it counts (recurring.charge_history)
     Table("recurring_charges", ("key", "txn_id", "date", "spend", "payee", "counts", "why", "run_id")),
+    Table("budget_checks", ("check", "kind", "about", "category", "label", "detail", "open", "run_id")),
     # recurring charges you track (recurring.subscriptions), and the Recurring editor's rows
     Table(
         "subscriptions",

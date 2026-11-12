@@ -127,6 +127,11 @@
       .attention ul.things li { display: grid; padding-left: 12px; border-left: 2px solid var(--outline-variant); }
       .attention ul.things strong { font-weight: 500; overflow-wrap: anywhere; }
       .attention ul.things span { color: var(--on-surface-variant); font-size: 13px; }
+      .attention ul.things button.thing-link { all: unset; display: grid; cursor: pointer; border-radius: 6px; padding: 2px 6px;
+        margin: -2px -6px; }
+      .attention ul.things button.thing-link strong { color: var(--primary); }
+      .attention ul.things button.thing-link:hover { background: var(--surface-container-high); }
+      .attention ul.things button.thing-link:focus-visible { outline: 2px solid var(--primary); }
       .attention .actions { margin-top: 16px; display: flex; gap: 8px; }
       .attention .log-line { margin: 8px 0 0; font: 12px/18px "Roboto Mono", ui-monospace, monospace; color: var(--on-surface-variant); }
       .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 12px; }
@@ -576,6 +581,8 @@
       .alert.changed { background: var(--waiting-container); color: var(--on-surface); }
       .alert.check { background: var(--waiting-container); color: var(--on-surface); margin: 8px 0 12px; }
       .alert.check > span:first-child svg.icon { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
+      .alert.check.settled { background: var(--surface-container); color: var(--on-surface-variant); }
+      .alert.check .tag { margin-left: 8px; }
       .alert .actions { margin: 0; }
       .rec-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
       .rec-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }

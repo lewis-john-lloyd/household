@@ -70,6 +70,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   recurring_name: [["key", "name"], []],
   recurring_line: [["key", "line"], []],
   recipient: [["key", "deductible"], []],
+  looks_right: [["check", "looks_right"], []],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -160,6 +161,7 @@ function editProblems(edit: Edit): string[] {
   }
   // the value checks ingest makes that an editor could get wrong: caught here, they don't refuse a whole save
   if (MERCHANT_KINDS.indexOf(edit.kind) >= 0 && edit.key === "") out.push("key is empty");
+  if (edit.kind === "looks_right" && edit.check === "") out.push("check is empty");
   const yesNo = YES_NO_FIELDS[edit.kind];
   if (yesNo && edit[yesNo] !== undefined && edit[yesNo] !== "yes" && edit[yesNo] !== "no")
     out.push(`${yesNo} ${JSON.stringify(edit[yesNo])} is not yes or no`);
@@ -168,7 +170,11 @@ function editProblems(edit: Edit): string[] {
 
 // kinds about a merchant key, and the fields that are yes or no, as parsers/changes.py checks them
 const MERCHANT_KINDS = ["payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient"];
-const YES_NO_FIELDS: Record<string, string> = { subscription: "subscription", recipient: "deductible" };
+const YES_NO_FIELDS: Record<string, string> = {
+  subscription: "subscription",
+  recipient: "deductible",
+  looks_right: "looks_right",
+};
 
 /** The setting an edit changes: one change set holds one edit per setting, so a newer edit replaces an older one. */
 function editTarget(edit: Edit): string {
@@ -206,6 +212,8 @@ function editTarget(edit: Edit): string {
       return `recurring_line|${f("key").toUpperCase()}`;
     case "recipient":
       return `recipient|${f("key").toUpperCase()}`;
+    case "looks_right":
+      return `looks_right|${f("check")}`;
     default:
       return `${edit.kind}|${JSON.stringify(edit)}`;
   }

@@ -416,6 +416,7 @@ interface StageRun {
 interface AttentionItem {
   title: string;
   detail: string;
+  link?: string; // where it opens: "budget:<category>" for a line item's drawer
 }
 
 interface Attention {
@@ -585,7 +586,13 @@ function reviewNote(review: unknown[][]): string {
  * The status page from run_log and run_notes, and, when given, Reports coverage (for the downloads due) and
  * editor_review (for how the review questions split).
  */
-function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[][] = [], review: unknown[][] = []): Status {
+function parseStatus(
+  runLog: unknown[][],
+  notes: unknown[][],
+  coverage: unknown[][] = [],
+  review: unknown[][] = [],
+  checks: unknown[][] = [],
+): Status {
   const runs: StageRun[] = [];
   if (runLog.length) {
     const [id, at, stage, detail] = columnsAt(runLog, RUN_LOG_COLUMNS, "run_log");
@@ -681,6 +688,8 @@ function parseStatus(runLog: unknown[][], notes: unknown[][], coverage: unknown[
       });
     }
   }
+  const budgetCard = checksAttention(budgetChecks(checks));
+  if (budgetCard) attention.push(budgetCard);
   const projection =
     compute && compute.summary.projection && typeof compute.summary.projection === "object"
       ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
@@ -809,6 +818,46 @@ function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
     .filter((r) => r.key);
   const total = rows.filter((r) => r.status !== "stopped").reduce((t, r) => t + (Number(r.yearly) || 0), 0);
   return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
+}
+
+interface BudgetCheck {
+  check: string; // its fingerprint: what "Looks right" settles (budget_checks.py)
+  kind: string; // price_changed or target_high
+  about: string; // the charge's key, or the budget line
+  category: string; // the line item it sits under
+  label: string; // a few words for the status column
+  detail: string; // what it rests on, in a sentence or two
+  open: string; // what to look at: "charge:<key>", "txn:<id>" or "line:<category>"
+}
+
+const BUDGET_CHECK_COLUMNS = ["check", "kind", "about", "category", "label", "detail", "open"];
+
+/** What looks off in the budget (the Reports budget_checks tab), or null before a run has written it. */
+function budgetChecks(values: unknown[][]): BudgetCheck[] | null {
+  if (!values.length) return null;
+  const at = columnsAt(values, BUDGET_CHECK_COLUMNS, "budget_checks");
+  return values
+    .slice(1)
+    .map((v) => {
+      const [check, kind, about, category, label, detail, open] = at.map((i) => String(v[i] ?? "").trim());
+      return { check, kind, about, category, label, detail, open };
+    })
+    .filter((c) => c.check && c.category);
+}
+
+/** The Status page's card for the budget's checks: each one, opening its line item on the Budget page. */
+function checksAttention(checks: BudgetCheck[] | null): Attention | null {
+  if (!checks || !checks.length) return null;
+  return {
+    key: "budget_checks",
+    label: checks.length === 1 ? "thing to check on the Budget page" : "things to check on the Budget page",
+    count: checks.length,
+    note: "Each is a number that may rest on a wrong input; its line item's drawer shows what to look at.",
+    detail: [],
+    flags: [],
+    action: "view:budget",
+    items: checks.map((c) => ({ title: c.label, detail: c.detail, link: "budget:" + c.category })),
+  };
 }
 
 interface ChargeLine {

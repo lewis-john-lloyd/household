@@ -144,7 +144,12 @@ function getTransactions(period: string, categories: string[], through?: string)
  * The Budget page's data (shape.ts budgetView shapes it in the page): each month's targets, every day's
  * spending, the recurring charges' months, and the recurring charges you track.
  */
-function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[]; charges: ChargeLine[] } {
+function getBudgetBook(): {
+  book: BudgetBook;
+  tracked: Record<string, string>[];
+  charges: ChargeLine[];
+  checks: BudgetCheck[] | null;
+} {
   const tabs = readTabsIfAny_([
     "budget_vs_actual",
     "daily_actuals",
@@ -156,6 +161,7 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[];
     "giving",
     "sinking_funds",
     "recurring_charges",
+    "budget_checks",
   ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
   const book = budgetBook(
@@ -173,6 +179,7 @@ function getBudgetBook(): { book: BudgetBook; tracked: Record<string, string>[];
     book,
     tracked: subscriptionsPage(tabs.subscriptions).subscriptions,
     charges: chargeLines(tabs.recurring_charges), // each recurring charge's lines, for the Recurring drawer
+    checks: budgetChecks(tabs.budget_checks), // what looks off, for the Check statuses (null before a run writes it)
   };
 }
 
@@ -188,8 +195,8 @@ function readTabIfAny_(name: string): unknown[][] {
 
 /** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
 function getStatus(): Status {
-  const tabs = readTabsIfAny_(["run_log", "run_notes", "coverage", "editor_review"]);
-  return parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review);
+  const tabs = readTabsIfAny_(["run_log", "run_notes", "coverage", "editor_review", "budget_checks"]);
+  return parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review, tabs.budget_checks);
 }
 
 // --- editing ------------------------------------------------------------------------------------------

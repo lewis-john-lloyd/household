@@ -31,6 +31,9 @@ row a person would otherwise have typed:
   recipient        whether gifts to a merchant key     -> proposal_decisions (kind
                    count toward the deduction (yes       deductible)
                    or no), from the Budget page
+  looks_right      a budget check (budget_checks.py)    -> proposal_decisions (kind
+                   looked at and right (yes), or back      looks_right)
+                   to a check (no), by its fingerprint
   recurring_line   the budget line a merchant key's    -> proposal_decisions (kind
                    recurring charge pays, or blank to     subscription_line)
                    unlink it
@@ -60,7 +63,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from .common import ParseError, Result
-from .. import categorize, compute, giving, schema
+from .. import budget_checks, categorize, compute, giving, schema
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -96,6 +99,7 @@ KINDS = {
     "recurring_name": ({"key", "name"}, set()),
     "recurring_line": ({"key", "line"}, set()),
     "recipient": ({"key", "deductible"}, set()),
+    "looks_right": ({"check", "looks_right"}, set()),
 }
 MERCHANT_KINDS = ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient")
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
@@ -229,6 +233,11 @@ def _values(kind, e):
         out.append("key is empty")
     if kind == "recipient" and e["deductible"] not in ("yes", "no"):
         out.append(f"deductible {e['deductible']!r} is not yes or no")
+    if kind == "looks_right":
+        if not e["check"].strip():
+            out.append("check is empty")
+        if e["looks_right"] not in ("yes", "no"):
+            out.append(f"looks_right {e['looks_right']!r} is not yes or no")
     if kind == "subscription" and e["subscription"] not in ("yes", "no"):
         out.append("subscription must be yes or no")
     if kind == "recurring_merge" and _merge_key(e["same_as"]) == _merge_key(e["key"]):
@@ -428,6 +437,8 @@ def _describe(e):
         return f"recipient {e['key']}: " + ("deductible" if e["deductible"] == "yes" else "not deductible")
     if kind == "recurring_line":
         return f"recurring {e['key']}: " + (f"pays budget line {e['line']}" if e["line"].strip() else "pays no line")
+    if kind == "looks_right":
+        return f"check {e['check']}: " + ("looks right" if e["looks_right"] == "yes" else "check again")
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -539,6 +550,17 @@ def _rows(edits, at):
                     "kind": giving.KIND,
                     "decided_at": at,
                     "decision": "approve" if e["deductible"] == "yes" else "reject",
+                    "note": "",
+                },
+            )
+        elif kind == "looks_right":
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"{budget_checks.KIND}:{e['check'].strip()}",
+                    "kind": budget_checks.KIND,
+                    "decided_at": at,
+                    "decision": "approve" if e["looks_right"] == "yes" else "reject",
                     "note": "",
                 },
             )

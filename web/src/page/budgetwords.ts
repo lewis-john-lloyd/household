@@ -119,13 +119,13 @@ function kindOf(lines: Row[]) {
 // A line item's status, in one grammar for every view: a tone, shown as an icon and words (never color alone).
 //   ok     as planned: paid, on pace
 //   watch  worth knowing: ahead of pace, a charge not seen yet
-//   check  a number that may rest on a wrong input: look at what it came from (`charge`, when it is a charge's)
+//   check  a number that may rest on a wrong input: look at what it came from (`open`, budget_checks.py)
 //   over   past its budget
 //   ""     a plain fact
 interface LineStatus {
   text: string;
   tone: string;
-  charge?: string; // the charge whose lines to look at, for a check
+  open?: string; // for a check, what to look at: "charge:<key>", "txn:<id>" or "line:<category>"
 }
 
 var TONE_ICON: Record<string, string> = { ok: "check", watch: "trending", check: "warning", over: "error" };
@@ -175,16 +175,60 @@ function priceChecks(l: ViewLine, lines: Row[]): Row[] {
   });
 }
 
-// What a check opens: the one charge's lines, or the line item's drawer, which lists each charge to look at.
+// A line item's checks (budget_checks.py, published by compute), each with whether someone said it looks
+// right here and the run has not caught up yet. Before a run has written the table, the tracked charges that
+// changed price stand in, worked out here.
+function checksFor(l: ViewLine, lines: Row[]): { c: BudgetCheck; settled: boolean }[] {
+  var all: BudgetCheck[] =
+    budget.data!.checks === null || budget.data!.checks === undefined
+      ? priceChecks(l, lines).map(function (t) {
+          return {
+            check: "price_changed|" + t.key + "|" + t.last + "|" + Number(t.latest).toFixed(2),
+            kind: "price_changed",
+            about: t.key,
+            category: l.category,
+            label: chargeName(t) + " " + priceWords(t),
+            detail:
+              chargeName(t) +
+              " went from " +
+              priceWords(t) +
+              " at its latest charge (" +
+              longDay(t.last) +
+              "). A one-time purchase from the same merchant reads as a new price: if that charge isn't part of " +
+              "it, mark it so in its charges.",
+            open: "charge:" + t.key,
+          };
+        })
+      : budget.data!.checks.filter(function (c) {
+          return c.category === l.category;
+        });
+  return all.map(function (c) {
+    var e = edited("looks_right|" + c.check);
+    return { c: c, settled: !!e && String((e.edit as Record<string, string>).looks_right) === "yes" };
+  });
+}
+
+// What a check opens: what it rests on (a charge's lines, a transaction's page), or the line item's drawer.
+function openCheck(open: string, category: string, v: BudgetView) {
+  var at = open.indexOf(":");
+  var what = open.slice(0, at),
+    id = open.slice(at + 1);
+  if (what === "charge") openCharge(id);
+  else if (what === "txn") openTransaction(id);
+  else {
+    budget.open = { category: category };
+    openLine(category, v);
+  }
+}
+
 function checkAction(st: LineStatus, category: string, v: BudgetView) {
   return function () {
-    if (st.charge) openCharge(st.charge);
-    else {
-      budget.open = { category: category };
-      openLine(category, v);
-    }
+    openCheck(st.open || "line:" + category, category, v);
   };
 }
+
+// The words on a check's button: what it opens.
+var CHECK_OPENS: Record<string, string> = { charge: "See its charges", txn: "Open that line", line: "Open the line item" };
 
 function priceWords(t: Row) {
   return cents.format(Number(t.previous)) + " \u2192 " + cents.format(Number(t.latest));
@@ -220,10 +264,11 @@ function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus
 
 // What a line item's row says in its status column.
 function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): LineStatus | null {
-  var checks = priceChecks(l, lines);
-  if (checks.length === 1)
-    return { text: chargeName(checks[0]) + " " + priceWords(checks[0]), tone: "check", charge: checks[0].key };
-  if (checks.length) return { text: checks.length + " charges changed price", tone: "check" };
+  var checks = checksFor(l, lines).filter(function (x) {
+    return !x.settled;
+  });
+  if (checks.length === 1) return { text: checks[0].c.label, tone: "check", open: checks[0].c.open };
+  if (checks.length) return { text: checks.length + " things to check", tone: "check", open: "line:" + l.category };
   var annual = lines.some(function (x) {
     return x.rule === "sinking_fund";
   })

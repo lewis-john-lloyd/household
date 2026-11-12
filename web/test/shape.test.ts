@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -16,12 +16,19 @@ const shape = new Function(
   parseBudget: (values: unknown[][]) => BudgetRow[];
   parseTransactions: (values: unknown[][]) => Txn[];
   transactionsFor: (txns: Txn[], period: string, categories: string[], through?: string) => Txn[];
-  parseStatus: (runLog: unknown[][], notes: unknown[][], coverage?: unknown[][], review?: unknown[][]) => Status;
+  parseStatus: (
+    runLog: unknown[][],
+    notes: unknown[][],
+    coverage?: unknown[][],
+    review?: unknown[][],
+    checks?: unknown[][],
+  ) => Status;
   findLine: (values: unknown[][], id: string) => Line | null;
   flowSummary: (totals: NodeTotal[]) => FlowSummary;
   reviewLines: (values: unknown[][], key: string, skip?: string[]) => ReviewLine[];
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
   chargeLines: (values: unknown[][]) => ChargeLine[];
+  budgetChecks: (values: unknown[][]) => BudgetCheck[] | null;
   budgetBook: (
     budget: unknown[][],
     daily: unknown[][],
@@ -785,4 +792,31 @@ test("charge lines: each recurring charge's lines, with whether each counts and 
   ]);
   assert.deepEqual(shape.chargeLines([]), []);
   assert.throws(() => shape.chargeLines([["key", "date"]]), /recurring_charges tab is missing columns/);
+});
+
+test("budget checks: each check's row, none before a run writes the tab, and a Status card that opens each", () => {
+  const values = [
+    ["check", "kind", "about", "category", "label", "detail", "open", "run_id"],
+    ["target_high|hobby|t9", "target_high", "hobby", "hobby", "Budget $55.00, usually $20.00", "Its budget...", "txn:t9", "r1"], // leak-guard: allow (made up)
+    ["", "price_changed", "X", "media", "x", "x", "charge:X", "r1"], // no fingerprint: dropped
+  ];
+  const checks = shape.budgetChecks(values);
+  assert.deepEqual(checks, [
+    {
+      check: "target_high|hobby|t9",
+      kind: "target_high",
+      about: "hobby",
+      category: "hobby",
+      label: "Budget $55.00, usually $20.00", // leak-guard: allow (made up)
+      detail: "Its budget...",
+      open: "txn:t9",
+    },
+  ]);
+  assert.equal(shape.budgetChecks([]), null); // not written yet, unlike written and empty
+  assert.deepEqual(shape.budgetChecks([values[0]]), []);
+  const status = shape.parseStatus([], [], [], [], values);
+  const card = status.attention.find((a) => a.key === "budget_checks");
+  assert.equal(card?.label, "thing to check on the Budget page");
+  assert.deepEqual(card?.items, [{ title: "Budget $55.00, usually $20.00", detail: "Its budget...", link: "budget:hobby" }]); // leak-guard: allow (made up)
+  assert.equal(card?.action, "view:budget");
 });

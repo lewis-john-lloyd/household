@@ -42,6 +42,7 @@
   "ledger.vest_schedule": "kmkeoepnhjokfcol",
   "reports.allocation": "lmdgbglogiojfklg",
   "reports.balance_check": "mifnimcclocnhcpp",
+  "reports.budget_checks": "gechopcjpkkknmjj",
   "reports.budget_targets": "jmeblpghakecekbg",
   "reports.budget_vs_actual": "mefmmbmgbkmeahhl",
   "reports.categorized": "eicicogighjgeekn",
@@ -148,6 +149,7 @@
   "ledger.vest_schedule": "kmkeoepnhjokfcol",
   "reports.allocation": "nkaoajlbfkmmnnmf",
   "reports.balance_check": "dphkpgmobgkfkbog",
+  "reports.budget_checks": "gechopcjpkkknmjj",
   "reports.budget_targets": "bbbknadghnfojppm",
   "reports.budget_vs_actual": "pjcfapoponoihofa",
   "reports.categorized": "dfkpljhnccpkehgi",
@@ -230,6 +232,7 @@
  "stubs_and_projection": {
   "reports.allocation": "nkaoajlbfkmmnnmf",
   "reports.balance_check": "mifnimcclocnhcpp",
+  "reports.budget_checks": "gechopcjpkkknmjj",
   "reports.budget_targets": "bbbknadghnfojppm",
   "reports.budget_vs_actual": "pjcfapoponoihofa",
   "reports.categorized": "ijpanidmpgmddpbe",

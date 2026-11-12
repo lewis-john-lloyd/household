@@ -76,7 +76,7 @@ def budget_lines(rules, targets, actuals, month):
     r["rule"] = r["rule"].astype(str).str.strip()
     r["month"] = r["effective"].astype(str).str[:7]
     spend = budget._spend_lookup(actuals)
-    window = [budget._shift(month, n) for n in budget.LOOKBACK_WINDOW]
+    window = [budget.shift_month(month, n) for n in budget.LOOKBACK_WINDOW]
     now = targets[targets["month"] == month].set_index("line")["target"] if len(targets) else pd.Series(dtype=float)
     out = []
     for line, rows in r.sort_values("month", kind="stable").groupby("line", sort=True):

@@ -75,7 +75,8 @@ def _months(first, last):
     return [p.strftime("%Y-%m") for p in pd.period_range(first, last, freq="M")]
 
 
-def _shift(month, n):
+def shift_month(month, n):
+    """The month n months from month ("2026-01" and -1 is "2025-12")."""
     return (pd.Period(month, freq="M") + n).strftime("%Y-%m")
 
 
@@ -215,7 +216,7 @@ def _rule_target(state, month, spend, recurring=None, by_line=None, loan=None):
         return (None, why) if value is None else (value, f"{rule}: {why}")
     if rule in ("seasonal", "lookback", "trailing"):
         window = {"trailing": TRAILING_WINDOW, "lookback": LOOKBACK_WINDOW}.get(rule, SEASONAL_WINDOW)
-        return _from_history(state, month, spend, rule, [_shift(month, n) for n in window])
+        return _from_history(state, month, spend, rule, [shift_month(month, n) for n in window])
     return None, f"unknown rule {rule!r}"
 
 

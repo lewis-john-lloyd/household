@@ -90,7 +90,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
       money.format(line.compared) +
       ".",
   );
-  lineChecks(d, line);
+  lineChecks(d, line, v);
   lineHistory(d, category, v);
   var txns = el("div", null, "drawer-section");
   var show = button(
@@ -307,31 +307,47 @@ function lineHistory(d: HTMLElement, category: string, v: BudgetView) {
   d.appendChild(svg);
 }
 
-// What may be wrong with a line item's numbers, first in its drawer: each charge whose price changed, the change
-// in words, and its lines to look at (a one-time purchase reads as a new price until it is marked one-off).
-function lineChecks(d: HTMLElement, l: ViewLine) {
-  var checks = priceChecks(l, linesFor(l.category));
-  checks.forEach(function (t) {
-    var box = el("div", null, "alert check");
+// What may be wrong with a line item's numbers, first in its drawer: each check in words, a button to what it
+// rests on, and "Looks right" for one that was looked at and is right (a looks_right edit: it settles this
+// evidence only, so the check comes back if the evidence changes). One settled here says so until a run.
+function lineChecks(d: HTMLElement, l: ViewLine, v: BudgetView) {
+  checksFor(l, linesFor(l.category)).forEach(function (x) {
+    var c = x.c,
+      t = "looks_right|" + c.check;
+    var box = el("div", null, "alert check" + (x.settled ? " settled" : ""));
+    box.dataset.check = c.check;
     var text = el("span");
-    text.appendChild(icon("warning"));
-    text.appendChild(el("strong", chargeName(t)));
-    text.appendChild(
-      document.createTextNode(
-        " went from " +
-          priceWords(t) +
-          " at its latest charge (" +
-          longDay(t.last) +
-          "). If that charge isn't part of it, mark it so and the price goes back.",
-      ),
-    );
+    text.appendChild(icon(x.settled ? "check" : "warning"));
+    text.appendChild(document.createTextNode(c.detail));
+    // whether "Looks right" waits to be saved, or for a run: the tag the page uses for any change in hand
+    if (stagedText(t)) text.appendChild(el("span", "waiting to be saved", "tag warn"));
+    else if (savedText(t)) text.appendChild(el("span", "saved, applies at the next run", "tag warn"));
     box.appendChild(text);
     var actions = el("span", null, "actions");
+    var what = c.open.slice(0, c.open.indexOf(":"));
+    if (!x.settled && what !== "line")
+      actions.appendChild(
+        button(
+          CHECK_OPENS[what] || "Open",
+          function () {
+            openCheck(c.open, l.category, v);
+          },
+          "text",
+        ),
+      );
     actions.appendChild(
       button(
-        "See its charges",
+        x.settled ? "Check it again" : "Looks right",
         function () {
-          openCharge(t.key);
+          if (staged[t])
+            unstage(t); // undo a change not saved yet
+          else
+            stage(
+              { kind: "looks_right", check: c.check, looks_right: x.settled ? "no" : "yes" },
+              pretty(l.category) + ": " + c.label + (x.settled ? ", check again" : ", looks right"),
+            );
+          budget.open = { category: l.category };
+          drawBudgetPage(); // the row's status follows, and the drawer opens again where it was
         },
         "text",
       ),

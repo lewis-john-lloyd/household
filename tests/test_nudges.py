@@ -289,3 +289,19 @@ def test_downloads_and_review_are_due_once_stale_for_30_days():
 def test_a_setting_that_cant_be_used_is_in_the_next_email():
     rows = nudges.build(date(2026, 11, 6), params(payroll_url="payroll.example"))
     assert rows[["group", "item", "show_from"]].values.tolist() == [["Fix a setting", "payroll_url", "2026-11-06"]]
+
+
+def test_a_budget_lifted_by_one_big_line_is_in_the_email_and_price_changes_stay_in_their_own_group():
+    checks = pd.DataFrame(
+        [
+            {"check": "target_high|hobby|t9", "kind": "target_high", "about": "hobby", "category": "hobby"}
+            | {"label": "Budget $55.00, usually $20.00", "detail": "", "open": "txn:t9"},  # leak-guard: allow (made up)
+            {"check": "price_changed|X|2026-11-01|9.00", "kind": "price_changed", "about": "X", "category": "media"}
+            | {"label": "X $5.00 -> $9.00", "detail": "", "open": "charge:X"},  # leak-guard: allow (made up)
+        ]
+    )
+    todo = nudges.build(date(2026, 11, 12), params(views_url="https://example.test/exec"), checks=checks)
+    budget = todo[todo["group"] == nudges.GROUPS["budget"]]
+    assert list(budget["item"]) == ["hobby"]
+    assert list(budget["detail"]) == ["Budget $55.00, usually $20.00"]  # leak-guard: allow (made up)
+    assert list(budget["link"]) == ["https://example.test/exec?view=budget"]

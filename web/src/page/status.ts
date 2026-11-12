@@ -238,6 +238,7 @@ var CARD_ICON: Record<string, string> = {
   possible_duplicates: "copy",
   transfers_unmatched: "edit",
   waiting_changes: "sync",
+  budget_checks: "warning",
 };
 var ACTION_LABEL: Record<string, string> = {
   review: "Answer in Review",
@@ -246,6 +247,7 @@ var ACTION_LABEL: Record<string, string> = {
   waiting: "See saved changes",
   "view:jobs": "Open Jobs",
   "view:recurring": "Open Recurring",
+  "view:budget": "Open Budget",
 };
 var CARD_NOTE: Record<string, string> = { downloads_due: "Download each one into the inbox, then run ingest." };
 
@@ -278,8 +280,24 @@ function attentionCard(a: Attention, waiting?: boolean) {
     var list = el("ul", null, "things");
     a.items.forEach(function (i) {
       var li = el("li");
-      li.appendChild(el("strong", i.title));
-      li.appendChild(el("span", i.detail));
+      if (i.link && i.link.indexOf("budget:") === 0) {
+        // a line item's check: its drawer on the Budget page, where what it rests on is one click away
+        var go = button(
+          "",
+          function () {
+            budget.tab = "lines";
+            budget.open = { category: i.link!.slice("budget:".length) };
+            setView("budget");
+          },
+          "thing-link",
+        );
+        go.appendChild(el("strong", i.title));
+        go.appendChild(el("span", i.detail));
+        li.appendChild(go);
+      } else {
+        li.appendChild(el("strong", i.title));
+        li.appendChild(el("span", i.detail));
+      }
       list.appendChild(li);
     });
     body.appendChild(list);

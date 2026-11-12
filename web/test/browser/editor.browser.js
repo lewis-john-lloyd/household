@@ -1626,3 +1626,60 @@ test("with no flows yet, coming back to Cashflow says so again and asks for no p
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("a check compute published: its words on the row, its evidence a click away, and Looks right settles it here", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [{ check: 'target_high|hobby|t9', kind: 'target_high'," +
+      "    about: 'hobby', category: 'hobby', label: 'Budget $55.00, usually $20.00'," + // leak-guard: allow (made up)
+      "    detail: 'Its budget this month is well above a usual month. If that was a one-off, mark it so.', open: 'txn:t9' }]," +
+      "    book: { groups: { hobby: 'fun', food: 'living' }, recurring: [], days: [[d, 'hobby', 20], [d, 'food', 20]]," +
+      "      targets: [{ month: m, category: 'hobby', priority: 'low', target: 55 }, { month: m, category: 'food', priority: 'high', target: 60 }] } };" +
+      "  window.__answers.getTransaction = null;" +
+      "})();",
+  );
+  const check = "table.bv tr.line:has-text('Hobby') td.status button.st-check";
+  await page.waitForSelector(check);
+  assert.equal(await page.textContent(check), "Budget $55.00, usually $20.00"); // leak-guard: allow (made up)
+  await page.click(check); // opens the line it rests on
+  await page.waitForFunction(() => window.__calls.some((c) => c.name === "getTransaction" && c.args[0] === "t9"));
+  await page.click("#view-budget");
+  await page.click("table.bv tr.line:has-text('Hobby') td:nth-child(2)");
+  await page.waitForSelector(".drawer .alert.check");
+  assert.match(await page.textContent(".drawer .alert.check"), /well above a usual month/);
+  await page.click(".drawer .alert.check button:has-text('Looks right')");
+  assert.deepEqual(await staged(page), ["Hobby: Budget $55.00, usually $20.00, looks right"]); // leak-guard: allow (made up)
+  await page.waitForSelector(".drawer .alert.check.settled");
+  assert.equal(await page.locator(check).count(), 0); // the row no longer asks
+  await page.click(".drawer .alert.check button:has-text('Check it again')"); // not saved yet: undone
+  assert.deepEqual(await staged(page), []);
+  await page.waitForSelector(check);
+  await page.click(".drawer .alert.check button:has-text('Looks right')");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "looks_right", check: "target_high|hobby|t9", looks_right: "yes" }]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a check on the Status page opens its line item's drawer on the Budget page", async () => {
+  const page = await open(
+    "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  var c = { check: 'target_high|hobby|t9', kind: 'target_high', about: 'hobby', category: 'hobby'," +
+      "    label: 'Budget $55.00, usually $20.00', detail: 'Its budget this month is well above a usual month.', open: 'txn:t9' };" + // leak-guard: allow (made up)
+      "  window.__answers.getStatus.attention = [{ key: 'budget_checks', label: 'thing to check on the Budget page', count: 1," +
+      "    note: '', detail: [], flags: [], action: 'view:budget', items: [{ title: c.label, detail: c.detail, link: 'budget:hobby' }] }];" +
+      "  window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [c], book: { groups: { hobby: 'fun' }, recurring: []," +
+      "    days: [[d, 'hobby', 20]], targets: [{ month: m, category: 'hobby', priority: 'low', target: 55 }] } };" +
+      "})();",
+  );
+  await page.waitForSelector(".attention button.thing-link");
+  await page.click(".attention button.thing-link");
+  await page.waitForSelector(".drawer .alert.check");
+  assert.match(await page.textContent(".drawer h2"), /Hobby/);
+  assert.equal(await page.getAttribute("#view-budget", "aria-pressed"), "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

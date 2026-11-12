@@ -53,6 +53,7 @@ GROUPS = {  # the email's sections, in order
     "download": "Download into the inbox",
     "review": "Answer in Review",
     "subscriptions": "Recurring charges that changed price",
+    "budget": "Budgets to check",
 }
 MIN_401K_GAP = 100  # dollars a 401(k) projection may miss its limit by before it is worth an email
 
@@ -175,7 +176,18 @@ def _last_paycheck(stubs, person, employer, year):
     return dates[-1] if dates else None
 
 
-def build(today, params, coverage=None, review=None, plan=None, elections=None, stubs=None, fsa=None, changed=None):
+def build(
+    today,
+    params,
+    coverage=None,
+    review=None,
+    plan=None,
+    elections=None,
+    stubs=None,
+    fsa=None,
+    changed=None,
+    checks=None,
+):
     """The nudges: one row per thing to do, with the dates between which it belongs in the weekly email."""
     rows = []
 
@@ -342,6 +354,10 @@ def build(today, params, coverage=None, review=None, plan=None, elections=None, 
                 charged + timedelta(days=recurring.FRESH_DAYS),
                 link=_view(params, "budget", "recurring"),
             )
+    if checks is not None and len(checks):
+        # a budget pushed up by one big line (budget_checks.py); price changes are their own group above
+        for r in checks[checks["kind"] == "target_high"].to_dict("records"):
+            add("budget", r["about"], r["label"], today, link=_view(params, "budget"))
     order = list(GROUPS.values())
     return (
         pd.DataFrame(rows, columns=COLUMNS)

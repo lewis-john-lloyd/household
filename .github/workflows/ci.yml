@@ -1,7 +1,10 @@
 name: ci
 
 on:
+  # branches only: a release tag points at a commit CI already tested on its branch, and with tags here a
+  # retag would run every old release again on today's tools
   push:
+    branches: ["**"]
   pull_request:
 
 # CI only reads the code: its token can't push, tag or change settings

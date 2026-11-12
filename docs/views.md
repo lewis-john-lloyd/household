@@ -84,4 +84,6 @@ To deploy (Node 22 and `npm i -g @google/clasp`):
 3. `clasp push` (or `npm run push`, which builds first)
 4. In the script editor, Project Settings, Script properties: add `REPORTS_ID` with the Reports spreadsheet's id
 5. Deploy, New deployment, Web app. It runs as the person viewing it, so they see only what they can open; `access` in `appsscript.json` is `MYSELF` (only the owner). To let another household member open it, set `ANYONE` (any signed-in Google account; Reports' own sharing still decides who can read it) and redeploy.
+On a fresh checkout the scripts already exist but each folder's `.clasp.json` (which names its script, so it stays out of git) is missing: `node tools/clasp_projects.mjs` finds each script by its title through clasp and shows the files it would write, and `--apply` writes them, for `web` and the three scripts in `docs/apps-scripts.md`.
+
 6. After a change: check out the release tag, `npm run push`, then `clasp update-deployment <deployment id>` (`clasp list-deployments` shows it), so the web app's URL stays the same. A release that adds a permission (editing added `drive.file` and the Drive service) asks for it again the next time the page opens.

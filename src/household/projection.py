@@ -48,7 +48,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from . import tax, taxdata, wisconsin, withholding
+from . import tax, taxdata, valuation, wisconsin, withholding
 
 PAY_INTERVAL = timedelta(days=14)
 FULL_YEAR_PAYCHECKS = 26
@@ -878,14 +878,15 @@ HEALTH_FSA_PLAN = "Limited-purpose FSA"
 BACKDOOR_ROTH = "Backdoor Roth IRA"
 
 
-def elections(year, paystubs, after_tax_converts=False, comp_events=None):
+def elections(year, paystubs, after_tax_converts=False, comp_events=None, iras=None):
     """401(k), HSA and dependent-care FSA so far and projected to year end against the year's limits.
 
     The mega backdoor Roth row is the after-tax 401(k): its limit is what 415(c) leaves after elective
     deferrals and the employer's contributions, projected. Its status says whether the plan converts
     after-tax money to Roth on its own (after_tax_converts, the household setting
     after_tax_401k_converts_to_roth), since the stubs can't show a conversion. A backdoor Roth IRA is not
-    on a pay stub, so each person gets a row saying it is not tracked yet.
+    on a pay stub: with the IRA histories (backdoor_roth's inputs) each person gets its row from them, else a
+    row saying it is not tracked yet.
     """
     p = taxdata.params(year)
     pos = positions(paystubs, year, comp_events=comp_events)
@@ -939,9 +940,13 @@ def elections(year, paystubs, after_tax_converts=False, comp_events=None):
             out.append(
                 _election(year, "household", "", plan, sum(v["ytd"][key] for v in pos.values()), projected, limit)
             )
-    for person in sorted(set(people)):
+    tracked = {} if iras is None else {r["person"].lower(): r for r in backdoor_roth(year, **iras)}
+    for person in sorted(set(people) | {p for p in tracked if p not in {q.lower() for q in people}}):
+        row = tracked.get(person.lower())
         out.append(
-            {
+            {**row, "person": person}
+            if row
+            else {
                 "year": year,
                 "person": person,
                 "employer": "",
@@ -950,10 +955,70 @@ def elections(year, paystubs, after_tax_converts=False, comp_events=None):
                 "projected": None,
                 "limit": None,
                 "gap": None,
-                "status": "not tracked: no IRA contributions or conversions in the ledger",
+                "status": "not tracked: no IRA accounts in the ledger",
             }
         )
     return pd.DataFrame(out, columns=ELECTION_COLUMNS)
+
+
+def backdoor_roth(year, activity, accounts, values_today=None, birth_dates=None):
+    """Each IRA owner's year in a backdoor Roth IRA, as election rows: what went into their IRAs this year
+    (contributions to a traditional or a Roth IRA share one limit, section 219(b)(5), more from the year they
+    turn 50) and what was converted to Roth. The status says what is left to do, and warns when the owner's
+    pre-tax IRA balance today would make part of a conversion taxable: Form 8606 takes the untaxed share of
+    every traditional IRA at December 31 (the pro-rata rule), so a rollover IRA spoils a backdoor unless it
+    moves into a 401(k) first. Contributions are counted by date; one made by April 15 may be for last year."""
+    p = taxdata.params(year)
+    birth_dates = {str(k).lower(): str(v) for k, v in (birth_dates or {}).items()}
+    iras = [a for a in accounts.to_dict("records") if valuation.wrapper(a) == "ira"] if len(accounts) else []
+    owner = {str(a["account_id"]): str(a.get("owner", "")).strip().lower() for a in iras}
+    roth = {str(a["account_id"]) for a in iras if str(a.get("tax_treatment", "")).strip() == "roth"}
+    act = (
+        activity
+        if activity is not None and len(activity)
+        else pd.DataFrame(columns=["account_id", "date", "kind", "amount"])
+    )
+    act = act[act["account_id"].astype(str).isin(owner) & act["date"].astype(str).str.startswith(str(year))].copy()
+    act["amount"] = pd.to_numeric(act["amount"], errors="coerce").fillna(0.0) if "amount" in act else 0.0
+    act["owner"] = act["account_id"].astype(str).map(owner)
+    pretax = {}
+    if values_today is not None and len(values_today):
+        v = values_today[values_today["bucket"] == "ira_pretax"]
+        for o, value in zip(v["owner"].astype(str).str.lower(), pd.to_numeric(v["value"], errors="coerce").fillna(0)):
+            pretax[o] = pretax.get(o, 0.0) + float(value)
+    out = []
+    for person in sorted({o for o in owner.values() if o and o not in ("joint", "kids")}):
+        mine = act[act["owner"] == person]
+        given = mine[(mine["kind"] == "contribution") & (mine["amount"] > 0)]
+        put_in = round(float(given["amount"].sum()), 2)
+        converted = round(
+            float(mine[(mine["kind"] == "conversion_in") & mine["account_id"].astype(str).isin(roth)]["amount"].sum()),
+            2,
+        )
+        born = birth_dates.get(person, "")
+        catch_up = born[:4].isdigit() and year - int(born[:4]) >= 50
+        limit = p["ira_contribution_219b"] + (p["ira_catch_up_50"] if catch_up else 0)
+        row = _election(year, person, "", BACKDOOR_ROTH, put_in, put_in, limit)
+        notes = [row["status"]]
+        if not put_in and not converted:
+            notes.append("nothing in yet this year")
+        elif put_in and not converted:
+            notes.append("not converted to Roth yet")
+        else:
+            notes.append(f"{converted:,.0f} converted to Roth")
+        balance = round(pretax.get(person, 0.0), 2)
+        if balance >= 1:
+            notes.append(
+                f"a pre-tax IRA balance of {balance:,.0f} makes part of a conversion taxable (the pro-rata rule, "
+                "Form 8606) unless it moves into a 401(k) by December 31"
+            )
+        if len(given) and (given["date"].astype(str).str[5:] <= "04-15").any():
+            notes.append("a contribution made by April 15 may be for last year")
+        if not born[:4].isdigit():
+            notes.append(f"no birth date (birth_date:{person}), so no age-50 catch-up")
+        row["status"] = "; ".join(notes)
+        out.append(row)
+    return out
 
 
 def _election(year, person, employer, plan, ytd, projected, limit):

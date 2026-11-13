@@ -1171,7 +1171,13 @@ function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string, y
 function accountsPanel(accounts: Row[]) {
   var panel = el("section", null, "panel");
   panel.appendChild(el("h2", "Retirement and health accounts"));
-  panel.appendChild(el("p", "So far this year from the pay stubs, and by December 31 at the same contributions.", "support"));
+  panel.appendChild(
+    el(
+      "p",
+      "So far this year from the pay stubs, and by December 31 at the same contributions. A backdoor Roth IRA is read from the IRA histories.",
+      "support",
+    ),
+  );
   var people: Record<string, Row[]> = {};
   accounts.forEach(function (a) {
     (people[a.person] = people[a.person] || []).push(a);
@@ -1211,13 +1217,13 @@ function accountsPanel(accounts: Row[]) {
             money.format(ytd) + " so far, " + money.format(projected) + " by year end, of " + money.format(limit),
           );
           row.appendChild(meter);
+          var ira = a.plan === "Backdoor Roth IRA"; // nothing to project: an IRA takes what is put in
           row.appendChild(
             el(
               "div",
               money.format(ytd) +
-                " so far, " +
-                money.format(projected) +
-                " by December 31, of " +
+                (ira ? " in this year" : " so far, " + money.format(projected) + " by December 31") +
+                ", of " +
                 money.format(limit) +
                 (Number(a.gap) > 0 ? "; " + money.format(Number(a.gap)) + " of room left" : ""),
               "support",

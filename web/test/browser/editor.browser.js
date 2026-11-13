@@ -982,6 +982,12 @@ test("on a phone the page leads with the answer: cards, the period's judgment un
   await page.goto("http://views.test/");
   await page.waitForSelector(".group-cards");
   assert.equal(await page.getAttribute(".layout-switch button:has-text('Cards')", "aria-pressed"), "true");
+  // the lens and the period share one row, the month short, the comparison in a few words
+  const lens = await page.locator(".bv-controls .segmented").boundingBox();
+  const period = await page.locator(".bv-picker select").boundingBox();
+  assert.equal(Math.round(lens.y + lens.height / 2), Math.round(period.y + period.height / 2));
+  assert.match(await page.$eval(".bv-picker select", (s) => s.selectedOptions[0].textContent), /^[A-Z][a-z]{2} \d{4}$/);
+  assert.match(await page.textContent(".bv-compare-menu summary"), /^Against /);
   assert.equal(await page.isVisible(".a2-sub"), true);
   assert.equal(await page.isVisible(".a2-card .a2-small"), false);
   // the year's payment landed this month: neither the line item nor its group reads as over
@@ -2764,7 +2770,19 @@ test("the withholding plan's two knobs preview at once, and a vest rate kept is 
       JSON.stringify({
         years: [{ year: "2002", filed: false, forms: { "Form 1040": [line("24", "Total tax", 90)] } }],
         plan,
-        accounts: [],
+        accounts: [
+          {
+            year: "2002",
+            person: "alex",
+            employer: "",
+            plan: "Backdoor Roth IRA",
+            ytd: "50",
+            projected: "50",
+            limit: "70",
+            gap: "20",
+            status: "room left; not converted to Roth yet",
+          },
+        ],
         notes: [],
         filed: {},
         history: [],
@@ -2775,6 +2793,11 @@ test("the withholding plan's two knobs preview at once, and a vest rate kept is 
   await page.click("#view-taxes");
   await page.waitForSelector("#tax-plan .plan-knobs");
   const noBalance = () => page.textContent("#tax-plan .plan-row:first-of-type tr:has-text('no balance') button");
+  // the backdoor Roth IRA, read from the IRA histories: what went in, not a projection to December 31
+  assert.match(
+    await page.textContent("#taxes-body"),
+    /Backdoor Roth IRA\s*room left; not converted to Roth yet\s*\$50 in this year, of \$70; \$20 of room left/, // leak-guard: allow (made up)
+  );
   assert.equal(await noBalance(), "$250.00"); // leak-guard: allow (made up)
   assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: owing \$1,000, as things stand/); // leak-guard: allow (made up)
   assert.match(
@@ -2921,6 +2944,104 @@ test("equity: the tax on this year's vests at the rate vests are withheld at, th
   await page.click("#view-equity");
   assert.equal(await page.inputValue("#equity-body .equity-tax input"), "22");
   assert.equal(await page.$("#equity-body .equity-tax button:has-text('Keep')"), null);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("home: work is added from the line that paid it, corrected and removed in place, each with its receipt", async () => {
+  const work = (date, description, kind, cost, receipt) => ({
+    property: "willow",
+    date,
+    description,
+    kind,
+    cost,
+    credit: 0,
+    basisAdded: kind === "capital" ? cost : 0,
+    receipt,
+    note: "",
+  });
+  const home = {
+    loans: [],
+    estimates: [],
+    improvements: [
+      work("2001-03-01", "Deck", "capital", 90, "t7"),
+      work("2001-04-01", "Gutters", "repair", 40, "https://example.test/r"),
+    ],
+    schedule: [],
+    years: [],
+    taxes: [],
+    month: "2001-06",
+    notes: [],
+    homes: [{ id: "willow", lines: [{ key: "status", label: "Status", value: "owned", asOf: "", note: "" }] }],
+  };
+  const line = {
+    id: "t8",
+    date: "2001-05-02",
+    account: "checking",
+    payee: "WILLOW ST",
+    payeeRaw: "WILLOW ST",
+    amount: -60,
+    category: "household",
+    parts: [],
+    items: [],
+    decidedBy: "rule",
+    status: "",
+    note: "",
+    key: "WILLOW ST",
+    oneOff: false,
+  };
+  const page = await open(
+    `window.__answers.getHome = ${JSON.stringify(home)}; window.__answers.getTransaction = ${JSON.stringify(line)};`,
+  );
+  await page.click("#view-home");
+  await page.click("#home-body button:has-text('Improvements')");
+  const table = "#improvements-willow table";
+  await page.waitForSelector(table);
+  // each receipt opens: the line that paid it, or the link it was kept as
+  assert.equal(await page.getAttribute(`${table} tr:has-text('Gutters') a`, "href"), "https://example.test/r");
+  assert.equal(await page.getAttribute(`${table} tr:has-text('Gutters') a`, "rel"), "noopener noreferrer");
+  assert.equal(await page.locator(`${table} tr:has-text('Deck') button:has-text('Payment')`).count(), 1);
+  // corrected: the same work, as a repair now
+  await page.click(`${table} tr:has-text('Deck') button:has-text('Change')`);
+  await page.selectOption("#improvements-willow .improvement-form select", "repair");
+  await page.click("#improvements-willow button:has-text('Keep changes')");
+  assert.match(await page.textContent(`${table} tr:has-text('Deck')`), /changed, not saved/);
+  // removed: struck through until saved, and Undo puts it back
+  await page.click(`${table} tr:has-text('Gutters') button:has-text('Remove')`);
+  assert.equal(await page.locator(`${table} tr.struck:has-text('Gutters')`).count(), 1);
+  // added from the line that paid for it: its date, payee and amount carried over, the line its receipt
+  await page.evaluate(() => openTransaction("t8"));
+  await page.click('button:has-text("Add to a home\'s improvements")');
+  await page.waitForSelector("#improvements-willow .improvement-form");
+  const field = (n) => page.inputValue(`#improvements-willow .improvement-form label:nth-child(${n}) input`);
+  assert.deepEqual([await field(1), await field(2), await field(4), await field(6)], ["2001-05-02", "WILLOW ST", "60.00", "t8"]);
+  await page.fill("#improvements-willow .improvement-form label:nth-child(2) input", "Porch rail");
+  await page.click("#improvements-willow button:has-text('Add work')");
+  assert.match(await page.textContent(`${table} tr:has-text('Porch rail')`), /new, not saved/);
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [
+    {
+      kind: "improvement",
+      property_id: "willow",
+      date: "2001-03-01",
+      description: "Deck",
+      work: "repair",
+      cost: "90",
+      receipt: "t7",
+    },
+    { kind: "improvement", property_id: "willow", date: "2001-04-01", description: "Gutters", work: "removed" },
+    {
+      kind: "improvement",
+      property_id: "willow",
+      date: "2001-05-02",
+      description: "Porch rail",
+      work: "capital",
+      cost: "60.00",
+      receipt: "t8",
+    },
+  ]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

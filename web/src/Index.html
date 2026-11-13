@@ -456,6 +456,16 @@
       .equity-steps .equity-table td:first-child, .equity-steps .equity-table th:first-child { padding-left: 8px; }
       .equity-grants .setting-control { flex-wrap: wrap; }
       .equity-tax .plan-knob { margin: 4px 0; }
+      /* work on a home, added and corrected in place (home.ts, drawImprovements) */
+      .improvement-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); gap: 8px 12px; margin: 8px 0 12px; }
+      .improvement-field { display: grid; gap: 2px; }
+      .improvement-field[hidden] { display: none; }
+      .improvement-form input, .improvement-form select { width: 100%; box-sizing: border-box; font: inherit; min-height: 36px; padding: 0 8px; border: 1px solid var(--outline); border-radius: 4px; background: var(--surface); color: var(--on-surface); }
+      .improvement-form > p, .improvement-form .form-actions { grid-column: 1 / -1; margin: 0; }
+      .improvement-form .form-actions { display: flex; gap: 8px; }
+      .w-table .row-acts { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+      .w-table tr.changed td { background: var(--secondary-container); }
+      .w-table tr.struck td:not(:last-child) { text-decoration: line-through; color: var(--on-surface-variant); }
       .equity-tax .equity-table { margin-top: 8px; }
       .vesting-chart .vest-month.past rect:not([fill=transparent]) { opacity: 0.55; }
       .vesting-chart .today { stroke: var(--on-surface); stroke-width: 1; stroke-dasharray: 3 3; }
@@ -540,6 +550,11 @@
         .a2-big { font-size: 20px; line-height: 28px; }
         .a2-headline { font-size: 24px; line-height: 32px; }
         .bv-controls { gap: 8px; }
+        /* the lens and the period on one row: the arrows give way to the period's own list */
+        .bv-controls .segmented button { padding: 0 10px; }
+        .bv-picker { flex: 1 1 0; min-width: 0; }
+        .bv-picker .icon-button { display: none; }
+        .bv-picker select { width: 100%; min-width: 0; }
       }
       .a2-big small, .group-sum small { font-size: 14px; color: var(--on-surface-variant); }
       .a2-card .spent-bar { width: 100%; }

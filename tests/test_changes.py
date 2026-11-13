@@ -859,3 +859,50 @@ def test_a_recipient_is_said_to_be_the_same_as_another_and_separated_again():
     assert "same_as must be another key" in refused(
         doc({"kind": "recipient_merge", "key": "WILLOW ST", "same_as": "willow st"}), ledger_reader(**LEDGER)
     )
+
+
+def test_work_on_a_home_is_added_corrected_and_removed_from_the_views():
+    from household import house
+
+    homes = table("properties", {"property_id": "home"})
+    reader = ledger_reader(**(LEDGER | {"properties": homes}))
+    add = {
+        "kind": "improvement",
+        "property_id": "home",
+        "date": "2026-05-01",
+        "description": "Deck",
+        "work": "capital",
+        "cost": "90",
+        "receipt": "t1",
+    }
+    first = changes.parse(doc(add))
+    first.check(reader)
+    rows = first.tables["improvements"]
+    assert rows[["date", "property_id", "description", "kind", "cost", "receipt"]].values.tolist() == [
+        ["2026-05-01", "home", "Deck", "capital", "90", "t1"]
+    ]
+    assert "improvement home 2026-05-01 Deck: capital 90" in first.notes
+    # a later row for the same work corrects it; one marked removed takes it out of the basis
+    fix = changes.parse(doc({**add, "description": "deck", "work": "energy_credit", "credit": "30"}))
+    fix.check(reader)
+    both = pd.concat([rows, fix.tables["improvements"]], ignore_index=True)
+    assert house.improvements(both)[["kind", "basis_added"]].values.tolist() == [["energy_credit", 60.0]]
+    gone = changes.parse(doc({k: v for k, v in add.items() if k != "cost"} | {"work": "removed"}))
+    gone.check(reader)
+    assert house.improvements(pd.concat([both, gone.tables["improvements"]], ignore_index=True)).empty
+
+
+def test_work_on_a_home_names_a_home_the_ledger_has_and_a_receipt_it_can_open():
+    reader = ledger_reader(**(LEDGER | {"properties": table("properties", {"property_id": "home"})}))
+    base = {
+        "kind": "improvement",
+        "property_id": "home",
+        "date": "2026-05-01",
+        "description": "Deck",
+        "work": "capital",
+    }
+    assert "no home cabin" in refused(doc(base | {"cost": "90", "property_id": "cabin"}), reader)
+    assert "is neither a transaction nor an https link" in refused(doc(base | {"cost": "90", "receipt": "t9"}), reader)
+    assert "receipt link must be https" in refused(doc(base | {"cost": "90", "receipt": "http://x.test"}), reader)
+    assert "cost '' is not a number" in refused(doc(base), reader)
+    assert "work must be one of" in refused(doc(base | {"cost": "90", "work": "fancy"}), reader)

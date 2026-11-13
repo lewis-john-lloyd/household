@@ -124,11 +124,17 @@ def equity_on(properties, values, loans, schedule, balances, day, rule):
 
 
 def improvements(rows):
-    """IMPROVEMENT_COLUMNS with what each adds to basis."""
+    """IMPROVEMENT_COLUMNS with what each adds to basis. A piece of work is its home, date and description:
+    the latest row for it stands (a correction from the views), and one marked removed takes it out."""
     if rows is None or rows.empty:
         return pd.DataFrame(columns=IMPROVEMENT_COLUMNS)
-    out = []
+    latest = {}
     for r in rows.to_dict("records"):
+        latest[(str(r["property_id"]), str(r["date"]), str(r["description"]).strip().lower())] = r
+    out = []
+    for r in latest.values():
+        if str(r["kind"]).strip() == "removed":
+            continue
         cost, credit = _num(r["cost"]) or 0.0, _num(r.get("credit")) or 0.0
         kind = str(r["kind"]).strip()
         added = cost if kind == "capital" else cost - credit if kind == "energy_credit" else 0.0

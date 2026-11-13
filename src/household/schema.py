@@ -294,7 +294,7 @@ LEDGER = (
     Table(
         "improvements",
         ("date", "property_id", "description", "kind", "cost", "credit", "receipt", "note", "doc_id"),
-        {"kind": ("capital", "repair", "energy_credit")},
+        {"kind": ("capital", "repair", "energy_credit", "removed")},
     ),
     # the Social Security statement (parsers/ssa_statement.py): whose it is and their birth date, the monthly
     # benefit it estimates at each claiming age (today's dollars), and the earnings record; each statement's

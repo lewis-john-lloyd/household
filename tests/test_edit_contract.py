@@ -63,6 +63,12 @@ SAMPLES = {
         {"year": "2026", "key": "wi_earned_income", "person": "alex", "value": "70"},
         {"year": "2026", "key": "wi_earned_income", "person": "sam", "value": "70"},
     ],
+    "improvement": [
+        {"property_id": "home", "date": "2026-05-01", "description": "Deck", "work": "capital", "cost": "90"},
+        {"property_id": "home", "date": "2026-05-01", "description": "deck", "work": "removed"},
+        {"property_id": "home", "date": "2026-05-02", "description": "Deck", "work": "repair", "cost": "50"},
+        {"property_id": "cabin", "date": "2026-05-01", "description": "Deck", "work": "capital", "cost": "90"},
+    ],
     "security": [
         {"symbol": "ACME", "asset_class": "SDT"},
         {"symbol": "ACME", "asset_class": "SDT 60, BT 40"},

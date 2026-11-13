@@ -340,53 +340,270 @@ function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
   if (!sched.length) body.appendChild(el("p", "No loan on this home.", "support"));
 }
 
+// Work on a home, added, corrected or removed here (an `improvement` edit; the latest row for a home, date and
+// description stands, house.improvements). A transaction page's "Add to a home's work" leaves its line here as
+// a draft (improvementDraft), so a payment becomes its work with the line as its receipt.
+var improvementDraft: { date: string; description: string; cost: string; receipt: string } | null = null;
+var IMPROVEMENT_WORK = ["capital", "repair", "energy_credit"];
+
+function improvementTarget(property: string, date: string, description: string) {
+  return editTarget({ kind: "improvement", property_id: property, date: date, description: description });
+}
+
+// a receipt as something to open: a transaction's page, or the link it was kept as
+function receiptLink(receipt: string): Node | string {
+  if (!receipt) return "–";
+  if (/^https:\/\//.test(receipt)) {
+    var a = el("a", "Receipt") as HTMLAnchorElement;
+    a.href = receipt;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    return a;
+  }
+  return button(
+    "Payment",
+    function () {
+      openTransaction(receipt);
+    },
+    "text",
+  );
+}
+
+// start: the form's values; editing: the work it corrects, when it corrects one (a draft from a line is new work)
+function improvementForm(h: Home, start: Record<string, string>, editing: boolean, done: () => void) {
+  var form = el("div", null, "improvement-form");
+  var field = function (label: string, input: HTMLElement) {
+    var l = el("label", null, "improvement-field");
+    l.appendChild(el("span", label, "support"));
+    l.appendChild(input);
+    form.appendChild(l);
+    return input;
+  };
+  var date = field("Date", textInput(start.date || today(), "", "YYYY-MM-DD")) as HTMLInputElement;
+  var what = field("Work", textInput(start.description || "", "", "what was done")) as HTMLInputElement;
+  var work = field("Kind", choice(IMPROVEMENT_WORK, start.kind || "capital", KIND_NAMES)) as HTMLSelectElement;
+  var cost = field("Cost", textInput(start.cost || "", "", "0.00")) as HTMLInputElement;
+  var credit = field("Credit", textInput(start.credit || "", "", "0.00")) as HTMLInputElement;
+  var receipt = field(
+    "Receipt",
+    textInput(start.receipt || "", "", "a link, or the paying line's transaction id"),
+  ) as HTMLInputElement;
+  var said = el("p", null, "support");
+  var creditShown = function () {
+    (credit.parentNode as HTMLElement).hidden = work.value !== "energy_credit";
+  };
+  work.onchange = creditShown;
+  creditShown();
+  form.appendChild(said);
+  var act = el("div", null, "form-actions");
+  act.appendChild(
+    button(
+      editing ? "Keep changes" : "Add work",
+      function () {
+        var wrong = [] as string[];
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value.trim())) wrong.push("a date as YYYY-MM-DD");
+        if (!what.value.trim()) wrong.push("what was done");
+        if (isNaN(parseFloat(cost.value.replace(/[$,]/g, "")))) wrong.push("its cost");
+        var r = receipt.value.trim();
+        if (r && /^http/.test(r) && !/^https:\/\//.test(r)) wrong.push("an https link");
+        if (wrong.length) {
+          said.textContent = "Needs " + wrong.join(", ") + ".";
+          return;
+        }
+        if (editing && (start.date !== date.value.trim() || start.description.toLowerCase() !== what.value.trim().toLowerCase()))
+          // a new date or name is another piece of work: the old one goes
+          stage(
+            { kind: "improvement", property_id: h.id, date: start.date, description: start.description, work: "removed" },
+            "home " + h.id + ": " + start.description + " replaced",
+          );
+        var edit: Edit = {
+          kind: "improvement",
+          property_id: h.id,
+          date: date.value.trim(),
+          description: what.value.trim(),
+          work: work.value,
+          cost: cost.value.replace(/[$,]/g, "").trim(),
+        };
+        if (work.value === "energy_credit" && credit.value.trim()) edit.credit = credit.value.replace(/[$,]/g, "").trim();
+        if (r) edit.receipt = r;
+        stage(
+          edit,
+          "home " +
+            h.id +
+            ": " +
+            edit.description +
+            ", " +
+            (KIND_NAMES[work.value] || work.value).toLowerCase() +
+            " " +
+            edit.cost,
+        );
+        done();
+      },
+      "tonal",
+    ),
+  );
+  act.appendChild(button("Cancel", done, "text"));
+  form.appendChild(act);
+  return form;
+}
+
 function drawImprovements(body: HTMLElement, d: HomePage, h: Home) {
   var im = el("section", null, "panel w-wide");
+  im.id = "improvements-" + h.id;
   im.appendChild(el("h3", "Improvements"));
   im.appendChild(
     el(
       "p",
       "Capital improvements add their cost to basis; energy-credit work adds its cost less the credit; " +
-        "repairs add nothing. Add work with an improvements file in the inbox: date, property_id, description, " +
-        "kind (capital, repair or energy_credit), cost, credit, receipt, note, doc_id.",
+        "repairs add nothing. Add or correct work here, with its receipt: a link, or the line that paid it.",
       "support",
     ),
   );
+  var redraw = function () {
+    drawHome();
+    var at = document.getElementById("improvements-" + h.id);
+    if (at) at.scrollIntoView({ block: "nearest" });
+  };
+  var formAt = el("div");
+  im.appendChild(formAt);
+  var openForm = function (start: Record<string, string>, editing: boolean) {
+    formAt.textContent = "";
+    formAt.appendChild(improvementForm(h, start, editing, redraw));
+    adding.hidden = true; // one form at a time; done redraws the page
+  };
+  var adding = button(
+    "Add work",
+    function () {
+      openForm({}, false);
+    },
+    "tonal",
+  );
+  im.appendChild(adding);
+  if (improvementDraft) {
+    var draft = improvementDraft;
+    improvementDraft = null;
+    openForm(draft, false);
+  }
   var work = d.improvements.filter(function (w) {
     return w.property === h.id;
   });
-  if (!work.length) im.appendChild(el("p", "None recorded yet.", "support"));
-  else {
-    var it = wTable(im, ["Date", "Work", "Kind", "Cost", "Credit", "Adds to basis"], [3, 4, 5]);
-    work.forEach(function (w) {
-      it.row([
+  // work staged here and not yet in the books shows too, marked
+  var known: Record<string, boolean> = {};
+  work.forEach(function (w) {
+    known[improvementTarget(h.id, w.date, w.description)] = true;
+  });
+  var fresh = Object.keys(staged)
+    .map(function (t) {
+      return staged[t].edit as Record<string, string>;
+    })
+    .filter(function (e) {
+      return e.kind === "improvement" && e.property_id === h.id && e.work !== "removed" && !known[editTarget(e as Edit)];
+    });
+  if (!work.length && !fresh.length) {
+    im.appendChild(el("p", "None recorded yet.", "support"));
+    body.appendChild(im);
+    return;
+  }
+  var it = wTable(im, ["Date", "Work", "Kind", "Cost", "Credit", "Adds to basis", "Receipt", ""], [3, 4, 5]);
+  var total = { cost: 0, added: 0 };
+  work.forEach(function (w) {
+    var t = improvementTarget(h.id, w.date, w.description);
+    var change = staged[t] ? (staged[t].edit as Record<string, string>) : null;
+    var acts = el("span", null, "row-acts");
+    if (change) {
+      acts.appendChild(el("span", change.work === "removed" ? "removed, not saved" : "changed, not saved", "support"));
+      acts.appendChild(
+        button(
+          "Undo",
+          function () {
+            unstage(t);
+            redraw();
+          },
+          "text",
+        ),
+      );
+    } else {
+      acts.appendChild(
+        button(
+          "Change",
+          function () {
+            openForm(
+              {
+                date: w.date,
+                description: w.description,
+                kind: w.kind,
+                cost: String(w.cost),
+                credit: w.credit ? String(w.credit) : "",
+                receipt: w.receipt || "",
+              },
+              true,
+            );
+          },
+          "text",
+        ),
+      );
+      acts.appendChild(
+        button(
+          "Remove",
+          function () {
+            stage(
+              { kind: "improvement", property_id: h.id, date: w.date, description: w.description, work: "removed" },
+              "home " + h.id + ": " + w.description + " removed",
+            );
+            redraw();
+          },
+          "text danger",
+        ),
+      );
+    }
+    var row = it.row(
+      [
         longDate(w.date),
         w.description,
         KIND_NAMES[w.kind] || w.kind,
         money.format(w.cost),
         w.credit ? money.format(w.credit) : "–",
         money.format(w.basisAdded),
-      ]);
-    });
+        receiptLink(w.receipt),
+        acts,
+      ],
+      change ? "changed" : "",
+    );
+    row.classList.toggle("struck", !!change && change.work === "removed");
+    total.cost += w.cost;
+    total.added += w.basisAdded;
+  });
+  fresh.forEach(function (e) {
+    var t = editTarget(e as Edit);
+    var cost = Number(e.cost) || 0,
+      credit = Number(e.credit) || 0;
+    var added = e.work === "capital" ? cost : e.work === "energy_credit" ? cost - credit : 0;
+    var acts = el("span", null, "row-acts");
+    acts.appendChild(el("span", "new, not saved", "support"));
+    acts.appendChild(
+      button(
+        "Undo",
+        function () {
+          unstage(t);
+          redraw();
+        },
+        "text",
+      ),
+    );
     it.row(
       [
-        "Total",
-        "",
-        "",
-        money.format(
-          work.reduce(function (s, w) {
-            return s + w.cost;
-          }, 0),
-        ),
-        "",
-        money.format(
-          work.reduce(function (s, w) {
-            return s + w.basisAdded;
-          }, 0),
-        ),
+        longDate(e.date),
+        e.description,
+        KIND_NAMES[e.work] || e.work,
+        money.format(cost),
+        credit ? money.format(credit) : "–",
+        money.format(added),
+        receiptLink(e.receipt || ""),
+        acts,
       ],
-      "total",
+      "changed",
     );
-  }
+  });
+  it.row(["Total, as recorded", "", "", money.format(total.cost), "", money.format(total.added), "", ""], "total");
   body.appendChild(im);
 }

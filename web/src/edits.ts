@@ -78,6 +78,10 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
     ["year", "key", "value"],
     ["person", "note", "was"],
   ],
+  improvement: [
+    ["property_id", "date", "description", "work"],
+    ["cost", "credit", "receipt", "note"],
+  ],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -238,6 +242,8 @@ function editTarget(edit: Edit): string {
       return `security|${f("symbol")}`;
     case "estimate":
       return `estimate|${f("year")}|${f("key")}|${f("person")}`;
+    case "improvement": // one piece of work: its home, date and description (house.improvements)
+      return `improvement|${f("property_id")}|${f("date")}|${f("description").trim().toLowerCase()}`;
     default:
       return `${edit.kind}|${JSON.stringify(edit)}`;
   }

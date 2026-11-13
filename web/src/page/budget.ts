@@ -217,8 +217,12 @@ function budgetControls(v: BudgetView) {
   earlier.disabled = at < 0 || at >= list.length - 1;
   var labels: Record<string, string> = {};
   var current = periodOf(today(), budget.lens);
+  // on a phone the lens and the period share one row: months as "Nov 2026", and "so far" left to the headline
+  var narrow = !!(window.matchMedia && window.matchMedia("(max-width: 600px)").matches);
   list.forEach(function (p) {
-    labels[p] = periodName(p) + (p === current ? ", so far" : "");
+    var name = periodName(p);
+    if (narrow && budget.lens === "month") name = name.slice(0, 3) + name.slice(name.indexOf(" "));
+    labels[p] = name + (p === current && !narrow ? ", so far" : "");
   });
   var pick = choice(list, budget.period, labels);
   pick.setAttribute("aria-label", "Period");
@@ -296,7 +300,12 @@ function compareMenu(v: BudgetView, list: string[], words: string) {
   }
   return popMenu(
     "bv-compare-menu",
-    el("span", "Compared with " + periodName(v.compare) + (v.partial && v.sameWeeks ? ", same weeks" : "")),
+    el(
+      "span",
+      (window.matchMedia && window.matchMedia("(max-width: 600px)").matches ? "Against " : "Compared with ") +
+        periodName(v.compare) +
+        (v.partial && v.sameWeeks ? ", same weeks" : ""),
+    ),
     panel,
     !!budget.compareOpen,
     function (open) {

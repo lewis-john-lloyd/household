@@ -138,6 +138,62 @@ def test_elections_show_the_year_so_far_and_say_a_backdoor_roth_is_not_tracked()
     assert plans.loc["Backdoor Roth IRA", "status"].startswith("not tracked")
 
 
+def ira_accounts():
+    return pd.DataFrame(
+        [
+            {"account_id": "alex_trad_ira", "type": "ira", "tax_treatment": "pre_tax", "owner": "alex"},
+            {"account_id": "alex_roth_ira", "type": "ira", "tax_treatment": "roth", "owner": "alex"},
+            {"account_id": "sam_roth_ira", "type": "ira", "tax_treatment": "roth", "owner": "sam"},
+            {"account_id": "joint_brokerage", "type": "brokerage", "tax_treatment": "taxable", "owner": "joint"},
+        ]
+    )
+
+
+def ira_activity(*rows):
+    return pd.DataFrame(
+        [{"account_id": a, "date": d, "kind": k, "amount": m} for a, d, k, m in rows],
+        columns=["account_id", "date", "kind", "amount"],
+    )
+
+
+def test_a_backdoor_roth_ira_is_read_from_the_ira_histories():
+    activity = ira_activity(
+        ("alex_trad_ira", "2026-05-01", "contribution", 7_500),
+        ("alex_trad_ira", "2026-05-03", "conversion_out", -7_500),
+        ("alex_roth_ira", "2026-05-03", "conversion_in", 7_500),
+        ("alex_trad_ira", "2025-05-01", "contribution", 7_000),  # last year's
+        ("joint_brokerage", "2026-05-01", "contribution", 50),
+    )
+    rows = {r["person"]: r for r in projection.backdoor_roth(2026, activity, ira_accounts())}
+    alex = rows["alex"]
+    assert (alex["ytd"], alex["limit"], alex["gap"]) == (7_500, 7_500, 0)
+    assert alex["status"].startswith("at limit; 7,500 converted to Roth")
+    assert "no birth date" in alex["status"]
+    # sam has a Roth IRA and nothing in it this year
+    assert rows["sam"]["status"].startswith("room left; nothing in yet this year")
+    assert set(rows) == {"alex", "sam"}  # a joint account is nobody's IRA
+
+
+def test_the_backdoor_roth_ira_warns_of_the_pro_rata_rule_and_counts_the_catch_up_at_50():
+    activity = ira_activity(("alex_trad_ira", "2026-03-01", "contribution", 8_600))
+    today = pd.DataFrame([{"owner": "alex", "bucket": "ira_pretax", "value": 90}])
+    (alex,) = [
+        r
+        for r in projection.backdoor_roth(2026, activity, ira_accounts(), today, {"alex": "1976-02-01"})
+        if r["person"] == "alex"
+    ]
+    assert alex["limit"] == 7_500 + 1_100 and alex["status"].startswith("at limit; not converted to Roth yet")
+    assert "pro-rata rule" in alex["status"] and "may be for last year" in alex["status"]
+
+
+def test_elections_take_the_backdoor_roth_ira_from_the_histories_by_person():
+    iras = {"activity": ira_activity(("alex_trad_ira", "2026-05-01", "contribution", 50)), "accounts": ira_accounts()}
+    plans = projection.elections(2026, stubs_through(24), iras=iras)
+    backdoor = plans[plans["plan"] == "Backdoor Roth IRA"].set_index("person")
+    assert backdoor.loc["alex", "ytd"] == 50 and backdoor.loc["alex", "limit"] == 7_500
+    assert "sam" in backdoor.index  # an IRA owner with no pay stubs still gets a row
+
+
 def test_the_mega_backdoor_row_says_whether_the_plan_converts_after_tax_money():
     rows = stubs_through(10).to_dict("records")
     for stub in {r["stub_id"]: r for r in rows}.values():  # an after-tax 401(k) contribution on every stub

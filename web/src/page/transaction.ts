@@ -172,6 +172,21 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   );
   moreForm.appendChild(moreActions);
   more.appendChild(moreForm);
+  if (t.amount < 0) {
+    // a payment for work on a home: its date, payee and amount carried to the Home page's form, this line its receipt
+    var work = section(panel, "Work on a home", "Capital improvements and energy-credit work add to the home's basis.");
+    work.appendChild(
+      button(
+        "Add to a home's improvements",
+        function () {
+          improvementDraft = { date: t.date, description: t.payee, cost: amountText(Math.round(-t.amount * 100)), receipt: t.id };
+          homeView = "improvements";
+          setView("home");
+        },
+        "tonal",
+      ),
+    );
+  }
 }
 
 // Rows of category and amount, adding up live against the line.

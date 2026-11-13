@@ -175,6 +175,7 @@ def _investments_and_homes(c: Compute, books, sched):
             + ", ".join(people or ("none set",)),
         )
     books["values_today"], books["allocated"] = now, allocated  # for the retirement plan
+    books["investment_activity"] = activity  # for the backdoor Roth IRA on the elections card
     return {
         "investments_value": round(float(pd.to_numeric(now["value"], errors="coerce").sum()), 2) if len(now) else 0.0,
         "rebalance_trades": len(trades),
@@ -861,7 +862,19 @@ def _elections(c: Compute, result, year, books, stubs, jobs):
     """Each person's plan contributions against the year's limits. Returns them when the year is this one."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
     converts = categorize.household_parameter(books["parameters"], "after_tax_401k_converts_to_roth").upper() == "TRUE"
-    plans = projection.elections(year, stubs, after_tax_converts=converts, comp_events=jobs)
+    # birth dates for the IRA catch-up at 50: the birth_date:<person> setting, else the Social Security statement
+    statements = read_ledger(c.ledger, "ss_statements")
+    births = {str(r["person"]).lower(): str(r["birth_date"]) for r in statements.to_dict("records")}
+    owners = {str(o).strip().lower() for o in books["accounts"].get("owner", [])}
+    set_here = {o: settings.value(books["parameters"], f"birth_date:{o}") for o in owners}
+    births |= {o: v for o, v in set_here.items() if v}
+    iras = {
+        "activity": books.get("investment_activity"),
+        "accounts": books["accounts"],
+        "values_today": books.get("values_today"),
+        "birth_dates": births,
+    }
+    plans = projection.elections(year, stubs, after_tax_converts=converts, comp_events=jobs, iras=iras)
     plans["run_id"] = run_id
     sheets.replace_table(reports, schema.table(schema.REPORTS, "elections"), plans)
     tax_elections = plans if year == int(today[:4]) else None

@@ -48,6 +48,10 @@ row a person would otherwise have typed:
                    progress (key, person if it is         source_doc "views": it stands
                    per person), as the whole figure       in for the estimates before
                                                           it, tax.estimates_in_force)
+  improvement      work on a home (work: capital,      -> improvements (the latest row
+                   repair, energy_credit) with its        for a home, date and
+                   cost, or removed; receipt a            description stands)
+                   transaction id or an https link
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -117,7 +121,9 @@ KINDS = {
     "looks_right": ({"check", "looks_right"}, set()),
     "security": ({"symbol", "asset_class"}, {"was"}),
     "estimate": ({"year", "key", "value"}, {"person", "note", "was"}),
+    "improvement": ({"property_id", "date", "description", "work"}, {"cost", "credit", "receipt", "note"}),
 }
+IMPROVEMENT_KINDS = ("capital", "repair", "energy_credit", "removed")
 MERCHANT_KINDS = (
     "payee",
     "subscription",
@@ -336,6 +342,20 @@ def _values(kind, e):
             out.append("an explanation needs a note")
     if kind == "item" and not e["item_id"]:
         out.append("item_id is empty")
+    if kind == "improvement":
+        if not _date(e["date"]):
+            out.append(f"date {e['date']!r} is not a date (YYYY-MM-DD)")
+        if not e["description"].strip() or len(e["description"]) > 120:
+            out.append("description must be 1 to 120 characters")
+        if e["work"] not in IMPROVEMENT_KINDS:
+            out.append(f"work must be one of {', '.join(IMPROVEMENT_KINDS)}")
+        elif e["work"] != "removed" and not _number(e.get("cost", "")):
+            out.append(f"cost {e.get('cost', '')!r} is not a number")
+        if e.get("credit", "") and not _number(e["credit"]):
+            out.append(f"credit {e['credit']!r} is not a number")
+        receipt = e.get("receipt", "").strip()
+        if receipt.startswith("http") and not receipt.startswith("https://"):
+            out.append("receipt link must be https")
     if kind == "job":
         if not _date(e["effective"]):
             out.append(f"effective {e['effective']!r} is not a date (YYYY-MM-DD)")
@@ -381,6 +401,8 @@ def _target(e):
         return ("job", e["person"], e["effective"], e["employer"])
     if kind == "estimate":
         return ("estimate", e["year"], e["key"], e.get("person", ""))
+    if kind == "improvement":  # one piece of work: its home, date and description (house.improvements)
+        return ("improvement", e["property_id"], e["date"], e["description"].strip().lower())
     key = {
         "payee_rule": "pattern",
         "category": "category",
@@ -518,6 +540,9 @@ def _describe(e):
         return f"{e['jurisdiction']} withholding on stub {e['stub_id']} explained"
     if kind == "item":
         return f"item {e['item_id']}: {e['category']}"
+    if kind == "improvement":
+        what = "removed" if e["work"] == "removed" else f"{e['work']} {e.get('cost', '')}"
+        return f"improvement {e['property_id']} {e['date']} {e['description'].strip()}: {what}"
     if kind == "job":
         pay = f" at {e['salary']}" if e.get("salary") else ""
         fte = f", {e['fte']} FTE" if e.get("fte") else ""
@@ -688,6 +713,21 @@ def _rows(edits, at):
                     "doc_id": "",
                 },
             )
+        elif kind == "improvement":
+            add(
+                "improvements",
+                {
+                    "date": e["date"],
+                    "property_id": e["property_id"],
+                    "description": e["description"].strip(),
+                    "kind": e["work"],
+                    "cost": e.get("cost", "").replace(",", ""),
+                    "credit": e.get("credit", "").replace(",", ""),
+                    "receipt": e.get("receipt", "").strip(),
+                    "note": e.get("note", "") or f"from the views {at[:10]}",
+                    "doc_id": "",
+                },
+            )
         elif kind == "item":
             add(
                 "item_categories",
@@ -842,6 +882,13 @@ def check(edits, read):
                 wrong.append("no such item")
             elif category not in known:
                 wrong.append(f"not a category: {category}")
+        elif kind == "improvement":
+            homes = read("properties")
+            if e["property_id"] not in (set(homes["property_id"].astype(str)) if len(homes) else set()):
+                wrong.append(f"no home {e['property_id']}")
+            receipt = e.get("receipt", "").strip()
+            if receipt and not receipt.startswith("https://") and receipt not in amounts:
+                wrong.append(f"receipt {receipt!r} is neither a transaction nor an https link")
         elif kind == "job":
             jobs = read("comp_events")
             people = set(stubs["person"].astype(str)) if len(stubs) else set()

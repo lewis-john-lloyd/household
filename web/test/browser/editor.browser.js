@@ -1517,21 +1517,51 @@ test("retirement: the plan, each year, the strategies, Social Security and the a
                            window.__location = { parameter: { view: 'retirement' } };`);
   await page.waitForSelector("#retirement-body h2");
   assert.equal(await page.getAttribute("#view-retirement", "aria-pressed"), "true");
-  assert.equal(await page.textContent("#retirement-body h2"), "Retire in 2031, at 51 and 49");
+  // it opens on how to read it: the plan in a sentence, where to look, and the numbers it leans on
+  assert.equal(await page.textContent("#retirement-body h2"), "How to read this page");
   assert.deepEqual(await page.$$eval("#retirement-body .subtabs button", (b) => b.map((x) => x.textContent)), [
+    "Start here",
     "Plan",
     "Budget",
     "Year by year",
-    "Strategies",
+    "Taking money out",
     "Social Security",
     "Assumptions",
   ]);
+  assert.match(
+    await page.textContent("#retirement-body .retire-answer"),
+    /^The plan: retire in 2031 \(at 51 and 49\), spending \$4 the first year\. The money lasts in 89% of simulated futures, taking money out by taking 401\(k\) and IRA money to the top of the 12% bracket first, converting to Roth up to the top of the 22% bracket, with the same spending each year\.$/, // leak-guard: allow (made up)
+  );
+  assert.equal(await page.locator("#retirement-body .retire-parts li").count(), 6);
+  await page.click("#retirement-body .retire-term summary:has-text('Lasts (Monte Carlo)')");
+  assert.match(await page.textContent("#retirement-body .retire-term[open]"), /1,000 made-up futures.*Source: Kitces/s);
+  assert.equal(
+    await page.getAttribute("#retirement-body .retire-term[open] a >> nth=1", "href"),
+    "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html",
+  );
+  await page.click("#retirement-body .retire-parts button:has-text('Plan')");
+  assert.equal(await page.textContent("#retirement-body h2"), "Retire in 2031, at 51 and 49");
   assert.equal(await page.textContent("#retirement-body tr.picked td"), "2031");
   assert.match(await page.textContent("#retirement-body table"), /short at 80\/78/); // at 5% the money runs out in 2060
   await page.click("#retirement-body .subtabs button:has-text('Year by year')");
   assert.equal(await page.$$eval("#retirement-body tr.short", (r) => r.length), 1);
-  await page.click("#retirement-body .subtabs button:has-text('Strategies')");
+  await page.click("#retirement-body .subtabs button:has-text('Taking money out')");
   assert.match(await page.textContent("#retirement-body"), /alex 70, sam 67/);
+  assert.match(await page.textContent("#retirement-body .retire-answer"), /^The plan takes money out by taking 401\(k\)/);
+  // a few measures first, every one on asking; each method explained with its sources
+  const heads = () => page.$$eval("#retirement-body .w-table >> nth=0", (t) => t.length);
+  assert.ok(await heads());
+  assert.equal(await page.locator("#retirement-body th:has-text('IRMAA')").count(), 0);
+  await page.click("#retirement-body button:has-text('Show every measure')");
+  assert.equal(await page.locator("#retirement-body th:has-text('IRMAA')").count(), 1);
+  assert.ok((await page.locator("#retirement-body .retire-term").count()) >= 10);
+  // another way made the plan, as the retirement_strategy setting
+  assert.equal((await page.locator("#retirement-body .tag.ok:has-text('The plan')").count()) >= 1, true);
+  await page.click("#retirement-body button[aria-label='Make it the plan: Variable percentage withdrawal']");
+  await page.waitForSelector("#retirement-body .tag:has-text('the plan once saved')");
+  assert.deepEqual(await staged(page), ["retirement plan: Variable percentage withdrawal"]);
+  await page.click("#retirement-body button:has-text('Undo')");
+  assert.deepEqual(await staged(page), []);
   await page.click("#retirement-body .subtabs button:has-text('Social Security')");
   assert.match(await page.textContent("#retirement-body"), /set social_security_monthly:sam/);
   await page.click("#retirement-body .subtabs button:has-text('Assumptions')");
@@ -2295,6 +2325,23 @@ test("performance: ten years of a household's spending draws and redraws quickly
       for (var k = 0; k < 15; k++) days.push([day, cats[(d.getUTCDate() * 7 + k * 13) % 60], 5 + ((k * 37) % 90)]);
       if (day.slice(8) === "01") cats.forEach(function (c) { targets.push({ month: day.slice(0, 7), category: c, priority: "medium", target: 300 }); });
     }
+    // a budget line for each: some set per year and some annual funds, judged on their year, the rest monthly
+    window.__answers.getEditor.budgetLines = cats.map(function (c, i) {
+      return { line: c, effective: "2001-01-01", category: c, account: "", priority: "medium", rule: i < 15 && i >= 10 ? "sinking_fund" : i < 30 && i >= 15 ? "trailing" : "fixed",
+        amount: "1200", per: i < 10 ? "annually" : "monthly", note: "", in_force: "yes", in_words: "x", this_month: "", last_12_months: "0", scheduled: "", spends_from: c };
+    });
+    var grants = [], months = [];
+    for (var g = 0; g < 20; g++) {
+      grants.push({ grant_id: "g" + g, symbol: "ACME", award_type: g % 5 ? "RSU" : "OPTION", award_date: "2022-01-01", grant_price: g % 5 ? null : 40,
+        price_from: "", granted: 480, vested: 240, unvested: 240, next_vest: "2026-12-25", last_vest: "2030-12-25" });
+      for (var m = 0; m < 48; m++) {
+        var y = 2022 + Math.floor((m + g) / 12), mo = ((m + g) % 12) + 1;
+        months.push({ month: y + "-" + (mo < 10 ? "0" : "") + mo, grant_id: "g" + g, symbol: "ACME", shares: 10, price: 50, value: 500, basis: "latest" });
+      }
+    }
+    months.sort(function (a, b) { return a.month < b.month ? -1 : 1; });
+    window.__answers.getEquity = { symbols: [{ symbol: "ACME", price: 50, price_date: "2026-11-12", held: 3000, basis: 90000, value: 150000,
+      gain: 60000, unvested: 4800, unvested_value: 200000 }], grants: grants, months: months, steps: [5, 10, 20], stepsSet: null };
     window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [], inputs: inputs, book: { groups: groups, recurring: [], days: days, targets: targets } };
     window.__location = { parameter: { view: "budget" } };
   })();`);
@@ -2311,6 +2358,15 @@ test("performance: ten years of a household's spending draws and redraws quickly
   assert.ok(timing.rows > 60, "the table drew its lines");
   assert.ok(timing.draw < 250, `a full redraw took ${Math.round(timing.draw)} ms`);
   assert.ok(timing.view < 120, `shaping the period took ${Math.round(timing.view)} ms`);
+  // the Equity page with twenty grants vesting over four years each
+  await page.click("#view-equity");
+  await page.waitForSelector("#equity-body .vesting-chart");
+  const equity = await page.evaluate(() => {
+    const t0 = performance.now();
+    for (let i = 0; i < 10; i++) drawEquity();
+    return (performance.now() - t0) / 10;
+  });
+  assert.ok(equity < 100, `the Equity page took ${Math.round(equity)} ms`);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

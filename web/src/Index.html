@@ -433,6 +433,16 @@
       .add-estimate form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
       .add-estimate form.inline input { width: 120px; }
       .add-estimate p { margin: 6px 0 0; }
+      /* Retirement: the plan in a sentence, where to look, and the terms with their sources */
+      .retire-answer { font-size: 18px; line-height: 28px; max-width: 72ch; margin: 0 0 16px; }
+      .retire-parts { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+      .retire-parts li { color: var(--on-surface-variant); }
+      .retire-parts li button { font-weight: 500; padding-left: 0; }
+      .retire-terms { display: flex; flex-direction: column; }
+      .retire-term { border-top: 1px solid var(--outline-variant); padding: 10px 0; }
+      .retire-term summary { cursor: pointer; font-weight: 500; }
+      .retire-term p { margin: 6px 0 0; max-width: 72ch; }
+      .retire-term .sources a { color: var(--primary); }
       /* Equity: the head, the prices either side, the grants, and the months vesting */
       #equity-body .equity-symbol { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
       #equity-body .panel h2 { margin-top: 0; }

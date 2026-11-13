@@ -253,6 +253,22 @@ function yearPaced(lines: Row[]) {
   return now.length > 0 && now.every(yearlyLine);
 }
 
+// Each category's spending from a year's start to a day, in one pass over the book's days, kept while the book
+// and the days asked are the same: every line item judged on its year reads it, so the book is read once a draw.
+var ytdCache: { days: unknown; from: string; through: string; sums: Record<string, number> } | null = null;
+
+function yearToDate(from: string, through: string): Record<string, number> {
+  var days = budget.data!.book.days;
+  if (ytdCache && ytdCache.days === days && ytdCache.from === from && ytdCache.through === through) return ytdCache.sums;
+  var sums: Record<string, number> = {};
+  for (var i = 0; i < days.length; i++) {
+    var d = days[i];
+    if (d[0] >= from && d[0] <= through) sums[d[1]] = (sums[d[1]] || 0) + d[2];
+  }
+  ytdCache = { days: days, from: from, through: through, sums: sums };
+  return sums;
+}
+
 interface YearPace {
   year: number; // the year's budget: its yearly lines' amounts, a year's worth
   spent: number; // spent from January 1 to the period's last day
@@ -269,13 +285,7 @@ function yearPace(v: BudgetView, category: string, lines: Row[]): YearPace | nul
   if (!year) return null;
   var through = v.through,
     from = through.slice(0, 4) + "-01-01";
-  var spent = budget
-    .data!.book.days.filter(function (d) {
-      return d[1] === category && d[0] >= from && d[0] <= through;
-    })
-    .reduce(function (t, d) {
-      return t + d[2];
-    }, 0);
+  var spent = yearToDate(from, through)[category] || 0;
   var days = (Date.parse(through) - Date.parse(from)) / 864e5 + 1,
     inYear = (Date.parse(through.slice(0, 4) + "-12-31") - Date.parse(from)) / 864e5 + 1;
   return {

@@ -32,7 +32,18 @@ var LAYOUTS: [string, string][] = [
 
 // Every line item in the period, by group, as the three views show them. A loan's parts (its loan_split
 // setting's categories) are one item when two or more are in the period.
+// The line items of a view, worked out once a draw: the head, the cards and the kind view all read them.
+var itemsCache: { v: BudgetView; gen: number; items: BudgetItemGroup[] } | null = null;
+var budgetDrawGen = 0; // counts the page's draws, so a change staged since is seen
+
 function budgetItems(v: BudgetView): BudgetItemGroup[] {
+  if (itemsCache && itemsCache.v === v && itemsCache.gen === budgetDrawGen) return itemsCache.items;
+  var items = budgetItemsNow(v);
+  itemsCache = { v: v, gen: budgetDrawGen, items: items };
+  return items;
+}
+
+function budgetItemsNow(v: BudgetView): BudgetItemGroup[] {
   var loanOf = budget.data!.book.loans || {}; // category -> loan id, from compute
   return v.groups.map(function (g) {
     var items: BudgetItem[] = [];

@@ -87,6 +87,7 @@ function loadBudget() {
 
 function drawBudgetPage() {
   if (view !== "budget" || !budget.data || !editor) return;
+  budgetDrawGen++;
   document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
     b.setAttribute("aria-pressed", String(b.dataset.tab === budget.tab));
   });

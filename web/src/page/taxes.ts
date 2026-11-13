@@ -1034,11 +1034,13 @@ function lawPanel(law: Row[]) {
         cell(row, r.item.replace(/_/g, " ").replace(/:/g, ": "), "text");
         cell(row, lawValue(r.item, r.value), "num");
         var from = cell(row, "", "text from");
-        var doc = r.record ? el("a", r.document + ", page " + r.page) : el("span", r.document + ", page " + r.page);
-        if (r.record) {
+        // a link only to an https address: a record's link comes from the data, never a script or a local file
+        var safe = /^https:\/\//i.test(r.record || "");
+        var doc = safe ? el("a", r.document + ", page " + r.page) : el("span", r.document + ", page " + r.page);
+        if (safe) {
           (doc as HTMLAnchorElement).href = r.record;
           (doc as HTMLAnchorElement).target = "_blank";
-          (doc as HTMLAnchorElement).rel = "noopener";
+          (doc as HTMLAnchorElement).rel = "noopener noreferrer";
         }
         from.appendChild(doc);
         if (r.quote) from.appendChild(el("div", "\u201c" + r.quote + "\u201d", "support quote"));

@@ -455,6 +455,8 @@
       .equity-table td.over { color: var(--error); }
       .equity-steps .equity-table td:first-child, .equity-steps .equity-table th:first-child { padding-left: 8px; }
       .equity-grants .setting-control { flex-wrap: wrap; }
+      .equity-tax .plan-knob { margin: 4px 0; }
+      .equity-tax .equity-table { margin-top: 8px; }
       .vesting-chart .vest-month.past rect:not([fill=transparent]) { opacity: 0.55; }
       .vesting-chart .today { stroke: var(--on-surface); stroke-width: 1; stroke-dasharray: 3 3; }
       .equity-chart { position: relative; }
@@ -466,6 +468,10 @@
         .equity-table { font-size: 13px; }
         .equity-table td, .equity-table th { padding-right: 8px; }
         .equity-steps .equity-table th:nth-child(2), .equity-steps .equity-table td:nth-child(2) { display: none; }
+        .equity-tax .equity-table th:nth-child(2), .equity-tax .equity-table td:nth-child(2) { display: none; }
+        .equity-tax .equity-table { table-layout: fixed; }
+        .equity-tax .equity-table th, .equity-tax .equity-table td { white-space: normal; }
+        .equity-tax .equity-table th:nth-child(1) { width: 34%; }
         .equity-grants .equity-table th:nth-child(2), .equity-grants .equity-table td:nth-child(2),
         .equity-grants .equity-table th:nth-child(3), .equity-grants .equity-table td:nth-child(3),
         .equity-grants .equity-table th:nth-child(5), .equity-grants .equity-table td:nth-child(5) { display: none; }
@@ -683,6 +689,19 @@
       .setting-control input { width: 9em; }
       .plan-settings { display: grid; gap: 8px; margin-top: 8px; }
       .plan-setting { display: grid; gap: 2px; }
+      /* the plan's two knobs, previewed before a run (taxes.ts, planCard) */
+      .plan-try { background: var(--surface); color: var(--on-surface); border-radius: 12px; padding: 12px 16px; margin: 8px 0 12px; }
+      .card.plan .plan-try .support { color: var(--on-surface-variant); opacity: 1; }
+      .plan-try h3 { margin: 0 0 2px; font-size: 15px; font-weight: 500; }
+      .plan-knobs { display: grid; gap: 6px; margin: 8px 0; }
+      .plan-knob { display: grid; grid-template-columns: minmax(0, 1fr) 5.5em 4.5em; align-items: center; gap: 8px; max-width: 26em; }
+      .plan-knob input.knob-input { width: 100%; box-sizing: border-box; text-align: right; font: inherit; font-variant-numeric: tabular-nums; }
+      .plan-knob input.bad { outline: 2px solid var(--error); }
+      .plan-result p { margin: 2px 0; }
+      .plan-result .off { color: var(--error); }
+      .plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; }
+      .plan-actions:empty { display: none; }
+      table.plan-table button.plan-use { color: inherit; padding: 0; min-height: 0; text-decoration: underline dotted; text-underline-offset: 3px; font-variant-numeric: tabular-nums; }
       /* a projected tax line opens to what it is made of (taxes.ts, partsRow) */
       table.form-lines button.line-why { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
       table.form-lines button.line-why:hover { color: var(--primary); }

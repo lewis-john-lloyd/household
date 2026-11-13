@@ -47,6 +47,8 @@ function drawEquity() {
         el("p", "No price for " + s.symbol + " yet: compute values the shares once prices has a close.", "support"),
       );
     else box.appendChild(equitySteps_(s, grants, d));
+    var tax = vestTaxPanel(s, grants, d);
+    if (tax) box.appendChild(tax);
     box.appendChild(grantsPanel(s, grants));
     box.appendChild(
       vestingChart(
@@ -59,6 +61,152 @@ function drawEquity() {
     );
     body.appendChild(box);
   });
+}
+
+var SHARE_AWARD_TYPES = ["RSU", "PSU", "RS"]; // schwab_awards.SHARE_AWARDS: shares delivered at vest, so a vest is pay
+
+// The federal tax on this year's vests still to come: what each has withheld at the rate vests are withheld
+// at (the knob the Taxes plan shares, knobRate in taxes.ts) beside what it adds to the tax at the household's
+// top federal rate (withholding_plan's marginal_rate). The gap comes back as a refund or is owed at filing.
+function vestTaxPanel(s: EquitySymbol, grants: EquityGrant[], d: EquityPage): HTMLElement | null {
+  var plan = d.plan || [];
+  if (!plan.length || plan[0].marginal_rate === "" || plan[0].marginal_rate === undefined) return null;
+  var year = plan[0].year || today().slice(0, 4);
+  var shareGrants: Record<string, boolean> = {};
+  grants.forEach(function (g) {
+    if (SHARE_AWARD_TYPES.indexOf(g.award_type.toUpperCase()) >= 0) shareGrants[g.grant_id] = true;
+  });
+  var byMonth: Record<string, number> = {};
+  d.months.forEach(function (m) {
+    if (m.symbol === s.symbol && shareGrants[m.grant_id] && m.basis === "latest" && m.month.slice(0, 4) === year)
+      byMonth[m.month] = (byMonth[m.month] || 0) + m.value;
+  });
+  var months = Object.keys(byMonth).sort();
+  if (!months.length) return null;
+  knobRate(plan);
+  var marginal = Number(plan[0].marginal_rate);
+  var panel = el("section", null, "panel equity-tax");
+  panel.id = "equity-tax-" + s.symbol.replace(/[^a-z0-9]+/gi, "-");
+  panel.appendChild(el("h2", "Tax on " + year + "'s vests still to come"));
+  panel.appendChild(
+    el(
+      "p",
+      "A vest is pay. Federal tax is withheld from it at the rate you choose, but what it adds to the tax is your top " +
+        "rate, " +
+        Math.round(marginal * 100) +
+        "%. The difference comes back as a refund, or is owed, when you file.",
+      "support",
+    ),
+  );
+  var knob = el("label", null, "plan-knob");
+  knob.appendChild(el("span", "Vests withheld at"));
+  var input = textInput(String(Math.round((planKnobs.rate || 0) * 1000) / 10), "knob-input");
+  input.inputMode = "decimal";
+  input.setAttribute("aria-label", "Rate future vests are withheld at, percent");
+  knob.appendChild(input);
+  knob.appendChild(el("span", "%"));
+  panel.appendChild(knob);
+  var actions = el("div", null, "plan-actions");
+  panel.appendChild(actions);
+  var wrap = el("div", null, "scroll");
+  panel.appendChild(wrap);
+  var words = el("p", null, "support");
+  words.setAttribute("aria-live", "polite");
+  panel.appendChild(words);
+  var draw = function () {
+    var rate = planKnobs.rate || 0;
+    wrap.textContent = "";
+    var table = el("table", null, "equity-table");
+    var head = el("tr");
+    [
+      ["Month", ""],
+      ["Vests", "num"],
+      ["Withheld at " + Math.round(rate * 1000) / 10 + "%", "num"],
+      ["Tax it adds at " + Math.round(marginal * 100) + "%", "num"],
+      ["Over or under withheld", "num"],
+    ].forEach(function (h) {
+      head.appendChild(el("th", h[0], h[1]));
+    });
+    table.appendChild(el("thead")).appendChild(head);
+    var body = el("tbody");
+    var total = { value: 0, withheld: 0, adds: 0 };
+    var row = function (label: string, value: number, cls?: string) {
+      var tr = el("tr", null, cls || "");
+      var withheld = value * rate,
+        adds = value * marginal;
+      cell(tr, label, "text");
+      cell(tr, money.format(value), "num");
+      cell(tr, money.format(withheld), "num");
+      cell(tr, money.format(adds), "num");
+      cell(tr, signedMoney(withheld - adds), "num" + (withheld - adds < -0.5 ? " over" : ""));
+      body.appendChild(tr);
+    };
+    months.forEach(function (m) {
+      var v = byMonth[m];
+      total.value += v;
+      total.withheld += v * rate;
+      total.adds += v * marginal;
+      row(monthWords(m), v);
+    });
+    if (months.length > 1) row("This year", total.value, "now");
+    table.appendChild(body);
+    wrap.appendChild(table);
+    var gap = total.withheld - total.adds;
+    words.textContent =
+      Math.abs(gap) < 0.5
+        ? "At " + Math.round(rate * 1000) / 10 + "%, these vests withhold about what they add to the tax."
+        : "At " +
+          Math.round(rate * 1000) / 10 +
+          "%, these vests withhold about " +
+          money.format(Math.abs(gap)) +
+          (gap > 0 ? " more than they add: a bigger refund" : " less than they add: a smaller refund, or more owed") +
+          ", at " +
+          cents.format(s.price || 0) +
+          " a share. The Taxes plan shows the whole year at this rate.";
+    actions.textContent = "";
+    var planned = plannedVestRate(plan);
+    if (planned !== null && Math.abs(rate - planned) > 1e-9) {
+      actions.appendChild(
+        button(
+          "Keep " + Math.round(rate * 1000) / 10 + "% for vests",
+          function () {
+            keepVestRate(rate, panel.id, drawEquity);
+          },
+          "tonal",
+        ),
+      );
+      actions.appendChild(
+        button(
+          "Put back",
+          function () {
+            planKnobs.rate = planned;
+            drawEquity();
+          },
+          "text",
+        ),
+      );
+    }
+    actions.appendChild(
+      button(
+        "Open the Taxes plan",
+        function () {
+          planScroll = true; // the plan card scrolls into view once the Taxes page draws it
+          taxView = "year";
+          setView("taxes");
+        },
+        "text",
+      ),
+    );
+  };
+  input.oninput = function () {
+    var r = parseFloat(input.value);
+    var ok = !isNaN(r) && r >= 0 && r <= 100;
+    input.classList.toggle("bad", !ok);
+    if (ok) planKnobs.rate = r / 100;
+    draw();
+  };
+  draw();
+  return panel;
 }
 
 function shares(n: number) {

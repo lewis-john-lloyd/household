@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -32,6 +32,8 @@ const shape = new Function(
   targetInputs: (values: unknown[][]) => TargetInput[] | null;
   floatingValue: (values: number[], sigma: number) => number;
   priceChanged: (latest: number, previous: number | null) => boolean;
+  planPreview: (row: PlanBasis, rate: number, extra: number) => { lands: number; penaltyFree: boolean | null };
+  planExtra: (row: PlanBasis, rate: number, goal: number) => number;
   chargeCadence: (dates: string[]) => string | null;
   sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
   grantKey: (grantId: string) => string;
@@ -988,4 +990,15 @@ test("gift lines name each gift's recipient, for a recipient to open to its gift
   assert.deepEqual(shape.giftLines(merged), [
     { txn_id: "t2", month: "2001-03", key: "QUILL & INK", category: "gifts", from_key: "WILLOW ST" },
   ]);
+});
+
+test("the withholding plan previews a vest rate and an extra as the engine would plan them", () => {
+  // tests/fixtures/withholding_preview.json: checked by tests/test_projection.py against projection.plan_preview
+  const doc = JSON.parse(
+    readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "withholding_preview.json"), "utf8"),
+  );
+  for (const c of doc.cases) {
+    assert.deepEqual(shape.planPreview(c.row, c.rate, c.extra), { lands: c.lands, penaltyFree: c.penalty_free }, c.why);
+    assert.equal(shape.planExtra(c.row, c.rate, 0), c.goal_extra, c.why);
+  }
 });

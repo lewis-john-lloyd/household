@@ -45,6 +45,7 @@ interface EquityPage {
   months: EquityMonth[];
   steps: number[]; // dollars a share the page moves the price by, up and down (equity_price_steps)
   stepsSet: string | null; // the setting as stored, or null when it is the default
+  plan: Record<string, string>[]; // the latest year's federal withholding plan: the vest rate and top rate
 }
 
 function equityPage(tabs: Record<string, unknown[][]>): EquityPage {
@@ -100,5 +101,8 @@ function equityPage(tabs: Record<string, unknown[][]>): EquityPage {
       unvested_value: maybe(r.unvested_value),
     }));
   const set = rows("editor_parameters").filter((r) => r.key === "equity_price_steps" && r.source !== "not set")[0];
-  return { symbols, grants, months, steps: equitySteps(set ? set.value : null), stepsSet: set ? set.value : null };
+  const planRows = rows("withholding_plan").filter((r) => r.return === "federal");
+  const year = planRows.reduce((y, r) => (r.year > y ? r.year : y), "");
+  const plan = planRows.filter((r) => r.year === year);
+  return { symbols, grants, months, steps: equitySteps(set ? set.value : null), stepsSet: set ? set.value : null, plan };
 }

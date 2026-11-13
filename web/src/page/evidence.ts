@@ -191,7 +191,8 @@ function lineList(lines: Txn[], redraw: () => void): HTMLElement {
 // A household setting shown where it is used (an assumption, a target), with Change to edit it in place: the
 // same `parameter` edit as Status, Settings. `shown` is the value the page shows when nothing is staged; null
 // when the page doesn't have it, so the stored value shows once the editor's data is loaded.
-function settingControl(key: string, shown: string | null): HTMLElement {
+// after: called once the setting is staged or put back, for a page that previews with it (the Taxes plan)
+function settingControl(key: string, shown: string | null, after?: () => void): HTMLElement {
   var box = el("span", null, "setting-control");
   box.dataset.setting = key;
   var draw = function () {
@@ -246,7 +247,8 @@ function settingControl(key: string, shown: string | null): HTMLElement {
                   },
                   "setting " + key + " = " + (v || "(blank)"),
                 );
-                draw();
+                if (after) after();
+                else draw();
               },
               "text",
             ),
@@ -257,7 +259,8 @@ function settingControl(key: string, shown: string | null): HTMLElement {
                 "Undo",
                 function () {
                   unstage(t);
-                  draw();
+                  if (after) after();
+                  else draw();
                 },
                 "text",
               ),

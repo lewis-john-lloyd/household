@@ -153,6 +153,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
         "health_fsa": _ytd(rows, "pre_tax", contains=HEALTH_FSA),
         "paychecks_left": 0,
         "vests_left": 0,
+        "vest_wages_left": 0.0,
         "extra_withholding": 0.0,
         "notes": [],
     }
@@ -238,6 +239,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
                 out["state_withheld"] += wi
             _add_medicare(out, amount, year)
         out["vests_left"] = len(by_date)
+        out["vest_wages_left"] = sum(by_date.values()) * price
         out["vest_rate"] = rate
         out["notes"].append(
             f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
@@ -263,6 +265,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
         for _ in range(months_left):
             _add_medicare(out, amount, year)
         out["vests_left"] = months_left
+        out["vest_wages_left"] = amount * months_left
         out["vest_rate"] = rate
         out["notes"].append(f"{months_left} more monthly vests of about {amount:,.0f} at {rate:.0%}")
         _parts(out, "vests", out["notes"][-1] + ", from the recent vests (no schedule on file)", before)
@@ -734,8 +737,36 @@ PLAN_COLUMNS = [
     "suggested_extra",
     "lands_at",
     "penalty_free",
+    "vest_wages_left",
+    "marginal_rate",
+    "withheld",
+    "total_tax",
+    "safe_harbor",
     "note",
 ]
+
+
+def plan_preview(row, rate, extra):
+    """Where a plan row's return lands with future vests withheld at rate and extra withheld a paycheck, and
+    whether a federal balance owed then escapes the penalty (None for Wisconsin). Both knobs only move
+    withholding, never the tax, so the row's projection shifts in a straight line; the page's planPreview
+    (budgetview.ts) is the same rule, checked against tests/fixtures/withholding_preview.json."""
+    federal = row["return"] == "federal"
+    vest_rate = row["vest_rate"] if row["vest_rate"] is not None and not pd.isna(row["vest_rate"]) else rate
+    shift = (rate - vest_rate) * row["vest_wages_left"] if federal else 0.0
+    shift += (extra - row["current_extra"]) * row["paychecks_left"]
+    lands = round(row["projected"] + shift, 2)
+    harbor = row["safe_harbor"] if row["safe_harbor"] is not None and not pd.isna(row["safe_harbor"]) else None
+    free = tax.penalty_free(-lands, row["withheld"] + shift, row["total_tax"], harbor) if federal else None
+    return lands, free
+
+
+def plan_extra(row, rate, goal):
+    """The extra a paycheck that lands a plan row's return on goal with future vests withheld at rate."""
+    federal = row["return"] == "federal"
+    vest_rate = row["vest_rate"] if row["vest_rate"] is not None and not pd.isna(row["vest_rate"]) else rate
+    projected = row["projected"] + ((rate - vest_rate) * row["vest_wages_left"] if federal else 0.0)
+    return round(max(row["current_extra"] + (goal - projected) / row["paychecks_left"], 0.0), 2)
 
 
 def _harbor(year, facts):
@@ -752,10 +783,25 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
     on owing target, from the year so far plus the projection with future vests withheld at
     supplemental_rate. projected and lands_at: refund positive, owed negative. The change goes on the
     paychecks of the person and employer with the most left (W-4 Step 4(c); WT-4's additional amount). A
-    federal balance owed says whether it escapes the underpayment penalty (tax.penalty_free)."""
+    federal balance owed says whether it escapes the underpayment penalty (tax.penalty_free).
+
+    The page previews both knobs from the same rows: vest_wages_left is the vest income still to come this
+    year, so a vest rate of q moves the federal refund by (q - vest_rate) * vest_wages_left, and an extra of
+    x moves it by (x - current_extra) * paychecks_left. marginal_rate is the tax on the next dollar of wages
+    (federal; Wisconsin on its rows), what a vest costs beside what it withholds."""
     i, pos = inputs_for(year, paystubs, sales, facts, {"supplemental_rate": supplemental_rate}, comp_events, vests)
     r = tax.federal_return(i, year)
     w = wisconsin.wisconsin_return({**i, "federal_agi": r["11a"]}, year)
+    more = {**i, "wages": i["wages"] + 100, "medicare_wages": i.get("medicare_wages", 0) + 100}
+    r_more = tax.federal_return(more, year)
+    w_more = wisconsin.wisconsin_return({**more, "federal_agi": r_more["11a"]}, year)
+    marginal = {
+        "federal": round((r_more["24"] - r["24"]) / 100, 4),
+        "wisconsin": round((w_more["wi_net_tax"] - w["wi_net_tax"]) / 100, 4),
+    }
+    vest_wages = round(sum(v.get("vest_wages_left", 0.0) for v in pos.values()), 2)
+    harbor = _harbor(year, facts)
+    federal = {"withheld": round(r["25a"] + r["25c"], 2), "total_tax": round(r["24"], 2), "safe_harbor": harbor}
     left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]
     vest = next((v.get("vest_rate") for v in pos.values() if v.get("vest_rate") is not None), None)
     if not left:
@@ -766,6 +812,9 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
                     "projected": -r["37"],
                     "target": target,
                     "vest_rate": vest,
+                    "vest_wages_left": vest_wages,
+                    "marginal_rate": marginal["federal"],
+                    **federal,
                     "note": "no paychecks left this year to change",
                 }
             ],
@@ -773,7 +822,6 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
         )
     (person, employer), v = max(left, key=lambda kv: kv[1]["paychecks_left"])
     n = v["paychecks_left"]
-    harbor = _harbor(year, facts)
     returns = (
         ("federal", -r["37"], v["extra_withholding"], "W-4 Step 4(c): extra withholding per paycheck"),
         (
@@ -802,6 +850,9 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
                 "suggested_extra": extra,
                 "lands_at": lands,
                 "penalty_free": None,
+                "vest_wages_left": vest_wages,
+                "marginal_rate": marginal[name],
+                **(federal if name == "federal" else {}),
                 "note": note,
             }
             if name == "federal":

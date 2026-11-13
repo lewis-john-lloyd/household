@@ -739,8 +739,84 @@ function drawTaxHistoryView(body: HTMLElement) {
   body.appendChild(two);
 }
 
+// The plan's rows as numbers (budgetview.ts PlanBasis), for the two knobs' preview.
+function planBasis(p: Row): PlanBasis {
+  var n = function (v: string | undefined) {
+    return v === "" || v === undefined || isNaN(Number(v)) ? null : Number(v);
+  };
+  return {
+    return: p["return"],
+    projected: n(p.projected) || 0,
+    vest_rate: n(p.vest_rate),
+    vest_wages_left: n(p.vest_wages_left) || 0,
+    current_extra: n(p.current_extra) || 0,
+    paychecks_left: n(p.paychecks_left) || 0,
+    withheld: n(p.withheld),
+    total_tax: n(p.total_tax),
+    safe_harbor: n(p.safe_harbor),
+  };
+}
+
+// The vest rate the plan should show: one staged or saved and not yet applied, else the one it ran with.
+function plannedVestRate(plan: Row[]): number | null {
+  var e = edited(editTarget({ kind: "parameter", key: "planned_supplemental_rate" }));
+  var v = e ? Number((e.edit as Record<string, string>).value) : NaN;
+  if (!isNaN(v) && (e!.edit as Record<string, string>).value !== "") return v > 1 ? v / 100 : v;
+  var ran = plan.filter(function (p) {
+    return p.vest_rate !== "" && p.vest_rate !== undefined;
+  })[0];
+  return ran ? Number(ran.vest_rate) : null;
+}
+
+function landWords(lands: number) {
+  return Math.abs(lands) < 0.5 ? "no balance" : (lands > 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands));
+}
+
+// what the knobs are set to, kept across redraws; the rate follows a newly staged setting
+var planKnobs: { rate: number | null; base: number | null | undefined; extra: Record<string, number> } = {
+  rate: null,
+  base: undefined,
+  extra: {},
+};
+
+var planScroll = false; // set by a link to the plan (the Equity page's tax on vests)
+
+// The vest rate the plan stands on now (plannedVestRate), with the rate knob following it when it changes; the
+// Taxes plan and the Equity page's tax on vests share the knob, so a rate tried on one shows on the other.
+function knobRate(plan: Row[]): number | null {
+  var planned = plannedVestRate(plan);
+  if (planKnobs.base !== planned) {
+    planKnobs.rate = planned;
+    planKnobs.base = planned;
+  }
+  return planned;
+}
+
+// Stage the rate as the planned_supplemental_rate setting; the next run plans with it.
+function keepVestRate(rate: number, where: string, after: () => void) {
+  withEditor(function () {
+    var known = (editor!.parameters || []).filter(function (p) {
+      return p.key === "planned_supplemental_rate";
+    })[0];
+    var value = String(Math.round(rate * 1000) / 1000);
+    stage(
+      {
+        kind: "parameter",
+        key: "planned_supplemental_rate",
+        value: value,
+        was: known && known.source !== "not set" ? { value: known.value } : null,
+      },
+      "setting planned_supplemental_rate = " + value,
+    );
+    after();
+  }, where);
+}
+
 // For each return, the extra withholding per paycheck that lands the year on a refund, on no balance, and
-// on owing, from the year so far plus the projection.
+// on owing, from the year so far plus the projection. The two knobs, the rate future vests are withheld at
+// and the extra a paycheck, preview here before a run: both move withholding only, so the plan's rows
+// shift in a straight line (budgetview.ts planPreview). A vest rate kept here is staged as the
+// planned_supplemental_rate setting, and the table plans with it at once; the extra is changed at payroll.
 function planCard(plan: Row[]) {
   var card = el("article", null, "card plan");
   card.appendChild(el("h2", "Withholding for the rest of the year"));
@@ -748,79 +824,255 @@ function planCard(plan: Row[]) {
   plan.forEach(function (p) {
     (byReturn[p["return"]] = byReturn[p["return"]] || []).push(p);
   });
-  var vest = "",
-    rate = "",
-    target = "";
+  var planned = knobRate(plan);
+  var ran = plan.filter(function (p) {
+    return p.vest_rate !== "" && p.vest_rate !== undefined;
+  })[0];
+  var ranRate = ran ? Number(ran.vest_rate) : null;
+  var target = "";
+  var federal = (byReturn.federal || [])[0];
+  var vestWages = federal ? Number(federal.vest_wages_left) || 0 : 0;
+  var marginal = federal && federal.marginal_rate !== "" ? Number(federal.marginal_rate) : null;
+
+  // the knobs
+  var knobs = el("div", null, "plan-knobs");
+  var result = el("div", null, "plan-result");
+  result.setAttribute("aria-live", "polite");
+  var tables = el("div");
+  var rateInput: HTMLInputElement | null = null;
+  if (vestWages > 0 && planKnobs.rate !== null) {
+    var rateRow = el("label", null, "plan-knob");
+    rateRow.appendChild(el("span", "Vests withheld at"));
+    rateInput = textInput(String(Math.round(planKnobs.rate * 1000) / 10), "knob-input");
+    rateInput.inputMode = "decimal";
+    rateInput.setAttribute("aria-label", "Rate future vests are withheld at, percent");
+    rateRow.appendChild(rateInput);
+    rateRow.appendChild(el("span", "%"));
+    knobs.appendChild(rateRow);
+  }
+  var extraInputs: Record<string, HTMLInputElement> = {};
   Object.keys(byReturn).forEach(function (name) {
-    var rows = byReturn[name],
-      first = rows[0];
-    var section = el("div", null, "plan-row");
-    section.appendChild(el("div", PLAN_NAME[name] || name, "plan-title"));
-    if (first.suggested_extra === "") {
-      section.appendChild(el("p", first.note, "support"));
-      card.appendChild(section);
-      return;
-    }
-    if (first.vest_rate) {
-      vest = Math.round(Number(first.vest_rate) * 100) + "%";
-      rate = first.vest_rate;
-    }
-    if (first.target !== "" && first.target !== undefined) target = first.target;
-    var now = Number(first.projected);
-    section.appendChild(
-      el(
-        "p",
-        "As things stand: " +
-          (now >= 0 ? "refund " : "owe ") +
-          money.format(Math.abs(now)) +
-          ". " +
-          (name === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") +
-          " for " +
-          first.person +
-          " (" +
-          first.employer +
-          ") is " +
-          cents.format(Number(first.current_extra)) +
-          " a paycheck, with " +
-          first.paychecks_left +
-          " paychecks left.",
-        "support",
-      ),
-    );
-    var table = el("table", null, "plan-table");
-    var head = el("tr");
-    ["To land on", "Extra a paycheck", ""].forEach(function (h) {
-      head.appendChild(el("th", h));
-    });
-    table.appendChild(el("thead")).appendChild(head);
-    var body = el("tbody");
-    rows.forEach(function (p) {
-      var goal = Number(p.target),
-        lands = Number(p.lands_at);
-      var row = el("tr", null, Number(p.suggested_extra) === Number(p.current_extra) ? "current" : "");
-      cell(
-        row,
-        goal > 0 ? "a refund of " + money.format(goal) : goal < 0 ? "owing " + money.format(-goal) : "no balance",
-        "text",
-      );
-      cell(row, cents.format(Number(p.suggested_extra)));
-      var notes: string[] = [];
-      if (Math.abs(lands - goal) > 1)
-        notes.push("gets to " + (lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands)) + " at most");
-      if (p.penalty_free === "FALSE" || p.penalty_free === "false") notes.push("an underpayment penalty is possible");
-      else if (lands < -1 && name === "federal") notes.push("no underpayment penalty");
-      cell(row, notes.join("; "), "text plan-note" + (/penalty is possible/.test(notes.join()) ? " off" : ""));
-      body.appendChild(row);
-    });
-    table.appendChild(body);
-    section.appendChild(table);
-    if (/no Wisconsin settings/.test(first.note)) section.appendChild(el("p", first.note + ".", "support"));
-    card.appendChild(section);
+    var first = byReturn[name][0];
+    if (first.suggested_extra === "") return; // no paychecks left to change
+    if (planKnobs.extra[name] === undefined) planKnobs.extra[name] = Number(first.current_extra) || 0;
+    var row = el("label", null, "plan-knob");
+    row.appendChild(el("span", (PLAN_NAME[name] || name) + " extra a paycheck"));
+    var input = textInput(String(planKnobs.extra[name]), "knob-input");
+    input.inputMode = "decimal";
+    input.setAttribute("aria-label", (PLAN_NAME[name] || name) + " extra withholding a paycheck, dollars");
+    row.appendChild(input);
+    row.appendChild(el("span", name === "wisconsin" ? "WT-4" : "W-4 4(c)", "support"));
+    extraInputs[name] = input;
+    knobs.appendChild(row);
   });
+  var actions = el("div", null, "plan-actions");
+  if (knobs.childNodes.length) {
+    var tryIt = el("section", null, "plan-try");
+    tryIt.appendChild(el("h3", "Try your two knobs"));
+    tryIt.appendChild(
+      el("p", "The rate vests are withheld at, and the extra a paycheck. The tables below plan with the rate.", "support"),
+    );
+    tryIt.appendChild(knobs);
+    tryIt.appendChild(result);
+    tryIt.appendChild(actions);
+    card.appendChild(tryIt);
+  }
+
+  var readKnobs = function () {
+    if (rateInput) {
+      var r = parseFloat(rateInput.value);
+      if (!isNaN(r) && r >= 0 && r <= 100) planKnobs.rate = r / 100;
+      rateInput.classList.toggle("bad", isNaN(r) || r < 0 || r > 100);
+    }
+    Object.keys(extraInputs).forEach(function (name) {
+      var x = parseFloat(extraInputs[name].value.replace(/[$,]/g, ""));
+      if (!isNaN(x) && x >= 0) planKnobs.extra[name] = x;
+      extraInputs[name].classList.toggle("bad", isNaN(x) || x < 0);
+    });
+  };
+
+  var drawResult = function () {
+    result.textContent = "";
+    var rate = planKnobs.rate === null ? 0 : planKnobs.rate;
+    Object.keys(extraInputs).forEach(function (name) {
+      var basis = planBasis(byReturn[name][0]);
+      var now = planPreview(basis, rate, planKnobs.extra[name]);
+      var line = el("p", null, "plan-lands");
+      line.appendChild(el("strong", (PLAN_NAME[name] || name) + ": " + landWords(now.lands)));
+      var moved = now.lands - basis.projected;
+      line.appendChild(
+        document.createTextNode(
+          Math.abs(moved) < 0.5 ? ", as things stand" : " (as things stand, " + landWords(basis.projected) + ")",
+        ),
+      );
+      if (now.penaltyFree === false) line.appendChild(el("span", " an underpayment penalty is possible", "off"));
+      result.appendChild(line);
+    });
+    if (vestWages > 0 && marginal !== null) {
+      var per = 1000;
+      result.appendChild(
+        el(
+          "p",
+          "Each " +
+            money.format(per) +
+            " that vests has " +
+            money.format(per * rate) +
+            " withheld and adds about " +
+            money.format(per * marginal) +
+            " to the federal tax (your top rate, " +
+            Math.round(marginal * 100) +
+            "%). " +
+            money.format(vestWages) +
+            " more vests this year.",
+          "support",
+        ),
+      );
+    }
+  };
+
+  var drawActions = function () {
+    actions.textContent = "";
+    var rate = planKnobs.rate;
+    if (rateInput && rate !== null && Math.abs(rate - (planned === null ? -1 : planned)) > 1e-9)
+      actions.appendChild(
+        button(
+          "Keep " + Math.round(rate * 1000) / 10 + "% for vests",
+          function () {
+            keepVestRate(rate!, "tax-plan", drawTaxes);
+          },
+          "tonal",
+        ),
+      );
+    var moved =
+      (rateInput && rate !== planned) ||
+      Object.keys(extraInputs).some(function (name) {
+        return planKnobs.extra[name] !== Number(byReturn[name][0].current_extra || 0);
+      });
+    if (moved)
+      actions.appendChild(
+        button(
+          "Put back",
+          function () {
+            planKnobs.rate = planned;
+            planKnobs.extra = {};
+            drawTaxes();
+          },
+          "text",
+        ),
+      );
+    if (
+      Object.keys(extraInputs).some(function (name) {
+        return planKnobs.extra[name] !== Number(byReturn[name][0].current_extra || 0);
+      })
+    )
+      actions.appendChild(el("span", "The extra is changed at payroll, on the W-4 or WT-4.", "support"));
+  };
+
+  var drawTables = function () {
+    tables.textContent = "";
+    var rate = planKnobs.rate === null ? 0 : planKnobs.rate;
+    Object.keys(byReturn).forEach(function (name) {
+      var rows = byReturn[name],
+        first = rows[0];
+      var section = el("div", null, "plan-row");
+      section.appendChild(el("div", PLAN_NAME[name] || name, "plan-title"));
+      if (first.suggested_extra === "") {
+        section.appendChild(el("p", first.note, "support"));
+        tables.appendChild(section);
+        return;
+      }
+      if (first.target !== "" && first.target !== undefined) target = first.target;
+      var basis = planBasis(first);
+      var now = planPreview(basis, rate, basis.current_extra).lands;
+      var rateMoved = name === "federal" && ranRate !== null && Math.abs(rate - ranRate) > 1e-9 && vestWages > 0;
+      section.appendChild(
+        el(
+          "p",
+          (rateMoved ? "With vests at " + Math.round(rate * 1000) / 10 + "%: " : "As things stand: ") +
+            (now >= 0 ? "refund " : "owe ") +
+            money.format(Math.abs(now)) +
+            ". " +
+            (name === "wisconsin" ? "WT-4 additional withholding" : "W-4 line 4(c)") +
+            " for " +
+            first.person +
+            " (" +
+            first.employer +
+            ") is " +
+            cents.format(basis.current_extra) +
+            " a paycheck, with " +
+            first.paychecks_left +
+            " paychecks left.",
+          "support",
+        ),
+      );
+      var table = el("table", null, "plan-table");
+      var head = el("tr");
+      ["To land on", "Extra a paycheck", ""].forEach(function (h) {
+        head.appendChild(el("th", h));
+      });
+      table.appendChild(el("thead")).appendChild(head);
+      var body = el("tbody");
+      rows.forEach(function (p) {
+        var goal = Number(p.target);
+        var extra = planExtra(planBasis(p), rate, goal);
+        var at = planPreview(planBasis(p), rate, extra);
+        var row = el("tr", null, extra === basis.current_extra ? "current" : "");
+        cell(
+          row,
+          goal > 0 ? "a refund of " + money.format(goal) : goal < 0 ? "owing " + money.format(-goal) : "no balance",
+          "text",
+        );
+        var use = button(
+          cents.format(extra),
+          function () {
+            planKnobs.extra[name] = extra;
+            if (extraInputs[name]) extraInputs[name].value = String(extra);
+            drawResult();
+            drawActions();
+          },
+          "text plan-use",
+        );
+        use.title = "Try " + cents.format(extra) + " a paycheck above";
+        row.appendChild(el("td")).appendChild(use);
+        var notes: string[] = [];
+        if (Math.abs(at.lands - goal) > 1)
+          notes.push("gets to " + (at.lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(at.lands)) + " at most");
+        if (at.penaltyFree === false) notes.push("an underpayment penalty is possible");
+        else if (at.lands < -1 && name === "federal") notes.push("no underpayment penalty");
+        cell(row, notes.join("; "), "text plan-note" + (at.penaltyFree === false ? " off" : ""));
+        body.appendChild(row);
+      });
+      table.appendChild(body);
+      section.appendChild(table);
+      if (/no Wisconsin settings/.test(first.note)) section.appendChild(el("p", first.note + ".", "support"));
+      tables.appendChild(section);
+    });
+  };
+
+  var redraw = function () {
+    readKnobs();
+    drawResult();
+    drawTables();
+    drawActions();
+  };
+  if (rateInput) rateInput.oninput = redraw;
+  Object.keys(extraInputs).forEach(function (name) {
+    extraInputs[name].oninput = function () {
+      readKnobs();
+      drawResult();
+      drawActions();
+    };
+  });
+  card.appendChild(tables);
+  redraw();
   card.appendChild(
     el(
       "p",
-      "From the year so far plus the projection" + (vest ? ", with future vests withheld at " + vest : "") + ".",
+      "From the year so far plus the projection" +
+        (ranRate !== null && vestWages > 0
+          ? ", run with future vests withheld at " + Math.round(ranRate * 1000) / 10 + "%"
+          : "") +
+        ".",
       "support small-print",
     ),
   );
@@ -828,13 +1080,20 @@ function planCard(plan: Row[]) {
   var settings = el("div", null, "plan-settings");
   var refund = el("div", null, "plan-setting");
   refund.appendChild(el("span", "The refund it aims for", "support"));
-  refund.appendChild(settingControl("target_refund", target));
+  refund.appendChild(settingControl("target_refund", target, drawTaxes));
   settings.appendChild(refund);
   var withheld = el("div", null, "plan-setting");
   withheld.appendChild(el("span", "What future vests are withheld at", "support"));
-  withheld.appendChild(settingControl("planned_supplemental_rate", rate));
+  withheld.appendChild(settingControl("planned_supplemental_rate", ranRate === null ? "" : String(ranRate), drawTaxes));
   settings.appendChild(withheld);
   card.appendChild(settings);
+  card.id = "tax-plan";
+  if (planScroll) {
+    planScroll = false;
+    setTimeout(function () {
+      card.scrollIntoView({ block: "start" });
+    }, 0);
+  }
   return card;
 }
 

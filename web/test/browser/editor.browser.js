@@ -2727,3 +2727,200 @@ test("home: the settings its figures rest on are changed beside them, the stored
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("the withholding plan's two knobs preview at once, and a vest rate kept is staged and planned with", async () => {
+  const line = (key, label, value) => ({ form: "Form 1040", line: key, key, label, value, filed: null });
+  const row = (ret, target, extra, projected, more) => ({
+    year: "2002",
+    return: ret,
+    person: "alex",
+    employer: "Acme Widgets",
+    paychecks_left: "5",
+    vest_rate: "0.35",
+    projected: String(projected),
+    target: String(target),
+    current_extra: ret === "federal" ? "50" : "0",
+    suggested_extra: String(extra),
+    lands_at: String(target),
+    penalty_free: ret === "federal" ? "TRUE" : "",
+    vest_wages_left: "20000",
+    marginal_rate: ret === "federal" ? "0.22" : "0.05",
+    withheld: ret === "federal" ? "20000" : "",
+    total_tax: ret === "federal" ? "17000" : "",
+    safe_harbor: "",
+    note: ret === "federal" ? "W-4 Step 4(c): extra withholding per paycheck" : "WT-4: additional amount per paycheck",
+    ...more,
+  });
+  const plan = [
+    row("federal", 2000, 650, -1000),
+    row("federal", 0, 250, -1000),
+    row("federal", -2000, 0, -1000, { lands_at: "-1250" }),
+    row("wisconsin", 2000, 440, -200),
+    row("wisconsin", 0, 40, -200),
+    row("wisconsin", -2000, 0, -200, { lands_at: "-200" }),
+  ];
+  const page = await open(
+    "window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [{ year: "2002", filed: false, forms: { "Form 1040": [line("24", "Total tax", 90)] } }],
+        plan,
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+      }) +
+      ";",
+  );
+  await page.click("#view-taxes");
+  await page.waitForSelector("#tax-plan .plan-knobs");
+  const noBalance = () => page.textContent("#tax-plan .plan-row:first-of-type tr:has-text('no balance') button");
+  assert.equal(await noBalance(), "$250.00"); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: owing \$1,000, as things stand/); // leak-guard: allow (made up)
+  assert.match(
+    await page.textContent("#tax-plan .plan-result"),
+    /Each \$1,000 that vests has \$350 withheld and adds about \$220/, // leak-guard: allow (made up)
+  );
+  // vests at 22%: 13 points less on 20,000 to come, so the federal return owes 2,600 more and each target
+  // takes 2,600 / 5 more a paycheck; Wisconsin is not moved by the federal rate
+  await page.fill("#tax-plan input[aria-label^='Rate future vests']", "22");
+  assert.equal(await noBalance(), "$770.00"); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: owing \$3,600 \(as things stand, owing \$1,000\)/); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Wisconsin: owing \$200, as things stand/); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#tax-plan"), /With vests at 22%: owe \$3,600/); // leak-guard: allow (made up)
+  // the extra that lands it on no balance, taken from the table into the knob
+  await page.click("#tax-plan .plan-row:first-of-type tr:has-text('no balance') button");
+  assert.equal(await page.inputValue("#tax-plan input[aria-label^='Federal extra']"), "770");
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: no balance/);
+  assert.match(await page.textContent("#tax-plan .plan-actions"), /changed at payroll/);
+  // keeping the rate stages the setting; the table plans with it after the redraw
+  await page.click("#tax-plan button:has-text('Keep 22% for vests')");
+  await page.waitForSelector("#pending-list li", { state: "attached" });
+  assert.deepEqual(await staged(page), ["setting planned_supplemental_rate = 0.22"]);
+  assert.equal(await noBalance(), "$770.00"); // leak-guard: allow (made up)
+  assert.equal(await page.inputValue("#tax-plan input[aria-label^='Rate future vests']"), "22");
+  assert.match(await page.textContent("#tax-plan [data-setting='planned_supplemental_rate']"), /set to 0.22/);
+  assert.equal(await page.$("#tax-plan button:has-text('Keep 22')"), null);
+  // putting the setting back in its own control returns the plan to the rate it ran with
+  await page.click("#tax-plan [data-setting='planned_supplemental_rate'] button:has-text('Change')");
+  await page.click("#tax-plan [data-setting='planned_supplemental_rate'] button:has-text('Undo')");
+  assert.equal(await noBalance(), "$250.00"); // leak-guard: allow (made up)
+  assert.equal(await page.inputValue("#tax-plan input[aria-label^='Rate future vests']"), "35");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("equity: the tax on this year's vests at the rate vests are withheld at, the knob the Taxes plan shares", async () => {
+  const month = (m, shares, basis) => ({
+    month: m,
+    grant_id: "g1",
+    symbol: "ACME",
+    shares,
+    price: 50,
+    value: shares * 50,
+    basis,
+  });
+  const plan = ["2000", "0", "-2000"].map((target) => ({
+    year: "2026",
+    return: "federal",
+    person: "alex",
+    employer: "Acme Widgets",
+    paychecks_left: "4",
+    vest_rate: "0.35",
+    projected: "-1000",
+    target,
+    current_extra: "0",
+    suggested_extra: "0",
+    lands_at: "-1000",
+    penalty_free: "TRUE",
+    vest_wages_left: "1000",
+    marginal_rate: "0.22",
+    withheld: "9000",
+    total_tax: "10000",
+    safe_harbor: "",
+    note: "W-4 Step 4(c): extra withholding per paycheck",
+  }));
+  const page = await open(
+    "window.__answers.getEquity = " +
+      JSON.stringify({
+        symbols: [
+          {
+            symbol: "ACME",
+            price: 50,
+            price_date: "2026-11-12",
+            held: 0,
+            basis: 0,
+            value: 0,
+            gain: 0,
+            unvested: 30,
+            unvested_value: 1500,
+          },
+        ],
+        grants: [
+          {
+            grant_id: "g1",
+            symbol: "ACME",
+            award_type: "RSU",
+            award_date: "2025-02-25",
+            grant_price: 40,
+            price_from: "award page", // leak-guard: allow (made up)
+            granted: 40,
+            vested: 10,
+            unvested: 30,
+            next_vest: "2026-11-25",
+            last_vest: "",
+          },
+        ],
+        months: [
+          month("2026-08", 10, "vested"),
+          month("2026-11", 10, "latest"),
+          month("2026-12", 10, "latest"),
+          month("2027-02", 10, "latest"),
+        ],
+        steps: [5, 10, 20],
+        stepsSet: null,
+        plan,
+      }) +
+      "; window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [{ year: "2026", filed: false, forms: { "Form 1040": [] } }],
+        plan,
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+      }) +
+      ";",
+  );
+  await page.click("#view-equity");
+  await page.waitForSelector("#equity-body .equity-tax");
+  const cells = () =>
+    page.$$eval("#equity-body .equity-tax tbody tr", (rs) =>
+      rs.map((r) => Array.from(r.querySelectorAll("td")).map((td) => td.textContent)),
+    );
+  // this year's two vests to come, not next year's or the one vested: withheld at 35%, adding 22% to the tax
+  assert.deepEqual(await cells(), [
+    ["November 2026", "$500", "$175", "$110", "+$65"], // leak-guard: allow (made up)
+    ["December 2026", "$500", "$175", "$110", "+$65"], // leak-guard: allow (made up)
+    ["This year", "$1,000", "$350", "$220", "+$130"], // leak-guard: allow (made up)
+  ]);
+  assert.match(await page.textContent("#equity-body .equity-tax"), /withhold about \$130 more than they add: a bigger refund/); // leak-guard: allow (made up)
+  await page.fill("#equity-body .equity-tax input", "22");
+  assert.deepEqual((await cells())[2], ["This year", "$1,000", "$220", "$220", "$0"]); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#equity-body .equity-tax"), /withhold about what they add to the tax/);
+  // the rate tried here is the Taxes plan's knob too
+  await page.click("#equity-body .equity-tax button:has-text('Open the Taxes plan')");
+  await page.waitForSelector("#tax-plan .plan-knobs");
+  assert.equal(await page.inputValue("#tax-plan input[aria-label^='Rate future vests']"), "22");
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: owing \$1,130 \(as things stand, owing \$1,000\)/); // leak-guard: allow (made up)
+  // kept on the Taxes page, it is the rate the Equity page shows from then on
+  await page.click("#tax-plan button:has-text('Keep 22% for vests')");
+  await page.waitForSelector("#pending-list li", { state: "attached" });
+  assert.deepEqual(await staged(page), ["setting planned_supplemental_rate = 0.22"]);
+  await page.click("#view-equity");
+  assert.equal(await page.inputValue("#equity-body .equity-tax input"), "22");
+  assert.equal(await page.$("#equity-body .equity-tax button:has-text('Keep')"), null);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

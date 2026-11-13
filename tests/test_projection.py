@@ -323,3 +323,54 @@ def test_an_estimate_set_from_the_views_stands_in_for_the_parts_before_it():
     _, _, _, parts = projection.project(2026, stubs_through(24), pd.DataFrame(), facts)
     est = parts[parts["key"] == "charity"]
     assert est[["amount", "detail"]].values.tolist() == [[60.0, "set from the views 2026-11-13"]]
+
+
+def vest_stub(pay_date, stub_id, base=5_000.0, rate=0.22):
+    common = {
+        "pay_date": pay_date,
+        "period_start": pay_date,
+        "period_end": pay_date,
+        "person": "alex",
+        "employer": "Acme",
+        "stub_id": stub_id,
+        "doc_id": "d",
+    }
+    items = [
+        ("RSU Vest", "income", base),
+        ("Federal Income Tax", "tax", base * rate),
+        ("Employee Medicare", "tax", base * 0.0145),
+        ("Gross", "memo", base),
+        ("FIT Taxable Wages", "memo", base),
+    ]
+    return [{**common, "line_item": a, "kind": k, "amount": v, "ytd_amount": v} for a, k, v in items]
+
+
+def test_the_plan_previews_a_new_vest_rate_and_extra_as_a_rerun_would_plan_them():
+    # two monthly vests so far: four more to come at the recent size, Sep to Dec
+    stubs = pd.concat(
+        [stubs_through(20), pd.DataFrame(vest_stub("2026-07-15", "v1") + vest_stub("2026-08-14", "v2"))],
+        ignore_index=True,
+    )
+    facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
+    sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
+    at_35 = projection.withholding_plan(2026, stubs, sales, facts, target=2000, supplemental_rate=0.35)
+    at_22 = projection.withholding_plan(2026, stubs, sales, facts, target=2000, supplemental_rate=0.22)
+    first = at_35.iloc[0]
+    assert first["vest_wages_left"] == 4 * 5_000 and first["vest_rate"] == 0.35
+    assert 0.1 < first["marginal_rate"] < 0.4 and first["total_tax"] > 0 and first["withheld"] > 0
+    assert at_35["marginal_rate"].nunique() == 2  # federal and Wisconsin each have their own
+    for a, b in zip(at_35.to_dict("records"), at_22.to_dict("records")):
+        # the preview from the plan at 35% is the plan a run at 22% makes, at every target and either extra
+        assert projection.plan_extra(a, 0.22, b["target"]) == b["suggested_extra"]
+        assert projection.plan_preview(a, 0.22, b["suggested_extra"]) == (b["lands_at"], b["penalty_free"])
+        assert projection.plan_preview(a, 0.22, a["current_extra"])[0] == b["projected"]
+
+
+def test_the_plan_preview_matches_the_shared_cases():
+    import json
+    from pathlib import Path
+
+    doc = json.loads((Path(__file__).parent / "fixtures" / "withholding_preview.json").read_text())
+    for c in doc["cases"]:
+        assert projection.plan_preview(c["row"], c["rate"], c["extra"]) == (c["lands"], c["penalty_free"]), c["why"]
+        assert projection.plan_extra(c["row"], c["rate"], 0) == c["goal_extra"], c["why"]

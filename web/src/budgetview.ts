@@ -454,3 +454,44 @@ function equitySteps(text: string | null): number[] {
   const unique = Array.from(new Set(steps)).sort((a, b) => a - b);
   return unique.length ? unique.slice(0, 6) : EQUITY_STEPS_DEFAULT.slice();
 }
+
+// The withholding plan's two knobs, previewed on the Taxes and Equity pages before a run: future vests
+// withheld at rate, and extra withheld a paycheck (W-4 Step 4(c), or WT-4's additional amount). Both only
+// move withholding, never the tax, so a plan row's projection shifts in a straight line. The same rule as
+// projection.plan_preview and plan_extra (tests/fixtures/withholding_preview.json).
+interface PlanBasis {
+  return: string; // federal or wisconsin; the vest rate is federal, so it leaves Wisconsin alone
+  projected: number; // refund positive, owed negative, with vests at vest_rate and the current extra
+  vest_rate: number | null;
+  vest_wages_left: number; // vest income still to come this year
+  current_extra: number;
+  paychecks_left: number;
+  withheld: number | null; // federal: this year's withholding, lines 25a and 25c
+  total_tax: number | null; // federal line 24
+  safe_harbor: number | null; // from last year's return, when it is on file
+}
+
+const PENALTY_FREE_BALANCE = 1000; // tax.PENALTY_FREE_BALANCE
+const CURRENT_YEAR_SHARE = 0.9; // tax.CURRENT_YEAR_SHARE
+
+function planShift(row: PlanBasis, rate: number, extra: number): number {
+  var vestRate = row.vest_rate === null ? rate : row.vest_rate;
+  return (
+    (row.return === "federal" ? (rate - vestRate) * row.vest_wages_left : 0) + (extra - row.current_extra) * row.paychecks_left
+  );
+}
+
+function planPreview(row: PlanBasis, rate: number, extra: number): { lands: number; penaltyFree: boolean | null } {
+  var shift = planShift(row, rate, extra);
+  var lands = Math.round((row.projected + shift) * 100) / 100;
+  if (row.return !== "federal") return { lands: lands, penaltyFree: null };
+  var owe = -lands,
+    total = row.total_tax || 0;
+  var needed = row.safe_harbor === null ? CURRENT_YEAR_SHARE * total : Math.min(CURRENT_YEAR_SHARE * total, row.safe_harbor);
+  return { lands: lands, penaltyFree: owe < PENALTY_FREE_BALANCE || (row.withheld || 0) + shift >= needed };
+}
+
+function planExtra(row: PlanBasis, rate: number, goal: number): number {
+  var projected = row.projected + planShift(row, rate, row.current_extra);
+  return Math.round(Math.max(row.current_extra + (goal - projected) / row.paychecks_left, 0) * 100) / 100;
+}

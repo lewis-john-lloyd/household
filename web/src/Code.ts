@@ -617,7 +617,9 @@ function getHome(): HomePage {
 
 /** Everything the Equity page shows (equity.ts): the grants, their vesting, and the shares held. */
 function getEquity(): EquityPage {
-  return equityPage(readTabsIfAny_(["equity_grants", "equity_vesting", "equity_summary", "editor_parameters"]));
+  return equityPage(
+    readTabsIfAny_(["equity_grants", "equity_vesting", "equity_summary", "editor_parameters", "withholding_plan"]),
+  );
 }
 
 /** Everything the Retirement page shows (retirement.ts). */

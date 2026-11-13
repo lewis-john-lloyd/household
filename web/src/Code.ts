@@ -149,6 +149,7 @@ function getBudgetBook(): {
   tracked: Record<string, string>[];
   charges: ChargeLine[];
   checks: BudgetCheck[] | null;
+  inputs: TargetInput[] | null;
 } {
   const tabs = readTabsIfAny_([
     "budget_vs_actual",
@@ -162,6 +163,7 @@ function getBudgetBook(): {
     "sinking_funds",
     "recurring_charges",
     "budget_checks",
+    "target_inputs",
   ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
   const book = budgetBook(
@@ -180,6 +182,7 @@ function getBudgetBook(): {
     tracked: subscriptionsPage(tabs.subscriptions).subscriptions,
     charges: chargeLines(tabs.recurring_charges), // each recurring charge's lines, for the Recurring drawer
     checks: budgetChecks(tabs.budget_checks), // what looks off, for the Check statuses (null before a run writes it)
+    inputs: targetInputs(tabs.target_inputs), // how each floating target was worked out, for the line's drawer
   };
 }
 

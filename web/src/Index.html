@@ -558,6 +558,30 @@
       .drawer table.txns { width: 100%; font-size: 13px; }
       .drawer table.txns td { padding: 6px 8px 6px 0; }
       .drawer table.charge-lines td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+      /* a floating target's working (working.ts): its months, the sum, and what the changes in hand will do */
+      .working { margin: 8px 0 16px; padding: 12px 16px; border-radius: 12px; background: var(--surface-container); }
+      .working h4 { margin: 0 0 2px; font-size: 14px; font-weight: 500; }
+      .working > .support { margin: 0 0 8px; }
+      .drawer .working table.working-months td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+      .working table.working-months td.spend { text-align: right; white-space: nowrap; }
+      .working table.working-months td.about { overflow-wrap: anywhere; }
+      .working table.working-months td:last-child { text-align: right; white-space: nowrap; }
+      .working tr.most td.spend { font-weight: 600; }
+      /* fixed layouts, so the months and an open month's lines fit the drawer whatever their words */
+      .working table.working-months { width: 100%; table-layout: fixed; }
+      .working table.working-months > tr > td:nth-child(1) { width: 72px; }
+      .working table.working-months > tr > td:nth-child(2) { width: 84px; }
+      .working table.working-months > tr > td:nth-child(4) { width: 104px; }
+      .working tr.month-lines > td { padding: 0 0 8px 12px; }
+      .working tr.month-lines table { width: 100%; table-layout: fixed; }
+      .working tr.month-lines td.day { width: 52px; white-space: nowrap; }
+      .working tr.month-lines td.spend { width: 80px; }
+      .working tr.month-lines td:last-child { width: 116px; }
+      .working tr.month-lines td.about { width: auto; overflow-wrap: anywhere; }
+      .working tr.month-lines td:last-child button { padding-left: 6px; padding-right: 6px; }
+      .working .working-sum { margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+      .working .working-after { margin: 6px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--waiting-container);
+        color: var(--on-surface); font-variant-numeric: tabular-nums; }
       .drawer table.charge-lines td.spend { text-align: right; white-space: nowrap; }
       .drawer table.charge-lines td.about { width: 100%; }
       .drawer table.charge-lines td.about .tag { margin-left: 0; }

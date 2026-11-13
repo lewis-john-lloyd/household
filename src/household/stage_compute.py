@@ -47,6 +47,9 @@ from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_led
 from .runlog import record_stage, recording, say
 
 
+INPUT_MONTHS = 24  # budget months whose floating targets show their working in the views
+
+
 @dataclass
 class Compute:
     """What every part of a compute run shares: where it reads and writes, which run and day it is, and its log."""
@@ -411,6 +414,9 @@ def _budget(c: Compute, books, categorized, actuals):
         planned = budget.targets(rules, usual, today[:7], expected, by_line, loan)
         _say_links(log, rules, books["decisions"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
+        # the working behind the floating targets of the last two years, so the views can show it
+        inputs = budget.target_inputs(planned, usual, actuals, budget.shift_month(today[:7], -INPUT_MONTHS + 1))
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "target_inputs"), inputs.assign(run_id=run_id))
         compared = budget.versus(planned, actuals, books["categories"])
         sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_vs_actual"), compared.assign(run_id=run_id))
         funds = budget.sinking_funds(planned, actuals)

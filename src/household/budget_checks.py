@@ -24,10 +24,8 @@ from . import decisions as decisions_
 
 COLUMNS = ["check", "kind", "about", "category", "label", "detail", "open"]
 KIND = "looks_right"  # proposal_decisions kind: a check that was looked at and is right
-FLOATING = ("trailing", "lookback", "seasonal")
 HIGH_RATIO = 1.5  # a floating target this many times a usual month's spending is worth a look
 HIGH_MIN = 25.0  # and at least this much more, so small lines are left alone
-WINDOWS = {"trailing": budget.TRAILING_WINDOW, "lookback": budget.LOOKBACK_WINDOW, "seasonal": budget.SEASONAL_WINDOW}
 
 
 def _money(x):
@@ -87,7 +85,7 @@ def high_targets(planned, categorized, month):
     naming the biggest line in the biggest month its average takes in."""
     if planned is None or planned.empty or categorized is None or categorized.empty:
         return []
-    now = planned[(planned["month"] == month) & planned["rule"].isin(FLOATING)]
+    now = planned[(planned["month"] == month) & planned["rule"].isin(budget.FLOATING)]
     if now.empty:
         return []
     rows = categorize.actual_rows(categorized[~recurring.one_off(categorized)]).copy()
@@ -101,7 +99,7 @@ def high_targets(planned, categorized, month):
         usual = float(np.median(past))
         if usual <= 0 or target < HIGH_RATIO * usual or target - usual < HIGH_MIN:
             continue
-        window = [budget.shift_month(month, n) for n in WINDOWS[r["rule"]]]
+        window = budget.window_months(r["rule"], month)
         big = max(window, key=lambda m: spend.get((category, m), 0.0))
         if spend.get((category, big), 0.0) - usual < HIGH_MIN:
             continue  # no month in its average stands out, so there is no line to point at

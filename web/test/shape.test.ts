@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -29,6 +29,8 @@ const shape = new Function(
   subscriptionsPage: (values: unknown[][]) => SubscriptionsPage;
   chargeLines: (values: unknown[][]) => ChargeLine[];
   budgetChecks: (values: unknown[][]) => BudgetCheck[] | null;
+  targetInputs: (values: unknown[][]) => TargetInput[] | null;
+  floatingValue: (values: number[], sigma: number) => number;
   budgetBook: (
     budget: unknown[][],
     daily: unknown[][],
@@ -819,4 +821,54 @@ test("budget checks: each check's row, none before a run writes the tab, and a S
   assert.equal(card?.label, "thing to check on the Budget page");
   assert.deepEqual(card?.items, [{ title: "Budget $55.00, usually $20.00", detail: "Its budget...", link: "budget:hobby" }]); // leak-guard: allow (made up)
   assert.equal(card?.action, "view:budget");
+});
+
+test("the page's floating preview gives the engine's numbers, from the fixture both check", () => {
+  // tests/fixtures/floating_targets.json: worked out by budget.history and checked by tests/test_budget.py too
+  const doc = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "floating_targets.json"), "utf8"));
+  assert.ok(doc.cases.length >= 3);
+  for (const c of doc.cases) {
+    assert.ok(Math.abs(shape.floatingValue(c.values, c.sigma) - c.value) < 1e-6, c.why);
+  }
+  assert.equal(shape.floatingValue([], 0.25), 0);
+});
+
+test("target inputs: each month a floating target averages, and none before a run writes the tab", () => {
+  const values = [
+    ["month", "line", "category", "rule", "input", "spend", "left_out", "mean", "spread", "sigma", "value", "run_id"],
+    ["2026-10", "petrol", "petrol", "trailing", "2026-06", "40", "0", "37.5", "26.3", "0.25", "44.07", "r1"],
+    ["2026-10", "petrol", "petrol", "trailing", "2026-07", "60", "30", "37.5", "26.3", "0.25", "44.07", "r1"],
+  ];
+  const rows = shape.targetInputs(values);
+  assert.deepEqual(rows?.[1], {
+    month: "2026-10",
+    line: "petrol",
+    category: "petrol",
+    rule: "trailing",
+    input: "2026-07",
+    spend: 60,
+    left_out: 30,
+    mean: 37.5,
+    spread: 26.3,
+    sigma: 0.25,
+    value: 44.07,
+  });
+  assert.equal(shape.targetInputs([]), null);
+  assert.throws(() => shape.targetInputs([["month", "line"]]), /target_inputs tab is missing columns/);
+});
+
+test("a transaction says whether it is marked one-off", () => {
+  const head = ["date", "account_id", "amount", "payee_raw", "payee_text", "category", "splits", "txn_id", "one_off"];
+  const txns = shape.parseTransactions([
+    head,
+    ["2026-07-02", "a1", "-30", "WILLOW ST", "", "petrol", "", "t1", "TRUE"],
+    ["2026-07-03", "a1", "-20", "WILLOW ST", "", "petrol", "", "t2", ""],
+  ]);
+  assert.deepEqual(
+    txns.map((t) => [t.id, t.one_off]),
+    [
+      ["t1", true],
+      ["t2", false],
+    ],
+  );
 });

@@ -134,6 +134,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
     );
     var note = changeNote("budget_line|" + bl.line);
     if (note) d.appendChild(el("p", note, "staged-note"));
+    if (RULE_MONTHS[bl.rule]) working(d, bl, v); // a floating target shows its working (working.ts)
     if (bl.rule === "loan") {
       // its target is the schedule's: the Home page shows it, month by month
       var to = el("p", null, "support");
@@ -325,6 +326,19 @@ function lineChecks(d: HTMLElement, l: ViewLine, v: BudgetView) {
     box.appendChild(text);
     var actions = el("span", null, "actions");
     var what = c.open.slice(0, c.open.indexOf(":"));
+    if (!x.settled && c.kind === "target_high" && budget.data!.inputs)
+      // its evidence is the line's working, further down this drawer: every month it averages, and their lines
+      actions.appendChild(
+        button(
+          "See how it was worked out",
+          function () {
+            var w = d.querySelector(".working");
+            var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            if (w) w.scrollIntoView({ block: "start", behavior: still ? "auto" : "smooth" });
+          },
+          "text",
+        ),
+      );
     if (!x.settled && what !== "line")
       actions.appendChild(
         button(

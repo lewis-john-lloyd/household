@@ -1683,3 +1683,74 @@ test("a check on the Status page opens its line item's drawer on the Budget page
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("a floating line shows its working, a month's lines, and what marking one off will do", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  var back = function (n) { var t = new Date(m + '-15'); t.setMonth(t.getMonth() - n); return t.toISOString().slice(0, 7); };" +
+      "  var spends = [40, 90, 50, 0], inputs = [4, 3, 2, 1].map(function (n, i) {" +
+      "    return { month: m, line: 'petrol', category: 'petrol', rule: 'trailing', input: back(n), spend: spends[i]," +
+      "      left_out: i === 0 ? 5 : 0, mean: 45, spread: 37.0, sigma: 0.25, value: 54.25 }; });" +
+      "  window.__july = back(3);" +
+      "  window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [], inputs: inputs," +
+      "    book: { groups: { petrol: 'car' }, recurring: [], days: [[d, 'petrol', 20]]," +
+      "      targets: [{ month: m, category: 'petrol', priority: 'high', target: 54.25 }] } };" +
+      "  window.__answers.getEditor.budgetLines = [{ line: 'petrol', effective: '2001-01-01', category: 'petrol', account: ''," +
+      "    priority: 'high', rule: 'trailing', amount: '', per: 'monthly', note: '', in_force: 'yes', in_words: 'from the last 4 months'," +
+      "    this_month: '54.25', last_12_months: '0', scheduled: '', spends_from: 'petrol' }];" +
+      "  window.__answers.getTransactions = [" +
+      "    { id: 't7', date: back(3) + '-20', account: 'a1', payee: 'BLUE PUMP FUEL', category: 'petrol', amount: -60, split: ''," +
+      "      items: [], key: 'BLUE PUMP FUEL', note: '', one_off: false }," +
+      "    { id: 't6', date: back(3) + '-05', account: 'a1', payee: 'BLUE PUMP FUEL', category: 'petrol', amount: -30, split: ''," +
+      "      items: [], key: 'BLUE PUMP FUEL', note: '', one_off: false }];" +
+      "})();",
+  );
+  await page.click("table.bv tr.line:has-text('Petrol') td:nth-child(2)");
+  await page.waitForSelector(".drawer .working");
+  assert.match(await page.textContent(".drawer .working h4"), /^How \w+ \d{4}'s budget was worked out$/);
+  const months = () =>
+    page.$$eval(".drawer .working-months > tr[data-month]", (rs) =>
+      rs.map((r) => [r.querySelector("td.spend").textContent, r.querySelector("td.about").textContent, r.className]),
+    );
+  assert.deepEqual(await months(), [
+    ["$40.00", "$5.00 marked one-off, left out", ""], // leak-guard: allow (made up)
+    ["$90.00", "The most of these months", "most"], // leak-guard: allow (made up)
+    ["$50.00", "", ""], // leak-guard: allow (made up)
+    ["$0.00", "", ""], // leak-guard: allow (made up)
+  ]);
+  assert.equal(await page.textContent(".drawer .working-sum"), "Average $45.00, plus a quarter of $37.00: $54.25."); // leak-guard: allow (made up)
+  // the big month's lines, the most spent first, each with the fix
+  const july = await page.evaluate(() => window.__july);
+  await page.click(`.drawer .working-months tr[data-month='${july}'] button:has-text('Its lines')`);
+  await page.waitForSelector(".drawer .working tr.month-lines tr[data-txn='t7']");
+  assert.deepEqual(await page.$$eval(".drawer .working tr.month-lines tr[data-txn]", (rs) => rs.map((r) => r.dataset.txn)), [
+    "t7",
+    "t6",
+  ]);
+  assert.equal(await page.locator(".drawer .working-after").count(), 0); // nothing in hand, nothing to preview
+  await page.click(".drawer .working tr[data-txn='t7'] button:has-text('One-off')");
+  assert.deepEqual(await staged(page), [`Petrol: the $60.00 line of ${july}-20 is a one-off`]); // leak-guard: allow (made up)
+  // July drops to 30: the average of 40, 30, 50 and 0 is 30, plus a quarter of their spread
+  const v = [40, 30, 50, 0],
+    mean = 30,
+    sd = Math.sqrt(v.reduce((t, x) => t + (x - mean) ** 2, 0) / 3);
+  const about = "$" + (mean + 0.25 * sd).toFixed(2);
+  assert.equal(
+    await page.textContent(".drawer .working-after"),
+    `After the next run, about ${about} (down $${(54.25 - mean - 0.25 * sd).toFixed(2)}), with 1 change to its lines in hand.`,
+  );
+  assert.equal(await page.getAttribute(".drawer .working tr[data-txn='t7']", "class"), "left-out");
+  await page.click(".drawer .working tr[data-txn='t7'] button:has-text('Count it')"); // changed my mind
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await page.locator(".drawer .working-after").count(), 0);
+  await page.click(".drawer .working tr[data-txn='t7'] button:has-text('One-off')");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "line", txn_id: "t7", field: "one_off", value: "TRUE" }]);
+  // saved but not run: still counted as in hand, so the preview stays
+  await page.waitForSelector(".drawer .working-after");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

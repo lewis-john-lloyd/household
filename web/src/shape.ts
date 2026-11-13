@@ -175,6 +175,7 @@ interface Txn {
   items: Item[];
   key: string; // the merchant it is answered under in review ("" in reports from before it)
   note: string; // the line's note in the ledger
+  one_off: boolean; // marked one-off: left out of recurring charges and budget averages
 }
 
 const BUDGET_COLUMNS = ["month", "category", "group", "priority", "target", "actual"];
@@ -246,6 +247,7 @@ function parseTransactions(values: unknown[][]): Txn[] {
       split: splits,
       key: optional(v, "key"),
       note: optional(v, "note"),
+      one_off: optional(v, "one_off").toUpperCase() === "TRUE",
     };
     if (splits) {
       for (const piece of splits.split("; ")) {
@@ -818,6 +820,58 @@ function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
     .filter((r) => r.key);
   const total = rows.filter((r) => r.status !== "stopped").reduce((t, r) => t + (Number(r.yearly) || 0), 0);
   return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
+}
+
+interface TargetInput {
+  month: string; // the budget month whose target this works out
+  line: string;
+  category: string;
+  rule: string; // trailing, lookback or seasonal
+  input: string; // a month its average takes in
+  spend: number; // what the category spent there, less the lines marked one-off
+  left_out: number; // what those one-off lines spent
+  mean: number;
+  spread: number; // the months' standard deviation
+  sigma: number; // how many spreads are added to the mean
+  value: number; // the target the working gives
+}
+
+const TARGET_INPUT_COLUMNS = [
+  "month",
+  "line",
+  "category",
+  "rule",
+  "input",
+  "spend",
+  "left_out",
+  "mean",
+  "spread",
+  "sigma",
+  "value",
+];
+
+/** How each floating target was worked out (the Reports target_inputs tab), or null before a run writes it. */
+function targetInputs(values: unknown[][]): TargetInput[] | null {
+  if (!values.length) return null;
+  const at = columnsAt(values, TARGET_INPUT_COLUMNS, "target_inputs");
+  return values.slice(1).map((v) => {
+    const [month, line, category, rule, input, spend, leftOut, mean, spread, sigma, value] = at.map((i) =>
+      String(v[i] ?? "").trim(),
+    );
+    return {
+      month: month.slice(0, 7),
+      line,
+      category,
+      rule,
+      input: input.slice(0, 7),
+      spend: Number(spend) || 0,
+      left_out: Number(leftOut) || 0,
+      mean: Number(mean) || 0,
+      spread: Number(spread) || 0,
+      sigma: Number(sigma) || 0,
+      value: Number(value) || 0,
+    };
+  });
 }
 
 interface BudgetCheck {

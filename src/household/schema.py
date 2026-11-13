@@ -850,6 +850,24 @@ REPORTS = (
     # every line ascribed to each charge in the Recurring editor, and whether it counts (recurring.charge_history)
     Table("recurring_charges", ("key", "txn_id", "date", "spend", "payee", "counts", "why", "run_id")),
     Table("budget_checks", ("check", "kind", "about", "category", "label", "detail", "open", "run_id")),
+    # how each floating target was worked out (budget.target_inputs): the months it averages, for the views
+    Table(
+        "target_inputs",
+        (
+            "month",
+            "line",
+            "category",
+            "rule",
+            "input",
+            "spend",
+            "left_out",
+            "mean",
+            "spread",
+            "sigma",
+            "value",
+            "run_id",
+        ),
+    ),
     # recurring charges you track (recurring.subscriptions), and the Recurring editor's rows
     Table(
         "subscriptions",

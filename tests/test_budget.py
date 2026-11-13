@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -268,3 +271,56 @@ def test_a_loan_line_budgets_its_part_of_each_months_scheduled_payment():
     assert out.loc[("interest", "2020-03"), "target"] == 999.0  # the balance fell, so did the interest
     assert out.loc[("principal", "2020-02"), "basis"] == "loan: scheduled principal 199.10"
     assert out.loc[("odd", "2020-02"), "target"] == 0.0  # no loan part for its category
+
+
+def test_a_floating_targets_working_lists_each_month_it_averages_and_what_one_offs_left_out():
+    usual = actuals(
+        [["2026-06", "petrol", 40.0], ["2026-07", "petrol", 60.0], ["2026-08", "petrol", 50.0]]
+    )  # September spent nothing
+    every = actuals([["2026-06", "petrol", 40.0], ["2026-07", "petrol", 90.0], ["2026-08", "petrol", 50.0]])
+    planned = budget.targets(
+        rules(
+            ["petrol", "2026-10-01", "petrol", "bills", "high", "trailing", "", "monthly", ""],
+            ["phone", "2026-10-01", "phone", "bills", "high", "fixed", "60", "monthly", ""],
+        ),
+        usual,
+        "2026-10",
+    )
+    work = budget.target_inputs(planned, usual, every, "2026-10")
+    assert list(work.columns) == budget.INPUT_COLUMNS
+    assert work[["month", "line", "input", "spend", "left_out"]].values.tolist() == [
+        ["2026-10", "petrol", "2026-06", 40.0, 0.0],
+        ["2026-10", "petrol", "2026-07", 60.0, 30.0],  # a 30 line marked one-off
+        ["2026-10", "petrol", "2026-08", 50.0, 0.0],
+        ["2026-10", "petrol", "2026-09", 0.0, 0.0],  # a month with no spending counts as zero
+    ]  # the fixed line has no working
+    row = work.iloc[0]
+    values = pd.Series([40.0, 60.0, 50.0, 0.0])
+    assert row["mean"] == pytest.approx(values.mean()) and row["spread"] == pytest.approx(round(values.std(), 2))
+    assert row["sigma"] == budget.LOOKBACK_SIGMA
+    # the working's value is the target the line was given: one formula for both
+    assert row["value"] == planned.set_index("line").loc["petrol", "target"]
+
+
+def test_a_floating_target_that_fell_back_to_its_amount_or_is_before_since_has_no_working():
+    planned = budget.targets(
+        rules(["petrol", "2026-09-01", "petrol", "bills", "high", "trailing", "45", "monthly", ""]),
+        actuals([["2026-09", "petrol", 40.0]]),
+        "2026-10",
+    )  # September: no history, so its amount; October: September's spending
+    assert budget.target_inputs(planned, actuals([["2026-09", "petrol", 40.0]]), None, "2026-01")[
+        "month"
+    ].unique().tolist() == ["2026-10"]
+    assert budget.target_inputs(planned, actuals([["2026-09", "petrol", 40.0]]), None, "2026-11").empty
+    work = budget.target_inputs(planned, actuals([["2026-09", "petrol", 40.0]]), None, "2026-01")
+    assert work["left_out"].tolist() == [0.0, 0.0, 0.0, 0.0]  # with no actuals to compare, nothing was left out
+
+
+def test_the_floating_formula_matches_the_fixture_the_views_preview_checks_too():
+    # the same file is read by web/test/shape.test.ts for the page's preview (floatingValue)
+    doc = json.loads((Path(__file__).parent / "fixtures" / "floating_targets.json").read_text())
+    for case in doc["cases"]:
+        months = [str(i) for i in range(len(case["values"]))]
+        _, mean, spread, value = budget.history("x", months, dict(zip([("x", m) for m in months], case["values"])))
+        assert case["sigma"] == budget.LOOKBACK_SIGMA, case["why"]
+        assert (mean, spread, value) == pytest.approx((case["mean"], case["spread"], case["value"])), case["why"]

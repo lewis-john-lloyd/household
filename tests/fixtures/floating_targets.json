@@ -1,0 +1,72 @@
+{
+  "about": "Floating budget targets (budget.history): mean plus sigma standard deviations (ddof 1) of each month's spending. Python (tests/test_budget.py) and the views' preview (web/test/shape.test.ts) both check these, so the page's \"after the next run, about\" figure can't drift from the engine. Made-up values.",
+  "cases": [
+    {
+      "why": "four months, one with no spending",
+      "values": [
+        40.0,
+        60.0,
+        50.0,
+        0.0
+      ],
+      "sigma": 0.25,
+      "mean": 37.5,
+      "spread": 26.299556,
+      "value": 44.074889
+    },
+    {
+      "why": "three even months: no spread",
+      "values": [
+        25.0,
+        25.0,
+        25.0
+      ],
+      "sigma": 0.25,
+      "mean": 25.0,
+      "spread": 0.0,
+      "value": 25.0
+    },
+    {
+      "why": "one big month among twelve small ones",
+      "values": [
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        90.0
+      ],
+      "sigma": 0.25,
+      "mean": 25.833333,
+      "spread": 20.207259,
+      "value": 30.885148
+    },
+    {
+      "why": "the same months with the big one marked one-off",
+      "values": [
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0
+      ],
+      "sigma": 0.25,
+      "mean": 20.0,
+      "spread": 0.0,
+      "value": 20.0
+    }
+  ]
+}

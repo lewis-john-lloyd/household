@@ -374,3 +374,15 @@ function budgetView(book: BudgetBook, period: string, compare: string, sameWeeks
     groups: sorted,
   };
 }
+
+/**
+ * A floating target from its months' spending: the mean plus sigma standard deviations (n - 1), as
+ * budget.history works it out. Checked against the same fixture as the engine (tests/fixtures/floating_targets.json),
+ * so the page's "after the next run, about" can't drift from it.
+ */
+function floatingValue(values: number[], sigma: number): number {
+  if (!values.length) return 0;
+  const mean = values.reduce((t, x) => t + x, 0) / values.length;
+  const spread = values.length > 1 ? Math.sqrt(values.reduce((t, x) => t + (x - mean) * (x - mean), 0) / (values.length - 1)) : 0;
+  return mean + sigma * spread;
+}

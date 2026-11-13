@@ -61,6 +61,10 @@ SEASONAL_WINDOW = (-13, -12, -11)  # months from the budget month: the same mont
 TRAILING_WINDOW = (-4, -3, -2, -1)  # the four months before the budget month
 LOOKBACK_WINDOW = tuple(range(-12, 0))  # the twelve months before the budget month
 TARGET_COLUMNS = ["month", "line", "category", "account", "priority", "rule", "target", "basis"]
+FLOATING = ("trailing", "lookback", "seasonal")  # the rules that average the category's own months
+WINDOWS = {"trailing": TRAILING_WINDOW, "lookback": LOOKBACK_WINDOW, "seasonal": SEASONAL_WINDOW}
+# a floating target's working: per budget month and line, each month its average takes in
+INPUT_COLUMNS = ["month", "line", "category", "rule", "input", "spend", "left_out", "mean", "spread", "sigma", "value"]
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2, "": 3}
 
 
@@ -214,25 +218,75 @@ def _rule_target(state, month, spend, recurring=None, by_line=None, loan=None):
     if rule in ("fixed", "sinking_fund"):
         value, why = _per_month(state)
         return (None, why) if value is None else (value, f"{rule}: {why}")
-    if rule in ("seasonal", "lookback", "trailing"):
-        window = {"trailing": TRAILING_WINDOW, "lookback": LOOKBACK_WINDOW}.get(rule, SEASONAL_WINDOW)
-        return _from_history(state, month, spend, rule, [shift_month(month, n) for n in window])
+    if rule in FLOATING:
+        return _from_history(state, month, spend, rule, window_months(rule, month))
     return None, f"unknown rule {rule!r}"
 
 
+def window_months(rule, month):
+    """The months a floating rule's target for `month` averages, oldest first."""
+    return [shift_month(month, n) for n in WINDOWS[rule]]
+
+
+def history(category, window, spend):
+    """A floating target's working over the window's months: (values, mean, spread, value), each month's
+    spending (a month with no spending counts as zero) and mean plus LOOKBACK_SIGMA standard deviations;
+    None while none of the months has any spending. The one place the formula lives (targets, target_inputs)."""
+    seen = [spend.get((category, m)) for m in window]
+    if all(h is None for h in seen):
+        return None
+    values = np.array([h or 0.0 for h in seen])
+    spread = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+    return values, float(values.mean()), spread, float(values.mean()) + LOOKBACK_SIGMA * spread
+
+
 def _from_history(state, month, spend, rule, window):
-    """Mean plus LOOKBACK_SIGMA standard deviations of the category's spending over the window's months
-    (a month with no spending counts as zero), or the line's amount while none of them has any."""
+    """The working's value, or the line's amount while none of the window's months has any spending."""
     category = str(state["category"]).strip()
-    history = [spend.get((category, m)) for m in window]
-    if all(h is None for h in history):
+    worked = history(category, window, spend)
+    if worked is None:
         value, why = _per_month(state)
         if value is None:
             return None, f"{rule}: no history for {window[0]} to {window[-1]} and no fallback amount"
         return value, f"{rule}: no history for {window[0]} to {window[-1]}, fallback {why}"
-    values = np.array([h or 0.0 for h in history])
-    value = values.mean() + LOOKBACK_SIGMA * values.std(ddof=1)
-    return value, f"{rule} {window[0]} to {window[-1]}: mean {values.mean():.2f} + {LOOKBACK_SIGMA} sd"
+    _, mean, _, value = worked
+    return value, f"{rule} {window[0]} to {window[-1]}: mean {mean:.2f} + {LOOKBACK_SIGMA} sd"
+
+
+def target_inputs(planned, usual, actuals, since):
+    """How each floating target from `since` (YYYY-MM) on was worked out, for the views to show its work: per
+    budget month and line, a row for each month its average takes in, with what the category spent there
+    (`usual`, the actuals the targets learn from), what lines marked one-off left out (`actuals` less `usual`),
+    and the working's mean, spread, sigma and value. A target that fell back to the line's amount has none."""
+    if planned is None or planned.empty:
+        return pd.DataFrame(columns=INPUT_COLUMNS)
+    spend, every = _spend_lookup(usual), _spend_lookup(actuals)
+    out = []
+    rows = planned[planned["rule"].isin(FLOATING) & (planned["month"] >= since)]
+    for r in rows.to_dict("records"):
+        category = str(r["category"]).strip()
+        window = window_months(r["rule"], r["month"])
+        worked = history(category, window, spend)
+        if worked is None:
+            continue
+        values, mean, spread, value = worked
+        for m, v in zip(window, values):
+            out.append(
+                {
+                    "month": r["month"],
+                    "line": r["line"],
+                    "category": category,
+                    "rule": r["rule"],
+                    "input": m,
+                    "spend": round(float(v), 2),
+                    "left_out": round(float(every.get((category, m), v)) - float(v), 2),  # none known: none
+                    "mean": round(mean, 2),
+                    "spread": round(spread, 2),
+                    "sigma": LOOKBACK_SIGMA,
+                    "value": round(value, 2),
+                }
+            )
+    return pd.DataFrame(out, columns=INPUT_COLUMNS)
 
 
 def _not_spending(categories):

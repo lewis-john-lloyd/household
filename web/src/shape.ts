@@ -865,17 +865,19 @@ interface GiftLine {
   month: string;
   key: string; // the recipient's key, as giving.py sums it
   category: string;
+  from_key: string; // the key it came under when that key was said to be the same recipient, else ""
 }
 
 /** Each gift line's recipient (the Reports gift_lines tab), so a recipient opens to its gifts. */
 function giftLines(values: unknown[][]): GiftLine[] {
   if (!values.length) return [];
   const at = columnsAt(values, ["txn_id", "month", "key", "category"], "gift_lines");
+  const from = values[0].map(String).indexOf("from_key"); // older Reports have no merges
   return values
     .slice(1)
     .map((v) => {
       const [txn, month, key, category] = at.map((i) => String(v[i] ?? "").trim());
-      return { txn_id: txn, month: month.slice(0, 7), key, category };
+      return { txn_id: txn, month: month.slice(0, 7), key, category, from_key: from >= 0 ? String(v[from] ?? "").trim() : "" };
     })
     .filter((g) => g.txn_id);
 }

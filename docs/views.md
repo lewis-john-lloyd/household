@@ -64,7 +64,7 @@ What can be changed:
 - **Review questions**: answer a merchant, or one line, which can be split. A merchant's question can also be split into its lines, each answered on its own; once every line has an answer the question leaves the list.
 - **Payee rules** (change or stop), **categories** and **old category names**, **household settings**, **withholding explanations** and **possible duplicates**.
 - **Budget lines**: change from a date, end, or schedule a one-off amount. An amount on a date that has one replaces it, and says what it replaced.
-- **Giving**: each recipient under its giving line item on the Budget page, marked deductible or not, and opened to its gifts, each with the fixes a line takes.
+- **Giving**: each recipient under its giving line item on the Budget page, marked deductible or not, and opened to its gifts, each with the fixes a line takes. A recipient that is another under a second key is said to be the same (`recipient_merge`), and its gifts count as one recipient's after the next run; the keys counted with a recipient are named in its gifts, each with Separate. Compute's `gift_lines` keeps the key each gift came under (`from_key`).
 - **A fund's asset class** (`security`), from the Investments funds list.
 - **A tax estimate** (`estimate`), from the projected line it feeds on Taxes: the whole figure for its year, key and person. Ingest writes it to `return_facts` with `source_doc` "views", and the projection reads it in place of the estimates before it (`tax.estimates_in_force`); one added to `return_facts` after it adds to it.
 - **Budget checks**: a check that was looked at and is right, from its line item's drawer ("Looks right"; "Check it again" takes it back).

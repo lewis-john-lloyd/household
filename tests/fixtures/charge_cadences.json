@@ -1,0 +1,27 @@
+{
+  "about": "The cadence a tracked charge's dates fall in (recurring.cadence_of): of the gaps between them, at least SHARE within GAP_TOLERANCE of one cadence, the shortest first. Python (tests/test_subscriptions.py) and the views' preview (web/test/shape.test.ts, chargeCadence) both check these. Made-up dates.",
+  "cases": [
+    { "why": "one charge: no gaps", "dates": ["2001-01-03"], "cadence": null },
+    { "why": "the 3rd of each month", "dates": ["2001-01-03", "2001-02-03", "2001-03-03", "2001-04-03"], "cadence": "monthly" },
+    { "why": "every other Friday", "dates": ["2001-01-05", "2001-01-19", "2001-02-02", "2001-02-16"], "cadence": "biweekly" },
+    { "why": "every week", "dates": ["2001-01-01", "2001-01-08", "2001-01-15"], "cadence": "weekly" },
+    { "why": "once a year", "dates": ["2001-03-01", "2002-03-01", "2003-02-28"], "cadence": "yearly" },
+    { "why": "each quarter", "dates": ["2001-01-15", "2001-04-15", "2001-07-15", "2001-10-15"], "cadence": "quarterly" },
+    {
+      "why": "monthly with one extra purchase in between: under 70% of gaps on time",
+      "dates": ["2001-01-03", "2001-02-03", "2001-02-17", "2001-03-03", "2001-04-03"],
+      "cadence": null
+    },
+    {
+      "why": "monthly, the extra purchase taken out: monthly again",
+      "dates": ["2001-01-03", "2001-02-03", "2001-03-03", "2001-04-03"],
+      "cadence": "monthly"
+    },
+    {
+      "why": "a few days late each time, within 20% of a month",
+      "dates": ["2001-01-03", "2001-02-08", "2001-03-06", "2001-04-09"],
+      "cadence": "monthly"
+    },
+    { "why": "out of order: read by date", "dates": ["2001-03-03", "2001-01-03", "2001-02-03"], "cadence": "monthly" }
+  ]
+}

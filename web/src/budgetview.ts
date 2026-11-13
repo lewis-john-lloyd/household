@@ -399,3 +399,28 @@ const RAISE_MIN = 0.5; // recurring.RAISE_MIN
 function priceChanged(latest: number, previous: number | null): boolean {
   return previous !== null && Math.abs(latest - previous) > Math.max(PRICE_STEP * previous, RAISE_MIN);
 }
+
+// recurring.CADENCES, GAP_TOLERANCE and SHARE: the cadences a charge's gaps are held to, shortest first
+const CHARGE_CADENCES: [string, number][] = [
+  ["weekly", 7],
+  ["biweekly", 14],
+  ["monthly", 30.4],
+  ["quarterly", 91.3],
+  ["yearly", 365.25],
+];
+const GAP_TOLERANCE = 0.2;
+const CADENCE_SHARE = 0.7;
+
+/** The cadence a charge's dates fall in, or null with fewer than two or no steady one: the engine's rule
+ * (recurring.cadence_of), both checked against tests/fixtures/charge_cadences.json. */
+function chargeCadence(dates: string[]): string | null {
+  if (dates.length < 2) return null;
+  const days = dates.map((d) => d.slice(0, 10)).sort();
+  const gaps: number[] = [];
+  for (let i = 1; i < days.length; i++) gaps.push(Math.round((Date.parse(days[i]) - Date.parse(days[i - 1])) / 864e5));
+  for (const [name, every] of CHARGE_CADENCES) {
+    const on = gaps.filter((g) => Math.abs(g - every) <= GAP_TOLERANCE * every).length;
+    if (on / gaps.length >= CADENCE_SHARE) return name;
+  }
+  return null;
+}

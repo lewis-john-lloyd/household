@@ -311,9 +311,18 @@ function chargeHistory(d: HTMLElement, key: string, name: string, tracked: Row |
 }
 
 var CHARGES_A_YEAR: Record<string, number> = { weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 }; // recurring.PER_YEAR
+var EVERY_WORDS: Record<string, string> = {
+  weekly: "every week",
+  biweekly: "every two weeks",
+  monthly: "every month",
+  quarterly: "every quarter",
+  yearly: "every year",
+  irregular: "with no steady cadence",
+};
 
-// What a charge's price will be after the next run, with the changes to its lines in hand: its latest line that
-// still counts, against the one before (priceChanged, the engine's rule). Null with no change in hand.
+// What a charge's price and cadence will be after the next run, with the changes to its lines in hand: its latest
+// line that still counts, against the one before (priceChanged), and the cadence its counted lines fall in
+// (chargeCadence), each the engine's rule. Null with no change in hand.
 function chargeAfter(all: ChargeLine[], name: string, tracked: Row | null): HTMLElement | null {
   var pending = 0;
   var counted = all.filter(function (c) {
@@ -330,14 +339,35 @@ function chargeAfter(all: ChargeLine[], name: string, tracked: Row | null): HTML
     var latest = counted[0].spend,
       previous = counted.length > 1 ? counted[1].spend : null;
     var changed = priceChanged(latest, previous);
-    var perYear = tracked && CHARGES_A_YEAR[tracked.cadence];
+    // its cadence by the engine's rule (chargeCadence), from the lines that will count
+    var every = chargeCadence(
+      counted.map(function (c) {
+        return c.date;
+      }),
+    );
+    var was = tracked ? tracked.cadence : "";
+    var yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    var perYear = every
+      ? latest * CHARGES_A_YEAR[every]
+      : counted
+          .filter(function (c) {
+            return c.date.slice(0, 10) > yearAgo;
+          })
+          .reduce(function (t, c) {
+            return t + c.spend;
+          }, 0); // irregular: the last twelve months' charges, as the engine counts it
+    var cadenceWords =
+      tracked && (every || "irregular") !== was
+        ? "It comes " + EVERY_WORDS[every || "irregular"] + " (it said " + (EVERY_WORDS[was] || was) + "). "
+        : "";
     words =
       "After the next run: " +
       cents.format(latest) +
       " a charge, from the line of " +
       longDay(counted[0].date) +
-      (perYear ? ", about " + money.format(latest * perYear) + " a year" : "") +
+      (perYear ? ", about " + money.format(perYear) + " a year" : "") +
       ". " +
+      cadenceWords +
       (changed
         ? "It still differs from the one before (" + cents.format(previous as number) + "), so it still says price changed."
         : tracked && tracked.status === "price changed"

@@ -358,7 +358,7 @@ function budgetTable(v: BudgetView) {
         var rr = recipientRow(r, v.through.slice(0, 4), l.category, v.through);
         if (nest) rr.classList.add("nested");
         body.appendChild(rr);
-        if (giftsOpen[l.category + "|" + r.key]) body.appendChild(recipientGifts(r, l.category, v.through, nest));
+        if (giftsOpen[l.category + "|" + r.key]) body.appendChild(recipientGifts(r, l.category, v.through, nest, l.recipients));
       });
     };
     // a loan's parts (its loan_split setting's categories) roll up into one row, opened to show each part
@@ -453,7 +453,7 @@ function budgetTable(v: BudgetView) {
 
 // A recipient's gifts this year, so far as the period goes: the lines giving.py summed under it (gift_lines),
 // read in one call for the giving line item's year, each with its fixes (evidence.ts).
-function recipientGifts(r: Recipient, category: string, through: string, nest: string) {
+function recipientGifts(r: Recipient, category: string, through: string, nest: string, all: Recipient[]) {
   var tr = el("tr", null, "rec gift-lines" + nest);
   var td = el("td");
   td.colSpan = 7;
@@ -476,6 +476,7 @@ function recipientGifts(r: Recipient, category: string, through: string, nest: s
       });
       var draw = function () {
         td.textContent = "";
+        td.appendChild(sameRecipient(r, category, through, all, draw));
         td.appendChild(lineList(mine, draw));
       };
       draw();
@@ -483,4 +484,95 @@ function recipientGifts(r: Recipient, category: string, through: string, nest: s
     id,
   );
   return tr;
+}
+
+// Whether a recipient is another one under a second key (a store's round-up spelled two ways, a gift with no
+// payee): said here with Same as, a `recipient_merge` edit, so their gifts count as one recipient's after the
+// next run. The keys already counted with it are named, each with Separate to take it back out.
+function sameRecipient(r: Recipient, category: string, through: string, all: Recipient[], redraw: () => void) {
+  var box = el("div", null, "same-recipient");
+  var year = through.slice(0, 4);
+  var target = editTarget({ kind: "recipient_merge", key: r.key });
+  var e = edited(target);
+  if (e) {
+    var into = String((e.edit as Record<string, string>).same_as);
+    box.appendChild(
+      el("span", into ? "Counts as " + nameOf(into, all) + " after the next run" : "On its own after the next run", "tag warn"),
+    );
+    if (staged[target])
+      box.appendChild(
+        button(
+          "Undo",
+          function () {
+            unstage(target);
+            redraw();
+          },
+          "text",
+        ),
+      );
+  } else {
+    var others = all.filter(function (x) {
+      return x.key !== r.key;
+    });
+    if (others.length) {
+      var label = el("label", null, "move-to");
+      label.appendChild(el("span", "Same recipient as"));
+      var pick = document.createElement("select");
+      pick.appendChild(el("option", "Choose\u2026"));
+      (pick.firstChild as HTMLOptionElement).value = "";
+      others.forEach(function (x) {
+        var o = el("option", x.name);
+        o.value = x.key;
+        pick.appendChild(o);
+      });
+      label.appendChild(pick);
+      box.appendChild(label);
+      box.appendChild(
+        button(
+          "Count as one",
+          function () {
+            if (!pick.value) return;
+            stage(
+              { kind: "recipient_merge", key: r.key, same_as: pick.value },
+              r.name + " is the same recipient as " + nameOf(pick.value, all),
+            );
+            redraw();
+          },
+          "text",
+        ),
+      );
+    }
+  }
+  // the keys counted with this recipient, each with the way back out
+  var joined: Record<string, boolean> = {};
+  ((budget.data && budget.data.gifts) || []).forEach(function (g) {
+    if (g.key === r.key && g.from_key && g.category === category && g.month.slice(0, 4) === year) joined[g.from_key] = true;
+  });
+  Object.keys(joined).forEach(function (k) {
+    var t = editTarget({ kind: "recipient_merge", key: k });
+    var row = el("div", null, "joined-key support");
+    row.appendChild(document.createTextNode("Includes gifts under " + k + " "));
+    if (edited(t)) row.appendChild(el("span", "on its own after the next run", "tag warn"));
+    if (staged[t] || !edited(t))
+      row.appendChild(
+        button(
+          staged[t] ? "Undo" : "Separate",
+          function () {
+            if (staged[t]) unstage(t);
+            else stage({ kind: "recipient_merge", key: k, same_as: "" }, k + " is a recipient of its own");
+            redraw();
+          },
+          "text",
+        ),
+      );
+    box.appendChild(row);
+  });
+  return box;
+}
+
+function nameOf(key: string, all: Recipient[]) {
+  var hit = all.filter(function (x) {
+    return x.key === key;
+  })[0];
+  return hit ? hit.name : key;
 }

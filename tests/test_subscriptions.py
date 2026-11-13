@@ -418,3 +418,10 @@ def test_a_price_change_follows_the_fixture_the_views_preview_checks_too():
     doc = json.loads((Path(__file__).parent / "fixtures" / "charge_prices.json").read_text())
     for case in doc["cases"]:
         assert recurring.price_changed(case["latest"], case["previous"]) == case["changed"], case["why"]
+
+
+def test_a_charges_cadence_follows_the_fixture_the_views_preview_checks_too():
+    doc = json.loads((Path(__file__).parent / "fixtures" / "charge_cadences.json").read_text())
+    assert len(doc["cases"]) >= 5
+    for case in doc["cases"]:
+        assert recurring.cadence_of(case["dates"]) == case["cadence"], case["why"]

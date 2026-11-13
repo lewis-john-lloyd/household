@@ -2,7 +2,10 @@
 
 A gift is spending in a category of the giving group (GROUP). Its recipient is the line's merchant key, the
 key review asks under, shown by the name given it in the Recurring editor (recurring.names) or else by the
-payee text seen most. Whether gifts to a recipient count toward the itemized deduction is a "recipient" edit
+payee text seen most. Two keys that are one recipient (a store's round-up under two spellings) count as one
+by a "recipient_merge" edit (kept in proposal_decisions, kind recipient_merge, the key it joins in its note),
+and each gift line keeps the key it came under (from_key) so the views can separate them again. Whether gifts
+to a recipient count toward the itemized deduction is a "recipient" edit
 (kept in proposal_decisions, kind deductible): yes, no, or not said yet. The Budget page sums a period's
 gifts by recipient under the giving line items, and the year's deductible gifts.
 
@@ -18,13 +21,30 @@ from . import decisions as decisions_
 GROUP = "giving"
 KIND = "deductible"
 PREFIX = KIND + ":"  # proposal_decisions keys: deductible:<merchant key>
+MERGE = "recipient_merge"  # proposal_decisions kind: a key whose gifts count as another's
 COLUMNS = ["month", "key", "name", "category", "given", "gifts", "deductible"]
-LINE_COLUMNS = ["txn_id", "month", "key", "category"]  # each gift's recipient, for the views to list its gifts
+# each gift's recipient, and the key it came under when that was merged into another, for the views to list
+LINE_COLUMNS = ["txn_id", "month", "key", "category", "from_key"]
 
 
 def deductible(decisions):
     """{key: "yes" or "no"} from proposal_decisions: the latest "deductible" answer per key (approve is yes)."""
     return {k: "yes" if approved else "no" for k, (approved, _) in decisions_.latest(decisions, KIND).items()}
+
+
+def merges(decisions):
+    """{key: the recipient it is part of}: the latest recipient_merge answer per key, a chain followed to its
+    end; a key in a cycle stays on its own (recurring.merges, of this kind)."""
+    raw = {k: into for k, into in decisions_.approved_notes(decisions, MERGE, upper=True).items() if into != k}
+    out = {}
+    for key, into in raw.items():
+        seen = [key]
+        while into in raw and into not in seen:
+            seen.append(into)
+            into = raw[into]
+        if into not in seen:
+            out[key] = into
+    return out
 
 
 def _key(row):
@@ -35,9 +55,10 @@ def _key(row):
     return categorize.payee_key(text) or str(text).strip().upper()
 
 
-def _gifts(categorized, categories):
+def _gifts(categorized, categories, decisions=None):
     """Every gift line (spending in a giving category, a split's part as its own line), with its month and
-    recipient key; None when there are none."""
+    recipient key (a merged key's gifts under the recipient it joined, from_key keeping its own); None when
+    there are none."""
     if categorized is None or categorized.empty or categories is None or categories.empty:
         return None
     giving = set(
@@ -49,14 +70,17 @@ def _gifts(categorized, categories):
         return None
     rows["amount"] = pd.to_numeric(rows["amount"], errors="coerce").fillna(0.0)
     rows["month"] = rows["date"].astype(str).str[:7]
-    rows["key"] = [_key(r) for r in rows.to_dict("records")]
+    own = [_key(r) for r in rows.to_dict("records")]
+    joined = merges(decisions)
+    rows["key"] = [joined.get(k, k) for k in own]
+    rows["from_key"] = [k if k in joined else "" for k in own]
     return rows
 
 
-def gift_lines(categorized, categories):
+def gift_lines(categorized, categories, decisions=None):
     """Each gift line's recipient (LINE_COLUMNS), so the views can list a recipient's gifts: the page cannot
     work a recipient's key out of a line itself (payee_key)."""
-    rows = _gifts(categorized, categories)
+    rows = _gifts(categorized, categories, decisions)
     if rows is None:
         return pd.DataFrame(columns=LINE_COLUMNS)
     rows["category"] = rows["category"].astype(str).str.strip()
@@ -66,7 +90,7 @@ def gift_lines(categorized, categories):
 def by_recipient(categorized, categories, decisions):
     """Each month's gifts per recipient and category: what was given (positive), how many gifts, and
     whether the recipient is deductible ("yes", "no" or "" for not said)."""
-    rows = _gifts(categorized, categories)
+    rows = _gifts(categorized, categories, decisions)
     if rows is None:
         return pd.DataFrame(columns=COLUMNS)
     text = rows["payee_text"] if "payee_text" in rows else rows["payee_raw"]

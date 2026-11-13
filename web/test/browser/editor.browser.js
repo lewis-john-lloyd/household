@@ -1142,7 +1142,8 @@ test("giving: a recipient opens to its gifts, each with the fixes a line takes",
       "    days: [[d, 'gifts', 70]], targets: [{ month: m, category: 'gifts', priority: 'low', target: 100 }]," +
       "    giving: [{ month: m, key: 'QUILL & INK', name: 'Quill & Ink', category: 'gifts', given: 40, gifts: 2, deductible: 'yes' }," +
       "      { month: m, key: 'WILLOW ST', name: 'WILLOW ST', category: 'gifts', given: 30, gifts: 1, deductible: '' }] }," +
-      "    gifts: [{ txn_id: 'g1', month: m, key: 'QUILL & INK', category: 'gifts' }, { txn_id: 'g2', month: m, key: 'QUILL & INK', category: 'gifts' }," +
+      "    gifts: [{ txn_id: 'g1', month: m, key: 'QUILL & INK', category: 'gifts', from_key: '' }," +
+      "      { txn_id: 'g2', month: m, key: 'QUILL & INK', category: 'gifts', from_key: 'ACME GROCER' }," +
       "      { txn_id: 'g3', month: m, key: 'WILLOW ST', category: 'gifts' }] };" +
       "  var t = function (id, payee, amount) { return { id: id, date: d, account: 'a1', payee: payee, category: 'gifts', amount: -amount," +
       "    split: '', items: [], key: payee, note: '', one_off: false }; };" +
@@ -1177,6 +1178,19 @@ test("giving: a recipient opens to its gifts, each with the fixes a line takes",
   assert.deepEqual(await staged(page), [`Gifts: the $25.00 line of ${day} moves to food`]); // leak-guard: allow (made up)
   await page.waitForSelector("table.bv tr.gift-lines tr[data-txn='g1']:has-text('Moves to Food after the next run')");
   await page.click("table.bv tr.gift-lines tr[data-txn='g1'] button:has-text('Undo move')");
+  assert.deepEqual(await staged(page), []);
+  // a recipient that is another under a second key: said once, counted as one after the next run
+  const quillPanel = "table.bv tr.gift-lines >> nth=0";
+  await page.selectOption(`${quillPanel} >> .same-recipient select`, "WILLOW ST");
+  await page.click(`${quillPanel} >> .same-recipient button:has-text('Count as one')`);
+  assert.deepEqual(await staged(page), ["Quill & Ink is the same recipient as WILLOW ST"]);
+  await page.waitForSelector("table.bv tr.gift-lines .same-recipient .tag:has-text('Counts as WILLOW ST after the next run')");
+  await page.click(`${quillPanel} >> .same-recipient button:has-text('Undo')`);
+  assert.deepEqual(await staged(page), []);
+  // a key already counted with it is named, with the way back out
+  await page.click(`${quillPanel} >> .joined-key button:has-text('Separate')`);
+  assert.deepEqual(await staged(page), ["ACME GROCER is a recipient of its own"]);
+  await page.click(`${quillPanel} >> .joined-key button:has-text('Undo')`);
   assert.deepEqual(await staged(page), []);
   // and closing it puts the gifts away
   await page.click(quill);
@@ -1821,7 +1835,9 @@ test("recurring: a charge lists its lines, and one that isn't part of it is left
   assert.deepEqual(await staged(page), ["Books: the $9.00 line of 2001-04-03 counts again"]); // leak-guard: allow (made up)
   assert.deepEqual((await rows())[3], ["t1", "", "Counts again after the next runchanged", "Not part of it"]); // and can go back
   assert.deepEqual(await after(), [
-    "After the next run: $15.00 a charge, from the line of Jun 3, 2001, about $180 a year. " + // leak-guard: allow (made up)
+    "After the next run: $15.00 a charge, from the line of Jun 3, 2001. " + // leak-guard: allow (made up)
+      // the line counted again breaks its month-apart rhythm: by the engine's rule it no longer has a cadence
+      "It comes with no steady cadence (it said every month). " +
       "It still differs from the one before ($4.00), so it still says price changed. 1 change to its lines in hand.", // leak-guard: allow (made up)
   ]);
   await page.click("#pending-save");

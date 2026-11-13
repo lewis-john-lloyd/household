@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -32,6 +32,7 @@ const shape = new Function(
   targetInputs: (values: unknown[][]) => TargetInput[] | null;
   floatingValue: (values: number[], sigma: number) => number;
   priceChanged: (latest: number, previous: number | null) => boolean;
+  chargeCadence: (dates: string[]) => string | null;
   giftLines: (values: unknown[][]) => GiftLine[];
   linesBetween: (txns: Txn[], from: string, to: string, categories: string[]) => Txn[];
   categoriesOf: (values: unknown[][], groups: string[]) => string[];
@@ -950,12 +951,28 @@ test("the page's price change preview follows the engine's rule, from the fixtur
   for (const c of doc.cases) assert.equal(shape.priceChanged(c.latest, c.previous), c.changed, c.why);
 });
 
+test("the page's cadence preview finds the engine's cadence, from the fixture both check", () => {
+  const doc = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "charge_cadences.json"), "utf8"));
+  assert.ok(doc.cases.length >= 5);
+  for (const c of doc.cases) assert.equal(shape.chargeCadence(c.dates), c.cadence, c.why);
+});
+
 test("gift lines name each gift's recipient, for a recipient to open to its gifts", () => {
   const values = [
     ["txn_id", "month", "key", "category", "run_id"],
     ["t1", "2001-03", "QUILL & INK", "gifts", "r1"],
     ["", "2001-03", "WILLOW ST", "gifts", "r1"], // no line: dropped
   ];
-  assert.deepEqual(shape.giftLines(values), [{ txn_id: "t1", month: "2001-03", key: "QUILL & INK", category: "gifts" }]);
+  // an older tab, before recipients could be merged: no key came from another
+  assert.deepEqual(shape.giftLines(values), [
+    { txn_id: "t1", month: "2001-03", key: "QUILL & INK", category: "gifts", from_key: "" },
+  ]);
   assert.deepEqual(shape.giftLines([]), []);
+  const merged = [
+    ["txn_id", "month", "key", "category", "from_key", "run_id"],
+    ["t2", "2001-03", "QUILL & INK", "gifts", "WILLOW ST", "r1"],
+  ];
+  assert.deepEqual(shape.giftLines(merged), [
+    { txn_id: "t2", month: "2001-03", key: "QUILL & INK", category: "gifts", from_key: "WILLOW ST" },
+  ]);
 });

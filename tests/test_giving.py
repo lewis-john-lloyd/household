@@ -119,14 +119,42 @@ def test_each_gift_line_names_its_recipient_so_the_views_can_list_a_recipients_g
     out = giving.gift_lines(CATEGORIZED, CATEGORIES)
     assert list(out.columns) == giving.LINE_COLUMNS
     assert out.values.tolist() == [
-        ["t6", "2025-12", "WILLOW ST", "gifts"],
-        ["t1", "2026-03", "QUILL & INK", "gifts"],
-        ["t2", "2026-03", "QUILL & INK", "gifts"],
-        ["t3", "2026-03", "WILLOW ST", "gifts"],
-        ["t5", "2026-04", "ACME GROCER", "gifts"],  # a split line's gift part: its key, its giving category
+        ["t6", "2025-12", "WILLOW ST", "gifts", ""],
+        ["t1", "2026-03", "QUILL & INK", "gifts", ""],
+        ["t2", "2026-03", "QUILL & INK", "gifts", ""],
+        ["t3", "2026-03", "WILLOW ST", "gifts", ""],
+        ["t5", "2026-04", "ACME GROCER", "gifts", ""],  # a split line's gift part: its key, its giving category
     ]
     # a line with no merchant key gets the recipient its gifts are summed under, the same one by_recipient uses
     keyless = pd.DataFrame([line("t9", "2026-05-01", -20.0, "WILLOW ST FUND", "gifts")])
     summed = giving.by_recipient(keyless, CATEGORIES, None)
     assert giving.gift_lines(keyless, CATEGORIES)["key"].tolist() == summed["key"].tolist()
     assert giving.gift_lines(pd.DataFrame(), CATEGORIES).empty
+
+
+def merged(*answers):
+    return pd.DataFrame(
+        [
+            {"proposal_key": f"{giving.MERGE}:{k}", "kind": giving.MERGE, "decided_at": at, "decision": d, "note": into}
+            for k, into, d, at in answers
+        ],
+        columns=["proposal_key", "kind", "decided_at", "decision", "note"],
+    )
+
+
+def test_two_keys_that_are_one_recipient_count_as_one_and_each_gift_keeps_its_own_key():
+    same = merged(("WILLOW ST", "QUILL & INK", "approve", "2026-01-01"))
+    out = giving.by_recipient(CATEGORIZED, CATEGORIES, same)
+    march = out[out["month"] == "2026-03"][["key", "given", "gifts"]].values.tolist()
+    assert march == [["QUILL & INK", 115.0, 3]]  # its own two gifts and WILLOW ST's one
+    lines = giving.gift_lines(CATEGORIZED, CATEGORIES, same)
+    assert lines[lines["txn_id"] == "t3"][["key", "from_key"]].values.tolist() == [["QUILL & INK", "WILLOW ST"]]
+    assert lines[lines["txn_id"] == "t1"][["key", "from_key"]].values.tolist() == [["QUILL & INK", ""]]
+    # separated again (a blank same_as is a reject), it is on its own
+    apart = merged(("WILLOW ST", "QUILL & INK", "approve", "2026-01-01"), ("WILLOW ST", "", "reject", "2026-02-01"))
+    assert "WILLOW ST" in set(giving.by_recipient(CATEGORIZED, CATEGORIES, apart)["key"])
+    # a cycle merges nothing
+    loop = merged(
+        ("WILLOW ST", "QUILL & INK", "approve", "2026-01-01"), ("QUILL & INK", "WILLOW ST", "approve", "2026-01-02")
+    )
+    assert giving.merges(loop) == {}

@@ -71,6 +71,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   recurring_name: [["key", "name"], []],
   recurring_line: [["key", "line"], []],
   recipient: [["key", "deductible"], []],
+  recipient_merge: [["key", "same_as"], []],
   looks_right: [["check", "looks_right"], []],
   security: [["symbol", "asset_class"], ["was"]],
   estimate: [
@@ -178,7 +179,15 @@ function editProblems(edit: Edit): string[] {
 }
 
 // kinds about a merchant key, and the fields that are yes or no, as parsers/changes.py checks them
-const MERCHANT_KINDS = ["payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient"];
+const MERCHANT_KINDS = [
+  "payee",
+  "subscription",
+  "recurring_merge",
+  "recurring_name",
+  "recurring_line",
+  "recipient",
+  "recipient_merge",
+];
 const YES_NO_FIELDS: Record<string, string> = {
   subscription: "subscription",
   recipient: "deductible",
@@ -221,6 +230,8 @@ function editTarget(edit: Edit): string {
       return `recurring_line|${f("key").toUpperCase()}`;
     case "recipient":
       return `recipient|${f("key").toUpperCase()}`;
+    case "recipient_merge":
+      return `recipient_merge|${f("key").toUpperCase()}`;
     case "looks_right":
       return `looks_right|${f("check")}`;
     case "security":

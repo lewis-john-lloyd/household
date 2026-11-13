@@ -40,6 +40,17 @@ def _cadence(gaps):
     return None, None
 
 
+def cadence_of(dates):
+    """The cadence a charge's dates fall in (a CADENCES name), or None with fewer than two or no steady one: the
+    rule the views preview a charge's cadence with (chargeCadence), both checked against
+    tests/fixtures/charge_cadences.json."""
+    if len(dates) < 2:
+        return None
+    days = pd.to_datetime(pd.Series(sorted(str(d)[:10] for d in dates)))
+    name, _ = _cadence(days.diff().dt.days.dropna().to_numpy())
+    return name
+
+
 def discover(categorized, today=None):
     today = pd.Timestamp(today or date.today())
     df = categorized[(categorized["era"] != "legacy") & (categorized["category"] != "transfer")].copy()

@@ -51,6 +51,7 @@ SAMPLES = {
     "recurring_name": [{"key": "PAGE TURNER BOOKS", "name": "books"}],
     "recurring_line": [{"key": "PAGE TURNER BOOKS", "line": "books"}],
     "recipient": [{"key": "WILLOW ST", "deductible": "yes"}, {"key": "willow st", "deductible": "no"}],
+    "recipient_merge": [{"key": "WILLOW ST", "same_as": "QUILL & INK"}, {"key": "willow st", "same_as": ""}],
     "looks_right": [
         {"check": "target_high|hobby|t9", "looks_right": "yes"},
         {"check": "target_high|hobby|t9", "looks_right": "no"},

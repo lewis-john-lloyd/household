@@ -844,3 +844,18 @@ def test_a_tax_estimate_must_be_a_number_for_a_year_and_the_figure_as_seen():
     assert result.tables["return_facts"][["key", "person", "value"]].values.tolist() == [
         ["wi_earned_income", "alex", "70"]
     ]
+
+
+def test_a_recipient_is_said_to_be_the_same_as_another_and_separated_again():
+    result = changes.parse(doc({"kind": "recipient_merge", "key": "willow st", "same_as": "Quill & Ink"}))
+    result.check(ledger_reader(**LEDGER))
+    assert result.tables["proposal_decisions"][["proposal_key", "kind", "decision", "note"]].values.tolist() == [
+        ["recipient_merge:WILLOW ST", "recipient_merge", "approve", "QUILL & INK"]
+    ]
+    assert "recipient willow st: the same as Quill & Ink" in result.notes
+    apart = changes.parse(doc({"kind": "recipient_merge", "key": "WILLOW ST", "same_as": ""}))
+    apart.check(ledger_reader(**LEDGER))
+    assert apart.tables["proposal_decisions"]["decision"].tolist() == ["reject"]
+    assert "same_as must be another key" in refused(
+        doc({"kind": "recipient_merge", "key": "WILLOW ST", "same_as": "willow st"}), ledger_reader(**LEDGER)
+    )

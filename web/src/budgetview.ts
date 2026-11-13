@@ -424,3 +424,33 @@ function chargeCadence(dates: string[]): string | null {
   }
   return null;
 }
+
+// ---- equity (equity.ts), shared with the page ----
+
+const EQUITY_STEPS_DEFAULT = [5, 10, 20];
+const OPTION_TYPES = ["OPTION", "ISO", "NSO", "NQ"]; // equity.OPTIONS
+
+/** What one share of a grant is worth at a price: an option's spread over its grant price, else the price
+ * (equity.per_share). */
+function sharePrice(awardType: string, price: number, grantPrice: number | null): number {
+  return OPTION_TYPES.indexOf(awardType.toUpperCase()) >= 0 ? Math.max(price - (grantPrice || 0), 0) : price;
+}
+
+/** A grant as a setting names it, grant_price:<this> (settings.symbol_key). */
+function grantKey(grantId: string): string {
+  return grantId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+/** The equity_price_steps setting as dollar steps: positive numbers, smallest first, at most six; the default
+ * when it is unset or has none. */
+function equitySteps(text: string | null): number[] {
+  const steps = String(text || "")
+    .split(",")
+    .map((s) => Number(s.replace(/[$\s]/g, "")))
+    .filter((n) => isFinite(n) && n > 0);
+  const unique = Array.from(new Set(steps)).sort((a, b) => a - b);
+  return unique.length ? unique.slice(0, 6) : EQUITY_STEPS_DEFAULT.slice();
+}

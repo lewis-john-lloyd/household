@@ -1268,6 +1268,7 @@ test("each editor part lives on the page it is about, in that page's submenu", a
     "Taxes",
     "Home",
     "Investments",
+    "Equity",
     "Retirement",
   ]);
   await openReview(page);
@@ -2440,6 +2441,110 @@ test("a tax line's estimate is changed where it shows, as the whole figure in pl
   assert.match(await page.textContent("#taxes-body .add-estimate"), /Taxable interest: \$25, your estimate waiting to be saved/); // leak-guard: allow (made up)
   await page.click("#taxes-body .add-estimate button:has-text('Undo')");
   assert.deepEqual(await staged(page), []);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("equity: shares held and to vest, at the price and steps either side, each grant's price set in place", async () => {
+  const month = (m, grant_id, shares, price, basis) => ({
+    month: m,
+    grant_id,
+    symbol: "ACME",
+    shares,
+    price,
+    value: shares * price,
+    basis,
+  });
+  const page = await open(
+    "window.__answers.getEquity = " +
+      JSON.stringify({
+        symbols: [
+          {
+            symbol: "ACME",
+            price: 50,
+            price_date: "2026-11-12",
+            held: 30,
+            basis: 1200,
+            value: 1500,
+            gain: 300,
+            unvested: 30,
+            unvested_value: 1100,
+          },
+        ],
+        grants: [
+          { grant_id: "g1", symbol: "ACME", award_type: "RSU", award_date: "2025-02-25", grant_price: null, price_from: "" }, // leak-guard: allow (made up)
+          {
+            grant_id: "o1",
+            symbol: "ACME",
+            award_type: "OPTION",
+            award_date: "2026-01-10",
+            grant_price: 40,
+            price_from: "award page",
+          },
+        ].map((g, i) => ({
+          ...g,
+          granted: i ? 20 : 80,
+          vested: i ? 10 : 60,
+          unvested: i ? 10 : 20,
+          next_vest: i ? "2027-07-10" : "2026-11-25",
+          last_vest: "",
+        })),
+        months: [
+          month("2025-05", "g1", 10, 30, "vested"),
+          month("2026-08", "g1", 10, 45, "vested"),
+          month("2026-11", "g1", 10, 50, "latest"),
+          month("2027-02", "g1", 10, 50, "latest"),
+          { ...month("2027-07", "o1", 10, 50, "latest"), value: 100 },
+        ],
+        steps: [5, 10, 20],
+        stepsSet: null,
+      }) +
+      ";",
+  );
+  await page.evaluate(() => {
+    window.today = () => "2026-11-13"; // the made-up grants' today, so the months vested stay the same
+  });
+  await page.click("#view-equity");
+  await page.waitForSelector("#equity-body .a2-headline");
+  assert.equal(await page.textContent("#equity-body .a2-headline"), "30 shares held, 30 shares still to vest");
+  assert.match(await page.textContent("#equity-body .a2-eyebrow"), /^ACME at \$50\.00, Nov 12, 2026$/); // leak-guard: allow (made up)
+  // the price and three steps either side: the gain on the shares held, and the value still to vest
+  const rows = await page.$$eval("#equity-body .equity-steps tr[data-move]", (rs) =>
+    rs.map((r) => [r.dataset.move, ...Array.from(r.querySelectorAll("td")).map((td) => td.textContent)]),
+  );
+  assert.equal(rows.length, 7);
+  assert.deepEqual(rows[3], ["0", "$50.00, now", "", "+$300", "$1,100"]); // leak-guard: allow (made up)
+  assert.deepEqual(rows[5], ["10", "$60.00", "+$10 a share", "+$600", "$1,400"]); // an option's shares at 20 over its 40 // leak-guard: allow (made up)
+  assert.deepEqual(rows[0], ["-20", "$30.00", "-$20 a share", "-$300", "$600"]); // the option is worth nothing at 30 // leak-guard: allow (made up)
+  assert.equal(await page.getAttribute("#equity-body .equity-steps tr[data-move='-20'] td:nth-child(3)", "class"), "num over");
+  // a grant with no price says so; its price is set in place, as a setting
+  assert.match(await page.textContent("#equity-body tr[data-grant='g1']"), /Needs a grant price/);
+  const g1 = "#equity-body .setting-control[data-setting='grant_price:g1']";
+  await page.click(g1 + " button:has-text('Change')");
+  await page.waitForSelector(g1 + " input");
+  await page.fill(g1 + " input", "30");
+  await page.click(g1 + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["setting grant_price:g1 = 30"]);
+  assert.match(await page.textContent("#equity-body tr[data-grant='o1']"), /from the award page.*\$10\.00 a share over it/s); // leak-guard: allow (made up)
+  // the steps are a setting too
+  assert.equal(await page.locator("#equity-body .setting-control[data-setting='equity_price_steps']").count(), 1);
+  // the months vesting over the grants' lives: a bar a month from the first vest to the last, and as a table
+  assert.equal(await page.locator("#equity-body .vesting-chart g.vest-month").count(), 27); // May 2025 to Jul 2027
+  await page.hover("#equity-body .vesting-chart g.vest-month >> nth=-1");
+  assert.match(await page.textContent("#equity-body .equity-chart .tip"), /^July 2027: \$100o1: 10 shares at \$50\.00$/); // leak-guard: allow (made up)
+  await page.click("#equity-body .equity-months summary");
+  assert.equal(await page.locator("#equity-body .equity-months tr.past").count(), 2);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("equity: no grants yet says how to add them", async () => {
+  const page = await open(
+    "window.__answers.getEquity = { symbols: [], grants: [], months: [], steps: [5, 10, 20], stepsSet: null };",
+  );
+  await page.click("#view-equity");
+  await page.waitForSelector("#equity-body p.support");
+  assert.match(await page.textContent("#equity-body"), /No grants yet\. Copy the award page/);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

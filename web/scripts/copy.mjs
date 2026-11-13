@@ -27,6 +27,7 @@ export const PAGE = [
   "edittabs",
   "investments",
   "home",
+  "equity",
   "taxes",
   "status",
   "retire",

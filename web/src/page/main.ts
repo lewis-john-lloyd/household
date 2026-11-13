@@ -36,6 +36,10 @@ function load() {
     loadHome();
     return;
   }
+  if (view === "equity") {
+    loadEquity();
+    return;
+  }
   if (view === "budget") {
     loadBudget();
     return;
@@ -84,7 +88,17 @@ function setView(next: string) {
   if (next !== "budget") closeDrawer(true);
   view = next;
   press(
-    ["view-status", "view-flows", "view-budget", "view-investments", "view-retirement", "view-home", "view-taxes", "view-jobs"],
+    [
+      "view-status",
+      "view-flows",
+      "view-budget",
+      "view-investments",
+      "view-equity",
+      "view-retirement",
+      "view-home",
+      "view-taxes",
+      "view-jobs",
+    ],
     "view-" + (view === "edit" ? EDIT_HOME[editTab] || "flows" : view),
   );
   if (view === "edit") drawEditTabs();
@@ -96,6 +110,7 @@ function setView(next: string) {
   byId("investments").hidden = view !== "investments";
   byId("retirement").hidden = view !== "retirement";
   byId("home").hidden = view !== "home";
+  byId("equity").hidden = view !== "equity";
   byId("jobs").hidden = view !== "jobs";
   document.querySelector("main")!.classList.toggle("wide", view === "flows");
   load();
@@ -133,6 +148,9 @@ google.charts.setOnLoadCallback(function () {
   });
   byId("view-home").addEventListener("click", function () {
     setView("home");
+  });
+  byId("view-equity").addEventListener("click", function () {
+    setView("equity");
   });
   byId("view-jobs").addEventListener("click", function () {
     setView("jobs");
@@ -246,9 +264,19 @@ function openFrom(location: PageLocation | null) {
   )
     investView = p.tab;
   if (
-    ["flows", "budget", "investments", "retirement", "home", "taxes", "jobs", "edit", "subscriptions", "recurring"].indexOf(
-      p.view,
-    ) >= 0
+    [
+      "flows",
+      "budget",
+      "investments",
+      "equity",
+      "retirement",
+      "home",
+      "taxes",
+      "jobs",
+      "edit",
+      "subscriptions",
+      "recurring",
+    ].indexOf(p.view) >= 0
   )
     setView(p.view);
   else load();

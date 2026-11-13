@@ -23,6 +23,7 @@ interface ServerCalls {
   getForm8949: typeof getForm8949;
   getInvestments: typeof getInvestments;
   getHome: typeof getHome;
+  getEquity: typeof getEquity;
   getRetirement: typeof getRetirement;
 }
 

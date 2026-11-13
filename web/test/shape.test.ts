@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -33,6 +33,9 @@ const shape = new Function(
   floatingValue: (values: number[], sigma: number) => number;
   priceChanged: (latest: number, previous: number | null) => boolean;
   chargeCadence: (dates: string[]) => string | null;
+  sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
+  grantKey: (grantId: string) => string;
+  equitySteps: (text: string | null) => number[];
   giftLines: (values: unknown[][]) => GiftLine[];
   linesBetween: (txns: Txn[], from: string, to: string, categories: string[]) => Txn[];
   categoriesOf: (values: unknown[][], groups: string[]) => string[];
@@ -955,6 +958,16 @@ test("the page's cadence preview finds the engine's cadence, from the fixture bo
   const doc = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "charge_cadences.json"), "utf8"));
   assert.ok(doc.cases.length >= 5);
   for (const c of doc.cases) assert.equal(shape.chargeCadence(c.dates), c.cadence, c.why);
+});
+
+test("equity: a share's worth, a grant's setting name and the price steps, as equity.py and settings have them", () => {
+  assert.equal(shape.sharePrice("RSU", 50, 40), 50);
+  assert.equal(shape.sharePrice("option", 50, 40), 10); // an option is worth what the price is over its grant price
+  assert.equal(shape.sharePrice("NSO", 30, 40), 0);
+  assert.equal(shape.grantKey("C-1234 A"), "c_1234_a"); // settings.symbol_key
+  assert.deepEqual(shape.equitySteps(null), [5, 10, 20]);
+  assert.deepEqual(shape.equitySteps("20, $5, x, 5, -1"), [5, 20]); // leak-guard: allow (made up)
+  assert.deepEqual(shape.equitySteps("nothing"), [5, 10, 20]);
 });
 
 test("gift lines name each gift's recipient, for a recipient to open to its gifts", () => {

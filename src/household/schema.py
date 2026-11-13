@@ -616,6 +616,30 @@ REPORTS = (
     ),
     # net worth on each valuation date, by part (a tax bucket, home equity, other debt) and owner (networth.py)
     Table("net_worth", ("date", "part", "owner", "value", "run_id")),
+    # the Equity page (equity.py): each grant, each month's vesting over the grants' lives, and per symbol the
+    # price, the shares held and the shares still to vest
+    Table(
+        "equity_grants",
+        (
+            "grant_id",
+            "symbol",
+            "award_type",
+            "award_date",
+            "grant_price",
+            "price_from",
+            "granted",
+            "vested",
+            "unvested",
+            "next_vest",
+            "last_vest",
+            "run_id",
+        ),
+    ),
+    Table("equity_vesting", ("month", "grant_id", "symbol", "shares", "price", "value", "basis", "run_id")),
+    Table(
+        "equity_summary",
+        ("symbol", "price", "price_date", "held", "basis", "value", "gain", "unvested", "unvested_value", "run_id"),
+    ),
     # each home's numbers (house.py): basis, value, loans, equity and what a sale would net
     Table("property_summary", ("property_id", "order", "key", "label", "value", "as_of", "note", "run_id")),
     Table("home_values", ("property_id", "as_of", "source", "value", "note", "run_id")),

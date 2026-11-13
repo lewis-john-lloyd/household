@@ -93,6 +93,10 @@ SETTINGS = {
     "hsa_spending_categories": "Categories or groups the HSA pays for in retirement, separated by commas (default "
     "medical); it pays Medicare premiums too",
     "retirement_monte_carlo_runs": "How many Monte Carlo runs (default 1000)",
+    "grant_price": "A grant's price per share, for the Equity page (grant_price:<grant id>, the id lower case with "
+    "anything but letters and digits as _; default: the price on the award page)",
+    "equity_price_steps": "The dollars a share the Equity page moves the price up and down by, separated by commas "
+    "(default 5, 10, 20)",
     "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
     "(receipt_sender:<store>); the receipt exporter reads only mail from these",
     "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "
@@ -131,6 +135,7 @@ NUMBERS = (
     "retirement_monte_carlo_runs",
     "retirement_pre_tax_contributions",
     "retirement_roth_contributions",
+    "grant_price",
 )
 DEADLINES = ("lpfsa_claim_deadline", "dcfsa_claim_deadline")
 ADDRESS = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")

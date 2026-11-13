@@ -106,13 +106,14 @@ function panel(parent: HTMLElement, title: string, lead?: string | null) {
   return p;
 }
 
+// A page's figures at a glance, as the Budget and Equity heads draw them: what each is above, the number below.
 function figures(parent: HTMLElement, items: ([number, string] | null)[]) {
   var box = el("div", null, "w-figures");
   items.forEach(function (f) {
     if (!f) return;
-    var c = el("div", null, "w-figure");
-    c.appendChild(el("span", money.format(f[0]).replace("-", "−"), "num" + (f[0] < -0.5 ? " neg" : "")));
-    c.appendChild(el("span", f[1], "what"));
+    var c = el("div", null, "w-figure a2-card");
+    c.appendChild(el("span", f[1].charAt(0).toUpperCase() + f[1].slice(1), "what a2-label"));
+    c.appendChild(el("span", money.format(f[0]).replace("-", "−"), "num a2-big" + (f[0] < -0.5 ? " neg" : "")));
     box.appendChild(c);
   });
   parent.appendChild(box);
@@ -892,8 +893,7 @@ function drawAllocation(body: HTMLElement, d: WealthPage) {
 }
 
 function drawAccounts(body: HTMLElement, d: WealthPage) {
-  var acc = el("section", null, "panel w-wide");
-  acc.appendChild(el("h3", "Accounts"));
+  var acc = el("section", null, "panel w-wide"); // the part's own heading names it, so the panel needs none
   acc.appendChild(
     el(
       "p",

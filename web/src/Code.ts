@@ -615,6 +615,11 @@ function getHome(): HomePage {
   return homePage(tabs, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM"));
 }
 
+/** Everything the Equity page shows (equity.ts): the grants, their vesting, and the shares held. */
+function getEquity(): EquityPage {
+  return equityPage(readTabsIfAny_(["equity_grants", "equity_vesting", "equity_summary", "editor_parameters"]));
+}
+
 /** Everything the Retirement page shows (retirement.ts). */
 function getRetirement(): RetirementPage {
   const tabs = readTabsIfAny_([

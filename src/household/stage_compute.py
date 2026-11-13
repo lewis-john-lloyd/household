@@ -14,6 +14,7 @@ from . import (
     checks,
     compute,
     editor,
+    equity,
     flows,
     giving,
     house,
@@ -215,6 +216,7 @@ def _lots(c: Compute, books):
     sheets.replace_table(reports, schema.table(schema.REPORTS, "form_8949"), form.assign(run_id=run_id))
     sheets.replace_table(reports, schema.table(schema.REPORTS, "open_lots"), still.assign(run_id=run_id))
     books["open_lots"] = still
+    _equity(c, books, schedule, still)
     facts = read_ledger(ledger, "return_facts")
     for line in notes + more + lots.year_lines(form, facts) + lots.holding_check(still, holdings, plan):
         say(log, line)
@@ -236,6 +238,23 @@ def _lots(c: Compute, books):
         "wash_sales": int((form["code"] == "W").sum()) if len(form) else 0,
         "open_lot_parts": len(still),
     }
+
+
+def _equity(c: Compute, books, schedule, held):
+    """The Equity page's tables (equity.py): grants, their vesting month by month, and per symbol the price, the
+    shares held and the shares still to vest."""
+    ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
+    vested, prices = read_ledger(ledger, "equity_vests"), read_ledger(ledger, "prices")
+    granted = equity.grants(schedule, books["parameters"], today)
+    months = equity.vesting(schedule, granted, vested, prices, today)
+    per_symbol = equity.summary(schedule, granted, held, vested, prices)
+    for name, table in (("equity_grants", granted), ("equity_vesting", months), ("equity_summary", per_symbol)):
+        sheets.replace_table(reports, schema.table(schema.REPORTS, name), table.assign(run_id=run_id))
+    say(
+        log,
+        f"equity: {len(granted)} grants, {granted['unvested'].sum() if len(granted) else 0:g} shares still to vest"
+        + ("" if len(per_symbol) and (per_symbol["price"] != "").all() else ("; no price yet" if len(granted) else "")),
+    )
 
 
 RETIREMENT_TABLES = (

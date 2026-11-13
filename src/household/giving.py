@@ -19,6 +19,7 @@ GROUP = "giving"
 KIND = "deductible"
 PREFIX = KIND + ":"  # proposal_decisions keys: deductible:<merchant key>
 COLUMNS = ["month", "key", "name", "category", "given", "gifts", "deductible"]
+LINE_COLUMNS = ["txn_id", "month", "key", "category"]  # each gift's recipient, for the views to list its gifts
 
 
 def deductible(decisions):
@@ -34,21 +35,40 @@ def _key(row):
     return categorize.payee_key(text) or str(text).strip().upper()
 
 
-def by_recipient(categorized, categories, decisions):
-    """Each month's gifts per recipient and category: what was given (positive), how many gifts, and
-    whether the recipient is deductible ("yes", "no" or "" for not said)."""
+def _gifts(categorized, categories):
+    """Every gift line (spending in a giving category, a split's part as its own line), with its month and
+    recipient key; None when there are none."""
     if categorized is None or categorized.empty or categories is None or categories.empty:
-        return pd.DataFrame(columns=COLUMNS)
+        return None
     giving = set(
         categories.loc[categories["group"].astype(str).str.strip() == GROUP, "category"].astype(str).str.strip()
     )
     rows = categorize.actual_rows(categorized)
     rows = rows[rows["category"].astype(str).str.strip().isin(giving)].copy()
     if rows.empty:
-        return pd.DataFrame(columns=COLUMNS)
+        return None
     rows["amount"] = pd.to_numeric(rows["amount"], errors="coerce").fillna(0.0)
     rows["month"] = rows["date"].astype(str).str[:7]
     rows["key"] = [_key(r) for r in rows.to_dict("records")]
+    return rows
+
+
+def gift_lines(categorized, categories):
+    """Each gift line's recipient (LINE_COLUMNS), so the views can list a recipient's gifts: the page cannot
+    work a recipient's key out of a line itself (payee_key)."""
+    rows = _gifts(categorized, categories)
+    if rows is None:
+        return pd.DataFrame(columns=LINE_COLUMNS)
+    rows["category"] = rows["category"].astype(str).str.strip()
+    return rows[LINE_COLUMNS].drop_duplicates().sort_values(["month", "key", "txn_id"]).reset_index(drop=True)
+
+
+def by_recipient(categorized, categories, decisions):
+    """Each month's gifts per recipient and category: what was given (positive), how many gifts, and
+    whether the recipient is deductible ("yes", "no" or "" for not said)."""
+    rows = _gifts(categorized, categories)
+    if rows is None:
+        return pd.DataFrame(columns=COLUMNS)
     text = rows["payee_text"] if "payee_text" in rows else rows["payee_raw"]
     rows["text"] = text.astype(str).str.strip()
     seen = rows[rows["text"] != ""].groupby("key")["text"].agg(lambda s: s.value_counts().index[0]).to_dict()

@@ -915,6 +915,58 @@ test("giving: each recipient under its line item, marked deductible here, and th
   await page.close();
 });
 
+test("giving: a recipient opens to its gifts, each with the fixes a line takes", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__day = d;" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { gifts: 'giving' }, recurring: []," +
+      "    days: [[d, 'gifts', 70]], targets: [{ month: m, category: 'gifts', priority: 'low', target: 100 }]," +
+      "    giving: [{ month: m, key: 'QUILL & INK', name: 'Quill & Ink', category: 'gifts', given: 40, gifts: 2, deductible: 'yes' }," +
+      "      { month: m, key: 'WILLOW ST', name: 'WILLOW ST', category: 'gifts', given: 30, gifts: 1, deductible: '' }] }," +
+      "    gifts: [{ txn_id: 'g1', month: m, key: 'QUILL & INK', category: 'gifts' }, { txn_id: 'g2', month: m, key: 'QUILL & INK', category: 'gifts' }," +
+      "      { txn_id: 'g3', month: m, key: 'WILLOW ST', category: 'gifts' }] };" +
+      "  var t = function (id, payee, amount) { return { id: id, date: d, account: 'a1', payee: payee, category: 'gifts', amount: -amount," +
+      "    split: '', items: [], key: payee, note: '', one_off: false }; };" +
+      "  window.__answers.getLines = [t('g1', 'QUILL & INK', 25), t('g2', 'QUILL & INK', 15), t('g3', 'WILLOW ST', 30)," +
+      "    t('x1', 'ACME GROCER', 5)];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line:has-text('gifts')");
+  await page.click("table.bv tr.line:has-text('gifts') button.chev");
+  const quill = "table.bv tr.recipient:has-text('Quill & Ink') button.fold-name";
+  await page.waitForSelector(quill);
+  assert.equal(await page.getAttribute(quill, "aria-expanded"), "false");
+  await page.click(quill);
+  await page.waitForSelector("table.bv tr.gift-lines tr[data-txn]");
+  assert.equal(await page.getAttribute(quill, "aria-expanded"), "true");
+  // only this recipient's gifts: not another recipient's, and not a line in the category that isn't a gift
+  const ids = () => page.$$eval("table.bv tr.gift-lines tr[data-txn]", (rs) => rs.map((r) => r.dataset.txn));
+  assert.deepEqual(await ids(), ["g1", "g2"]);
+  assert.equal((await page.locator("table.bv tr.line").count()) > 0, true); // opening a recipient opens no drawer
+  assert.equal(await page.locator(".drawer").count(), 0);
+  // the other recipient opens from the same read
+  await page.click("table.bv tr.recipient:has-text('WILLOW ST') button.fold-name");
+  await page.waitForFunction(() => document.querySelectorAll("table.bv tr.gift-lines").length === 2);
+  assert.deepEqual(await ids(), ["g1", "g2", "g3"]);
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").length), 1);
+  // a gift listed under the wrong line item moves, staged like any change
+  await page.click("table.bv tr.gift-lines tr[data-txn='g1'] button:has-text('Move')");
+  await page.waitForSelector("table.bv tr.move-row select option[value='food']", { state: "attached" });
+  await page.selectOption("table.bv tr.move-row select", "food");
+  await page.click("table.bv tr.move-row button:has-text('Move it')");
+  const day = await page.evaluate(() => window.__day);
+  assert.deepEqual(await staged(page), [`Gifts: the $25.00 line of ${day} moves to food`]); // leak-guard: allow (made up)
+  await page.waitForSelector("table.bv tr.gift-lines tr[data-txn='g1']:has-text('Moves to Food after the next run')");
+  await page.click("table.bv tr.gift-lines tr[data-txn='g1'] button:has-text('Undo move')");
+  assert.deepEqual(await staged(page), []);
+  // and closing it puts the gifts away
+  await page.click(quill);
+  await page.waitForFunction(() => document.querySelectorAll("table.bv tr.gift-lines").length === 1);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("jobs: choosing a stretch of a pay line shows it, and a correction is staged like any change", async () => {
   const j = (effective, employer, salary, fte) => ({
     effective,
@@ -1538,11 +1590,22 @@ test("recurring: a charge lists its lines, and one that isn't part of it is left
   await page.click(".drawer tr[data-txn='t3'] button");
   assert.deepEqual(await staged(page), ["Books: the $4.00 line of 2001-05-20 is not part of it"]); // leak-guard: allow (made up)
   assert.deepEqual((await rows())[1], ["t3", "left-out", "Left out after the next runchanged", "Count it"]);
+  // the price the next run will find, by the engine's rule (priceChanged): the one before t4 is now t2, the same
+  const after = () => page.$$eval(".drawer .charge-after", (ps) => ps.map((p) => p.textContent));
+  assert.deepEqual(await after(), [
+    "After the next run: $15.00 a charge, from the line of Jun 3, 2001, about $180 a year. " + // leak-guard: allow (made up)
+      "The one before is the same, so the price change clears. 1 change to its lines in hand.",
+  ]);
   await page.click(".drawer tr[data-txn='t3'] button"); // changed my mind: the staged change goes
   assert.deepEqual(await staged(page), []);
+  assert.deepEqual(await after(), []); // nothing in hand, nothing to preview
   await page.click(".drawer tr[data-txn='t1'] button"); // and a line marked before counts again
   assert.deepEqual(await staged(page), ["Books: the $9.00 line of 2001-04-03 counts again"]); // leak-guard: allow (made up)
   assert.deepEqual((await rows())[3], ["t1", "", "Counts again after the next runchanged", "Not part of it"]); // and can go back
+  assert.deepEqual(await after(), [
+    "After the next run: $15.00 a charge, from the line of Jun 3, 2001, about $180 a year. " + // leak-guard: allow (made up)
+      "It still differs from the one before ($4.00), so it still says price changed. 1 change to its lines in hand.", // leak-guard: allow (made up)
+  ]);
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.saved");
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);

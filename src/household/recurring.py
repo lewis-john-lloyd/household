@@ -297,6 +297,12 @@ def group_lines(df, key, merged):
     return df[df["key"].astype(str).map(lambda k: any(_covers(m, k) for m in keys))].sort_values("date", kind="stable")
 
 
+def price_changed(latest, previous):
+    """Whether a charge's latest price differs from the one before by more than PRICE_STEP and RAISE_MIN. The
+    views preview it with the same rule (priceChanged), both checked against tests/fixtures/charge_prices.json."""
+    return previous is not None and abs(latest - previous) > max(PRICE_STEP * previous, RAISE_MIN)
+
+
 def _empty(key, note):
     return {
         "key": key,
@@ -331,7 +337,7 @@ def _row(key, g, today, note, merged):
     else:
         yearly = float(spend[(days > today - pd.Timedelta(days=365)).to_numpy()].sum())
         following = ""
-    changed = previous is not None and abs(latest - previous) > max(PRICE_STEP * previous, RAISE_MIN)
+    changed = price_changed(latest, previous)
     if (today - last).days > (1.5 * cadence if cadence else 400):
         status = "stopped"
     elif changed:

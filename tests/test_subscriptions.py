@@ -1,5 +1,8 @@
 """Subscriptions you mark, their yearly cost and price changes, on made-up charges."""
 
+import json
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -408,3 +411,10 @@ def test_budget_averages_learn_from_months_without_one_off_lines():
     may = lambda actuals: budget.targets(rules, actuals, "2026-05").query("month == '2026-05'")["target"].iloc[0]  # noqa: E731
     assert may(usual) < may(every)  # the one-off raised April's spending, so it would have raised the average
     assert every.query("month == '2026-04'")["spend"].iloc[0] == 140.0  # and it still counts as spent
+
+
+def test_a_price_change_follows_the_fixture_the_views_preview_checks_too():
+    # the same file is read by web/test/shape.test.ts for the page's preview (priceChanged)
+    doc = json.loads((Path(__file__).parent / "fixtures" / "charge_prices.json").read_text())
+    for case in doc["cases"]:
+        assert recurring.price_changed(case["latest"], case["previous"]) == case["changed"], case["why"]

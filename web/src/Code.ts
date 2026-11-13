@@ -160,6 +160,7 @@ function getBudgetBook(): {
   charges: ChargeLine[];
   checks: BudgetCheck[] | null;
   inputs: TargetInput[] | null;
+  gifts: GiftLine[];
 } {
   const tabs = readTabsIfAny_([
     "budget_vs_actual",
@@ -174,6 +175,7 @@ function getBudgetBook(): {
     "recurring_charges",
     "budget_checks",
     "target_inputs",
+    "gift_lines",
   ]);
   if (!tabs.budget_vs_actual.length) throw new Error("The Reports budget_vs_actual tab is empty: run compute first.");
   const book = budgetBook(
@@ -193,6 +195,7 @@ function getBudgetBook(): {
     charges: chargeLines(tabs.recurring_charges), // each recurring charge's lines, for the Recurring drawer
     checks: budgetChecks(tabs.budget_checks), // what looks off, for the Check statuses (null before a run writes it)
     inputs: targetInputs(tabs.target_inputs), // how each floating target was worked out, for the line's drawer
+    gifts: giftLines(tabs.gift_lines), // each gift line's recipient, for a recipient to open to its gifts
   };
 }
 

@@ -386,3 +386,15 @@ function floatingValue(values: number[], sigma: number): number {
   const spread = values.length > 1 ? Math.sqrt(values.reduce((t, x) => t + (x - mean) * (x - mean), 0) / (values.length - 1)) : 0;
   return mean + sigma * spread;
 }
+
+const PRICE_STEP = 0.03; // recurring.PRICE_STEP
+const RAISE_MIN = 0.5; // recurring.RAISE_MIN
+
+/**
+ * Whether a charge's latest price differs from the one before enough to say "price changed", as
+ * recurring.price_changed decides it. Checked against the same fixture as the engine
+ * (tests/fixtures/charge_prices.json), so the page's preview can't drift from it.
+ */
+function priceChanged(latest: number, previous: number | null): boolean {
+  return previous !== null && Math.abs(latest - previous) > Math.max(PRICE_STEP * previous, RAISE_MIN);
+}

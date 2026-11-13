@@ -838,6 +838,26 @@ function subscriptionsPage(values: unknown[][]): SubscriptionsPage {
   return { subscriptions: rows, total: Math.round(total * 100) / 100, computedAt: "" };
 }
 
+interface GiftLine {
+  txn_id: string;
+  month: string;
+  key: string; // the recipient's key, as giving.py sums it
+  category: string;
+}
+
+/** Each gift line's recipient (the Reports gift_lines tab), so a recipient opens to its gifts. */
+function giftLines(values: unknown[][]): GiftLine[] {
+  if (!values.length) return [];
+  const at = columnsAt(values, ["txn_id", "month", "key", "category"], "gift_lines");
+  return values
+    .slice(1)
+    .map((v) => {
+      const [txn, month, key, category] = at.map((i) => String(v[i] ?? "").trim());
+      return { txn_id: txn, month: month.slice(0, 7), key, category };
+    })
+    .filter((g) => g.txn_id);
+}
+
 interface TargetInput {
   month: string; // the budget month whose target this works out
   line: string;

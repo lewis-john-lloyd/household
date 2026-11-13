@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -31,6 +31,8 @@ const shape = new Function(
   budgetChecks: (values: unknown[][]) => BudgetCheck[] | null;
   targetInputs: (values: unknown[][]) => TargetInput[] | null;
   floatingValue: (values: number[], sigma: number) => number;
+  priceChanged: (latest: number, previous: number | null) => boolean;
+  giftLines: (values: unknown[][]) => GiftLine[];
   linesBetween: (txns: Txn[], from: string, to: string, categories: string[]) => Txn[];
   categoriesOf: (values: unknown[][], groups: string[]) => string[];
   budgetBook: (
@@ -897,4 +899,21 @@ test("lines between two days: these categories', both days in, the most spent fi
   assert.deepEqual(shape.categoriesOf(cats, ["living"]), ["food", "gifts"]);
   assert.deepEqual(shape.categoriesOf(cats, []), []);
   assert.deepEqual(shape.categoriesOf([], ["living"]), []);
+});
+
+test("the page's price change preview follows the engine's rule, from the fixture both check", () => {
+  // tests/fixtures/charge_prices.json: checked by tests/test_subscriptions.py against recurring.price_changed
+  const doc = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "charge_prices.json"), "utf8"));
+  assert.ok(doc.cases.length >= 5);
+  for (const c of doc.cases) assert.equal(shape.priceChanged(c.latest, c.previous), c.changed, c.why);
+});
+
+test("gift lines name each gift's recipient, for a recipient to open to its gifts", () => {
+  const values = [
+    ["txn_id", "month", "key", "category", "run_id"],
+    ["t1", "2001-03", "QUILL & INK", "gifts", "r1"],
+    ["", "2001-03", "WILLOW ST", "gifts", "r1"], // no line: dropped
+  ];
+  assert.deepEqual(shape.giftLines(values), [{ txn_id: "t1", month: "2001-03", key: "QUILL & INK", category: "gifts" }]);
+  assert.deepEqual(shape.giftLines([]), []);
 });

@@ -202,7 +202,7 @@ function openCharge(key: string) {
     closeDrawer();
     drawBudgetPage();
   };
-  chargeHistory(d, key, chargeName(t || r));
+  chargeHistory(d, key, chargeName(t || r), t);
   d.appendChild(paysForm(r, done));
   d.appendChild(subscriptionForm(r, done));
   d.appendChild(mergeForm(r, editor!.subscriptions, done));
@@ -214,7 +214,7 @@ var chargeLinesAll: Record<string, boolean> = {}; // charges whose every line is
 // The lines matched with a charge, newest first, each saying whether it counts toward the price and cadence.
 // One that is not part of it (a one-time purchase from the same merchant, say) is marked one-off here, a line
 // edit like the transaction drawer's; the next run works the charge out again without it.
-function chargeHistory(d: HTMLElement, key: string, name: string) {
+function chargeHistory(d: HTMLElement, key: string, name: string, tracked: Row | null) {
   var all = ((budget.data && budget.data.charges) || []).filter(function (c) {
     return c.key === key;
   });
@@ -294,6 +294,8 @@ function chargeHistory(d: HTMLElement, key: string, name: string) {
     table.appendChild(row);
   });
   s.appendChild(table);
+  var after = chargeAfter(all, name, tracked);
+  if (after) s.appendChild(after);
   if (shown.length < all.length)
     s.appendChild(
       button(
@@ -305,6 +307,47 @@ function chargeHistory(d: HTMLElement, key: string, name: string) {
         "text",
       ),
     );
+}
+
+var CHARGES_A_YEAR: Record<string, number> = { weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 }; // recurring.PER_YEAR
+
+// What a charge's price will be after the next run, with the changes to its lines in hand: its latest line that
+// still counts, against the one before (priceChanged, the engine's rule). Null with no change in hand.
+function chargeAfter(all: ChargeLine[], name: string, tracked: Row | null): HTMLElement | null {
+  var pending = 0;
+  var counted = all.filter(function (c) {
+    var marked = c.why === "marked one-off"; // as of the last run
+    var e = edited("line|" + c.txn_id + "|one_off");
+    var oneOff = e ? String((e.edit as Record<string, string>).value).toUpperCase() === "TRUE" : marked;
+    if (oneOff !== marked) pending++;
+    return !oneOff && (c.counts || marked); // a line an order history shows as goods stays out
+  }); // newest first, as the lines are
+  if (!pending) return null;
+  var words: string;
+  if (!counted.length) words = "After the next run no line counts, so " + name + " has no price.";
+  else {
+    var latest = counted[0].spend,
+      previous = counted.length > 1 ? counted[1].spend : null;
+    var changed = priceChanged(latest, previous);
+    var perYear = tracked && CHARGES_A_YEAR[tracked.cadence];
+    words =
+      "After the next run: " +
+      cents.format(latest) +
+      " a charge, from the line of " +
+      longDay(counted[0].date) +
+      (perYear ? ", about " + money.format(latest * perYear) + " a year" : "") +
+      ". " +
+      (changed
+        ? "It still differs from the one before (" + cents.format(previous as number) + "), so it still says price changed."
+        : tracked && tracked.status === "price changed"
+          ? "The one before is the same, so the price change clears."
+          : "");
+  }
+  return el(
+    "p",
+    (words + " " + countOf(pending, "change", "changes") + " to its lines in hand.").replace("  ", " "),
+    "working-after charge-after",
+  );
 }
 
 // The budget line a charge pays: picking one makes that line's target follow the charge (once its rule is

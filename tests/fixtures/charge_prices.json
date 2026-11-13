@@ -1,0 +1,47 @@
+{
+  "about": "When a tracked charge's price counts as changed (recurring.price_changed): the latest counted charge against the one before, by more than PRICE_STEP of it and RAISE_MIN. Python (tests/test_subscriptions.py) and the views' preview (web/test/shape.test.ts, priceChanged) both check these. Made-up values.",
+  "cases": [
+    {
+      "why": "the same price",
+      "latest": 14.95,
+      "previous": 14.95,
+      "changed": false
+    },
+    {
+      "why": "a few cents: under 3% and under 50 cents",
+      "latest": 15.2,
+      "previous": 14.95,
+      "changed": false
+    },
+    {
+      "why": "a raise over 3% and 50 cents",
+      "latest": 16.95,
+      "previous": 14.95,
+      "changed": true
+    },
+    {
+      "why": "a small charge: 3% is under 50 cents, so it takes 50 cents",
+      "latest": 4.4,
+      "previous": 4.0,
+      "changed": false
+    },
+    {
+      "why": "a small charge that moved more than 50 cents",
+      "latest": 4.6,
+      "previous": 4.0,
+      "changed": true
+    },
+    {
+      "why": "a one-time purchase read as the price",
+      "latest": 4.0,
+      "previous": 24.0,
+      "changed": true
+    },
+    {
+      "why": "a first charge has nothing before it",
+      "latest": 24.0,
+      "previous": null,
+      "changed": false
+    }
+  ]
+}

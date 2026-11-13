@@ -444,6 +444,8 @@ def _giving(c: Compute, books, categorized):
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
     gifts = giving.by_recipient(categorized, books["categories"], books["decisions"])
     sheets.replace_table(reports, schema.table(schema.REPORTS, "giving"), gifts.assign(run_id=run_id))
+    lines = giving.gift_lines(categorized, books["categories"])  # which lines are each recipient's
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "gift_lines"), lines.assign(run_id=run_id))
     if len(gifts):
         year = gifts[gifts["month"].str[:4] == today[:4]]
         unsaid = year.loc[year["deductible"] == "", "key"].nunique()

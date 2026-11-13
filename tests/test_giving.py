@@ -113,3 +113,20 @@ def test_a_gift_with_no_payee_is_kept_under_no_payee():
     blank = pd.DataFrame([line("t9", "2026-05-01", -20.0, "", "gifts")])
     out = giving.by_recipient(blank, CATEGORIES, None)
     assert out[["key", "name", "given"]].values.tolist() == [["", "No payee", 20.0]]
+
+
+def test_each_gift_line_names_its_recipient_so_the_views_can_list_a_recipients_gifts():
+    out = giving.gift_lines(CATEGORIZED, CATEGORIES)
+    assert list(out.columns) == giving.LINE_COLUMNS
+    assert out.values.tolist() == [
+        ["t6", "2025-12", "WILLOW ST", "gifts"],
+        ["t1", "2026-03", "QUILL & INK", "gifts"],
+        ["t2", "2026-03", "QUILL & INK", "gifts"],
+        ["t3", "2026-03", "WILLOW ST", "gifts"],
+        ["t5", "2026-04", "ACME GROCER", "gifts"],  # a split line's gift part: its key, its giving category
+    ]
+    # a line with no merchant key gets the recipient its gifts are summed under, the same one by_recipient uses
+    keyless = pd.DataFrame([line("t9", "2026-05-01", -20.0, "WILLOW ST FUND", "gifts")])
+    summed = giving.by_recipient(keyless, CATEGORIES, None)
+    assert giving.gift_lines(keyless, CATEGORIES)["key"].tolist() == summed["key"].tolist()
+    assert giving.gift_lines(pd.DataFrame(), CATEGORIES).empty

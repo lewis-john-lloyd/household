@@ -32,12 +32,27 @@ function redrawKeeping(key: string) {
 
 // A recipient of gifts under its giving line item: what it was given in the year so far, and whether gifts
 // to it count toward the deduction, marked here (a recipient edit, saved like any other).
-function recipientRow(r: Recipient, year: string) {
+var giftsOpen: Record<string, boolean> = {}; // "category|key": a recipient whose gifts are shown
+
+function recipientRow(r: Recipient, year: string, category: string, through: string) {
   var t = "recipient|" + r.key.toUpperCase();
   var e = edited(t);
   var said = e ? String((e.edit as Record<string, string>).deductible || "") : r.deductible;
   var row = el("tr", null, "rec recipient");
-  var name = cell(row, r.name);
+  // the name opens the recipient's gifts, each with its fixes: a gift that isn't one moves to another category
+  var open = category + "|" + r.key;
+  var name = cell(row, "");
+  var toggle = button(
+    r.name,
+    function () {
+      giftsOpen[open] = !giftsOpen[open];
+      redrawKeeping("gifts:" + open);
+    },
+    "fold-name",
+  );
+  toggle.dataset.fold = "gifts:" + open;
+  toggle.setAttribute("aria-expanded", String(!!giftsOpen[open]));
+  name.appendChild(toggle);
   if (changedText(t)) name.appendChild(el("span", "changed", "tag warn"));
   cell(row, countOf(r.gifts, "gift", "gifts") + " in " + year, "text");
   cell(row, "", "text");
@@ -329,9 +344,10 @@ function budgetTable(v: BudgetView) {
         body.appendChild(dr);
       }
       l.recipients.forEach(function (r) {
-        var rr = recipientRow(r, v.through.slice(0, 4));
+        var rr = recipientRow(r, v.through.slice(0, 4), l.category, v.through);
         if (nest) rr.classList.add("nested");
         body.appendChild(rr);
+        if (giftsOpen[l.category + "|" + r.key]) body.appendChild(recipientGifts(r, l.category, v.through, nest));
       });
     };
     // a loan's parts (its loan_split setting's categories) roll up into one row, opened to show each part
@@ -422,4 +438,38 @@ function budgetTable(v: BudgetView) {
   table.appendChild(body);
   wrap.appendChild(table);
   return wrap;
+}
+
+// A recipient's gifts this year, so far as the period goes: the lines giving.py summed under it (gift_lines),
+// read in one call for the giving line item's year, each with its fixes (evidence.ts).
+function recipientGifts(r: Recipient, category: string, through: string, nest: string) {
+  var tr = el("tr", null, "rec gift-lines" + nest);
+  var td = el("td");
+  td.colSpan = 7;
+  tr.appendChild(td);
+  var year = through.slice(0, 4);
+  var ids: Record<string, boolean> = {};
+  ((budget.data && budget.data.gifts) || []).forEach(function (g) {
+    if (g.key === r.key && g.category === category && g.month.slice(0, 4) === year && g.month <= through.slice(0, 7))
+      ids[g.txn_id] = true;
+  });
+  var id = "gifts-" + (category + "-" + r.key).replace(/[^a-z0-9]+/gi, "-");
+  td.id = id;
+  td.appendChild(el("span", "Loading\u2026", "support"));
+  cachedCall(
+    "getLines",
+    [year + "-01-01", through, [category], []],
+    function (list) {
+      var mine = list.filter(function (t) {
+        return ids[t.id] && t.category === category;
+      });
+      var draw = function () {
+        td.textContent = "";
+        td.appendChild(lineList(mine, draw));
+      };
+      draw();
+    },
+    id,
+  );
+  return tr;
 }

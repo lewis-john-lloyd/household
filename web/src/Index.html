@@ -570,6 +570,14 @@
       table.line-list tr.left-out td.spend { text-decoration: line-through; }
       table.line-list tr.move-row td { padding: 0 0 10px; }
       table.line-list .move-to { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
+      table.bv tr.gift-lines > td { padding: 4px 16px 12px 40px; }
+      table.bv tr.gift-lines.nested > td { padding-left: 56px; }
+      /* a recipient's gifts sit inside a budget row: its cell rules (tr.rec td) are not theirs */
+      table.bv tr.gift-lines table.line-list td { padding: 8px 12px 8px 0; color: var(--on-surface); }
+      table.bv tr.gift-lines table.line-list td.acts { width: 220px; padding-right: 0; white-space: normal; }
+      table.bv tr.gift-lines table.line-list tr.move-row td { padding: 0 0 10px; }
+      table.bv tr.recipient button.fold-name { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+      table.bv tr.recipient button.fold-name:focus-visible { outline: 2px solid var(--primary); border-radius: 4px; }
       .flow-items li.opens { cursor: pointer; border-radius: 8px; }
       .flow-items li.opens:hover { background: var(--surface-container-high); }
       .flow-items li.opens:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -621,6 +629,8 @@
       .working tr.month-lines td.about { width: auto; overflow-wrap: anywhere; }
       .working tr.month-lines td:last-child button { padding-left: 6px; padding-right: 6px; }
       .working .working-sum { margin: 8px 0 0; font-variant-numeric: tabular-nums; }
+      .drawer .charge-after { margin: 8px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--waiting-container);
+        color: var(--on-surface); font-variant-numeric: tabular-nums; }
       .working .working-after { margin: 6px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--waiting-container);
         color: var(--on-surface); font-variant-numeric: tabular-nums; }
       .drawer table.charge-lines td.spend { text-align: right; white-space: nowrap; }

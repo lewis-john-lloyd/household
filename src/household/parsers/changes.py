@@ -37,6 +37,10 @@ row a person would otherwise have typed:
   recurring_line   the budget line a merchant key's    -> proposal_decisions (kind
                    recurring charge pays, or blank to     subscription_line)
                    unlink it
+  security         a fund's asset class: one code or   -> securities (its other fields
+                   a blend ("SDT 60, BT 40"), each        carried from the row it
+                   code a node of the allocation          replaces)
+                   targets
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -48,7 +52,7 @@ no unknown fields, sizes, enums, dates, regexes), and check then holds each edit
 refuses the whole file, which stays in the inbox with every reason, so nothing is half applied.
 
 An edit that replaces a setting (a budget line, a scheduled amount on its date, a payee rule, a
-category, an alias, a parameter) says in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
+category, an alias, a parameter, a security) says in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
 it was when the person edited it, or null for a new one; a `was` missing any of them is refused. If the ledger no longer agrees (another change set or a seed got there first), the file is
 refused rather than written over what the person never saw.
 
@@ -63,7 +67,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from .common import ParseError, Result
-from .. import budget_checks, categorize, compute, giving, schema
+from .. import allocation, budget_checks, categorize, compute, giving, schema
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -76,6 +80,8 @@ MAX_ERRORS = 25  # reasons listed when a change set is refused
 SOURCE = "web"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")  # a category, the shape a split can name
+SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .\-_/]{0,39}$")  # a ticker, or a plan fund's name
+CLASS_RE = re.compile(r"^[A-Za-z_]+(\s*[: ]\s*[0-9.]+)?(\s*,\s*[A-Za-z_]+\s*[: ]\s*[0-9.]+)*$")  # SDT, or SDT 60, BT 40
 PARAMETER_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z0-9_]+)?$")
 PATTERN_PARAMETERS = ("order_payee:", "transfer_payee:")  # parameters whose value is a payee pattern
 TOP = {"format", "version", "created_at", "base_run", "edits"}
@@ -100,18 +106,20 @@ KINDS = {
     "recurring_line": ({"key", "line"}, set()),
     "recipient": ({"key", "deductible"}, set()),
     "looks_right": ({"check", "looks_right"}, set()),
+    "security": ({"symbol", "asset_class"}, {"was"}),
 }
 MERCHANT_KINDS = ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient")
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
 FUTURE_SLACK = timedelta(days=1)  # clocks disagree a little; a change set from further ahead is refused
-REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter"}  # edits that carry `was`
+REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter", "security"}  # edits that carry `was`
 # every field such an edit can change: `was` gives them all, so a change made since to any of them is seen
 WAS_FIELDS = {
     "budget_line": ("effective", "category", "account", "priority", "rule", "amount", "per", "note"),
     "payee_rule": ("category", "precedence", "effective", "ask"),
     "category": ("group", "priority"),
     "alias": ("category", "note"),
+    "security": ("name", "asset_class", "expense_ratio", "quote", "wash_group"),
     "parameter": ("value",),
 }
 
@@ -233,6 +241,11 @@ def _values(kind, e):
         out.append("key is empty")
     if kind == "recipient" and e["deductible"] not in ("yes", "no"):
         out.append(f"deductible {e['deductible']!r} is not yes or no")
+    if kind == "security":
+        if not SYMBOL_RE.match(e["symbol"]):
+            out.append(f"symbol {e['symbol']!r} is not a ticker")
+        if not allocation.blend(e["asset_class"]) or not CLASS_RE.match(e["asset_class"].strip()):
+            out.append(f"asset_class {e['asset_class']!r} is not a code or a blend of codes (SDT 60, BT 40)")
     if kind == "looks_right":
         if not e["check"].strip():
             out.append("check is empty")
@@ -347,6 +360,8 @@ def _target(e):
         "parameter": "key",
         "explanation": "stub_id",
         "item": "item_id",
+        "looks_right": "check",
+        "security": "symbol",
     }[kind]
     extra = (e["jurisdiction"],) if kind == "explanation" else ()
     return (kind, e[key]) + extra
@@ -439,6 +454,8 @@ def _describe(e):
         return f"recurring {e['key']}: " + (f"pays budget line {e['line']}" if e["line"].strip() else "pays no line")
     if kind == "looks_right":
         return f"check {e['check']}: " + ("looks right" if e["looks_right"] == "yes" else "check again")
+    if kind == "security":
+        return f"security {e['symbol']}: asset class {e['asset_class'].strip()}"
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -592,6 +609,19 @@ def _rows(edits, at):
                 "parameters",
                 {"year": "", "jurisdiction": "household", "key": e["key"], "value": e["value"], "source": SOURCE},
             )
+        elif kind == "security":
+            was = e.get("was") or {}  # the row it replaces, as the ledger has it (check compared them)
+            add(
+                "securities",
+                {
+                    "symbol": e["symbol"],
+                    "name": was.get("name", ""),
+                    "asset_class": e["asset_class"].strip(),
+                    "expense_ratio": was.get("expense_ratio", ""),
+                    "quote": was.get("quote", ""),
+                    "wash_group": was.get("wash_group", ""),
+                },
+            )
         elif kind == "item":
             add(
                 "item_categories",
@@ -680,6 +710,8 @@ def _current(e, read):
         return _in_force(read("categories"), ["category"], [e["category"]])
     if kind == "alias":
         return _in_force(read("category_aliases"), ["alias"], [e["alias"]])
+    if kind == "security":
+        return _in_force(read("securities"), ["symbol"], [e["symbol"]])
     parameters = read("parameters")
     return _in_force(parameters, ["jurisdiction", "key"], ["household", e["key"]])
 
@@ -729,6 +761,13 @@ def check(edits, read):
                     categorize.parse_split(e["value"], amounts[e["txn_id"]], known)
                 except ValueError as err:
                     wrong.append(f"split: {err}")
+        elif kind == "security":
+            # each code must be a node of the allocation targets in force, or the fund would count nowhere
+            nodes = allocation.tree(read("allocation_targets"), datetime.now(timezone.utc).date().isoformat())
+            known_classes = {n for n, _, _ in nodes} if nodes else set()
+            unknown = sorted(set(allocation.blend(e["asset_class"])) - known_classes) if known_classes else []
+            if unknown:
+                wrong.append("not an asset class in the allocation targets: " + ", ".join(unknown))
         elif kind == "item":
             if e["item_id"] not in item_ids:
                 wrong.append("no such item")

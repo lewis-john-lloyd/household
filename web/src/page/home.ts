@@ -113,6 +113,22 @@ function drawOneHome(body: HTMLElement, d: HomePage, h: Home, line: Record<strin
     vt.row([label, money.format(l.value).replace("-", "−")], ["basis", "equity", "sale_net"].indexOf(l.key) >= 0 ? "group" : "");
   });
 
+  // the two settings these figures rest on, changed here (evidence.ts)
+  var uses = el("div", null, "plan-settings");
+  [
+    [
+      "home_value_basis",
+      "What net worth counts the home at: purchase_price (the default), median, lowest, or one source, such as county_fair_market",
+    ],
+    ["home_sale_cost_rate", "What selling would cost, as a fraction of the price, for what a sale would net (0.06 unless set)"],
+  ].forEach(function (s) {
+    var row = el("div", null, "plan-setting");
+    row.appendChild(el("span", s[1], "support"));
+    row.appendChild(settingControl(s[0], null));
+    uses.appendChild(row);
+  });
+  vb.appendChild(uses);
+
   var es = panel(
     grid,
     "Estimates",

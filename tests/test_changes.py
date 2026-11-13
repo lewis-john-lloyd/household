@@ -751,3 +751,51 @@ def test_a_change_set_from_the_future_is_refused():
     later = doc({"kind": "payee", "key": "ACME GROCER", "category": "food"}, created_at="2999-01-01T00:00:00Z")
     with pytest.raises(ParseError, match="is in the future"):
         changes.parse(later)
+
+
+FUND = {"symbol": "ACME", "name": "Acme Total Market", "asset_class": "", "expense_ratio": "0.04", "quote": "ACME"}
+FUND_WAS = {k: FUND[k] for k in ("name", "asset_class", "expense_ratio", "quote")} | {"wash_group": "total"}
+TARGETS = table(
+    "allocation_targets",
+    {"effective": "2020-01-01", "node": "stocks", "parent": "", "weight": "80"},
+    {"effective": "2020-01-01", "node": "SDT", "parent": "stocks", "weight": "100"},
+    {"effective": "2020-01-01", "node": "BT", "parent": "", "weight": "20"},
+)
+WITH_FUND = LEDGER | {"securities": table("securities", FUND | {"wash_group": "total"}), "allocation_targets": TARGETS}
+
+
+def test_a_funds_asset_class_is_set_from_the_views_and_its_other_fields_are_carried():
+    edit = {"kind": "security", "symbol": "ACME", "asset_class": "SDT 60, BT 40", "was": FUND_WAS}
+    result = changes.parse(doc(edit))
+    result.check(ledger_reader(**WITH_FUND))
+    assert result.tables["securities"].values.tolist() == [
+        ["ACME", "Acme Total Market", "SDT 60, BT 40", "0.04", "ACME", "total"]  # quote and wash group kept
+    ]
+    assert "security ACME: asset class SDT 60, BT 40" in result.notes
+
+
+def test_a_funds_asset_class_must_be_codes_the_targets_know_and_its_row_as_seen():
+    wrong = {"kind": "security", "symbol": "ACME", "asset_class": "SDT 60, XYZ 40", "was": FUND_WAS}
+    assert "not an asset class in the allocation targets: XYZ" in refused(doc(wrong), ledger_reader(**WITH_FUND))
+    garbled = {"kind": "security", "symbol": "ACME", "asset_class": "60 SDT", "was": FUND_WAS}
+    assert "is not a code or a blend of codes" in refused(doc(garbled), ledger_reader(**WITH_FUND))
+    stale = {"kind": "security", "symbol": "ACME", "asset_class": "SDT", "was": FUND_WAS | {"quote": "OLD"}}
+    assert "changed in the ledger since you edited it (quote is 'ACME')" in refused(
+        doc(stale), ledger_reader(**WITH_FUND)
+    )
+    # a fund the ledger doesn't list yet is new: no was, and nothing to carry
+    new = {"kind": "security", "symbol": "WILLOW", "asset_class": "BT", "was": None}
+    result = changes.parse(doc(new))
+    result.check(ledger_reader(**WITH_FUND))
+    assert result.tables["securities"].values.tolist() == [["WILLOW", "", "BT", "", "", ""]]
+
+
+def test_a_looks_right_change_set_is_read_whole_and_becomes_a_decision():
+    edit = {"kind": "looks_right", "check": "target_high|hobby|t9", "looks_right": "yes"}
+    result = changes.parse(doc(edit))
+    result.check(ledger_reader(**LEDGER))
+    assert result.tables["proposal_decisions"][["proposal_key", "kind", "decision"]].values.tolist() == [
+        ["looks_right:target_high|hobby|t9", "looks_right", "approve"]
+    ]
+    twice = doc(edit, dict(edit, looks_right="no"))
+    assert "edit 2 (looks_right): edits the same thing as edit 1" in refused(twice)

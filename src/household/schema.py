@@ -441,6 +441,11 @@ REPORTS = (
     Table("elections", ("year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status", "run_id")),
     # both returns line by line per scenario, beside the filed value once the return is in (projection.py)
     Table("tax_lines", ("year", "scenario", "order", "form", "line", "key", "label", "value", "filed", "run_id")),
+    # what each projected line is made of (projection.working): wages and withholding so far and to come per
+    # person and employer, capital gains by term, and the estimates used
+    Table("tax_inputs", ("year", "key", "person", "employer", "part", "amount", "detail", "run_id")),
+    # each fund as the ledger has it (editor.securities), for the Investments page to change its asset class
+    Table("editor_securities", ("symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group", "run_id")),
     # what withholding lands the year near the target refund (projection.withholding_plan)
     Table(
         "withholding_plan",

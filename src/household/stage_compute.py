@@ -85,6 +85,9 @@ def _investments_and_homes(c: Compute, books, sched):
         proxies=valuation.proxies(params),
     )
     sheets.replace_table(reports, schema.table(schema.REPORTS, "investment_values"), vals.assign(run_id=run_id))
+    # each fund as the ledger has it, for the views to change its asset class (a security edit carries `was`)
+    funds = editor.securities(securities)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "editor_securities"), funds.assign(run_id=run_id))
     now = vals[vals["date"] == today] if len(vals) else vals
     say(
         log,
@@ -735,8 +738,9 @@ def _tax_lines(c: Compute, year, stubs, sales, facts, jobs, vests):
     """The year projected, joining the tax history until its return is in, and last year's lines: as filed when
     its return is in return_facts, else from its stubs. Returns the projection's scenarios and notes."""
     reports, run_id, log = c.reports, c.run_id, c.log
-    lines, notes, detail = projection.project(year, stubs, sales, facts, jobs, vests)
+    lines, notes, detail, parts = projection.project(year, stubs, sales, facts, jobs, vests)
     lines["year"], lines["run_id"] = year, run_id
+    workings = [parts.assign(year=year)]
     sheets.replace_table(reports, schema.table(schema.REPORTS, "projection"), lines)
     # last year too: as filed once its return is in return_facts, until then the year its stubs show
     details = [detail.assign(year=year)]
@@ -760,10 +764,16 @@ def _tax_lines(c: Compute, year, stubs, sales, facts, jobs, vests):
             f"{len(off)} off by more than 1",
         )
     elif last in tax.taxdata.PARAMS and (stubs["pay_date"].astype(str).str[:4] == str(last)).any():
-        details.append(projection.project(last, stubs, sales, facts, jobs, vests)[2].assign(year=last))
+        _, _, last_detail, last_parts = projection.project(last, stubs, sales, facts, jobs, vests)
+        details.append(last_detail.assign(year=last))
+        workings.append(last_parts.assign(year=last))
         say(log, f"tax_lines: {last} from its pay stubs until its return's figures are in return_facts")
     every = pd.concat(details, ignore_index=True)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_lines"), every.assign(run_id=run_id))
+    # what each projected line is made of, for the Taxes page to show beneath it
+    made_of = pd.concat(workings, ignore_index=True)
+    sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_inputs"), made_of.assign(run_id=run_id))
+    say(log, f"tax_inputs: {len(made_of)} parts under {made_of[['year', 'key']].drop_duplicates().shape[0]} lines")
     return lines, notes
 
 

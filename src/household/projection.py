@@ -159,6 +159,11 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     out["ytd"] = {k: out[k] for k in ("elective", "after_tax", "employer_401k", "hsa", "dependent_care", "health_fsa")}
     out["wi_settings"] = wi_settings
     out["medicare_wages"] = medicare_wages(out["medicare_withheld"], year)
+    # what the year's wages and withholding are made of, for the views to show under each line (WORKING_LINES)
+    stubs_seen = rows["stub_id"].astype(str).nunique()
+    through = rows["pay_date"].astype(str).max()[:10] if len(rows) else ""
+    out["parts"] = []
+    _parts(out, "so far", f"{stubs_seen} pay stub{'' if stubs_seen == 1 else 's'} through {through}", None)
     if regular.empty or ended:
         return out
 
@@ -172,6 +177,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     medicare_base = _current(stub, "tax", contains=MEDICARE) / _medicare_rate(out["medicare_wages"], year)
     dates = [d for d in remaining_pay_dates(last["pay_date"], year) if ends is None or d < ends]
     done = len(regular["pay_date"].unique())
+    before = _so_far(out)
     for n, _ in enumerate(dates, start=done + 1):
         full = n > FULL_YEAR_PAYCHECKS
         wages = gross if full else taxable
@@ -194,6 +200,16 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     out["paychecks_left"] = len(dates)
     if len(dates) + done > FULL_YEAR_PAYCHECKS:
         out["notes"].append(f"{len(dates) + done} paychecks this year; the 27th carries no deductions")
+    if dates:
+        _parts(
+            out,
+            "paychecks",
+            f"{len(dates)} more paycheck{'' if len(dates) == 1 else 's'} like the latest, of {str(last['pay_date'])[:10]}"
+            + (f", each with {adjustment:,.2f} extra withheld" if adjustment else "")
+            + ("; the 27th carries no deductions" if len(dates) + done > FULL_YEAR_PAYCHECKS else ""),
+            before,
+        )
+    before = _so_far(out)
 
     supplemental = bt[(bt["kind"] == "supplemental")].copy()
     recent = supplemental[
@@ -227,6 +243,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
             f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
             f"{price:,.2f}, withheld at {rate:.0%}"
         )
+        _parts(out, "vests", out["notes"][-1] + ", from the vesting schedule", before)
     elif len(vest_days) >= 2:
         latest_vest = date.fromisoformat(vest_days.index.max()[:10])
         # a vest on the same day of each month after the latest, before the job ends
@@ -248,7 +265,66 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
         out["vests_left"] = months_left
         out["vest_rate"] = rate
         out["notes"].append(f"{months_left} more monthly vests of about {amount:,.0f} at {rate:.0%}")
+        _parts(out, "vests", out["notes"][-1] + ", from the recent vests (no schedule on file)", before)
     return out
+
+
+# the lines a person's year adds up to, and the figure of theirs each one is: the Taxes page shows each
+# line's parts beneath it (tax_inputs in Reports)
+WORKING_LINES = {"1z": "wages", "25a": "federal_withheld", "wi_withheld": "wi_withheld"}
+WORKING_COLUMNS = ["key", "person", "employer", "part", "amount", "detail"]
+
+
+def _so_far(out):
+    return {k: out[k] for k in WORKING_LINES.values()}
+
+
+def _parts(out, part, detail, before):
+    """Record what `part` added to each working line since `before` (None: the whole of it so far)."""
+    for key, name in WORKING_LINES.items():
+        amount = out[name] - (before[name] if before else 0.0)
+        if abs(amount) >= 0.005:
+            out["parts"].append({"key": key, "part": part, "amount": round(float(amount), 2), "detail": detail})
+
+
+def working(year, pos, sales, facts):
+    """Each projected line's parts (WORKING_COLUMNS): every person's and employer's wages and withholding so far
+    and still to come (employer_position), the year's capital gains by term, and the estimates the return uses
+    from return_facts, each with where it comes from."""
+    out = []
+    for (person, employer), p in pos.items():
+        for part in p.get("parts", []):
+            out.append({"person": person, "employer": employer, **part})
+    if sales is not None and not sales.empty:
+        sold = sales[sales["sale_date"].astype(str).str[:4] == str(year)]
+        long_term = sold["term"] == "long_term"
+        for label, rows in (("short-term", sold[~long_term]), ("long-term", sold[long_term])):
+            if len(rows):
+                out.append(
+                    {
+                        "key": "7a",
+                        "person": "",
+                        "employer": "",
+                        "part": label,
+                        "amount": round(float(_num(rows["gain"]).sum()), 2),
+                        "detail": f"{len(rows)} sale{'' if len(rows) == 1 else 's'} on Form 8949",
+                    }
+                )
+    if facts is not None and not facts.empty:
+        est = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "estimate")]
+        for r in est.to_dict("records"):
+            where = str(r.get("source_doc", "") or "").strip() or str(r.get("note", "") or "").strip()
+            out.append(
+                {
+                    "key": str(r["key"]),
+                    "person": str(r.get("person", "") or ""),
+                    "employer": "",
+                    "part": "estimate",
+                    "amount": round(float(_num(pd.Series([r["value"]])).iloc[0]), 2),
+                    "detail": "your estimate in return_facts" + (f": {where}" if where else ""),
+                }
+            )
+    return pd.DataFrame(out, columns=WORKING_COLUMNS)
 
 
 SCENARIOS = {
@@ -400,9 +476,9 @@ def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, v
 def project(year, paystubs, sales, facts, comp_events=None, vests=None):
     """Projected lines per scenario, plus the safe-harbor target from last year's return.
 
-    Returns (summary, notes, detail): one summary row per scenario, the notes, and every line of both
+    Returns (summary, notes, detail, parts): one summary row per scenario, the notes, every line of both
     returns as things stand (return_lines), each beside the filed value once the year's return is in
-    return_facts.
+    return_facts, and the parts the lines as things stand are made of (working).
     """
     rows, detail = [], []
     filed = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "filed")] if not facts.empty else facts
@@ -412,7 +488,7 @@ def project(year, paystubs, sales, facts, comp_events=None, vests=None):
     )
     prior_lines = dict(zip(prior["key"], _num(prior["value"]))) if len(prior) else {}
     harbor = tax.safe_harbor(prior_lines["24"], prior_lines.get("11a", 0)) if "24" in prior_lines else None
-    notes = []
+    notes, parts = [], pd.DataFrame(columns=WORKING_COLUMNS)
     for name, overrides in SCENARIOS.items():
         i, pos = inputs_for(year, paystubs, sales, facts, overrides, comp_events, vests)
         r = tax.federal_return(i, year)
@@ -420,6 +496,7 @@ def project(year, paystubs, sales, facts, comp_events=None, vests=None):
         if name == "as is":
             notes = [f"{p}/{e}: {n}" for (p, e), v in pos.items() for n in v["notes"]]
             notes += _wisconsin_notes(year)
+            parts = working(year, pos, sales, facts)
         if name == "as is":  # the forms show the year as it stands; scenarios differ only in their totals
             for order, row in enumerate(return_lines(i, r, w, year)):
                 detail.append({"scenario": name, "order": order, **row, "filed": filed.get(row["key"])})
@@ -441,7 +518,7 @@ def project(year, paystubs, sales, facts, comp_events=None, vests=None):
                 "wi_owe_or_refund": w["wi_owe_or_refund"],
             }
         )
-    return pd.DataFrame(rows), notes, pd.DataFrame(detail, columns=DETAIL_COLUMNS)
+    return pd.DataFrame(rows), notes, pd.DataFrame(detail, columns=DETAIL_COLUMNS), parts
 
 
 FEDERAL = "Form 1040"

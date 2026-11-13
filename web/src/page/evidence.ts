@@ -189,16 +189,22 @@ function lineList(lines: Txn[], redraw: () => void): HTMLElement {
 // ---- a setting where a number uses it ----
 
 // A household setting shown where it is used (an assumption, a target), with Change to edit it in place: the
-// same `parameter` edit as Status, Settings. `shown` is the value the page shows when nothing is staged.
-function settingControl(key: string, shown: string): HTMLElement {
+// same `parameter` edit as Status, Settings. `shown` is the value the page shows when nothing is staged; null
+// when the page doesn't have it, so the stored value shows once the editor's data is loaded.
+function settingControl(key: string, shown: string | null): HTMLElement {
   var box = el("span", null, "setting-control");
   box.dataset.setting = key;
   var draw = function () {
     box.textContent = "";
     var t = editTarget({ kind: "parameter", key: key });
     var e = edited(t);
-    var now = e ? String((e.edit as Record<string, string>).value) : shown;
-    box.appendChild(el("strong", now === "" ? "not set" : now, "setting-value"));
+    var stored = editor
+      ? (editor.parameters || []).filter(function (p) {
+          return p.key === key && p.source !== "not set";
+        })[0]
+      : undefined;
+    var now = e ? String((e.edit as Record<string, string>).value) : shown !== null ? shown : stored ? stored.value : null;
+    if (now !== null) box.appendChild(el("strong", now === "" ? "not set" : now, "setting-value"));
     box.appendChild(el("code", key, "setting-key"));
     if (e)
       box.appendChild(
@@ -219,7 +225,7 @@ function settingControl(key: string, shown: string): HTMLElement {
             return p.key === key;
           })[0];
           // the setting as stored when it is (an assumption may show it in words); else what the page shows
-          var value = textInput(e || !known || known.source === "not set" ? now : known.value, "");
+          var value = textInput(e || !known || known.source === "not set" ? now || "" : known.value, "");
           value.setAttribute("aria-label", key);
           box.appendChild(value);
           box.appendChild(
@@ -227,7 +233,7 @@ function settingControl(key: string, shown: string): HTMLElement {
               "Keep",
               function () {
                 var v = value.value.trim();
-                if (v === now) {
+                if (v === (now === null && known ? known.value : now)) {
                   draw();
                   return;
                 }

@@ -917,9 +917,37 @@ function drawAccounts(body: HTMLElement, d: WealthPage) {
   ac.row(["Total", "", "", money.format(d.total)], "total");
   var funds = el("details");
   funds.appendChild(el("summary", d.funds.length + " funds and positions"));
+  // a fund with no asset class counts nowhere in the allocation: say so, and open the list to fix it here
+  var blank = d.funds.filter(function (f) {
+    return !f.assetClass && isFund(f) && !edited("security|" + f.symbol);
+  });
+  if (blank.length) {
+    (funds as HTMLDetailsElement).open = true;
+    acc.appendChild(
+      statusTag({
+        text:
+          countOf(blank.length, "fund has", "funds have") +
+          " no asset class, so the allocation and the rebalance leave " +
+          (blank.length === 1 ? "it" : "them") +
+          " out: " +
+          blank
+            .map(function (f) {
+              return f.symbol;
+            })
+            .join(", "),
+        tone: "check",
+      }),
+    );
+  }
   var ft = wTable(funds, ["Fund", "Class", "Accounts", "Value"], [3]);
   d.funds.forEach(function (f) {
-    ft.row([f.symbol, f.assetClass || "unclassified", f.accounts.join(", "), money.format(f.value)]);
+    var name = f.security && f.security.name ? f.symbol + ", " + f.security.name : f.symbol;
+    ft.row([name, isFund(f) ? classControl(f, d) : f.assetClass || "", f.accounts.join(", "), money.format(f.value)], "", [
+      name.toLowerCase(),
+      (f.assetClass || "").toLowerCase(),
+      f.accounts.join(", ").toLowerCase(),
+      f.value,
+    ]);
   });
   acc.appendChild(funds);
 }
@@ -1039,4 +1067,134 @@ function drawLots(body: HTMLElement, d: WealthPage) {
     });
     sold.appendChild(ul);
   }
+}
+
+// Whether a row is a fund the ledger's securities can describe: not an account's total, nor cash.
+function isFund(f: FundValue) {
+  return !/^\(.* total\)$/.test(f.symbol) && f.symbol.toLowerCase() !== "cash";
+}
+
+// The asset class codes the allocation targets use: each leaf of the tree, with its label.
+function classCodes(d: WealthPage): [string, string][] {
+  return d.allocation
+    .filter(function (a) {
+      return a.leaf;
+    })
+    .map(function (a) {
+      return [a.node, a.label] as [string, string];
+    });
+}
+
+// A fund's asset class, changed where it shows: one code or a blend ("SDT 60, BT 40"), each code a class of the
+// allocation targets, staged as a security edit that carries the fund's row as the ledger has it.
+function classControl(f: FundValue, d: WealthPage): HTMLElement {
+  var box = el("span", null, "class-control");
+  var t = "security|" + f.symbol;
+  var codes = classCodes(d);
+  var label: Record<string, string> = {};
+  codes.forEach(function (c) {
+    label[c[0]] = c[1];
+  });
+  var draw = function () {
+    box.textContent = "";
+    var e = edited(t);
+    var now = e ? String((e.edit as Record<string, string>).asset_class) : f.assetClass;
+    if (now) {
+      var shown = el("span", now, "class-now");
+      shown.title = now
+        .split(",")
+        .map(function (part) {
+          var code = part.trim().split(/[\s:]+/)[0];
+          return label[code] ? part.trim() + ": " + label[code] : part.trim();
+        })
+        .join("\n");
+      box.appendChild(shown);
+    } else box.appendChild(el("span", "unclassified", "class-none"));
+    if (e) box.appendChild(el("span", stagedText(t) ? "waiting to be saved" : "applies at the next run", "tag warn"));
+    var change = button(
+      now ? "Change" : "Set",
+      function () {
+        box.textContent = "";
+        var list = el("datalist");
+        list.id = "classes-" + f.symbol.replace(/[^a-z0-9]+/gi, "-");
+        codes.forEach(function (c) {
+          var o = document.createElement("option");
+          o.value = c[0];
+          o.label = c[1];
+          list.appendChild(o);
+        });
+        var input = textInput(now, "");
+        input.setAttribute("list", list.id);
+        input.setAttribute("aria-label", "Asset class of " + f.symbol);
+        input.placeholder = "SDT, or SDT 60, BT 40";
+        var error = el("div", "", "error");
+        box.appendChild(input);
+        box.appendChild(list);
+        box.appendChild(
+          button(
+            "Keep",
+            function () {
+              var v = input.value.trim();
+              var parts = v.split(",").map(function (p) {
+                return p.trim().split(/[\s:]+/)[0];
+              });
+              var unknown = parts.filter(function (p) {
+                return p && !(p in label);
+              });
+              if (!v || unknown.length) {
+                error.textContent = v
+                  ? "Not a class in the allocation targets: " + unknown.join(", ")
+                  : "Give a class, or a blend like SDT 60, BT 40.";
+                return;
+              }
+              if (v === f.assetClass) {
+                if (staged[t]) unstage(t);
+                draw();
+                return;
+              }
+              var s = f.security;
+              stage(
+                {
+                  kind: "security",
+                  symbol: f.symbol,
+                  asset_class: v,
+                  was: s
+                    ? {
+                        name: s.name,
+                        asset_class: s.asset_class,
+                        expense_ratio: s.expense_ratio,
+                        quote: s.quote,
+                        wash_group: s.wash_group,
+                      }
+                    : null,
+                },
+                "security " + f.symbol + ": asset class " + v,
+              );
+              draw();
+            },
+            "text",
+          ),
+        );
+        if (staged[t])
+          box.appendChild(
+            button(
+              "Undo",
+              function () {
+                unstage(t);
+                draw();
+              },
+              "text",
+            ),
+          );
+        box.appendChild(button("Cancel", draw, "text"));
+        box.appendChild(error);
+        input.focus();
+      },
+      "text",
+    );
+    change.setAttribute("aria-label", (now ? "Change" : "Set") + " the asset class of " + f.symbol);
+    box.appendChild(change);
+  };
+  draw();
+  return box;
 }

@@ -1969,3 +1969,193 @@ test("performance: ten years of a household's spending draws and redraws quickly
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("a projected tax line opens to what it is made of, adding up to it, with the way to each input", async () => {
+  const line = (key, label, value) => ({ form: "Form 1040", line: key, key, label, value, filed: null });
+  const part = (key, person, employer, kind, amount, detail) => ({ person, employer, part: kind, amount, detail });
+  const page = await open(
+    "window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [
+          {
+            year: "2001",
+            filed: false,
+            forms: {
+              "Form 1040": [line("1z", "Wages (W-2 box 1)", 90), line("25a", "Withheld, W-2s", 12), line("24", "Total tax", 9)],
+            },
+          },
+        ],
+        plan: [],
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+        law: [],
+        parts: {
+          "2001|1z": [
+            part("1z", "alex", "Acme Widgets", "so far", 60, "20 pay stubs through 2001-09-25"),
+            part("1z", "alex", "Acme Widgets", "paychecks", 30, "7 more paychecks like the latest"),
+          ],
+          "2001|25a": [
+            part("25a", "alex", "Acme Widgets", "so far", 11.6, "20 pay stubs"),
+            part("25a", "alex", "Acme Widgets", "vests", 0.7, "2 vests"),
+          ],
+        },
+      }) +
+      ";",
+  );
+  await page.click("#view-taxes");
+  await page.waitForSelector("#taxes-body table.form-lines");
+  // a line with parts reads as one that opens; one without stays plain
+  assert.equal(await page.locator("#taxes-body button.line-why").count(), 2);
+  await page.click("#taxes-body button.line-why:has-text('Wages')");
+  await page.waitForSelector("#taxes-body tr.line-parts");
+  assert.equal(await page.getAttribute("#taxes-body button.line-why:has-text('Wages')", "aria-expanded"), "true");
+  assert.deepEqual(
+    await page.$$eval("#taxes-body tr.line-parts table.parts tr", (rs) =>
+      rs.map((r) => [r.querySelector(".who div").textContent, r.querySelector(".num").textContent]),
+    ),
+    [
+      ["So far", "$60.00"], // leak-guard: allow (made up)
+      ["Paychecks to come", "$30.00"], // leak-guard: allow (made up)
+    ],
+  );
+  assert.equal(await page.textContent("#taxes-body tr.line-parts .parts-sum"), "Adds up to $90.00."); // leak-guard: allow (made up)
+  await page.click("#taxes-body button.line-why:has-text('Wages')"); // and closes
+  assert.equal(await page.locator("#taxes-body tr.line-parts").count(), 0);
+  // a line the return rounds says so
+  await page.click("#taxes-body button.line-why:has-text('Withheld')");
+  assert.equal(
+    await page.textContent("#taxes-body tr.line-parts .parts-sum"),
+    "Adds up to $12.30; the return rounds it to $12.00.", // leak-guard: allow (made up)
+  );
+  // a vest leads to the job behind it
+  await page.click("#taxes-body tr.line-parts button:has-text('on Jobs')");
+  await page.waitForFunction(() => document.querySelector("#view-jobs").getAttribute("aria-pressed") === "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("investments: a fund with no asset class is flagged, and its class is set where it shows", async () => {
+  const leaf = (node, label) => ({
+    node,
+    parent: "",
+    depth: 0,
+    label,
+    leaf: true,
+    targetShare: 0.5,
+    currentShare: 0.5,
+    targetValue: 45,
+    currentValue: 45,
+    deltaValue: 0,
+    proposedValue: null,
+    proposedShare: null,
+  });
+  const page = await open(`window.__answers.getInvestments = ${JSON.stringify({
+    ...INVESTMENTS,
+    allocation: [leaf("SDT", "US stocks"), leaf("BT", "US bonds")],
+    funds: [
+      {
+        symbol: "ACMEX",
+        assetClass: "SDT",
+        value: 60,
+        accounts: ["a_brokerage"],
+        security: {
+          symbol: "ACMEX",
+          name: "Acme Index",
+          asset_class: "SDT",
+          expense_ratio: "0.04",
+          quote: "ACMEX",
+          wash_group: "total",
+        },
+      },
+      {
+        symbol: "WILLX",
+        assetClass: "",
+        value: 30,
+        accounts: ["a_brokerage"],
+        security: { symbol: "WILLX", name: "Willow Bond", asset_class: "", expense_ratio: "", quote: "WILLX", wash_group: "" },
+      },
+      { symbol: "(a_plan total)", assetClass: "", value: 5, accounts: ["a_plan"], security: null },
+    ],
+  })};
+                           window.__location = { parameter: { view: 'investments', tab: 'accounts' } };`);
+  await page.waitForSelector("#investments-body .st-check");
+  assert.match(await page.textContent("#investments-body .st-check"), /1 fund has no asset class.*: WILLX/);
+  assert.equal(await page.evaluate(() => document.querySelector("#investments-body details").open), true);
+  const willx = "#investments-body tr:has-text('WILLX') .class-control";
+  await page.click(willx + " button:has-text('Set')");
+  await page.fill(willx + " input", "SDT 60, XX 40");
+  await page.click(willx + " button:has-text('Keep')");
+  assert.match(await page.textContent(willx + " .error"), /Not a class in the allocation targets: XX/);
+  await page.fill(willx + " input", "BT");
+  await page.click(willx + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["security WILLX: asset class BT"]);
+  assert.match(await page.textContent(willx), /BT.*waiting to be saved/);
+  assert.equal(await page.locator("#investments-body tr:has-text('(a_plan total)') .class-control").count(), 0); // not a fund
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [
+    {
+      kind: "security",
+      symbol: "WILLX",
+      asset_class: "BT",
+      was: { name: "Willow Bond", asset_class: "", expense_ratio: "", quote: "WILLX", wash_group: "" },
+    },
+  ]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("home: the settings its figures rest on are changed beside them, the stored value shown once loaded", async () => {
+  const line = (key, label, value, note = "") => ({ key, label, value, asOf: "2001-01-01", note });
+  const home = {
+    loans: [],
+    estimates: [],
+    improvements: [],
+    schedule: [],
+    years: [],
+    taxes: [],
+    month: "2001-06",
+    notes: [],
+    homes: [
+      {
+        id: "willow",
+        lines: [line("status", "Status", "owned"), line("value_used", "Value counted in net worth", 90, "purchase price")],
+      },
+    ],
+  };
+  const page = await open(
+    `window.__answers.getHome = ${JSON.stringify(home)};` +
+      "window.__answers.getEditor.parameters = [{ key: 'home_sale_cost_rate', value: '0.05', source: 'ledger' }," +
+      "  { key: 'home_value_basis', value: '', source: 'not set' }];",
+  );
+  await page.click("#view-home");
+  const rate = "#home-body .setting-control[data-setting='home_sale_cost_rate']";
+  await page.waitForSelector(rate);
+  assert.equal(await page.locator(rate + " .setting-value").count(), 0); // the page doesn't have it yet
+  await page.click(rate + " button:has-text('Change')");
+  await page.waitForSelector(rate + " input");
+  assert.equal(await page.inputValue(rate + " input"), "0.05"); // the stored value, once loaded
+  await page.fill(rate + " input", "0.04");
+  await page.click(rate + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["setting home_sale_cost_rate = 0.04"]);
+  // a setting not set yet starts blank, and is a new one
+  const basis = "#home-body .setting-control[data-setting='home_value_basis']";
+  assert.equal(await page.locator(basis + " .setting-value").count(), 0); // nothing stored to show
+  await page.click(basis + " button:has-text('Change')");
+  assert.equal(await page.inputValue(basis + " input"), "");
+  await page.fill(basis + " input", "median");
+  await page.click(basis + " button:has-text('Keep')");
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [
+    { kind: "parameter", key: "home_sale_cost_rate", value: "0.04", was: { value: "0.05" } },
+    { kind: "parameter", key: "home_value_basis", value: "median", was: null },
+  ]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

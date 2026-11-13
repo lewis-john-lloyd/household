@@ -126,3 +126,27 @@ test("any filed year's lines come form by form in order, and a projected year in
     ],
   );
 });
+
+test("a projected line's parts come by year and key, in the order compute wrote them", () => {
+  const page = taxes.taxPage({
+    tax_lines: LINES,
+    tax_inputs: [
+      ["year", "key", "person", "employer", "part", "amount", "detail", "run_id"],
+      ["2026", "1z", "alex", "Acme Widgets", "so far", "90", "20 pay stubs through 2026-09-25", "r1"],
+      ["2026", "1z", "alex", "Acme Widgets", "paychecks", "30", "7 more paychecks like the latest", "r1"],
+      ["2026", "7a", "", "", "short-term", "5", "2 sales on Form 8949", "r1"],
+      ["", "1z", "", "", "so far", "1", "", "r1"], // no year: dropped
+    ],
+  });
+  assert.deepEqual(
+    page.parts["2026|1z"].map((p) => [p.part, p.amount]),
+    [
+      ["so far", 90],
+      ["paychecks", 30],
+    ],
+  );
+  assert.deepEqual(page.parts["2026|7a"], [
+    { person: "", employer: "", part: "short-term", amount: 5, detail: "2 sales on Form 8949" },
+  ]);
+  assert.deepEqual(taxes.taxPage({ tax_lines: LINES }).parts, {});
+});

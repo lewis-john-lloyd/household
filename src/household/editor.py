@@ -163,6 +163,21 @@ def review_queue(review):
     return review.reindex(columns=columns, fill_value="")
 
 
+SECURITY_COLUMNS = ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group"]
+
+
+def securities(rows):
+    """Each fund's row in force (the last for its symbol), for the views to change its asset class."""
+    if rows is None or rows.empty:
+        return pd.DataFrame(columns=SECURITY_COLUMNS)
+    r = rows.copy()
+    r["symbol"] = r["symbol"].astype(str).str.strip()
+    r = r[r["symbol"] != ""].drop_duplicates("symbol", keep="last")
+    for c in SECURITY_COLUMNS:
+        r[c] = r[c].astype(str).str.strip() if c in r else ""
+    return r[SECURITY_COLUMNS].sort_values("symbol").reset_index(drop=True)
+
+
 def publish(books, review, rules, targets, actuals, month):
     """Every editor table, by Reports table name."""
     return {

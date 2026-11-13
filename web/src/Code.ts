@@ -572,6 +572,7 @@ function getTaxes(): TaxPage {
     "tax_history",
     "filed_lines",
     "tax_sources",
+    "tax_inputs",
   ]);
   return taxPage(tabs);
 }
@@ -584,6 +585,7 @@ function getForm8949(): F8949Page {
 function getInvestments(): WealthPage {
   const tabs = readTabsIfAny_([
     "investment_values",
+    "editor_securities",
     "net_worth",
     "allocation",
     "rebalance",

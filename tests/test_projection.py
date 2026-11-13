@@ -60,7 +60,7 @@ def test_scenarios_change_withholding_not_tax():
     stubs = stubs_through(24)
     facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
-    lines, notes, detail = projection.project(2026, stubs, sales, facts)
+    lines, notes, detail, _ = projection.project(2026, stubs, sales, facts)
     lines = lines.set_index("scenario")
     as_is = detail[detail["scenario"] == "as is"].set_index("key")
     assert as_is.loc["11a", "value"] == lines.loc["as is", "agi"]
@@ -79,7 +79,7 @@ def test_the_return_lines_read_like_the_forms_and_sit_beside_a_filed_return():
         ]
     )
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
-    _, _, detail = projection.project(2026, stubs, sales, facts)
+    _, _, detail, _ = projection.project(2026, stubs, sales, facts)
     federal = detail[(detail["scenario"] == "as is") & (detail["form"] == "Form 1040")]
     assert federal["line"].tolist()[:4] == ["1z", "7", "9", "11"]  # no interest or dividends: left out
     assert federal.set_index("key").loc["24", "filed"] == 9000
@@ -161,7 +161,7 @@ def test_wisconsin_lines_carry_the_form_s_line_numbers_and_say_when_they_are_las
     stubs = stubs_through(24)
     facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
     sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
-    _, notes, detail = projection.project(2026, stubs, sales, facts)
+    _, notes, detail, _ = projection.project(2026, stubs, sales, facts)
     wi = detail[(detail["scenario"] == "as is") & (detail["form"] == "Wisconsin Form 1")].set_index("key")
     assert wi.loc["wi_income", "line"] == "7" and wi.loc["wi_net_tax", "line"] == "22"
     assert wi.loc["wi_owe_or_refund", "line"] == ("40" if wi.loc["wi_owe_or_refund", "label"] == "Refund" else "45")
@@ -262,3 +262,51 @@ def test_a_filed_year_is_laid_out_from_its_own_figures_beside_every_filed_line()
     assert by.loc["pa40_12", "value"] == round(0.0307 * 50_000) != by.loc["pa40_12", "filed"]
     assert detail["label"].iloc[-1] in ("Refund", "Amount owed") and set(detail["scenario"]) == {"as is"}
     assert projection.has_return(facts, 2025) and not projection.has_return(facts, 2026)
+
+
+def test_each_projected_line_is_made_of_parts_that_add_up_to_it():
+    stubs = stubs_through(24)  # last paid Nov 20: three more paychecks, the 27th without deductions
+    facts = pd.DataFrame(
+        [
+            {
+                "year": 2026,
+                "kind": "estimate",
+                "key": "charity",
+                "person": "",
+                "value": 50,
+                "source_doc": "",
+                "note": "a guess",
+            }
+        ]
+    )
+    sales = pd.DataFrame(
+        [
+            {"sale_date": "2026-03-02", "gain": 40.0, "term": "short_term"},
+            {"sale_date": "2026-05-02", "gain": 25.0, "term": "short_term"},
+            {"sale_date": "2026-06-02", "gain": -10.0, "term": "long_term"},
+            {"sale_date": "2025-06-02", "gain": 99.0, "term": "long_term"},  # another year: not this one's
+        ]
+    )
+    _, _, detail, parts = projection.project(2026, stubs, sales, facts)
+    assert list(parts.columns) == projection.WORKING_COLUMNS
+    lines = detail.set_index("key")["value"]
+    for key in ("1z", "25a", "wi_withheld"):  # a person's wages and withholding: so far, then to come
+        mine = parts[parts["key"] == key]
+        assert abs(mine["amount"].sum() - lines[key]) < 0.5, key  # the return rounds some lines to whole dollars
+        assert mine["part"].tolist() == ([] if key == "wi_withheld" else ["so far", "paychecks"])  # none withheld
+    wages = parts[parts["key"] == "1z"].set_index("part")
+    assert wages.loc["so far", "detail"] == "24 pay stubs through 2026-11-20"
+    assert wages.loc["paychecks", "detail"].startswith(
+        "3 more paychecks like the latest, of 2026-11-20, each with 200.00 extra"
+    )
+    assert wages.loc["paychecks", "detail"].endswith("; the 27th carries no deductions")
+    gains = parts[parts["key"] == "7a"]
+    assert gains[["part", "amount", "detail"]].values.tolist() == [
+        ["short-term", 65.0, "2 sales on Form 8949"],
+        ["long-term", -10.0, "1 sale on Form 8949"],
+    ]
+    assert gains["amount"].sum() == lines["7a"]
+    est = parts[parts["key"] == "charity"]
+    assert est[["part", "amount", "detail"]].values.tolist() == [
+        ["estimate", 50.0, "your estimate in return_facts: a guess"]
+    ]

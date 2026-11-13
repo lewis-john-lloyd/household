@@ -17,6 +17,8 @@ Type annotations are gradual: the functions where one stage hands work to anothe
 
 The engine notebook calls `runner.run`, which calls the stages through `engine`: `stage_legacy` (the old workbooks into the ledger), `stage_ingest` (the inbox, review answers and prices; the only writer of the ledger) and `stage_compute` (Reports from the ledger). `ledgerio` opens the two spreadsheets and reads ledger tables; compute reads through a `LedgerView`, the ledger with a `LedgerReading` attached (renamed accounts, moved readings, corrected activity), worked out once from the ledger and passed along explicitly, `books` gives both stages the transactions as they now stand, and `runlog` keeps what each stage prints for the Status page.
 
+The views' page modules (`web/src/page`) share one script, so a top-level name two of them declare is one name and the later silently replaces the earlier (TypeScript allows a `var` declared twice). `web/scripts/copy.mjs` refuses to build when that happens. A new edit kind needs its place in `changes.KINDS`, `_target` and the views' `edits.ts`; `tests/test_edit_contract.py` holds the two sides together and computes every sample's target, so a kind without one fails there rather than at ingest.
+
 Optional local hooks: `pip install pre-commit && pre-commit install`, and `git config core.hooksPath .githooks` for the push guard.
 
 ## Tax law

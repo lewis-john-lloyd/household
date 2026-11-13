@@ -14,6 +14,14 @@ interface TaxLine {
   filed: number | null; // the filed return's value, once it is in return_facts
 }
 
+interface TaxPart {
+  person: string;
+  employer: string;
+  part: string; // so far, paychecks, vests, short-term, long-term or estimate
+  amount: number;
+  detail: string; // where it comes from, in words
+}
+
 interface TaxYear {
   year: string;
   forms: Record<string, TaxLine[]>; // form -> lines in order, the year as it stands
@@ -51,6 +59,7 @@ interface TaxPage {
   accounts: Record<string, string>[];
   notes: string[];
   law: Record<string, string>[]; // the latest year's tax law values, each with its document, page and quote
+  parts: Record<string, TaxPart[]>; // "year|key": what a projected line is made of (tax_inputs)
 }
 
 function rowsOf(values: unknown[][]): Record<string, string>[] {
@@ -143,5 +152,22 @@ function taxPage(tabs: Record<string, unknown[][]>): TaxPage {
     accounts: latest(rowsOf(tabs.elections || [])),
     notes,
     law: latest(rowsOf(tabs.tax_sources || [])).filter((r) => r.item && r.document),
+    parts: taxParts(rowsOf(tabs.tax_inputs || [])),
   };
+}
+
+/** What each projected line is made of (tax_inputs), by "year|key", in the order compute wrote them. */
+function taxParts(rows: Record<string, string>[]): Record<string, TaxPart[]> {
+  const out: Record<string, TaxPart[]> = {};
+  for (const r of rows) {
+    if (!r.year || !r.key) continue;
+    (out[r.year + "|" + r.key] = out[r.year + "|" + r.key] || []).push({
+      person: r.person || "",
+      employer: r.employer || "",
+      part: r.part || "",
+      amount: Number(r.amount) || 0,
+      detail: r.detail || "",
+    });
+  }
+  return out;
 }

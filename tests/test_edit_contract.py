@@ -51,7 +51,16 @@ SAMPLES = {
     "recurring_name": [{"key": "PAGE TURNER BOOKS", "name": "books"}],
     "recurring_line": [{"key": "PAGE TURNER BOOKS", "line": "books"}],
     "recipient": [{"key": "WILLOW ST", "deductible": "yes"}, {"key": "willow st", "deductible": "no"}],
-    "looks_right": [{"check": "target_high|hobby|t9", "looks_right": "yes"}],
+    "looks_right": [
+        {"check": "target_high|hobby|t9", "looks_right": "yes"},
+        {"check": "target_high|hobby|t9", "looks_right": "no"},
+        {"check": "price_changed|WILLOW ST|2001-01-03|9.00", "looks_right": "yes"},
+    ],
+    "security": [
+        {"symbol": "ACME", "asset_class": "SDT"},
+        {"symbol": "ACME", "asset_class": "SDT 60, BT 40"},
+        {"symbol": "WILLOW", "asset_class": "BT"},
+    ],
 }
 
 
@@ -83,6 +92,8 @@ def test_both_sides_know_the_same_kinds_and_fields():
 def test_both_sides_agree_on_which_edits_replace_each_other():
     side = views()
     for kind, samples in SAMPLES.items():
+        for a in samples:  # every kind has a target on both sides, even one with a single sample
+            assert changes._target({"kind": kind, **a}), (kind, a)
         for (i, a), (j, b) in combinations(enumerate(samples), 2):
             same_here = side["targets"][kind][i] == side["targets"][kind][j]
             same_there = changes._target({"kind": kind, **a}) == changes._target({"kind": kind, **b})

@@ -329,3 +329,18 @@ test("the lots part lists open lots oldest first, sales newest first, and each y
     ],
   );
 });
+
+test("a fund carries its row in the ledger's securities, for its asset class to be changed", () => {
+  const page = wealth.wealthPage({
+    investment_values: VALUES,
+    net_worth: NET,
+    editor_securities: [
+      ["symbol", "name", "asset_class", "expense_ratio", "quote", "wash_group", "run_id"],
+      ["ACMEX", "Acme Index", "SDT", "0.04", "ACMEX", "total", "r"],
+    ],
+  });
+  const by = Object.fromEntries(page.funds.map((f) => [f.symbol, f.security]));
+  assert.equal(by["ACMEX"]?.quote, "ACMEX");
+  assert.equal(by["WILLX"], null); // not in securities: a new one if its class is set
+  assert.equal(wealth.wealthPage({ investment_values: VALUES, net_worth: NET }).funds[0].security, null);
+});

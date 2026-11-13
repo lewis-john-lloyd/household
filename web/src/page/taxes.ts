@@ -483,7 +483,7 @@ function drawTaxes() {
   Object.keys(year.forms).forEach(function (form) {
     var panel = el("section", null, "panel");
     panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
-    panel.appendChild(formTable(year.forms[form], year.filed, year.filed ? "Computed" : "From stubs"));
+    panel.appendChild(formTable(year.forms[form], year.filed, year.filed ? "Computed" : "From stubs", year.year));
     returns.appendChild(panel);
   });
   side.appendChild(returns);
@@ -729,7 +729,9 @@ function drawTaxHistoryView(body: HTMLElement) {
   Object.keys(r.forms).forEach(function (form) {
     var panel = el("section", null, "panel");
     panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
-    panel.appendChild(formTable(r.forms[form], r.computed && r.filed, r.computed && r.filed ? "Computed" : "Amount"));
+    panel.appendChild(
+      formTable(r.forms[form], r.computed && r.filed, r.computed && r.filed ? "Computed" : "Amount", historyYear),
+    );
     (form === "Form 1040" ? two : states).appendChild(panel);
   });
   if (states.childNodes.length) two.appendChild(states);
@@ -844,7 +846,9 @@ var STATE_NAMES: Record<string, string> = {
 };
 var RATIO_KEYS = ["wi1npr_32"]; // a share, not dollars
 
-function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string) {
+var taxLineOpen: Record<string, boolean> = {}; // "year|key" whose parts are shown
+
+function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string, year?: string) {
   var wrap = el("div", null, "scroll");
   var table = el("table", null, "form-lines");
   var head = el("tr");
@@ -864,7 +868,25 @@ function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string) {
           : "",
     );
     cell(row, l.line, "line-no");
-    cell(row, l.label, "text");
+    var parts = year && taxes && taxes.parts ? taxes.parts[year + "|" + l.key] : undefined;
+    var labelCell = cell(row, parts && parts.length ? "" : l.label, "text");
+    if (parts && parts.length) {
+      // a projected line opens to what it is made of, each part with where it comes from
+      var open = year + "|" + l.key;
+      var toggle = button(
+        l.label,
+        function () {
+          taxLineOpen[open] = !taxLineOpen[open];
+          toggle.setAttribute("aria-expanded", String(!!taxLineOpen[open]));
+          var next = row.nextElementSibling;
+          if (next && next.classList.contains("line-parts")) next.remove();
+          if (taxLineOpen[open]) row.parentNode!.insertBefore(partsRow(l, parts!, withFiled ? 5 : 3), row.nextSibling);
+        },
+        "line-why",
+      );
+      toggle.setAttribute("aria-expanded", String(!!taxLineOpen[open]));
+      labelCell.appendChild(toggle);
+    }
     var ratio = RATIO_KEYS.indexOf(l.key) >= 0;
     var show = function (v: number) {
       return ratio ? (v * 100).toFixed(2) + "%" : cents.format(v);
@@ -878,6 +900,7 @@ function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string) {
       cell(row, isOff ? show(l.value - (l.filed as number)) : "", isOff ? "off" : "");
     }
     tbody.appendChild(row);
+    if (parts && parts.length && taxLineOpen[year + "|" + l.key]) tbody.appendChild(partsRow(l, parts, withFiled ? 5 : 3));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
@@ -1032,4 +1055,66 @@ function lawValue(item: string, value: string) {
   if (/rate/.test(item) && n > 0 && n < 1) return (n * 100).toFixed(n * 100 < 1 ? 2 : 1).replace(/\.0$/, "") + "%";
   if (n >= 100) return money.format(n);
   return value;
+}
+
+var TAX_PART_NAMES: Record<string, string> = {
+  "so far": "So far",
+  paychecks: "Paychecks to come",
+  vests: "Vests to come",
+  "short-term": "Short-term",
+  "long-term": "Long-term",
+  estimate: "Your estimate",
+};
+
+// What a projected line is made of: each part with whose it is and where it comes from, what they add up to, and
+// the way to the input behind a part: a job's pay changes and end on Jobs, the sales on Form 8949.
+function partsRow(l: TaxLine, parts: TaxPart[], span: number) {
+  var tr = el("tr", null, "line-parts");
+  var td = el("td");
+  td.colSpan = span;
+  tr.appendChild(td);
+  var table = el("table", null, "parts");
+  var total = 0;
+  parts.forEach(function (p) {
+    total += p.amount;
+    var r = el("tr");
+    var who = cell(r, "", "text who");
+    who.appendChild(el("div", TAX_PART_NAMES[p.part] || p.part));
+    if (p.person || p.employer) who.appendChild(el("div", [p.person, p.employer].filter(Boolean).join(", "), "support"));
+    cell(r, cents.format(p.amount), "num");
+    var from = cell(r, "", "text");
+    from.appendChild(el("div", p.detail, "support"));
+    if (p.part === "paychecks" || p.part === "vests")
+      from.appendChild(
+        button(
+          "Pay changes and job end, on Jobs",
+          function () {
+            setView("jobs");
+          },
+          "text",
+        ),
+      );
+    if (p.part === "short-term" || p.part === "long-term")
+      from.appendChild(
+        button(
+          "The sales, on Form 8949",
+          function () {
+            taxView = "8949";
+            drawTaxes();
+          },
+          "text",
+        ),
+      );
+    table.appendChild(r);
+  });
+  td.appendChild(table);
+  var rounded = Math.abs(total - l.value) >= 0.005;
+  td.appendChild(
+    el(
+      "p",
+      "Adds up to " + cents.format(total) + (rounded ? "; the return rounds it to " + cents.format(l.value) + "." : "."),
+      "parts-sum",
+    ),
+  );
+  return tr;
 }

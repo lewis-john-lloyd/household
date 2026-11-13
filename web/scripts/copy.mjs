@@ -45,5 +45,16 @@ page = inline(
   "/* budgetview.js, edits.js */",
   ["budgetview.js", "edits.js"].map((f) => readFileSync(`dist/${f}`, "utf8")).join("\n"),
 );
+// The page's modules share one script, so a name two of them declare at the top level is one name, and the later
+// silently replaces the earlier (TypeScript allows a var declared twice). Refuse to build that.
+const declared = new Map();
+for (const m of PAGE) {
+  const code = readFileSync(`build/page/page/${m}.js`, "utf8");
+  for (const [, name] of code.matchAll(/^(?:var|let|const|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    if (declared.has(name) && declared.get(name) !== m)
+      throw new Error(`src/page/${m}.ts and src/page/${declared.get(name)}.ts both declare ${name} at the top level`);
+    declared.set(name, m);
+  }
+}
 page = inline(page, "/* page.js */", PAGE.map((m) => readFileSync(`build/page/page/${m}.js`, "utf8")).join("\n"));
 writeFileSync("dist/Index.html", page);

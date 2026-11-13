@@ -578,6 +578,21 @@
       .setting-control input { width: 9em; }
       .plan-settings { display: grid; gap: 8px; margin-top: 8px; }
       .plan-setting { display: grid; gap: 2px; }
+      /* a projected tax line opens to what it is made of (taxes.ts, partsRow) */
+      table.form-lines button.line-why { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+      table.form-lines button.line-why:hover { color: var(--primary); }
+      table.form-lines button.line-why:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+      table.form-lines button.line-why[aria-expanded="true"] { font-weight: 500; }
+      table.form-lines tr.line-parts > td { padding: 0 0 12px 24px; }
+      table.form-lines table.parts { width: 100%; font-size: 13px; table-layout: fixed; }
+      table.form-lines table.parts td { padding: 6px 8px 6px 0; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+      table.form-lines table.parts td.num { width: 96px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      table.form-lines table.parts td.who { width: 30%; }
+      table.form-lines .parts-sum { margin: 4px 0 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+      .class-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+      .class-control .class-none { color: var(--waiting); font-weight: 500; }
+      .class-control input { width: 12em; }
+      .class-control .error { flex-basis: 100%; }
       details.law > summary { cursor: pointer; list-style: revert; }
       details.law > summary h2 { display: inline; margin-right: 8px; }
       table.law-lines { width: 100%; margin-top: 8px; font-size: 13px; }

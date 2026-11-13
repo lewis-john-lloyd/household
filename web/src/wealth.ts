@@ -26,6 +26,7 @@ interface FundValue {
   assetClass: string;
   value: number;
   accounts: string[];
+  security: Record<string, string> | null; // its row in the ledger's securities (editor_securities), or null
 }
 
 interface OwnerRow {
@@ -327,6 +328,8 @@ function valueLines(
 }
 
 function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
+  const securities: Record<string, Record<string, string>> = {}; // each fund's row in force, by symbol
+  for (const r of wealthRows(tabs.editor_securities || [])) if (r.symbol) securities[r.symbol] = r;
   const vals = wealthRows(tabs.investment_values || []);
   const asOf = vals.reduce((a, r) => (r.date > a ? r.date : a), "");
   const now = vals.filter((r) => r.date === asOf);
@@ -351,7 +354,7 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
     a.tracked = a.tracked || r.basis === "tracked"; // an old reading moved with prices since
     byAccount.set(key, a);
     const symbol = r.symbol || "(" + r.account_id + " total)";
-    const f = byFund.get(symbol) || { symbol, assetClass: r.asset_class, value: 0, accounts: [] };
+    const f = byFund.get(symbol) || { symbol, assetClass: r.asset_class, value: 0, accounts: [], security: null };
     f.value += v;
     if (f.accounts.indexOf(r.account_id) < 0) f.accounts.push(r.account_id);
     byFund.set(symbol, f);
@@ -456,7 +459,9 @@ function wealthPage(tabs: Record<string, unknown[][]>): WealthPage {
     total: now.reduce((s, r) => s + num(r.value), 0),
     buckets,
     accounts: Array.from(byAccount.values()).sort((a, b) => b.value - a.value),
-    funds: Array.from(byFund.values()).sort((a, b) => b.value - a.value),
+    funds: Array.from(byFund.values())
+      .map((f) => ({ ...f, security: securities[f.symbol] || null }))
+      .sort((a, b) => b.value - a.value),
     owners: Array.from(owners.values()).sort(
       (a, b) => ownerOrder(a.owner) - ownerOrder(b.owner) || a.owner.localeCompare(b.owner),
     ),

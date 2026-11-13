@@ -355,6 +355,9 @@ function budgetBook(
   if (fundValues.length) {
     // each annual (sinking fund) line's running balance at each month's end (budget.sinking_funds)
     const [month, line, category, balance] = columnsAt(fundValues, ["month", "line", "category", "balance"], "sinking_funds");
+    const head = fundValues[0].map(String);
+    const setAside = head.indexOf("set_aside"),
+      spentAt = head.indexOf("spent"); // older Reports have the balance only
     book.funds = [];
     for (const v of fundValues.slice(1)) {
       const m = String(v[month] ?? "");
@@ -364,6 +367,8 @@ function budgetBook(
           line: String(v[line] ?? ""),
           category: String(v[category] ?? ""),
           balance: Number(v[balance]) || 0,
+          ...(setAside >= 0 ? { set_aside: Number(v[setAside]) || 0 } : {}),
+          ...(spentAt >= 0 ? { spent: Number(v[spentAt]) || 0 } : {}),
         });
     }
   }

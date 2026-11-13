@@ -5,7 +5,7 @@ import json
 import pandas as pd
 import pytest
 
-from household import budget, categorize, compute, engine, inbox, schema, sheets
+from household import budget, categorize, compute, engine, inbox, schema, sheets, tax
 from household.parsers import ParseError, changes, identify
 from test_inbox import FakeDrive, rows
 from test_sheets import FakeSpreadsheet
@@ -801,3 +801,46 @@ def test_a_looks_right_change_set_is_read_whole_and_becomes_a_decision():
     ]
     twice = doc(edit, dict(edit, looks_right="no"))
     assert "edit 2 (looks_right): edits the same thing as edit 1" in refused(twice)
+
+
+FACTS = table(
+    "return_facts",
+    # a made-up estimate in two parts, which add up; and a filed line, which an estimate never touches
+    {"year": "2026", "kind": "estimate", "key": "charity", "person": "", "value": "30", "source_doc": "", "note": "a"},
+    {"year": "2026", "kind": "estimate", "key": "charity", "person": "", "value": "20", "source_doc": "", "note": "b"},
+    {"year": "2025", "kind": "filed", "key": "charity", "person": "", "value": "40", "source_doc": "d1", "note": ""},
+)
+
+
+def test_a_tax_estimate_is_set_from_the_views_as_the_whole_figure():
+    edit = {"kind": "estimate", "year": "2026", "key": "charity", "value": "60", "was": {"value": "50"}}
+    result = changes.parse(doc(edit))
+    result.check(ledger_reader(**(LEDGER | {"return_facts": FACTS})))
+    rows = result.tables["return_facts"]
+    assert rows[["year", "kind", "key", "person", "value", "source_doc"]].values.tolist() == [
+        ["2026", "estimate", "charity", "", "60", "views"]
+    ]
+    assert rows["note"].iloc[0].startswith("set from the views ")
+    assert "estimate 2026 charity: 60" in result.notes
+    # the projection reads it as the whole figure: the parts before it no longer add
+    after = pd.concat([FACTS, rows], ignore_index=True)
+    assert tax.estimate_total(after, "2026", "charity") == 60
+    later = table("return_facts", {"year": "2026", "kind": "estimate", "key": "charity", "value": "5"})
+    assert tax.estimate_total(pd.concat([after, later], ignore_index=True), "2026", "charity") == 65  # one after adds
+
+
+def test_a_tax_estimate_must_be_a_number_for_a_year_and_the_figure_as_seen():
+    reader = ledger_reader(**(LEDGER | {"return_facts": FACTS}))
+    stale = {"kind": "estimate", "year": "2026", "key": "charity", "value": "60", "was": {"value": "30"}}
+    assert "changed in the ledger since you edited it (value is '50')" in refused(doc(stale), reader)
+    words = {"kind": "estimate", "year": "2026", "key": "charity", "value": "lots", "was": {"value": "50"}}
+    assert "value 'lots' is not a number" in refused(doc(words), reader)
+    year = {"kind": "estimate", "year": "26", "key": "charity", "value": "60", "was": {"value": "50"}}
+    assert "year '26' is not a year" in refused(doc(year), reader)
+    # a figure the ledger has no estimate for yet is new, per person when it is one person's
+    new = {"kind": "estimate", "year": "2026", "key": "wi_earned_income", "person": "alex", "value": "70", "was": None}
+    result = changes.parse(doc(new))
+    result.check(reader)
+    assert result.tables["return_facts"][["key", "person", "value"]].values.tolist() == [
+        ["wi_earned_income", "alex", "70"]
+    ]

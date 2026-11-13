@@ -211,3 +211,191 @@ function monthLines(box: HTMLElement, bl: Row, month: string, rows: TargetInput[
   );
   return tr;
 }
+
+// ---- an annual fund's balance ----
+
+var fundOpen: Record<string, boolean> = {}; // "line|month" whose lines are shown
+var fundLines: Record<string, Txn[]> = {}; // "category|month": its lines, once loaded
+
+// How an annual (sinking fund) line's balance was worked out, in its drawer: what it carried into the year, then
+// each month this year to the period's last: set aside, spent from it (every line in its category, one-offs
+// included), and the balance after. Each month opens its lines, where one that belongs elsewhere is moved out,
+// and the balance after the next run is said once a change is in hand. The amount set aside is the line's own,
+// changed with its Change.
+function fundWorking(d: HTMLElement, bl: Row, v: BudgetView) {
+  var all = (budget.data!.book.funds || []).filter(function (f) {
+    return f.line === bl.line;
+  });
+  if (!all.length || all[0].spent === undefined) return; // before a run has written them
+  var box = el("div", null, "working fund-working");
+  box.dataset.line = bl.line;
+  d.appendChild(box);
+  drawFund(box, bl, workingMonth(v), all);
+}
+
+function drawFund(box: HTMLElement, bl: Row, month: string, all: NonNullable<BudgetBook["funds"]>) {
+  box.textContent = "";
+  var year = month.slice(0, 4);
+  var rows = all
+    .filter(function (f) {
+      return f.month.slice(0, 4) === year && f.month <= month;
+    })
+    .sort(function (a, b) {
+      return a.month < b.month ? -1 : 1;
+    });
+  var before = all
+    .filter(function (f) {
+      return f.month < year + "-01";
+    })
+    .sort(function (a, b) {
+      return a.month < b.month ? -1 : 1;
+    });
+  box.appendChild(el("h4", "How its balance was worked out"));
+  if (!rows.length) {
+    box.appendChild(el("p", "It has no months in " + year + " yet.", "support"));
+    return;
+  }
+  var carried = before.length ? before[before.length - 1].balance : 0;
+  box.appendChild(
+    el(
+      "p",
+      (before.length
+        ? "It carried " + cents.format(carried) + " into " + year + ". "
+        : "It began in " + monthWords(rows[0].month) + ". ") +
+        "Each month it sets aside its amount and pays what its category spent, every line counted, one-offs too.",
+      "support",
+    ),
+  );
+  var table = el("table", null, "txns working-months fund-months");
+  var head = el("tr");
+  ["Month", "Set aside", "Spent", "Balance", ""].forEach(function (h, i) {
+    var th = el("th", h, i === 0 || i === 4 ? "text" : "");
+    head.appendChild(th);
+  });
+  table.appendChild(head);
+  var pending = 0,
+    shift = 0; // what the changes in hand move out of (or into) the fund's spending
+  rows.forEach(function (f) {
+    var key = bl.line + "|" + f.month;
+    (fundLines[bl.category + "|" + f.month] || []).forEach(function (t) {
+      var was = t.category === bl.category,
+        now = movedTo(t) === bl.category;
+      if (was === now) return;
+      pending++;
+      shift += (now ? 1 : -1) * -t.amount;
+    });
+    var row = el("tr");
+    row.dataset.month = f.month;
+    cell(row, monthShort(f.month), "text");
+    cell(row, cents.format(f.set_aside || 0), "");
+    cell(row, cents.format(f.spent || 0), "spend");
+    cell(row, cents.format(f.balance), f.balance < -0.005 ? "over" : "");
+    var toggle = button(
+      fundOpen[key] ? "Hide its lines" : "Its lines",
+      function () {
+        fundOpen[key] = !fundOpen[key];
+        drawFund(box, bl, month, all);
+      },
+      "text",
+    );
+    toggle.setAttribute("aria-expanded", String(!!fundOpen[key]));
+    cell(row, "", "text").appendChild(toggle);
+    table.appendChild(row);
+    if (fundOpen[key]) table.appendChild(fundMonthLines(box, bl, month, all, rows, f.month));
+  });
+  box.appendChild(table);
+  var last = rows[rows.length - 1];
+  box.appendChild(
+    el(
+      "p",
+      cents.format(carried) +
+        " carried, plus " +
+        cents.format(
+          rows.reduce(function (t, f) {
+            return t + (f.set_aside || 0);
+          }, 0),
+        ) +
+        " set aside, less " +
+        cents.format(
+          rows.reduce(function (t, f) {
+            return t + (f.spent || 0);
+          }, 0),
+        ) +
+        " spent: " +
+        cents.format(last.balance) +
+        " at the end of " +
+        monthShort(last.month) +
+        ".",
+      "working-sum",
+    ),
+  );
+  if (pending) {
+    var next = last.balance - shift;
+    box.appendChild(
+      el(
+        "p",
+        "After the next run, about " +
+          cents.format(next) +
+          " (" +
+          (next < last.balance ? "down " : "up ") +
+          cents.format(Math.abs(next - last.balance)) +
+          "), with " +
+          countOf(pending, "line", "lines") +
+          " moved " +
+          (shift < 0 ? "out of it" : "into it") +
+          ".",
+        "working-after",
+      ),
+    );
+  }
+}
+
+// The category a line is in once the changes in hand apply.
+function movedTo(t: Txn) {
+  var moving = edited("line|" + t.id + "|category");
+  return moving ? String((moving.edit as Record<string, string>).value) : t.category;
+}
+
+// One month's lines in the fund's category, with their fixes. The first month opened loads the year so far in
+// one read, so the others open at once and the preview counts every month's moves.
+function fundMonthLines(
+  box: HTMLElement,
+  bl: Row,
+  month: string,
+  all: NonNullable<BudgetBook["funds"]>,
+  rows: NonNullable<BudgetBook["funds"]>,
+  m: string,
+) {
+  var tr = el("tr", null, "month-lines");
+  var td = el("td");
+  td.colSpan = 5;
+  tr.appendChild(td);
+  var lines = fundLines[bl.category + "|" + m];
+  if (!lines) {
+    var id = "fund-" + bl.line.replace(/[^a-z0-9]+/gi, "-") + "-" + m;
+    td.id = id;
+    td.appendChild(el("span", "Loading\u2026", "support"));
+    cachedCall(
+      "getLines",
+      [rows[0].month + "-01", periodDays(rows[rows.length - 1].month)[1], [bl.category], []],
+      function (list) {
+        rows.forEach(function (r) {
+          fundLines[bl.category + "|" + r.month] = [];
+        });
+        list.forEach(function (t) {
+          var at = fundLines[bl.category + "|" + t.date.slice(0, 7)];
+          if (at && t.category === bl.category) at.push(t);
+        });
+        drawFund(box, bl, month, all);
+      },
+      id,
+    );
+    return tr;
+  }
+  td.appendChild(
+    lineList(lines, function () {
+      drawFund(box, bl, month, all);
+    }),
+  );
+  return tr;
+}

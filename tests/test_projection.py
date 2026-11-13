@@ -310,3 +310,16 @@ def test_each_projected_line_is_made_of_parts_that_add_up_to_it():
     assert est[["part", "amount", "detail"]].values.tolist() == [
         ["estimate", 50.0, "your estimate in return_facts: a guess"]
     ]
+
+
+def test_an_estimate_set_from_the_views_stands_in_for_the_parts_before_it():
+    def fact(value, doc="", note=""):
+        row = {"year": "2026", "kind": "estimate", "key": "charity", "person": "", "value": value}
+        return row | {"source_doc": doc, "note": note}
+
+    facts = pd.DataFrame(
+        [fact("30", note="a"), fact("20", note="b"), fact("60", "views", "set from the views 2026-11-13")]
+    )
+    _, _, _, parts = projection.project(2026, stubs_through(24), pd.DataFrame(), facts)
+    est = parts[parts["key"] == "charity"]
+    assert est[["amount", "detail"]].values.tolist() == [[60.0, "set from the views 2026-11-13"]]

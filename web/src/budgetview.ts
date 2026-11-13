@@ -18,7 +18,8 @@ interface BudgetBook {
   lineTargets?: { month: string; line: string; category: string; target: number }[]; // each budget line's (budget_targets)
   income?: { month: string; pay: number; other: number }[]; // what came in each month: take-home pay, other income (flows)
   giving?: Gift[]; // each month's gifts by recipient (the giving report)
-  funds?: { month: string; line: string; category: string; balance: number }[]; // annual lines' balances at each month's end (sinking_funds)
+  // annual lines' balances at each month's end, with that month's amount set aside and spending (sinking_funds)
+  funds?: { month: string; line: string; category: string; balance: number; set_aside?: number; spent?: number }[];
   days: [string, string, number][]; // [date, category, spend]
   groups: Record<string, string>; // category -> group
   loans?: Record<string, string>; // category -> the loan whose payment splits into it (editor_categories)

@@ -142,6 +142,43 @@ FILED_LINES = ("11a", "12e", "15", "16", "s2_11", "s2_12", "23", "24", "25c", "3
 
 
 PER_PERSON = ("ss_withheld", "employers", "wi_earned_income")  # kept per person, not added up
+FROM_VIEWS = "views"  # the source_doc of an estimate set from the views: it stands in for the estimates before it
+
+
+def estimates_in_force(facts: DataFrame) -> DataFrame:
+    """return_facts less the estimates a later one set from the views stands in for.
+
+    Estimates for the same year, key and person add up (a figure in parts). One set from the views (source_doc
+    "views") is the whole figure as the person sees it, so it replaces every estimate before it; one added after
+    it adds to it as usual. Other kinds are untouched."""
+    if facts is None or facts.empty:
+        return facts
+    est = facts["kind"].astype(str) == "estimate"
+    if not est.any():
+        return facts
+    rows = facts[est]
+    keys = list(zip(rows["year"].astype(str), rows["key"].astype(str), rows["person"].astype(str).str.strip()))
+    views = rows["source_doc"].astype(str).str.strip() == FROM_VIEWS
+    last = {}  # (year, key, person) -> the position of its latest estimate set from the views
+    for i, (k, v) in enumerate(zip(keys, views)):
+        if v:
+            last[k] = i
+    drop = [rows.index[i] for i, k in enumerate(keys) if k in last and i < last[k]]
+    return facts.drop(index=drop)
+
+
+def estimate_total(facts: DataFrame, year: int | str, key: str, person: str = "") -> float | None:
+    """The estimate in force for a year, key and person (its parts added up), or None when there is none."""
+    if facts is None or facts.empty:
+        return None
+    f = estimates_in_force(facts)
+    hit = f[
+        (f["kind"].astype(str) == "estimate")
+        & (f["year"].astype(str) == str(year))
+        & (f["key"].astype(str) == key)
+        & (f["person"].astype(str).str.strip() == person)
+    ]
+    return None if hit.empty else round(float(pd.to_numeric(hit["value"], errors="coerce").fillna(0).sum()), 2)
 
 
 def inputs_from_facts(facts: DataFrame, year: int, kinds: tuple[str, ...] = ("input",)) -> Inputs:

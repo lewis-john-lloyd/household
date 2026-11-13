@@ -41,6 +41,10 @@ row a person would otherwise have typed:
                    a blend ("SDT 60, BT 40"), each        carried from the row it
                    code a node of the allocation          replaces)
                    targets
+  estimate         a tax estimate for a year in        -> return_facts (kind estimate,
+                   progress (key, person if it is         source_doc "views": it stands
+                   per person), as the whole figure       in for the estimates before
+                                                          it, tax.estimates_in_force)
   job              a pay change: a raise, a new job,   -> comp_events
                    a change of hours (FTE); a row for
                    the same date, person and employer
@@ -52,7 +56,7 @@ no unknown fields, sizes, enums, dates, regexes), and check then holds each edit
 refuses the whole file, which stays in the inbox with every reason, so nothing is half applied.
 
 An edit that replaces a setting (a budget line, a scheduled amount on its date, a payee rule, a
-category, an alias, a parameter, a security) says in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
+category, an alias, a parameter, a security, an estimate) says in `was` what it replaced: every field of the row in force that the edit can change (WAS_FIELDS), as
 it was when the person edited it, or null for a new one; a `was` missing any of them is refused. If the ledger no longer agrees (another change set or a seed got there first), the file is
 refused rather than written over what the person never saw.
 
@@ -67,7 +71,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from .common import ParseError, Result
-from .. import allocation, budget_checks, categorize, compute, giving, schema
+from .. import allocation, budget_checks, categorize, compute, giving, schema, tax
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -82,6 +86,7 @@ SOURCE = "web"
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")  # a category, the shape a split can name
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .\-_/]{0,39}$")  # a ticker, or a plan fund's name
 CLASS_RE = re.compile(r"^[A-Za-z_]+(\s*[: ]\s*[0-9.]+)?(\s*,\s*[A-Za-z_]+\s*[: ]\s*[0-9.]+)*$")  # SDT, or SDT 60, BT 40
+YEAR_RE = re.compile(r"^(19|20)[0-9]{2}$")
 PARAMETER_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z0-9_]+)?$")
 PATTERN_PARAMETERS = ("order_payee:", "transfer_payee:")  # parameters whose value is a payee pattern
 TOP = {"format", "version", "created_at", "base_run", "edits"}
@@ -107,12 +112,13 @@ KINDS = {
     "recipient": ({"key", "deductible"}, set()),
     "looks_right": ({"check", "looks_right"}, set()),
     "security": ({"symbol", "asset_class"}, {"was"}),
+    "estimate": ({"year", "key", "value"}, {"person", "note", "was"}),
 }
 MERCHANT_KINDS = ("payee", "subscription", "recurring_merge", "recurring_name", "recurring_line", "recipient")
 LINE_FIELDS = ("category", "split", "note", "one_off", "void")
 JURISDICTIONS = ("federal", "wi")
 FUTURE_SLACK = timedelta(days=1)  # clocks disagree a little; a change set from further ahead is refused
-REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter", "security"}  # edits that carry `was`
+REPLACES = {"budget_line", "payee_rule", "category", "alias", "parameter", "security", "estimate"}  # carry `was`
 # every field such an edit can change: `was` gives them all, so a change made since to any of them is seen
 WAS_FIELDS = {
     "budget_line": ("effective", "category", "account", "priority", "rule", "amount", "per", "note"),
@@ -121,6 +127,7 @@ WAS_FIELDS = {
     "alias": ("category", "note"),
     "security": ("name", "asset_class", "expense_ratio", "quote", "wash_group"),
     "parameter": ("value",),
+    "estimate": ("value",),
 }
 
 BUDGET = schema.table(schema.LEDGER, "budget_rules")
@@ -246,6 +253,13 @@ def _values(kind, e):
             out.append(f"symbol {e['symbol']!r} is not a ticker")
         if not allocation.blend(e["asset_class"]) or not CLASS_RE.match(e["asset_class"].strip()):
             out.append(f"asset_class {e['asset_class']!r} is not a code or a blend of codes (SDT 60, BT 40)")
+    if kind == "estimate":
+        if not YEAR_RE.match(e["year"]):
+            out.append(f"year {e['year']!r} is not a year")
+        if not NAME_RE.match(e["key"]):
+            out.append(f"key {e['key']!r} is not a return_facts key")
+        if not _number(e["value"]):
+            out.append(f"value {e['value']!r} is not a number")
     if kind == "looks_right":
         if not e["check"].strip():
             out.append("check is empty")
@@ -353,6 +367,8 @@ def _target(e):
         return (kind, _merge_key(e["key"]))
     if kind == "job":
         return ("job", e["person"], e["effective"], e["employer"])
+    if kind == "estimate":
+        return ("estimate", e["year"], e["key"], e.get("person", ""))
     key = {
         "payee_rule": "pattern",
         "category": "category",
@@ -456,6 +472,9 @@ def _describe(e):
         return f"check {e['check']}: " + ("looks right" if e["looks_right"] == "yes" else "check again")
     if kind == "security":
         return f"security {e['symbol']}: asset class {e['asset_class'].strip()}"
+    if kind == "estimate":
+        who = f" for {e['person']}" if e.get("person") else ""
+        return f"estimate {e['year']} {e['key']}{who}: {e['value']}"
     if kind == "line":
         return f"line {e['txn_id']}: {e['field']} {e['value'] or '(cleared)'}"
     if kind == "budget_line":
@@ -629,6 +648,20 @@ def _rows(edits, at):
                     "wash_group": was.get("wash_group", ""),
                 },
             )
+        elif kind == "estimate":
+            add(
+                "return_facts",
+                {
+                    "year": e["year"],
+                    "kind": "estimate",
+                    "key": e["key"],
+                    "person": e.get("person", ""),
+                    "value": e["value"].replace(",", ""),
+                    "source_doc": tax.FROM_VIEWS,  # the whole figure: it stands in for the estimates before it
+                    "note": e.get("note", "") or f"set from the views {at[:10]}".strip(),
+                    "doc_id": "",
+                },
+            )
         elif kind == "item":
             add(
                 "item_categories",
@@ -719,6 +752,9 @@ def _current(e, read):
         return _in_force(read("category_aliases"), ["alias"], [e["alias"]])
     if kind == "security":
         return _in_force(read("securities"), ["symbol"], [e["symbol"]])
+    if kind == "estimate":  # the figure in force: its parts added up, as the projection reads it
+        total = tax.estimate_total(read("return_facts"), e["year"], e["key"], e.get("person", ""))
+        return None if total is None else {"value": str(total)}
     parameters = read("parameters")
     return _in_force(parameters, ["jurisdiction", "key"], ["household", e["key"]])
 

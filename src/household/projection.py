@@ -311,9 +311,11 @@ def working(year, pos, sales, facts):
                     }
                 )
     if facts is not None and not facts.empty:
-        est = facts[(facts["year"].astype(str) == str(year)) & (facts["kind"] == "estimate")]
+        settled = tax.estimates_in_force(facts)
+        est = settled[(settled["year"].astype(str) == str(year)) & (settled["kind"] == "estimate")]
         for r in est.to_dict("records"):
-            where = str(r.get("source_doc", "") or "").strip() or str(r.get("note", "") or "").strip()
+            doc, note = str(r.get("source_doc", "") or "").strip(), str(r.get("note", "") or "").strip()
+            where = note if doc in ("", tax.FROM_VIEWS) else doc
             out.append(
                 {
                     "key": str(r["key"]),
@@ -321,7 +323,10 @@ def working(year, pos, sales, facts):
                     "employer": "",
                     "part": "estimate",
                     "amount": round(float(_num(pd.Series([r["value"]])).iloc[0]), 2),
-                    "detail": "your estimate in return_facts" + (f": {where}" if where else ""),
+                    # one set from the views says so (its note carries the day); one in return_facts names its doc
+                    "detail": (note or "set from the views")
+                    if doc == tax.FROM_VIEWS
+                    else "your estimate in return_facts" + (f": {where}" if where else ""),
                 }
             )
     return pd.DataFrame(out, columns=WORKING_COLUMNS)
@@ -452,7 +457,7 @@ def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, v
     sales = sales[sales["sale_date"].astype(str).str[:4] == str(year)] if not sales.empty else sales
     gain = _num(sales["gain"]) if not sales.empty else pd.Series(dtype=float)
     term = sales["term"] if not sales.empty else pd.Series(dtype=str)
-    i = tax.inputs_from_facts(facts, year, kinds=("estimate",)) if not facts.empty else {}
+    i = tax.inputs_from_facts(tax.estimates_in_force(facts), year, kinds=("estimate",)) if not facts.empty else {}
     i.pop("ss_withheld_by_person", None)
     earned = {}
     for (person, _), p in pos.items():

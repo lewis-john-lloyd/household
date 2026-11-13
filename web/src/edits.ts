@@ -73,6 +73,10 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   recipient: [["key", "deductible"], []],
   looks_right: [["check", "looks_right"], []],
   security: [["symbol", "asset_class"], ["was"]],
+  estimate: [
+    ["year", "key", "value"],
+    ["person", "note", "was"],
+  ],
 };
 
 // every field an edit that replaces a setting can change: its `was` gives them all (WAS_FIELDS in changes.py)
@@ -83,6 +87,7 @@ const WAS_FIELDS: Record<string, string[]> = {
   alias: ["category", "note"],
   parameter: ["value"],
   security: ["name", "asset_class", "expense_ratio", "quote", "wash_group"],
+  estimate: ["value"],
 };
 
 /** A tab's values (header first) as rows of text by column name; blank rows are skipped. */
@@ -220,6 +225,8 @@ function editTarget(edit: Edit): string {
       return `looks_right|${f("check")}`;
     case "security":
       return `security|${f("symbol")}`;
+    case "estimate":
+      return `estimate|${f("year")}|${f("key")}|${f("person")}`;
     default:
       return `${edit.kind}|${JSON.stringify(edit)}`;
   }

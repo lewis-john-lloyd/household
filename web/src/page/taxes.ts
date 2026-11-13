@@ -880,7 +880,7 @@ function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string, y
           toggle.setAttribute("aria-expanded", String(!!taxLineOpen[open]));
           var next = row.nextElementSibling;
           if (next && next.classList.contains("line-parts")) next.remove();
-          if (taxLineOpen[open]) row.parentNode!.insertBefore(partsRow(l, parts!, withFiled ? 5 : 3), row.nextSibling);
+          if (taxLineOpen[open]) row.parentNode!.insertBefore(partsRow(l, parts!, withFiled ? 5 : 3, year!), row.nextSibling);
         },
         "line-why",
       );
@@ -900,7 +900,7 @@ function formTable(lines: TaxLine[], withFiled: boolean, computedHead: string, y
       cell(row, isOff ? show(l.value - (l.filed as number)) : "", isOff ? "off" : "");
     }
     tbody.appendChild(row);
-    if (parts && parts.length && taxLineOpen[year + "|" + l.key]) tbody.appendChild(partsRow(l, parts, withFiled ? 5 : 3));
+    if (parts && parts.length && taxLineOpen[year + "|" + l.key]) tbody.appendChild(partsRow(l, parts, withFiled ? 5 : 3, year!));
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
@@ -1068,7 +1068,8 @@ var TAX_PART_NAMES: Record<string, string> = {
 
 // What a projected line is made of: each part with whose it is and where it comes from, what they add up to, and
 // the way to the input behind a part: a job's pay changes and end on Jobs, the sales on Form 8949.
-function partsRow(l: TaxLine, parts: TaxPart[], span: number) {
+function partsRow(l: TaxLine, parts: TaxPart[], span: number, year: string) {
+  var estimated: Record<string, boolean> = {}; // the people whose estimate already has its Change
   var tr = el("tr", null, "line-parts");
   var td = el("td");
   td.colSpan = span;
@@ -1084,6 +1085,25 @@ function partsRow(l: TaxLine, parts: TaxPart[], span: number) {
     cell(r, cents.format(p.amount), "num");
     var from = cell(r, "", "text");
     from.appendChild(el("div", p.detail, "support"));
+    if (p.part === "estimate" && !estimated[p.person]) {
+      // the estimate is changed where it shows, as the whole figure for its person (its parts added up)
+      estimated[p.person] = true;
+      var mine = parts.filter(function (x) {
+        return x.part === "estimate" && x.person === p.person;
+      });
+      from.appendChild(
+        estimateControl(
+          year,
+          l.key,
+          l.label,
+          p.person,
+          mine.reduce(function (t, x) {
+            return t + x.amount;
+          }, 0),
+          mine.length,
+        ),
+      );
+    }
     if (p.part === "paychecks" || p.part === "vests")
       from.appendChild(
         button(
@@ -1117,4 +1137,69 @@ function partsRow(l: TaxLine, parts: TaxPart[], span: number) {
     ),
   );
   return tr;
+}
+
+// A tax estimate changed where the line it feeds shows it: the whole figure for its year, key and person (an
+// `estimate` edit; ingest keeps it as the figure in place of the parts before it). Staged like any change, and
+// said on the line until the run applies it.
+function estimateControl(year: string, key: string, label: string, person: string, total: number, parts: number) {
+  var box = el("span", null, "setting-control estimate-control");
+  box.dataset.estimate = key + (person ? "|" + person : "");
+  var target = editTarget({ kind: "estimate", year: year, key: key, person: person });
+  var draw = function () {
+    box.textContent = "";
+    var e = edited(target);
+    if (e) {
+      var to = String((e.edit as Record<string, string>).value);
+      box.appendChild(el("strong", money.format(Number(to)), "setting-value"));
+      box.appendChild(el("span", stagedText(target) ? "waiting to be saved" : "applies at the next run", "tag warn"));
+    }
+    var change = button(
+      "Change",
+      function () {
+        box.textContent = "";
+        var value = textInput(e ? String((e.edit as Record<string, string>).value) : String(Math.round(total * 100) / 100), "");
+        value.setAttribute("aria-label", "Your estimate for " + label + (person ? ", " + person : ""));
+        value.inputMode = "decimal";
+        box.appendChild(value);
+        box.appendChild(
+          button(
+            "Keep",
+            function () {
+              var v = value.value.trim().replace(/[$,]/g, "");
+              if (!/^-?[0-9]+(\.[0-9]+)?$/.test(v)) {
+                value.setCustomValidity("A number, like 1200");
+                value.reportValidity();
+                return;
+              }
+              var edit: Edit = { kind: "estimate", year: year, key: key, value: v, was: { value: String(total) } };
+              if (person) edit.person = person;
+              stage(edit, "your estimate for " + label + (person ? " (" + person + ")" : "") + ", " + year + ": " + v);
+              draw();
+            },
+            "text",
+          ),
+        );
+        if (staged[target])
+          box.appendChild(
+            button(
+              "Undo",
+              function () {
+                unstage(target);
+                draw();
+              },
+              "text",
+            ),
+          );
+        box.appendChild(button("Cancel", draw, "text"));
+        if (parts > 1) box.appendChild(el("div", "The figure you keep stands in for its " + parts + " parts.", "support"));
+        value.focus();
+      },
+      "text",
+    );
+    change.setAttribute("aria-label", "Change your estimate for " + label);
+    box.appendChild(change);
+  };
+  draw();
+  return box;
 }

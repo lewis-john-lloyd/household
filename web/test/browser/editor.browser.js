@@ -994,6 +994,51 @@ test("on a phone the page leads with the answer: cards, the period's judgment un
   await page.close();
 });
 
+test("an annual fund's balance shows its working: carried, set aside, spent, and a line moved out", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-02', y = m.slice(0, 4), k = Number(m.slice(5, 7));" +
+      "  var funds = [{ month: (Number(y) - 1) + '-12', line: 'media', category: 'media', set_aside: 10, spent: 0, balance: 30 }];" +
+      "  for (var i = 1; i <= k; i++) { var mm = y + '-' + String(i).padStart(2, '0');" +
+      "    funds.push({ month: mm, line: 'media', category: 'media', set_aside: 10, spent: i === k ? 9 : 0, balance: 30 + 10 * i - (i === k ? 9 : 0) }); }" +
+      "  window.__k = k;" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { media: 'fun' }, recurring: [], funds: funds," +
+      "    days: [[d, 'media', 9]], targets: [{ month: m, category: 'media', priority: 'low', target: 10 }] } };" +
+      "  window.__answers.getEditor.budgetLines = [{ line: 'media', effective: '2001-01-01', category: 'media', account: ''," +
+      "    priority: 'low', rule: 'sinking_fund', amount: '10', per: 'monthly', note: '', in_force: 'yes', in_words: '120 a year, set aside'," +
+      "    this_month: '', last_12_months: '0', scheduled: '', spends_from: 'media' }];" +
+      "  window.__answers.getLines = [{ id: 't1', date: d, account: 'a1', payee: 'PAGE TURNER BOOKS', category: 'media', amount: -9," +
+      "    split: '', items: [], key: 'PAGE TURNER BOOKS', note: '', one_off: false }];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line:has-text('Media')");
+  await page.click("table.bv tr.line:has-text('Media') td:nth-child(2)");
+  await page.waitForSelector(".drawer .fund-working");
+  const k = await page.evaluate(() => window.__k);
+  const year = new Date().getFullYear();
+  assert.match(await page.textContent(".drawer .fund-working p.support"), new RegExp(`^It carried \\$30\\.00 into ${year}\\.`)); // leak-guard: allow (made up)
+  assert.equal(await page.locator(".drawer .fund-months tr[data-month]").count(), k); // this year's months so far
+  const end = 30 + 10 * k - 9;
+  assert.match(
+    await page.textContent(".drawer .fund-working .working-sum"),
+    new RegExp(`^\\$30\\.00 carried, plus \\$${10 * k}\\.00 set aside, less \\$9\\.00 spent: \\$${end}\\.00 at the end of `), // leak-guard: allow (made up)
+  );
+  // the month's line belongs elsewhere: moved out, the balance after the next run is said
+  await page.click(".drawer .fund-months tr[data-month]:last-of-type button:has-text('Its lines')");
+  await page.waitForSelector(".drawer .fund-months tr[data-txn='t1']");
+  await page.click(".drawer .fund-months tr[data-txn='t1'] button:has-text('Move')");
+  await page.waitForSelector(".drawer .fund-months tr.move-row select option[value='food']", { state: "attached" });
+  await page.selectOption(".drawer .fund-months tr.move-row select", "food");
+  await page.click(".drawer .fund-months tr.move-row button:has-text('Move it')");
+  await page.waitForSelector(".drawer .fund-working .working-after");
+  assert.equal(
+    await page.textContent(".drawer .fund-working .working-after"),
+    `After the next run, about $${end + 9}.00 (up $9.00), with 1 line moved out of it.`, // leak-guard: allow (made up)
+  );
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("a line set per year is judged on its year: a month a payment lands in isn't over", async () => {
   const page = await open(
     "window.__location = { parameter: { view: 'budget' } };" +
@@ -1018,6 +1063,11 @@ test("a line set per year is judged on its year: a month a payment lands in isn'
   assert.equal(await page.getAttribute(`${row("Kids")} .spent-bar`, "title"), "This year: $1,200 of $1,200"); // leak-guard: allow (made up)
   // past the year's budget is still over
   assert.equal(await page.textContent(`${row("Family")} td.status .st`), "1.3 times the year's $120"); // leak-guard: allow (made up)
+  // the period's plan judges each line by its own measure: the yearly ones apart, one past its year by name
+  assert.match(
+    await page.textContent(".a2-card:has-text('Went out') .a2-small"),
+    /^\$30 more than planned, besides \$1,359 on lines judged on their year \(Family is past its year\); /, // leak-guard: allow (made up)
+  );
   assert.equal(await page.locator(`${row("Family")} td.over`).count(), 1);
   // a monthly line is judged on its month as before, and an annual fund's bar marks its even pace
   assert.equal(await page.textContent(`${row("Hobby")} td.status .st`), "Over by $30"); // leak-guard: allow (made up)
@@ -2303,6 +2353,52 @@ test("a projected tax line opens to what it is made of, adding up to it, with th
   // a vest leads to the job behind it
   await page.click("#taxes-body tr.line-parts button:has-text('on Jobs')");
   await page.waitForFunction(() => document.querySelector("#view-jobs").getAttribute("aria-pressed") === "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a tax line's estimate is changed where it shows, as the whole figure in place of its parts", async () => {
+  const line = (key, label, value) => ({ form: "Form 1040", line: key, key, label, value, filed: null });
+  const part = (person, kind, amount, detail) => ({ person, employer: "", part: kind, amount, detail });
+  const page = await open(
+    "window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [{ year: "2001", filed: false, forms: { "Form 1040": [line("charity", "Gifts to charity", 50)] } }],
+        plan: [],
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+        law: [],
+        parts: {
+          "2001|charity": [
+            part("", "estimate", 30, "your estimate in return_facts: a"),
+            part("", "estimate", 20, "your estimate in return_facts: b"),
+          ],
+        },
+      }) +
+      ";",
+  );
+  await page.click("#view-taxes");
+  await page.click("#taxes-body button.line-why:has-text('Gifts to charity')");
+  await page.waitForSelector("#taxes-body tr.line-parts .estimate-control");
+  assert.equal(await page.locator("#taxes-body .estimate-control").count(), 1); // one figure, one Change
+  await page.click("#taxes-body .estimate-control button:has-text('Change')");
+  assert.equal(await page.inputValue("#taxes-body .estimate-control input"), "50"); // its parts added up
+  assert.match(await page.textContent("#taxes-body .estimate-control"), /stands in for its 2 parts/);
+  await page.fill("#taxes-body .estimate-control input", "words");
+  await page.click("#taxes-body .estimate-control button:has-text('Keep')");
+  assert.deepEqual(await staged(page), []); // not a number: nothing staged
+  await page.fill("#taxes-body .estimate-control input", "$60"); // leak-guard: allow (made up)
+  await page.click("#taxes-body .estimate-control button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["your estimate for Gifts to charity, 2001: 60"]);
+  const edit = await page.evaluate(() => Object.values(staged)[0].edit);
+  assert.deepEqual(edit, { kind: "estimate", year: "2001", key: "charity", value: "60", was: { value: "50" } });
+  assert.match(await page.textContent("#taxes-body .estimate-control"), /\$60waiting to be saved/); // leak-guard: allow (made up)
+  await page.click("#taxes-body .estimate-control button:has-text('Change')");
+  await page.click("#taxes-body .estimate-control button:has-text('Undo')");
+  assert.deepEqual(await staged(page), []);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

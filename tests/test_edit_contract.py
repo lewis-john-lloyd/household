@@ -56,6 +56,12 @@ SAMPLES = {
         {"check": "target_high|hobby|t9", "looks_right": "no"},
         {"check": "price_changed|WILLOW ST|2001-01-03|9.00", "looks_right": "yes"},
     ],
+    "estimate": [
+        {"year": "2026", "key": "charity", "value": "60"},
+        {"year": "2026", "key": "charity", "value": "70", "note": "x"},
+        {"year": "2026", "key": "wi_earned_income", "person": "alex", "value": "70"},
+        {"year": "2026", "key": "wi_earned_income", "person": "sam", "value": "70"},
+    ],
     "security": [
         {"symbol": "ACME", "asset_class": "SDT"},
         {"symbol": "ACME", "asset_class": "SDT 60, BT 40"},

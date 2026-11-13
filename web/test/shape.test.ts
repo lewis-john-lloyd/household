@@ -756,6 +756,22 @@ test("budget view: an annual line item's fund balance at the period's last month
   assert.equal(food("2026-Q4")?.balance, 40); // a quarter: its last month so far
   const none = shape.budgetView(book(), "2026-11", "2025-11", true, "2026-11-07").groups[0].lines[0];
   assert.equal(none.balance, null);
+  // each month keeps what was set aside and spent, for the drawer's working; an older tab has the balance only
+  assert.deepEqual(b.funds?.[1], { month: "2026-10", line: "upkeep", category: "food", balance: 80, set_aside: 50, spent: 20 });
+  const old = shape.budgetBook(
+    BOOK_VALUES.budget,
+    BOOK_VALUES.daily,
+    BOOK_VALUES.recurring,
+    BOOK_VALUES.categories,
+    [],
+    [],
+    [],
+    [
+      ["month", "line", "category", "balance"],
+      ["2026-10", "upkeep", "food", 80],
+    ],
+  );
+  assert.deepEqual(old.funds, [{ month: "2026-10", line: "upkeep", category: "food", balance: 80 }]);
 });
 
 test("budget book: each category's loan comes from editor_categories, and an older tab without the column has none", () => {

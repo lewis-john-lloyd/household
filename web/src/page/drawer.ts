@@ -142,6 +142,7 @@ function openLine(category: string, v: BudgetView, only?: string) {
     var note = changeNote("budget_line|" + bl.line);
     if (note) d.appendChild(el("p", note, "staged-note"));
     if (RULE_MONTHS[bl.rule]) working(d, bl, v); // a floating target shows its working (working.ts)
+    if (bl.rule === "sinking_fund") fundWorking(d, bl, v); // an annual fund's balance shows its working (working.ts)
     if (bl.rule === "loan") {
       // its target is the schedule's: the Home page shows it, month by month
       var to = el("p", null, "support");

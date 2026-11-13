@@ -27,6 +27,17 @@ The Taxes view is this year's return worked out from the pay stubs, vests, sales
 - **Form 8949.** Each year's sales as the form lays them out (the `form_8949` report from `lots.py`): Part I short-term and Part II long-term, columns (a) to (h), a wash sale's code W and its adjustment, a tag where the plan reported another basis for the shares, and each part's totals beside the return's Schedule D line 7 or 15 as filed. The box (A to F) comes from the 1099-B.
 - **Retirement and health accounts.** The 401(k), the mega backdoor Roth (after-tax 401(k) contributions against what 415(c) leaves, marked converted when the household setting `after_tax_401k_converts_to_roth` is TRUE, since a stub can't show a conversion), the HSA, a limited-purpose or health FSA (against the year's health FSA limit, per person and employer) and the dependent-care FSA, each so far this year and by December 31 against its limit (`elections`). A backdoor Roth IRA isn't on a pay stub, so it shows as not tracked.
 
+### Evidence and fixes on every page
+
+A number the engine worked out shows what it came from, and the wrong input is fixed where it shows (the UX audit's principle, `web/src/page/evidence.ts`):
+
+- **The lines behind a number** come with the same fixes wherever they show: Move (to another category, a `line` edit), One-off or Count it, and Open (the line's page). A change shows on the line until the run applies it, and the same button undoes one not saved yet. A split line is moved on its own page. The Budget drawer's transactions, a floating budget's months and Cashflow use the one list.
+- **Cashflow**: where money went opens its lines for the chosen period, from the table or by clicking the chart; by group, every category in the group. A year's monthly average lists the year's lines and says it is a twelfth of them. A category also opens its budget.
+- **Settings where they are used**: the Taxes withholding plan's target refund and vest rate, and each Retirement assumption's setting, are changed beside the number (the same `parameter` edit as Status, Settings), the value as stored filled in.
+- **Taxes cites its law**: "The law these numbers use" lists the year's limits, rates and thresholds from `tax_sources`, each with the document, page and words it comes from and a link to the PDF on file.
+
+Performance: Reports change only when compute runs, so the page asks once and keeps the answer (`cachedCall`; two asks while one runs share it). A thing a person does costs one call: a floating budget's window of months comes in one read (`getLines`, from one day to another, a group's categories resolved on the server), and the editor's data loads only when someone edits from a page that did not need it. A browser test loads ten years of a household's spending, about four times the real data, and fails if a full redraw of the Budget page or shaping its period grows past generous limits.
+
 ### Editing in the views
 
 The views change the ledger without opening it. Each change is made on the page it is about:

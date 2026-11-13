@@ -99,12 +99,15 @@ function openLine(category: string, v: BudgetView, only?: string) {
       show.remove();
       txns.appendChild(el("div", "Loading…", "support"));
       txns.id = "drawer-txns";
-      call(
+      cachedCall(
         "getTransactions",
         [v.period, [category], v.sameWeeks ? v.through : ""],
         function (list) {
-          txns.textContent = "";
-          txns.appendChild(transactionTable(list));
+          var draw = function () {
+            txns.textContent = "";
+            txns.appendChild(lineList(list, draw)); // each line with its fixes (evidence.ts)
+          };
+          draw();
         },
         "drawer-txns",
       );
@@ -166,38 +169,6 @@ function openNewLine() {
       "",
     ),
   );
-}
-
-function transactionTable(txns: Txn[]) {
-  if (!txns.length) return el("p", "No transactions.", "support");
-  var table = el("table", null, "txns");
-  txns.forEach(function (t) {
-    var r = el("tr");
-    cell(r, t.date);
-    var payee = cell(r, t.payee, "text");
-    if (t.split) {
-      var badge = el("span", "split", "badge");
-      badge.title = t.split.split("; ").join("\n");
-      payee.appendChild(document.createTextNode(" "));
-      payee.appendChild(badge);
-    }
-    if (t.items && t.items.length) payee.appendChild(itemList(t.items));
-    cell(r, cents.format(t.amount));
-    var open = button(
-      t.id,
-      function (e) {
-        e.stopPropagation();
-        closeDrawer();
-        openTransaction(t.id);
-      },
-      "link txn-link",
-    );
-    open.title = "Edit this transaction: its category, split, note and flags";
-    cell(r, "", "text").appendChild(open);
-    if (changedText("line|" + t.id)) r.className = "staged";
-    table.appendChild(r);
-  });
-  return table;
 }
 
 // A line's twelve months up to the period's last: what it spent each month (red past its target) and

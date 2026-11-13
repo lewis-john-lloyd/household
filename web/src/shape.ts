@@ -394,12 +394,28 @@ function budgetBook(
 
 /** A period's transactions in these categories, from its first day through `through` ("" for its last). */
 function transactionsFor(txns: Txn[], period: string, categories: string[], through = ""): Txn[] {
-  const wanted = new Set(categories);
   const [from, end] = periodDays(period);
-  const last = through || end;
+  return linesBetween(txns, from, through || end, categories);
+}
+
+/** The lines of these categories from one day to another, both included: the most spent first. */
+function linesBetween(txns: Txn[], from: string, to: string, categories: string[]): Txn[] {
+  const wanted = new Set(categories);
   return txns
-    .filter((t) => wanted.has(t.category) && t.date >= from && t.date <= last)
+    .filter((t) => wanted.has(t.category) && t.date >= from && t.date <= to)
     .sort((a, b) => a.amount - b.amount || b.date.localeCompare(a.date));
+}
+
+/** The categories of these groups (editor_categories: category, group), for a group's lines. */
+function categoriesOf(values: unknown[][], groups: string[]): string[] {
+  if (!values.length || !groups.length) return [];
+  const [c, g] = columnsAt(values, ["category", "group"], "editor_categories");
+  const wanted = new Set(groups);
+  return values
+    .slice(1)
+    .filter((v) => wanted.has(String(v[g] ?? "").trim()))
+    .map((v) => String(v[c] ?? "").trim())
+    .filter(Boolean);
 }
 
 /**

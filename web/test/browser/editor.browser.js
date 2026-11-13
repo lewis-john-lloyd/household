@@ -1699,7 +1699,7 @@ test("a floating line shows its working, a month's lines, and what marking one o
       "  window.__answers.getEditor.budgetLines = [{ line: 'petrol', effective: '2001-01-01', category: 'petrol', account: ''," +
       "    priority: 'high', rule: 'trailing', amount: '', per: 'monthly', note: '', in_force: 'yes', in_words: 'from the last 4 months'," +
       "    this_month: '54.25', last_12_months: '0', scheduled: '', spends_from: 'petrol' }];" +
-      "  window.__answers.getTransactions = [" +
+      "  window.__answers.getLines = [" +
       "    { id: 't7', date: back(3) + '-20', account: 'a1', payee: 'BLUE PUMP FUEL', category: 'petrol', amount: -60, split: ''," +
       "      items: [], key: 'BLUE PUMP FUEL', note: '', one_off: false }," +
       "    { id: 't6', date: back(3) + '-05', account: 'a1', payee: 'BLUE PUMP FUEL', category: 'petrol', amount: -30, split: ''," +
@@ -1751,6 +1751,221 @@ test("a floating line shows its working, a month's lines, and what marking one o
   assert.deepEqual(sent, [{ kind: "line", txn_id: "t7", field: "one_off", value: "TRUE" }]);
   // saved but not run: still counted as in hand, so the preview stays
   await page.waitForSelector(".drawer .working-after");
+  // the whole window came in one read: opening another month asks for nothing more
+  await page.click(".drawer .working-months tr[data-month]:first-child button:has-text('Its lines')");
+  await page.waitForSelector(".drawer .working tr.month-lines .line-list, .drawer .working tr.month-lines .support");
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").length), 1);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+const SANKEY = // a Sankey that keeps its select handler and selection, so a test can click a node
+  "window.google.visualization = { DataTable: function () { this.addColumn = function () {}; this.addRows = function () {}; }," +
+  "  Sankey: function () { var me = this; window.__sankey = me; me.draw = function () {}; me.picked = [];" +
+  "    me.getSelection = function () { return me.picked; }; }," +
+  "  events: { addListener: function (chart, ev, f) { chart.onselect = f; } } };";
+
+const FLOWS =
+  "window.__answers.getPeriods = ['2001-10', '2001', '2001 monthly average'];" +
+  "window.__answers.getFlows = { rows: [['accounts', 'food', 80], ['accounts', 'hobby', 20]], dropped: []," +
+  "  totals: [{ name: 'accounts', into: 0, out: 100, total: 100 }, { name: 'food', into: 80, out: 0, total: 80 }," +
+  "    { name: 'hobby', into: 20, out: 0, total: 20 }]," +
+  "  summary: { income: [], other: [], taxes: [], went: [{ name: 'food', amount: 80 }, { name: 'hobby', amount: 20 }], through: [] } };" +
+  "window.__answers.getLines = [{ id: 't1', date: '2001-10-04', account: 'a1', payee: 'ACME GROCER', category: 'food', amount: -50," +
+  "    split: '', items: [], key: 'ACME GROCER', note: '', one_off: false }," +
+  "  { id: 't2', date: '2001-10-09', account: 'a1', payee: 'WILLOW ST', category: 'food', amount: -30, split: '', items: []," +
+  "    key: 'WILLOW ST', note: '', one_off: false }];" +
+  "window.__answers.getEditor.categories = [{ category: 'food', group: 'living', priority: 'high' }," +
+  "  { category: 'household', group: 'home', priority: 'medium' }];";
+
+test("where money went opens its lines, from the table or the chart, each with its fixes", async () => {
+  const page = await open(SANKEY + FLOWS);
+  await page.click("#view-flows");
+  await page.click("#flows-tabs button[data-tab='table']");
+  await page.waitForSelector(".flow-column.went li.opens");
+  await page.click(".flow-column.went li.opens:has-text('food')");
+  await page.waitForSelector(".drawer .line-list tr[data-txn='t1']");
+  assert.match(await page.textContent(".drawer h2"), /Food/);
+  const asked = await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").map((c) => c.args));
+  assert.deepEqual(asked, [["2001-10-01", "2001-10-31", [], ["food"]]]); // the page opens by group
+  // move a line to another category: the categories load only now, and the move is undone in place
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getEditor").length), 0);
+  await page.click(".drawer tr[data-txn='t2'] button:has-text('Move')");
+  await page.waitForSelector(".drawer tr.move-row select"); // the picker's own row, under the line
+  await page.selectOption(".drawer tr.move-row select", "household");
+  await page.click(".drawer tr.move-row button:has-text('Move it')");
+  assert.deepEqual(await staged(page), ["Food: the $30.00 line of 2001-10-09 moves to household"]); // leak-guard: allow (made up)
+  assert.match(await page.textContent(".drawer tr[data-txn='t2']"), /Moves to Household after the next run/);
+  await page.click(".drawer tr[data-txn='t2'] button:has-text('Undo move')");
+  assert.deepEqual(await staged(page), []);
+  await page.keyboard.press("Escape");
+  // the chart: a click on where money went opens the same lines, from the page's copy
+  await page.click("#flows-tabs button[data-tab='sankey']");
+  await page.evaluate(() => {
+    window.__sankey.picked = [{ name: "food  $80" }]; // leak-guard: allow (made up)
+    window.__sankey.onselect();
+  });
+  await page.waitForSelector(".drawer .line-list tr[data-txn='t1']");
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").length), 1); // cached
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a year's monthly average opens the year's lines and says so", async () => {
+  const page = await open(SANKEY + FLOWS);
+  await page.click("#view-flows");
+  await page.waitForSelector("#period option", { state: "attached" });
+  await page.selectOption("#period", "2001 monthly average");
+  await page.click("#flows-tabs button[data-tab='table']");
+  await page.click(".flow-column.went li.opens:has-text('food')");
+  await page.waitForSelector(".drawer .line-list");
+  assert.match(await page.textContent(".drawer"), /These are the year's lines; the average is a twelfth of them/);
+  const asked = await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").map((c) => c.args));
+  assert.deepEqual(asked, [["2001-01-01", "2001-12-31", [], ["food"]]]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a setting a number uses is changed beside it: the tax plan's target, a retirement assumption", async () => {
+  const line = (key, label, value) => ({ form: "Form 1040", line: key, key, label, value, filed: null });
+  const plan = {
+    year: "2001",
+    return: "federal",
+    person: "alex",
+    employer: "Acme Widgets",
+    paychecks_left: "4",
+    vest_rate: "0.35",
+    projected: "-10",
+    target: "50",
+    current_extra: "0",
+    suggested_extra: "5",
+    lands_at: "50",
+    penalty_free: "TRUE",
+    note: "",
+  };
+  const law = [
+    {
+      year: "2001",
+      item: "hsa_family",
+      value: "8000",
+      document: "Rev. Proc. 2000-1",
+      page: "2",
+      quote: "family coverage is 8,000",
+      record: "https://example.test/doc",
+    }, // leak-guard: allow (made up)
+    {
+      year: "2001",
+      item: "addl_medicare_rate",
+      value: "0.009",
+      document: "Instructions for Form 8959",
+      page: "1",
+      quote: "",
+      record: "",
+    },
+  ];
+  const page = await open(
+    "window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [{ year: "2001", filed: false, forms: { "Form 1040": [line("24", "Total tax", 90)] } }],
+        plan: [plan],
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+        law,
+      }) +
+      ";" +
+      "window.__answers.getEditor.parameters = [{ key: 'target_refund', value: '50', source: 'ledger' }];",
+  );
+  await page.click("#view-taxes");
+  await page.waitForSelector("#taxes-body .plan-settings");
+  const refund = "#taxes-body .setting-control[data-setting='target_refund']";
+  assert.match(await page.textContent(refund), /target_refund/);
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getEditor").length), 0); // not until needed
+  await page.click(refund + " button:has-text('Change')");
+  await page.waitForSelector(refund + " input");
+  assert.equal(await page.inputValue(refund + " input"), "50");
+  await page.fill(refund + " input", "40");
+  await page.click(refund + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["setting target_refund = 40"]);
+  assert.match(await page.textContent(refund), /set to 40, waiting to be saved/);
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(sent, [{ kind: "parameter", key: "target_refund", value: "40", was: { value: "50" } }]);
+  // a setting not in the ledger yet is a new one: no was
+  const rate = "#taxes-body .setting-control[data-setting='planned_supplemental_rate']";
+  await page.click(rate + " button:has-text('Change')");
+  await page.fill(rate + " input", "0.3");
+  await page.click(rate + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["setting planned_supplemental_rate = 0.3"]);
+  // the law behind the numbers: closed, drawn only when opened
+  assert.equal(await page.locator("#taxes-body details.law table").count(), 0);
+  await page.click("#taxes-body details.law summary");
+  await page.waitForSelector("#taxes-body details.law table");
+  assert.deepEqual(
+    await page.$$eval("#taxes-body details.law tr", (rs) => rs.map((r) => [...r.children].slice(0, 2).map((c) => c.textContent))),
+    [
+      ["addl medicare rate", "0.90%"],
+      ["hsa family", "$8,000"], // leak-guard: allow (made up)
+    ],
+  );
+  assert.equal(
+    await page.getAttribute("#taxes-body details.law tr[data-item='hsa_family'] a", "href"),
+    "https://example.test/doc",
+  );
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a retirement assumption's setting is changed beside it", async () => {
+  const page = await open(`window.__answers.getRetirement = ${JSON.stringify(RETIREMENT)};
+                           window.__location = { parameter: { view: 'retirement', tab: 'assumptions' } };`);
+  const kids = "#retirement-body .setting-control[data-setting='retirement_spending:kids']";
+  await page.waitForSelector(kids);
+  await page.click(kids + " button:has-text('Change')");
+  await page.waitForSelector(kids + " input");
+  assert.equal(await page.inputValue(kids + " input"), "0 from 2032");
+  await page.fill(kids + " input", "0 from 2033");
+  await page.click(kids + " button:has-text('Keep')");
+  assert.deepEqual(await staged(page), ["setting retirement_spending:kids = 0 from 2033"]);
+  await page.click(kids + " button:has-text('Change')");
+  await page.click(kids + " button:has-text('Undo')");
+  assert.deepEqual(await staged(page), []);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("performance: ten years of a household's spending draws and redraws quickly", async () => {
+  // about four times the household's real data (daily_actuals, budget targets, two years of floating workings),
+  // so a change that makes the page's work grow badly with the data fails here before anyone feels it. Generous
+  // limits: a slow CI machine passes, a quadratic loop does not.
+  const page = await open(`(function () {
+    var cats = [], groups = {}, days = [], targets = [], inputs = [];
+    for (var i = 0; i < 60; i++) { cats.push("cat" + i); groups["cat" + i] = "group" + (i % 8); }
+    var end = new Date(), d = new Date(Date.UTC(end.getUTCFullYear() - 10, end.getUTCMonth(), 1));
+    for (; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      var day = d.toISOString().slice(0, 10);
+      for (var k = 0; k < 15; k++) days.push([day, cats[(d.getUTCDate() * 7 + k * 13) % 60], 5 + ((k * 37) % 90)]);
+      if (day.slice(8) === "01") cats.forEach(function (c) { targets.push({ month: day.slice(0, 7), category: c, priority: "medium", target: 300 }); });
+    }
+    window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [], inputs: inputs, book: { groups: groups, recurring: [], days: days, targets: targets } };
+    window.__location = { parameter: { view: "budget" } };
+  })();`);
+  await page.waitForSelector("table.bv tr.line");
+  const timing = await page.evaluate(() => {
+    const t0 = performance.now();
+    for (let i = 0; i < 10; i++) drawBudgetPage();
+    const draw = (performance.now() - t0) / 10;
+    const t1 = performance.now();
+    for (let i = 0; i < 10; i++)
+      budgetView(budget.data.book, budget.period, budget.compare, budget.sameWeeks, budget.through || "");
+    return { draw, view: (performance.now() - t1) / 10, rows: document.querySelectorAll("table.bv tr").length };
+  });
+  assert.ok(timing.rows > 60, "the table drew its lines");
+  assert.ok(timing.draw < 250, `a full redraw took ${Math.round(timing.draw)} ms`);
+  assert.ok(timing.view < 120, `shaping the period took ${Math.round(timing.view)} ms`);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

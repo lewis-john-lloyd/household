@@ -6,6 +6,7 @@ interface ServerCalls {
   getPeriods: typeof getPeriods;
   getFlows: typeof getFlows;
   getTransactions: typeof getTransactions;
+  getLines: typeof getLines;
   getBudgetBook: typeof getBudgetBook;
   getStatus: typeof getStatus;
   getEditor: typeof getEditor;
@@ -52,6 +53,10 @@ declare namespace google {
     class Sankey {
       constructor(container: Element);
       draw(data: DataTable, options: object): void;
+      getSelection(): { name?: string; row?: number }[]; // a node's selection names it, a link's has its row
+    }
+    namespace events {
+      function addListener(chart: object, event: string, handler: () => void): void;
     }
   }
 }

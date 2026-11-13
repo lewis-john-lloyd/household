@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -31,6 +31,8 @@ const shape = new Function(
   budgetChecks: (values: unknown[][]) => BudgetCheck[] | null;
   targetInputs: (values: unknown[][]) => TargetInput[] | null;
   floatingValue: (values: number[], sigma: number) => number;
+  linesBetween: (txns: Txn[], from: string, to: string, categories: string[]) => Txn[];
+  categoriesOf: (values: unknown[][], groups: string[]) => string[];
   budgetBook: (
     budget: unknown[][],
     daily: unknown[][],
@@ -871,4 +873,28 @@ test("a transaction says whether it is marked one-off", () => {
       ["t2", false],
     ],
   );
+});
+
+test("lines between two days: these categories', both days in, the most spent first; a group's categories", () => {
+  const t = (id: string, date: string, category: string, amount: number) =>
+    ({ id, date, category, amount, account: "", payee: "", split: "", items: [], key: "", note: "", one_off: false }) as Txn;
+  const txns = [
+    t("a", "2001-07-01", "food", -20),
+    t("b", "2001-07-31", "food", -50),
+    t("c", "2001-08-01", "food", -90),
+    t("d", "2001-07-10", "hobby", -10),
+  ];
+  assert.deepEqual(
+    shape.linesBetween(txns, "2001-07-01", "2001-07-31", ["food", "hobby"]).map((x) => x.id),
+    ["b", "a", "d"],
+  );
+  const cats = [
+    ["category", "group", "priority"],
+    ["food", "living", "high"],
+    ["hobby", "fun", "low"],
+    ["gifts", "living", "low"],
+  ];
+  assert.deepEqual(shape.categoriesOf(cats, ["living"]), ["food", "gifts"]);
+  assert.deepEqual(shape.categoriesOf(cats, []), []);
+  assert.deepEqual(shape.categoriesOf([], ["living"]), []);
 });

@@ -13,6 +13,7 @@ export const PAGE = [
   "budgettable",
   "budgetviews",
   "drawer",
+  "evidence",
   "working",
   "recurring",
   "jobs",

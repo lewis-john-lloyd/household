@@ -501,6 +501,7 @@ function drawTaxes() {
   }
   if (taxes!.totals.length > 1) aside.appendChild(scenariosPanel(taxes!.totals));
   if (taxes!.accounts.length) aside.appendChild(accountsPanel(taxes!.accounts));
+  if (taxes!.law && taxes!.law.length) aside.appendChild(lawPanel(taxes!.law));
   side.appendChild(aside);
   body.appendChild(side);
 }
@@ -744,7 +745,9 @@ function planCard(plan: Row[]) {
   plan.forEach(function (p) {
     (byReturn[p["return"]] = byReturn[p["return"]] || []).push(p);
   });
-  var vest = "";
+  var vest = "",
+    rate = "",
+    target = "";
   Object.keys(byReturn).forEach(function (name) {
     var rows = byReturn[name],
       first = rows[0];
@@ -755,7 +758,11 @@ function planCard(plan: Row[]) {
       card.appendChild(section);
       return;
     }
-    if (first.vest_rate) vest = Math.round(Number(first.vest_rate) * 100) + "%";
+    if (first.vest_rate) {
+      vest = Math.round(Number(first.vest_rate) * 100) + "%";
+      rate = first.vest_rate;
+    }
+    if (first.target !== "" && first.target !== undefined) target = first.target;
     var now = Number(first.projected);
     section.appendChild(
       el(
@@ -810,12 +817,21 @@ function planCard(plan: Row[]) {
   card.appendChild(
     el(
       "p",
-      "From the year so far plus the projection" +
-        (vest ? ", with future vests withheld at " + vest : "") +
-        ". The amount and the vest rate are household settings (target_refund, planned_supplemental_rate) in Status, Settings.",
+      "From the year so far plus the projection" + (vest ? ", with future vests withheld at " + vest : "") + ".",
       "support small-print",
     ),
   );
+  // the two settings this plan rests on, changed here (evidence.ts); the next run plans with them
+  var settings = el("div", null, "plan-settings");
+  var refund = el("div", null, "plan-setting");
+  refund.appendChild(el("span", "The refund it aims for", "support"));
+  refund.appendChild(settingControl("target_refund", target));
+  settings.appendChild(refund);
+  var withheld = el("div", null, "plan-setting");
+  withheld.appendChild(el("span", "What future vests are withheld at", "support"));
+  withheld.appendChild(settingControl("planned_supplemental_rate", rate));
+  settings.appendChild(withheld);
+  card.appendChild(settings);
   return card;
 }
 
@@ -966,4 +982,54 @@ function drawScenarioBars(box: HTMLElement, totals: ScenarioTotals[]) {
     list.appendChild(row);
   });
   box.appendChild(list);
+}
+
+// The tax law these numbers use (tax_sources): each limit, rate and threshold with the document, page and words it
+// comes from, a link to the PDF on file. Closed until opened, and drawn only then: the page has no need of it first.
+function lawPanel(law: Row[]) {
+  var box = el("details", null, "card law");
+  var summary = el("summary");
+  summary.appendChild(el("h2", "The law these numbers use"));
+  summary.appendChild(
+    el("span", law[0].year + ": " + countOf(law.length, "value", "values") + ", each with its source", "support"),
+  );
+  box.appendChild(summary);
+  var drawn = false;
+  box.addEventListener("toggle", function () {
+    if (drawn || !(box as HTMLDetailsElement).open) return;
+    drawn = true;
+    var table = el("table", null, "law-lines");
+    law
+      .slice()
+      .sort(function (a, b) {
+        return a.item.localeCompare(b.item);
+      })
+      .forEach(function (r) {
+        var row = el("tr");
+        row.dataset.item = r.item;
+        cell(row, r.item.replace(/_/g, " ").replace(/:/g, ": "), "text");
+        cell(row, lawValue(r.item, r.value), "num");
+        var from = cell(row, "", "text from");
+        var doc = r.record ? el("a", r.document + ", page " + r.page) : el("span", r.document + ", page " + r.page);
+        if (r.record) {
+          (doc as HTMLAnchorElement).href = r.record;
+          (doc as HTMLAnchorElement).target = "_blank";
+          (doc as HTMLAnchorElement).rel = "noopener";
+        }
+        from.appendChild(doc);
+        if (r.quote) from.appendChild(el("div", "\u201c" + r.quote + "\u201d", "support quote"));
+        table.appendChild(row);
+      });
+    box.appendChild(table);
+  });
+  return box;
+}
+
+// A law value as it reads: a rate as a percent, a dollar amount as dollars, anything else as written.
+function lawValue(item: string, value: string) {
+  var n = Number(value);
+  if (value === "" || isNaN(n)) return value;
+  if (/rate/.test(item) && n > 0 && n < 1) return (n * 100).toFixed(n * 100 < 1 ? 2 : 1).replace(/\.0$/, "") + "%";
+  if (n >= 100) return money.format(n);
+  return value;
 }

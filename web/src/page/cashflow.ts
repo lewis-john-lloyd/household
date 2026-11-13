@@ -25,6 +25,18 @@ function drawFlowSummary(s: FlowSummary) {
     var list = el("ul", null, "flow-items");
     c[1].forEach(function (i) {
       var li = el("li");
+      if (c[2] === "went") {
+        // where it went opens its lines, each with its fixes (evidence.ts)
+        li.classList.add("opens");
+        li.tabIndex = 0;
+        li.setAttribute("role", "button");
+        li.setAttribute("aria-haspopup", "dialog");
+        var go = function () {
+          openFlowLines(i.name, i.amount);
+        };
+        li.onclick = go;
+        li.onkeydown = onEnter(go);
+      }
       var label = el("div", null, "flow-label");
       label.appendChild(el("span", i.name));
       label.appendChild(el("span", money.format(i.amount), "n"));
@@ -106,6 +118,14 @@ function drawFlows(result: Answer<"getFlows">) {
       return [label[r[0]], label[r[1]], r[2], r[0] + " → " + r[1] + ": " + money.format(r[2])];
     }),
   );
+  var named: Record<string, string> = {}; // a node's label back to its name, for a click on it
+  Object.keys(label).forEach(function (n) {
+    named[label[n]] = n;
+  });
+  var went: Record<string, number> = {};
+  result.summary.went.forEach(function (i) {
+    went[i.name] = i.amount;
+  });
   var height = Math.max(480, 28 * result.rows.length);
   chart.style.height = height + "px";
   chart.textContent = "";
@@ -114,7 +134,14 @@ function drawFlows(result: Answer<"getFlows">) {
   var token = function (name: string) {
     return css.getPropertyValue(name).trim();
   };
-  new google.visualization.Sankey(chart).draw(data, {
+  var sankey = new google.visualization.Sankey(chart);
+  // a click on where money went opens its lines, as the table's rows do
+  google.visualization.events.addListener(sankey, "select", function () {
+    var picked = sankey.getSelection()[0] as { name?: string } | undefined;
+    var name = picked && picked.name ? named[picked.name] : "";
+    if (name && name in went) openFlowLines(name, went[name]);
+  });
+  sankey.draw(data, {
     height: height,
     backgroundColor: "transparent",
     sankey: {
@@ -162,4 +189,51 @@ function itemList(items: Item[]) {
     list.appendChild(more);
   }
   return list;
+}
+
+// The lines behind where money went in the chosen period: a category's (or, by group, its categories'), the most
+// spent first, each with its fixes. A year's monthly average is a twelfth of the year's lines, so it lists those.
+function openFlowLines(name: string, amount: number) {
+  var period = chosen.flows || "";
+  var average = period.indexOf(" ") > 0;
+  var whole = average ? period.slice(0, 4) : period;
+  var days = periodDays(whole);
+  var byGroup = level === "group";
+  var d = drawer(
+    pretty(name),
+    (average ? "Each month of " + whole + " on average: " : periodName(whole) + ": ") +
+      money.format(amount) +
+      (byGroup ? ", every category in the group." : ".") +
+      (average ? " These are the year's lines; the average is a twelfth of them." : ""),
+  );
+  var box = el("div", "Loading\u2026", "drawer-section support");
+  box.id = "flow-lines";
+  d.appendChild(box);
+  if (!byGroup) {
+    // a category's budget is one click on: its drawer on the Budget page
+    var link = button(
+      "Open its budget",
+      function () {
+        closeDrawer();
+        budget.tab = "lines";
+        budget.open = { category: name };
+        setView("budget");
+      },
+      "text",
+    );
+    d.insertBefore(link, box);
+  }
+  cachedCall(
+    "getLines",
+    [days[0], days[1], byGroup ? [] : [name], byGroup ? [name] : []],
+    function (list) {
+      var draw = function () {
+        box.textContent = "";
+        box.className = "drawer-section";
+        box.appendChild(lineList(list, draw));
+      };
+      draw();
+    },
+    "flow-lines",
+  );
 }

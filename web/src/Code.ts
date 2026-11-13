@@ -141,6 +141,16 @@ function getTransactions(period: string, categories: string[], through?: string)
 }
 
 /**
+ * The lines behind a number on any page, from one day to another: these categories', and every category's in
+ * these groups. One read for a whole window (a floating budget's months, a flow's period), not one per month.
+ */
+function getLines(from: string, to: string, categories: string[], groups: string[]): Txn[] {
+  const tabs = readTabsIfAny_(groups.length ? ["categorized", "editor_categories"] : ["categorized"]);
+  const wanted = categories.concat(categoriesOf(tabs.editor_categories || [], groups));
+  return linesBetween(parseTransactions(tabs.categorized), from, to, wanted);
+}
+
+/**
  * The Budget page's data (shape.ts budgetView shapes it in the page): each month's targets, every day's
  * spending, the recurring charges' months, and the recurring charges you track.
  */
@@ -561,6 +571,7 @@ function getTaxes(): TaxPage {
     "run_notes",
     "tax_history",
     "filed_lines",
+    "tax_sources",
   ]);
   return taxPage(tabs);
 }

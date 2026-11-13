@@ -794,7 +794,8 @@ function drawRetireAssumptions(body: HTMLElement, d: RetirementPage) {
     rows.forEach(function (a) {
       var v =
         MONEY_SECTIONS.indexOf(sec) >= 0 && a.value !== "" && !isNaN(Number(a.value)) ? money.format(Number(a.value)) : a.value;
-      t.row([a.label, v, a.source, a.setting]);
+      // the setting behind an assumption is changed here, beside it (evidence.ts)
+      t.row([a.label, v, a.source, a.setting ? settingControl(a.setting, a.value) : ""]);
     });
   });
 }

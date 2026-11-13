@@ -97,10 +97,11 @@ function drawWorking(box: HTMLElement, bl: Row, month: string, rows: TargetInput
     var lines = workingLines[x.category + "|" + x.input];
     var spend = x.spend;
     (lines || []).forEach(function (t) {
-      var o = oneOffNow(t);
-      if (!o.changed) return;
+      var before = !t.one_off,
+        now = countsNow(t, x.category);
+      if (before === now) return;
       pending++;
-      spend += o.now ? t.amount : -t.amount; // spending is negative: leaving it out lowers the month
+      spend += (now ? 1 : -1) * -t.amount; // a line's spending is its amount's negative
     });
     after.push(Math.max(spend, 0));
     var row = el("tr", null, x === most && rows.length > 1 && x.spend > 0 ? "most" : "");
@@ -157,24 +158,45 @@ function drawWorking(box: HTMLElement, bl: Row, month: string, rows: TargetInput
   }
 }
 
-// One month's lines in the category, each with One-off or Count it; loaded once, then kept.
+// Whether a line counts toward its category's averages once the changes in hand apply: not one-off, and not
+// moved to another category.
+function countsNow(t: Txn, category: string) {
+  var moving = edited("line|" + t.id + "|category");
+  var to = moving ? String((moving.edit as Record<string, string>).value) : t.category;
+  return !oneOffNow(t).now && to === category;
+}
+
+// One month's lines in the category, with their fixes (evidence.ts). The first month opened loads the whole
+// window in one read, so the others open at once and the preview counts every month's changes.
 function monthLines(box: HTMLElement, bl: Row, month: string, rows: TargetInput[], x: TargetInput) {
   var tr = el("tr", null, "month-lines");
   var td = el("td");
   td.colSpan = 4;
   tr.appendChild(td);
-  var cacheKey = x.category + "|" + x.input;
-  var lines = workingLines[cacheKey];
+  var lines = workingLines[x.category + "|" + x.input];
   if (!lines) {
     var id = "working-" + bl.line.replace(/[^a-z0-9]+/gi, "-") + "-" + x.input;
     td.id = id;
-    td.appendChild(el("span", "Loading…", "support"));
-    call(
-      "getTransactions",
-      [x.input, [x.category], ""],
+    td.appendChild(el("span", "Loading\u2026", "support"));
+    var months = rows.map(function (r) {
+      return r.input;
+    });
+    var first = months.reduce(function (a, b) {
+        return b < a ? b : a;
+      }),
+      last = months.reduce(function (a, b) {
+        return b > a ? b : a;
+      });
+    cachedCall(
+      "getLines",
+      [first + "-01", periodDays(last)[1], [x.category], []],
       function (list) {
-        workingLines[cacheKey] = list.filter(function (t) {
-          return t.category === x.category;
+        months.forEach(function (m) {
+          workingLines[x.category + "|" + m] = [];
+        });
+        list.forEach(function (t) {
+          var at = workingLines[x.category + "|" + t.date.slice(0, 7)];
+          if (at && t.category === x.category) at.push(t);
         });
         drawWorking(box, bl, month, rows);
       },
@@ -182,58 +204,10 @@ function monthLines(box: HTMLElement, bl: Row, month: string, rows: TargetInput[
     );
     return tr;
   }
-  if (!lines.length) {
-    td.appendChild(el("span", "No lines.", "support"));
-    return tr;
-  }
-  var table = el("table", null, "txns charge-lines");
-  lines
-    .slice()
-    .sort(function (a, b) {
-      return a.amount - b.amount; // the most spent first
-    })
-    .forEach(function (t) {
-      var o = oneOffNow(t);
-      var target = "line|" + t.id + "|one_off";
-      var row = el("tr", null, o.now ? "left-out" : "");
-      row.dataset.txn = t.id;
-      cell(row, shortDay(t.date), "text day");
-      cell(row, cents.format(-t.amount), "spend");
-      var about = cell(row, "", "text about");
-      about.appendChild(el("div", t.payee));
-      if (o.changed)
-        about.appendChild(el("div", o.now ? "Left out after the next run" : "Counts again after the next run", "support"));
-      else if (o.now) about.appendChild(el("div", "Marked one-off", "support"));
-      var act = cell(row, "", "text");
-      var text = pretty(x.category) + ": the " + cents.format(-t.amount) + " line of " + t.date;
-      act.appendChild(
-        button(
-          o.now ? "Count it" : "One-off",
-          function () {
-            if (staged[target])
-              unstage(target); // undo a change not saved yet
-            else
-              stage(
-                { kind: "line", txn_id: t.id, field: "one_off", value: o.now ? "FALSE" : "TRUE" },
-                text + (o.now ? " counts again" : " is a one-off"),
-              );
-            drawWorking(box, bl, month, rows);
-          },
-          "text",
-        ),
-      );
-      var open = button(
-        "Open",
-        function () {
-          closeDrawer();
-          openTransaction(t.id);
-        },
-        "text",
-      );
-      open.title = "Its page: category, split, note and flags";
-      act.appendChild(open);
-      table.appendChild(row);
-    });
-  td.appendChild(table);
+  td.appendChild(
+    lineList(lines, function () {
+      drawWorking(box, bl, month, rows);
+    }),
+  );
   return tr;
 }

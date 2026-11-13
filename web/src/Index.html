@@ -323,7 +323,6 @@
         color: var(--on-secondary-container); cursor: help; }
       button.link { all: unset; cursor: pointer; color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
       button.link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-      button.txn-link { font: 12px "Roboto Mono", ui-monospace, monospace; }
 
       /* the list and the editor */
       .md { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -558,6 +557,33 @@
       .drawer table.txns { width: 100%; font-size: 13px; }
       .drawer table.txns td { padding: 6px 8px 6px 0; }
       .drawer table.charge-lines td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+      /* the lines behind a number and their fixes, and a setting edited where it is used (evidence.ts) */
+      .drawer table.line-list td { vertical-align: middle; font-variant-numeric: tabular-nums; }
+      table.line-list { width: 100%; table-layout: fixed; }
+      table.line-list td.day { width: 76px; white-space: nowrap; }
+      table.line-list td.spend { width: 80px; text-align: right; white-space: nowrap; }
+      table.line-list td.about { overflow-wrap: anywhere; }
+      table.line-list td.acts { width: 156px; text-align: right; }
+      table.line-list td.acts button { padding-left: 6px; padding-right: 6px; }
+      table.line-list td.acts select { max-width: 150px; }
+      table.line-list tr.left-out td:not(.acts) { color: var(--on-surface-variant); }
+      table.line-list tr.left-out td.spend { text-decoration: line-through; }
+      table.line-list tr.move-row td { padding: 0 0 10px; }
+      table.line-list .move-to { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; }
+      .flow-items li.opens { cursor: pointer; border-radius: 8px; }
+      .flow-items li.opens:hover { background: var(--surface-container-high); }
+      .flow-items li.opens:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+      .setting-control { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+      .setting-control code.setting-key { font-size: 12px; color: var(--on-surface-variant); }
+      .setting-control input { width: 9em; }
+      .plan-settings { display: grid; gap: 8px; margin-top: 8px; }
+      .plan-setting { display: grid; gap: 2px; }
+      details.law > summary { cursor: pointer; list-style: revert; }
+      details.law > summary h2 { display: inline; margin-right: 8px; }
+      table.law-lines { width: 100%; margin-top: 8px; font-size: 13px; }
+      table.law-lines td { padding: 6px 8px 6px 0; vertical-align: top; }
+      table.law-lines td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      table.law-lines .quote { font-style: italic; }
       /* a floating target's working (working.ts): its months, the sum, and what the changes in hand will do */
       .working { margin: 8px 0 16px; padding: 12px 16px; border-radius: 12px; background: var(--surface-container); }
       .working h4 { margin: 0 0 2px; font-size: 14px; font-weight: 500; }

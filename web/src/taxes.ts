@@ -50,6 +50,7 @@ interface TaxPage {
   plan: Record<string, string>[];
   accounts: Record<string, string>[];
   notes: string[];
+  law: Record<string, string>[]; // the latest year's tax law values, each with its document, page and quote
 }
 
 function rowsOf(values: unknown[][]): Record<string, string>[] {
@@ -141,5 +142,6 @@ function taxPage(tabs: Record<string, unknown[][]>): TaxPage {
     plan: latest(rowsOf(tabs.withholding_plan || [])),
     accounts: latest(rowsOf(tabs.elections || [])),
     notes,
+    law: latest(rowsOf(tabs.tax_sources || [])).filter((r) => r.item && r.document),
   };
 }

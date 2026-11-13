@@ -23,6 +23,8 @@ function server({
   ],
   changesWritten = [["file_id", "file", "written_at"]],
   refusals = [],
+  user = "alex@example.test",
+  users = "Alex@example.test, sam@example.test",
 } = {}) {
   const tabs = { run_log: runLog, changes_written: changesWritten };
   const props = { ...start };
@@ -75,8 +77,17 @@ function server({
     unescape,
     encodeURIComponent,
     Date: FakeDate,
-    PropertiesService: { getUserProperties: () => store, getScriptProperties: () => ({ getProperty: () => "reports-id" }) },
+    PropertiesService: {
+      getUserProperties: () => store,
+      getScriptProperties: () => ({ getProperty: (k) => (k === "VIEWS_USERS" ? users : "reports-id") }),
+    },
+    Session: { getActiveUser: () => ({ getEmail: () => user }), getScriptTimeZone: () => "America/Chicago" },
     HtmlService: {
+      createHtmlOutput: (html) => {
+        const page = { html, set: {} };
+        page.setTitle = (t) => ((page.set.title = t), page);
+        return page;
+      },
       createHtmlOutputFromFile: (file) => {
         const page = { file, set: {} };
         page.setTitle = (t) => ((page.set.title = t), page);
@@ -354,4 +365,34 @@ test("the edits of change sets still waiting come back with their words, oldest 
       .join(),
     "f2",
   );
+});
+
+test("only the accounts VIEWS_USERS lists get the page or any answer; unset, the views are closed", () => {
+  const listed = server();
+  assert.equal(listed.context.doGet().file, "Index");
+  const stranger = server({ user: "someone@example.test" });
+  const page = stranger.context.doGet();
+  assert.equal(page.file, undefined);
+  assert.match(page.html, /someone@example\.test is not one of the accounts these views are for/);
+  assert.throws(() => stranger.context.getStatus(), /not one of the accounts/);
+  assert.throws(() => stranger.context.saveChanges([], []), /not one of the accounts/);
+  assert.deepEqual(stranger.reads, []); // refused before anything is read
+  assert.equal(stranger.files.length, 0);
+  const closed = server({ users: "" });
+  assert.match(closed.context.doGet().html, /closed until the script property VIEWS_USERS/);
+  assert.throws(() => server({ user: "" }).context.getStatus(), /This account is not one/);
+  // a name that would be markup is shown as text
+  assert.match(server({ user: "<b>x</b>@example.test" }).context.doGet().html, /&#60;b&#62;x/);
+});
+
+test("every call the page can make is refused to an account not on the list", () => {
+  // the page reaches the server through its public functions (no trailing underscore): each must start with allow_()
+  const code = fs.readFileSync(path.join(DIST, "Code.js"), "utf8");
+  const publicFns = [...code.matchAll(/^function ([A-Za-z]\w*[^_\W])\(/gm)].map((m) => m[1]).filter((n) => n !== "doGet");
+  assert.ok(publicFns.length >= 20);
+  for (const name of publicFns) {
+    const body = code.slice(code.indexOf(`function ${name}(`));
+    const open = body.indexOf("{", body.indexOf(")"));
+    assert.match(body.slice(open, open + 40), /^\{\s*allow_\(\);/, `${name} does not start with allow_()`);
+  }
 });

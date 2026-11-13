@@ -23,6 +23,7 @@ SERVICES = {
     "Drive": ("drive", "v3", {"drive.file"}),
     "Gmail": ("gmail", "v1", {"gmail.readonly"}),
 }
+WHO = re.compile(r"\bSession\.getActiveUser\(\)\.getEmail\b")
 TRIGGERS = re.compile(r"\bScriptApp\.(newTrigger|getProjectTriggers|deleteTrigger)\b")
 # built-in services that would demand a broad scope (all of Drive, all of Sheets, sending mail, the network)
 BROAD_CALLS = re.compile(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.")
@@ -60,6 +61,8 @@ def test_the_manifest_enables_what_the_code_calls_and_nothing_more(project):
         assert scopes & allowed, f"{project}: calls {name} but declares none of {sorted(allowed)}"
     assert set(enabled) <= used, f"{project}: enables {sorted(set(enabled) - used)} but never calls it"
     needed = set().union(*(SERVICES[n][2] for n in used)) | ({"script.scriptapp"} if TRIGGERS.search(text) else set())
+    if WHO.search(text):  # the views' allowlist reads who is viewing
+        needed |= {"userinfo.email"}
     assert scopes <= needed, f"{project}: declares {sorted(scopes - needed)}, which its code does not need"
     assert not scopes & BROAD_SCOPES
     assert not BROAD_CALLS.search(text), f"{project}: {BROAD_CALLS.search(text).group(0)} would need a broad scope"
@@ -112,3 +115,10 @@ def test_clasp_pushes_only_the_script_and_its_manifest(project):
         "Code.js",
         "appsscript.json",
     ]
+
+
+def test_the_views_open_to_signed_in_accounts_and_refuse_all_but_their_list():
+    # a personal account can't name people in the manifest, so the code's allowlist (VIEWS_USERS) does
+    manifest = json.loads(PROJECTS["web"][0].read_text())
+    assert manifest["webapp"] == {"executeAs": "USER_ACCESSING", "access": "ANYONE"}
+    assert "allow_()" in code(PROJECTS["web"][1]) and WHO.search(code(PROJECTS["web"][1]))

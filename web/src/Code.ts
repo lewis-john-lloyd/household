@@ -10,7 +10,40 @@
 // repo (web/assets/icon.png, drawn from icon.svg beside it).
 const ICON = "https://github.com/lewis-john-lloyd/household/raw/main/web/assets/icon.png";
 
+// Who may use the views: the accounts the VIEWS_USERS script property lists (emails, separated by commas or spaces).
+// The web app opens to any signed-in Google account (appsscript.json), since a personal account can't name people
+// there. It runs as the person viewing, so their own sharing still limits what they can read; this list refuses
+// everyone else before anything is read or written. Unset, it refuses everyone and says how to set it.
+function viewer_(): { email: string; allowed: boolean; listed: boolean } {
+  const email = String(Session.getActiveUser().getEmail() || "")
+    .trim()
+    .toLowerCase();
+  const list = String(PropertiesService.getScriptProperties().getProperty("VIEWS_USERS") || "")
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+  return { email, allowed: !!email && list.indexOf(email) >= 0, listed: list.length > 0 };
+}
+
+/** Every call from the page starts here: someone not on the list gets nothing. */
+function allow_(): void {
+  const v = viewer_();
+  if (!v.allowed) throw new Error(refusal_(v));
+}
+
+function refusal_(v: { email: string; listed: boolean }): string {
+  if (!v.listed) return "The views are closed until the script property VIEWS_USERS lists who may use them (your email first).";
+  return `${v.email || "This account"} is not one of the accounts these views are for. The owner adds it to VIEWS_USERS.`;
+}
+
 function doGet(): GoogleAppsScript.HTML.HtmlOutput {
+  const v = viewer_();
+  if (!v.allowed) {
+    const words = refusal_(v).replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
+    return HtmlService.createHtmlOutput("<p style='font: 16px sans-serif; margin: 2em'>" + words + "</p>").setTitle(
+      "The Steward",
+    );
+  }
   return HtmlService.createHtmlOutputFromFile("Index").setTitle("The Steward").setFaviconUrl(ICON);
 }
 
@@ -122,6 +155,7 @@ function readFlows_(): FlowRow[] {
 
 /** Periods with flows, newest first. */
 function getPeriods(): string[] {
+  allow_();
   return periods(readFlows_());
 }
 
@@ -130,6 +164,7 @@ function getFlows(
   period: string,
   level: string,
 ): { rows: SankeyRow[]; dropped: SankeyRow[]; totals: NodeTotal[]; summary: FlowSummary } {
+  allow_();
   const { rows, dropped } = toSankeyRows(readFlows_(), period, level);
   const totals = nodeTotals(rows);
   return { rows, dropped, totals, summary: flowSummary(totals) };
@@ -137,6 +172,7 @@ function getFlows(
 
 /** The transactions behind one budget line: that period's (through a day, when given), in those categories. */
 function getTransactions(period: string, categories: string[], through?: string): Txn[] {
+  allow_();
   return transactionsFor(parseTransactions(readTab_("categorized")), period, categories, through || "");
 }
 
@@ -145,6 +181,7 @@ function getTransactions(period: string, categories: string[], through?: string)
  * these groups. One read for a whole window (a floating budget's months, a flow's period), not one per month.
  */
 function getLines(from: string, to: string, categories: string[], groups: string[]): Txn[] {
+  allow_();
   const tabs = readTabsIfAny_(groups.length ? ["categorized", "editor_categories"] : ["categorized"]);
   const wanted = categories.concat(categoriesOf(tabs.editor_categories || [], groups));
   return linesBetween(parseTransactions(tabs.categorized), from, to, wanted);
@@ -162,6 +199,7 @@ function getBudgetBook(): {
   inputs: TargetInput[] | null;
   gifts: GiftLine[];
 } {
+  allow_();
   const tabs = readTabsIfAny_([
     "budget_vs_actual",
     "daily_actuals",
@@ -211,6 +249,7 @@ function readTabIfAny_(name: string): unknown[][] {
 
 /** The latest ingest and compute: their summaries, every line they printed, and what needs the owner. */
 function getStatus(): Status {
+  allow_();
   const tabs = readTabsIfAny_(["run_log", "run_notes", "coverage", "editor_review", "budget_checks"]);
   return parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review, tabs.budget_checks);
 }
@@ -282,6 +321,7 @@ function keepSaved_(id: string, record: string): void {
 
 /** Everything the editors show: the settings in force, the review queue, duplicates and unexplained stubs. */
 function getEditor(): EditorData {
+  allow_();
   const names = [
     "run_log",
     "editor_budget_lines",
@@ -363,6 +403,7 @@ function savedFor_(request: string): SaveResult | null {
  * comes back as a warning, never as "not saved".
  */
 function saveChanges(edits: Edit[], described: string[], request?: string): SaveResult {
+  allow_();
   const lock = LockService.getUserLock();
   lock.waitLock(20000);
   try {
@@ -401,6 +442,7 @@ function saveChanges(edits: Edit[], described: string[], request?: string): Save
  * since), or null when it did not. Asked after a Save whose answer never came. It waits for any Save still running, so a slow one is not missed.
  */
 function findSave(request: string): SaveResult | null {
+  allow_();
   const req = requestId(request);
   if (!req) throw new Error("Not a request id: " + JSON.stringify(request));
   const lock = LockService.getUserLock();
@@ -418,6 +460,7 @@ function findSave(request: string): SaveResult | null {
 
 /** Change sets saved but not yet read by ingest, and those ingest refused, with the reason. */
 function getWaiting(): Waiting[] {
+  allow_();
   const folder = editsFolder_(false);
   if (!folder) return [];
   const files: { id: string; name: string; createdTime: string }[] = [];
@@ -452,6 +495,7 @@ function getWaiting(): Waiting[] {
  * show what was saved until a run applies it. A change set ingest refused is left out: it will not apply as it is.
  */
 function getWaitingEdits(): WaitingEdits[] {
+  allow_();
   const out: WaitingEdits[] = [];
   const waiting = getWaiting()
     .filter((w) => !w.refused)
@@ -487,6 +531,7 @@ const DISCARDED_DAYS = 30; // long enough for the next ingest to say whether it 
  * can't be remembered, the answer says so.
  */
 function discardWaiting(id: string): { remembered: boolean; warning: string } {
+  allow_();
   const folder = editsFolder_(false);
   if (!folder) throw new Error("No change sets saved yet.");
   const file = drive_().Files.get(id, { fields: "id,name,parents" });
@@ -546,26 +591,31 @@ function discarded_(): Record<string, Discarded> {
 
 /** Discarded change sets an ingest applied anyway (appliedAnyway in edits.ts). */
 function getAppliedAnyway(): AppliedAnyway[] {
+  allow_();
   return appliedAnyway(discarded_(), readTabIfAny_("changes_written"));
 }
 
 /** Stop telling about a discarded change set an ingest applied anyway, once its settings are seen to. */
 function forgetDiscarded(id: string): void {
+  allow_();
   PropertiesService.getUserProperties().deleteProperty(DISCARDED_PREFIX + String(id));
 }
 
 /** One transaction, whole, for the transaction page (null when Reports has no such line). */
 function getTransaction(id: string): Line | null {
+  allow_();
   return findLine(readTab_("categorized"), String(id || "").trim());
 }
 
 /** The open lines a review question covers, to answer them one by one (shape.ts reviewLines). */
 function getReviewLines(key: string): ReviewLine[] {
+  allow_();
   return reviewLines(readTab_("categorized"), String(key || "").trim());
 }
 
 /** Everything the tax page shows (taxes.ts). */
 function getTaxes(): TaxPage {
+  allow_();
   const tabs = readTabsIfAny_([
     "tax_lines",
     "projection",
@@ -583,10 +633,12 @@ function getTaxes(): TaxPage {
 
 /** The Taxes page's Form 8949 part (form8949.ts). */
 function getForm8949(): F8949Page {
+  allow_();
   return form8949Page(readTabsIfAny_(["form_8949", "filed_lines"]));
 }
 
 function getInvestments(): WealthPage {
+  allow_();
   const tabs = readTabsIfAny_([
     "investment_values",
     "editor_securities",
@@ -602,6 +654,7 @@ function getInvestments(): WealthPage {
 }
 
 function getHome(): HomePage {
+  allow_();
   const tabs = readTabsIfAny_([
     "property_summary",
     "home_values",
@@ -617,6 +670,7 @@ function getHome(): HomePage {
 
 /** Everything the Equity page shows (equity.ts): the grants, their vesting, and the shares held. */
 function getEquity(): EquityPage {
+  allow_();
   return equityPage(
     readTabsIfAny_(["equity_grants", "equity_vesting", "equity_summary", "editor_parameters", "withholding_plan"]),
   );
@@ -624,6 +678,7 @@ function getEquity(): EquityPage {
 
 /** Everything the Retirement page shows (retirement.ts). */
 function getRetirement(): RetirementPage {
+  allow_();
   const tabs = readTabsIfAny_([
     "retirement_years",
     "retirement_strategies",

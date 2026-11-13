@@ -132,3 +132,29 @@ def test_each_category_names_the_loan_whose_payment_splits_into_it():
         "principal": "acme_loan",
     }
     assert set(editor.categories(cats, None)["loan"]) == {""}
+
+
+def test_a_settings_history_is_every_value_it_has_had_in_order_with_its_day():
+    params = pd.DataFrame(
+        [
+            {"year": "", "jurisdiction": "household", "key": "transfer_account", "value": "checking", "source": "seed"},
+            {"year": "2026", "jurisdiction": "federal", "key": "rate", "value": "0.1", "source": "law"},
+            {"year": "", "jurisdiction": "household", "key": "vest_rate", "value": "0.22", "source": "seed"},
+            {"year": "", "jurisdiction": "household", "key": "transfer_account", "value": "savings", "source": "web"},
+            {
+                "year": "",
+                "jurisdiction": "household",
+                "key": "transfer_account",
+                "value": "brokerage",
+                "source": "web 2026-11-13",
+            },
+        ]
+    )
+    h = editor.parameter_history(params)
+    assert h.values.tolist() == [
+        ["transfer_account", 1, "checking", "seed"],
+        ["vest_rate", 1, "0.22", "seed"],
+        ["transfer_account", 2, "savings", "web"],  # saved before rows kept their day
+        ["transfer_account", 3, "brokerage", "web 2026-11-13"],
+    ]  # the household's own settings only, in the ledger's order
+    assert editor.parameter_history(None).empty

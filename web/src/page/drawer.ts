@@ -8,6 +8,7 @@ function closeDrawer(quiet?: boolean) {
   document.removeEventListener("keydown", drawerKey);
   if (!quiet) {
     budget.open = null;
+    budget.formOpen = {}; // a drawer opened again leads with the line, not its form
     document.querySelectorAll("table.bv tr.chosen").forEach(function (r) {
       r.classList.remove("chosen");
     });
@@ -156,8 +157,52 @@ function openLine(category: string, v: BudgetView, only?: string) {
       );
       d.appendChild(to);
     }
-    d.appendChild(budgetForm(bl, redraw, category));
+    d.appendChild(lineChange(bl, redraw, category));
   });
+}
+
+// A budget line's form behind one Change, so the drawer leads with the line in words and its evidence: what
+// most visits are for. Opened, it stays open while the drawer is (a second amount can be scheduled at once);
+// Cancel or closing the drawer puts it away. A line naming no category opens with it, its note in view.
+function lineChange(bl: Row, redraw: () => void, category: string) {
+  var box = el("div", null, "line-change");
+  var named = bl.category || bl.spends_from;
+  var broken =
+    !!named &&
+    !(editor!.categories || []).some(function (c) {
+      return c.category === named;
+    });
+  var chosen = budget.formOpen && budget.formOpen[bl.line];
+  var open = chosen === undefined ? broken : chosen;
+  var set = function (now: boolean) {
+    budget.formOpen = budget.formOpen || {};
+    budget.formOpen[bl.line] = now;
+  };
+  if (!open) {
+    var change = button(
+      "Change",
+      function () {
+        set(true);
+        box.replaceWith(lineChange(bl, redraw, category));
+      },
+      "small",
+    );
+    change.setAttribute("aria-label", "Change budget line " + bl.line);
+    box.appendChild(change);
+    return box;
+  }
+  box.appendChild(budgetForm(bl, redraw, category));
+  box.appendChild(
+    button(
+      "Cancel",
+      function () {
+        set(false);
+        box.replaceWith(lineChange(bl, redraw, category));
+      },
+      "text",
+    ),
+  );
+  return box;
 }
 
 function openNewLine() {

@@ -120,6 +120,7 @@
       .attention .badge-icon { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center;
         background: var(--error-container); color: var(--on-error-container); }
       .attention.waiting .badge-icon { background: var(--waiting-container); color: var(--on-surface); }
+      .attention.clear .badge-icon { background: var(--success); color: var(--success-container); } /* all clear: a check, never on red */
       .attention .headline { font-size: 16px; line-height: 24px; font-weight: 500; }
       .attention .headline .num { font-size: 28px; line-height: 36px; font-weight: 400; margin-right: 6px; font-variant-numeric: tabular-nums; }
       .attention .support { margin: 4px 0 0; }
@@ -342,7 +343,6 @@
       .md-sub { font-size: 13px; color: var(--on-surface-variant); overflow-wrap: anywhere; }
       button.md-row[aria-current="true"] .md-sub { color: inherit; }
       .md-staged { font-size: 12px; color: var(--primary); }
-      .md-staged::before { content: "Not saved: "; font-weight: 500; }
       .md-detail { background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 16px; padding: 20px 24px;
         min-height: 240px; }
       .md-heading { font-size: 22px; line-height: 28px; font-weight: 400; margin-bottom: 12px; overflow-wrap: anywhere; }
@@ -395,6 +395,39 @@
       .bv-controls { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin-bottom: 16px; }
       .bv-picker { display: inline-flex; align-items: center; gap: 4px; }
       .bv-compare { display: inline-flex; align-items: center; gap: 8px; }
+      /* a menu (popMenu): a button that says what it holds, opening a panel over the page */
+      .pop-menu { position: relative; }
+      .pop-menu > summary { list-style: none; display: inline-flex; align-items: center; gap: 4px; min-height: 40px;
+        padding: 0 10px 0 16px; border: 1px solid var(--outline); border-radius: 20px; cursor: pointer; color: var(--on-surface); }
+      .pop-menu > summary::-webkit-details-marker { display: none; }
+      .pop-menu > summary:hover { background: var(--surface-container); }
+      .pop-menu > summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+      .pop-menu > summary > .icon { transform: rotate(90deg); transition: transform 0.15s; }
+      .pop-menu[open] > summary { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; }
+      .pop-menu[open] > summary > .icon { transform: rotate(-90deg); }
+      .pop-menu .menu-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: flex;
+        flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; min-width: 300px;
+        max-width: calc(100vw - 32px); background: var(--surface-low); border: 1px solid var(--outline-variant);
+        border-radius: 12px; box-shadow: var(--shadow); color: var(--on-surface); font-weight: 400; }
+      .pop-menu .menu-panel select { max-width: 100%; }
+      .bv-compare-menu .menu-panel .bv-compare { flex-wrap: wrap; }
+      @media (prefers-reduced-motion: reduce) { .pop-menu > summary > .icon { transition: none; } }
+      /* the header's saved changes that wait for a run: the waiting color, as on every "applies at the next run" tag */
+      .waiting-menu > summary { min-height: 32px; padding: 0 8px 0 12px; font-size: 13px; border-color: transparent;
+        background: var(--waiting-container); color: var(--on-surface); }
+      .waiting-menu > summary > span { display: inline-flex; align-items: center; gap: 6px; }
+      .waiting-menu > summary > span .icon { width: 16px; height: 16px; }
+      .waiting-menu .waiting-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+      .waiting-menu .menu-panel p { margin: 0; }
+      .waiting-menu .menu-panel { min-width: 320px; }
+      @media (max-width: 600px) { .pop-menu .menu-panel { position: fixed; left: 16px; right: 16px; top: auto; min-width: 0; max-width: none; } }
+      /* a setting's history: every value it has had, newest first */
+      .setting-history { flex-basis: 100%; margin-top: 8px; }
+      .setting-history h4 { margin: 0 0 4px; font-size: 13px; font-weight: 500; color: var(--on-surface-variant); }
+      .setting-history ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+      .setting-history strong { font-weight: 500; }
+      .drawer .line-change { margin: 4px 0 8px; }
+      .drawer .line-change > form + button { margin-top: 4px; }
       .bv-controls select { min-height: 40px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--outline);
         background: var(--surface-low); color: var(--on-surface); font-weight: 400; }
       .bv-controls .check { display: inline-flex; align-items: center; gap: 6px; color: var(--on-surface-variant); }
@@ -441,6 +474,17 @@
       .a2-card.warn .a2-big { color: var(--waiting); }
       .a2-card.ok .a2-big { color: var(--success); }
       @media (max-width: 900px) { .a2-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      .a2-sub { display: none; margin: 0; font-size: 14px; color: var(--on-surface-variant); }
+      /* a phone leads with the answer: the cards keep their numbers, the period's judgment sits under the headline */
+      @media (max-width: 600px) {
+        .a2-sub { display: block; }
+        .a2-cards { gap: 8px; }
+        .a2-card { padding: 12px 14px; border-radius: 12px; gap: 2px; }
+        .a2-card .a2-small { display: none; }
+        .a2-big { font-size: 20px; line-height: 28px; }
+        .a2-headline { font-size: 24px; line-height: 32px; }
+        .bv-controls { gap: 8px; }
+      }
       .a2-big small, .group-sum small { font-size: 14px; color: var(--on-surface-variant); }
       .a2-card .spent-bar { width: 100%; }
       .layout-switch { margin-bottom: 16px; }
@@ -791,7 +835,7 @@
   </head>
   <body>
     <header class="top">
-      <div class="appbar"><h1>Household</h1></div>
+      <div class="appbar"><h1>Household</h1><div id="waiting-count"></div></div>
       <nav class="tabs" aria-label="Views">
         <button id="view-status" aria-pressed="true">Status</button>
         <button id="view-jobs" aria-pressed="false">Jobs</button>
@@ -804,14 +848,6 @@
       </nav>
     </header>
     <main>
-    <div id="controls" hidden>
-      <select id="period" aria-label="Period"></select>
-      <span class="segmented" role="group" aria-label="Detail">
-        <button id="group" aria-pressed="true">Groups</button>
-        <button id="category" aria-pressed="false">Categories</button>
-      </span>
-    </div>
-
     <section id="status">
       <div id="status-tabs" class="subtabs" role="group" aria-label="Status">
         <button data-tab="overview" aria-pressed="true">Overview</button>
@@ -853,6 +889,14 @@
         <button data-tab="edit:review" aria-pressed="false">Review</button>
         <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
         <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
+      </div>
+      <!-- the tabs first, then the chosen tab's controls, as on Budget -->
+      <div id="controls" hidden>
+        <select id="period" aria-label="Period"></select>
+        <span class="segmented" role="group" aria-label="Detail">
+          <button id="group" aria-pressed="true">Groups</button>
+          <button id="category" aria-pressed="false">Categories</button>
+        </span>
       </div>
       <div id="flows-sankey">
         <div id="chart">Loading…</div>

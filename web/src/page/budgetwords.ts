@@ -51,11 +51,13 @@ function shortHow(bl: Row) {
   return String(bl.in_words || "");
 }
 
-// A bar for how much of a budget is spent: full and red past it, with a mark where the budget ends.
-function spentBar(actual: number, target: number) {
+// A bar for how much of a budget is spent: full and red past it, with a mark where the budget ends. `judged`
+// says whether it counts as over when the caller judges by more than this sum (a total holding a line set per
+// year, which a month's payment takes past its twelfth without being over).
+function spentBar(actual: number, target: number, judged?: boolean) {
   var m = el("span", null, "spent-bar");
   var fill = el("i");
-  var over = target > 0 && actual > target + 0.5;
+  var over = judged === undefined ? target > 0 && actual > target + 0.5 : judged;
   fill.style.width = (target > 0 ? Math.max(0, Math.min(100, (100 * actual) / target)) : actual > 0 ? 100 : 0) + "%";
   if (over) fill.className = "over";
   if (!target) fill.className = "unbudgeted";
@@ -298,6 +300,43 @@ function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus
   if (!p.setAside) return { text: share + "'s " + money.format(p.year), tone: "ok" };
   if (p.spent > p.pace + 0.5) return { text: share + ", " + money.format(p.spent - p.pace) + " ahead of pace", tone: "watch" };
   return { text: share + ", on pace", tone: "ok" };
+}
+
+// A line item, or a total of them, as the over judgment needs it: its period's numbers, and whether it is
+// judged on its year (and then whether it is over its year).
+interface Judged {
+  actual: number;
+  target: number;
+  yearly: boolean;
+  over: boolean;
+}
+
+// One line item, judged by its own measure: its year for a line set per year, else its period.
+function judgeLine(v: BudgetView, l: { category: string; target: number; actual: number }, lines: Row[]): Judged {
+  var pace = yearPaced(lines) ? yearPace(v, l.category, lines) : null;
+  return {
+    actual: l.actual,
+    target: l.target,
+    yearly: !!pace,
+    over: pace ? pace.spent > pace.year + 0.5 : l.target > 0 && l.actual > l.target + 0.5,
+  };
+}
+
+// Whether a total (a group, a kind) is over: its other line items' spending past their budgets, or one judged
+// on its year past its year. A yearly payment landing this month doesn't turn its group red, and every view
+// says the same of the same numbers.
+function totalOver(parts: Judged[]) {
+  var actual = 0,
+    target = 0,
+    yearlyOver = false;
+  parts.forEach(function (p) {
+    if (p.yearly) yearlyOver = yearlyOver || p.over;
+    else {
+      actual += p.actual;
+      target += p.target;
+    }
+  });
+  return yearlyOver || (target > 0 && actual > target + 0.5);
 }
 
 // The bar for a line item judged on its year: spent this year against the year's budget, with an annual

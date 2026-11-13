@@ -197,13 +197,21 @@ function loadWaitingCard() {
 }
 
 // The view, its period list and the level.
+// A Cashflow period in words, as the Budget page names its periods: "October 2001", "2001", "2001, a month on
+// average".
+function flowPeriodName(p: string) {
+  var m = /^(\d{4}) monthly average$/.exec(p);
+  if (m) return m[1] + ", a month on average";
+  return /^\d{4}(-\d{2}|-Q[1-4])?$/.test(p) ? periodName(p) : p;
+}
+
 function fillPeriods(list: string[]) {
   var select = byId("period") as HTMLSelectElement;
   select.textContent = "";
   list.forEach(function (p) {
     var option = document.createElement("option");
     option.value = p;
-    option.textContent = p;
+    option.textContent = flowPeriodName(p);
     select.appendChild(option);
   });
   if (chosen[view] && list.indexOf(chosen[view]) >= 0) select.value = chosen[view];

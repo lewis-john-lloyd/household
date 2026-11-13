@@ -263,6 +263,8 @@ function settingControl(key: string, shown: string | null): HTMLElement {
               ),
             );
           box.appendChild(button("Cancel", draw, "text"));
+          var history = settingHistory(key); // what it was before, so a change can be checked or put back
+          if (history) box.appendChild(history);
           value.focus();
         }, id);
       },

@@ -81,3 +81,34 @@ function isDate(text: string) {
 function isAmount(text: string) {
   return /^-?\d+(\.\d{1,2})?$/.test(text.replace(/,/g, ""));
 }
+
+// A button that says what it holds and opens a small panel over the page: the one menu every page uses (the
+// Budget page's comparison, the header's waiting changes). It closes on Escape or a click elsewhere, like any
+// menu; `toggled` hears each open and close, so a page can keep it open when it draws again.
+function popMenu(cls: string, summary: HTMLElement, panel: HTMLElement, open: boolean, toggled?: (open: boolean) => void) {
+  var menu = el("details", null, "pop-menu " + cls) as HTMLDetailsElement;
+  menu.open = open;
+  var head = el("summary");
+  head.appendChild(summary);
+  head.appendChild(icon("chevron"));
+  menu.appendChild(head);
+  panel.classList.add("menu-panel");
+  menu.appendChild(panel);
+  var away = function (e: Event) {
+    if (!document.body.contains(menu)) return document.removeEventListener("pointerdown", away);
+    if (!menu.contains(e.target as Node)) menu.open = false;
+  };
+  menu.addEventListener("toggle", function () {
+    if (toggled) toggled(menu.open);
+    if (menu.open) document.addEventListener("pointerdown", away);
+    else document.removeEventListener("pointerdown", away);
+  });
+  menu.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && menu.open) {
+      e.stopPropagation();
+      menu.open = false;
+      head.focus();
+    }
+  });
+  return menu;
+}

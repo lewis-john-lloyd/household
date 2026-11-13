@@ -832,6 +832,7 @@ REPORTS = (
     Table("editor_categories", ("category", "group", "priority", "loan", "run_id")),
     Table("editor_aliases", ("alias", "category", "note", "run_id")),
     Table("editor_parameters", ("key", "value", "source", "about", "run_id")),
+    Table("editor_parameter_history", ("key", "n", "value", "source", "run_id")),
     Table(
         "editor_review",
         (

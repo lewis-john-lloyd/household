@@ -14,6 +14,7 @@ interface BudgetItem {
   category: string; // the category whose drawer it opens, or "" for a loan's parts together
   loan: string; // the loan whose parts it rolls up, or ""
   balance: number | null; // an annual line item's fund at the period's last month so far
+  judged: Judged; // whether it is over, by its own measure (its year for a line set per year)
 }
 
 interface BudgetItemGroup {
@@ -66,6 +67,7 @@ function budgetItems(v: BudgetView): BudgetItemGroup[] {
         category: l.category,
         loan: "",
         balance: l.balance,
+        judged: judgeLine(v, l, lines),
       };
       var id = loanOf[l.category];
       if (id) (parts[id] = parts[id] || []).push(item);
@@ -97,7 +99,15 @@ function budgetItems(v: BudgetView): BudgetItemGroup[] {
         category: "",
         loan: id,
         balance: null,
+        judged: { actual: 0, target: 0, yearly: false, over: false }, // set below, from its parts' sums
       });
+      var rolled = items[items.length - 1];
+      rolled.judged = {
+        actual: rolled.actual,
+        target: rolled.target,
+        yearly: false,
+        over: rolled.target > 0 && rolled.actual > rolled.target + 0.5,
+      };
     });
     items.sort(function (a, b) {
       return b.target - a.target || b.actual - a.actual || a.name.localeCompare(b.name);
@@ -133,9 +143,7 @@ function itemRow(item: BudgetItem, v: BudgetView, middle: HTMLElement | null, su
   if (middle) mid.appendChild(middle);
   row.appendChild(mid);
   row.appendChild(el("span", item.target ? money.format(item.target) : "", "item-num muted"));
-  row.appendChild(
-    el("span", money.format(item.actual), "item-num" + (item.target > 0 && item.actual > item.target + 0.5 ? " over" : "")),
-  );
+  row.appendChild(el("span", money.format(item.actual), "item-num" + (item.judged.over ? " over" : "")));
   var go = function () {
     openItem(item, v);
   };
@@ -172,7 +180,17 @@ function kindCards(groups: BudgetItemGroup[]) {
     var big = el("span", money.format(actual), "a2-big");
     if (target) big.appendChild(el("small", " of " + money.format(target)));
     c.appendChild(big);
-    c.appendChild(spentBar(actual, target));
+    c.appendChild(
+      spentBar(
+        actual,
+        target,
+        totalOver(
+          items.map(function (x) {
+            return x.judged;
+          }),
+        ),
+      ),
+    );
     c.appendChild(el("span", countOf(items.length, "line item", "line items"), "a2-small"));
     cards.appendChild(c);
   });
@@ -210,7 +228,7 @@ function kindView(v: BudgetView) {
         middle = statusTag(fundText(x.balance));
         if (x.status) middle.title = x.status.text;
       } else if (x.status) middle = statusTag(x.status);
-      else if (x.kind !== "Recurring" && x.kind !== "Unplanned") middle = spentBar(x.actual, x.target);
+      else if (x.kind !== "Recurring" && x.kind !== "Unplanned") middle = spentBar(x.actual, x.target, x.judged.over);
       panel.appendChild(itemRow(x, v, middle, x.group + ", " + x.how.charAt(0).toLowerCase() + x.how.slice(1)));
     });
     wrap.appendChild(panel);
@@ -229,7 +247,17 @@ function cardsView(v: BudgetView) {
     if (g.target) sum.appendChild(el("small", " of " + money.format(g.target)));
     head.appendChild(sum);
     card.appendChild(head);
-    card.appendChild(spentBar(g.actual, g.target));
+    card.appendChild(
+      spentBar(
+        g.actual,
+        g.target,
+        totalOver(
+          g.items.map(function (x) {
+            return x.judged;
+          }),
+        ),
+      ),
+    );
     g.items.forEach(function (x) {
       var row = itemRow(
         x,
@@ -258,6 +286,12 @@ function cardsView(v: BudgetView) {
 }
 
 // The views' switch, above the period's head.
+// The view shown: the one chosen, else the table by group, or on a phone the cards, since the table's numbers sit
+// past the screen's edge there.
+function layoutNow() {
+  return budget.layout || (window.matchMedia && window.matchMedia("(max-width: 600px)").matches ? "cards" : "group");
+}
+
 function layoutSwitch() {
   var seg = el("span", null, "segmented layout-switch");
   seg.setAttribute("role", "group");
@@ -268,7 +302,7 @@ function layoutSwitch() {
       redrawKeeping("layout:" + l[0]);
     });
     b.dataset.fold = "layout:" + l[0];
-    b.setAttribute("aria-pressed", String((budget.layout || "group") === l[0]));
+    b.setAttribute("aria-pressed", String(layoutNow() === l[0]));
     seg.appendChild(b);
   });
   return seg;

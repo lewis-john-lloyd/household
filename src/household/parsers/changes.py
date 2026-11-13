@@ -607,7 +607,14 @@ def _rows(edits, at):
         elif kind == "parameter":
             add(
                 "parameters",
-                {"year": "", "jurisdiction": "household", "key": e["key"], "value": e["value"], "source": SOURCE},
+                # the day it was saved goes with it, so a setting's history can say when each value came in
+                {
+                    "year": "",
+                    "jurisdiction": "household",
+                    "key": e["key"],
+                    "value": e["value"],
+                    "source": f"{SOURCE} {at[:10]}" if at else SOURCE,
+                },
             )
         elif kind == "security":
             was = e.get("was") or {}  # the row it replaces, as the ledger has it (check compared them)

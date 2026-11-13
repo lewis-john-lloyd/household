@@ -17,6 +17,8 @@ var budget: {
   unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
   shut?: Record<string, boolean>; // the groups shut ("group:<name>"); every group is open at first
   layout?: string; // the Lines tab's view: "group" (A, the default), "kind" (B) or "cards" (C)
+  compareOpen?: boolean; // the comparison menu is open (kept across a redraw)
+  formOpen?: Record<string, boolean>; // the budget lines whose form is open in the drawer
   opened?: Record<string, boolean>; // the breakdowns open ("line:<category>", "loan:<loan id>"); shut at first
 } = { tab: "lines", lens: "month", period: "", compare: "", sameWeeks: true, data: null, open: null };
 
@@ -159,7 +161,7 @@ function drawLinesTab(body: HTMLElement) {
   } else {
     body.appendChild(layoutSwitch());
     body.appendChild(budgetSummary(v));
-    var layout = budget.layout || "group";
+    var layout = layoutNow();
     body.appendChild(layout === "kind" ? kindView(v) : layout === "cards" ? cardsView(v) : budgetTable(v));
   }
   var add = el("div", null, "actions");
@@ -237,12 +239,21 @@ function budgetControls(v: BudgetView) {
   picker.appendChild(pick);
   picker.appendChild(later);
   c.appendChild(picker);
+  var words = { month: "month", quarter: "quarter", year: "year" }[budget.lens] || budget.lens;
+  c.appendChild(compareMenu(v, list, words));
+  return c;
+}
+
+// What the period is set beside, as one button that says it ("Compared with November 2025, same weeks") and opens
+// the choices: another period, and whether to count only the same weeks. Kept out of the way, since the default
+// (a year earlier) is usually the one wanted.
+function compareMenu(v: BudgetView, list: string[], words: string) {
+  var panel = el("div");
   var label = el("label", null, "bv-compare");
   label.appendChild(el("span", "Compare to", "support"));
   var cmp = document.createElement("select");
   var quick = document.createElement("optgroup");
   quick.label = "Quick picks";
-  var words = { month: "month", quarter: "quarter", year: "year" }[budget.lens];
   quickPicks(budget.period).forEach(function (p, i) {
     var o = el("option", (i === 0 ? "Previous " + words : "A year earlier") + " (" + periodName(p) + ")");
     o.value = p;
@@ -264,10 +275,11 @@ function budgetControls(v: BudgetView) {
   cmp.value = budget.compare;
   cmp.onchange = function () {
     budget.compare = cmp.value;
+    budget.compareOpen = false; // chosen: the menu has done its job
     drawBudgetPage();
   };
   label.appendChild(cmp);
-  c.appendChild(label);
+  panel.appendChild(label);
   if (v.partial) {
     var same = el("label", null, "check");
     var box = document.createElement("input");
@@ -275,13 +287,21 @@ function budgetControls(v: BudgetView) {
     box.checked = budget.sameWeeks;
     box.onchange = function () {
       budget.sameWeeks = box.checked;
-      drawBudgetPage();
+      drawBudgetPage(); // the menu stays open, so the effect shows beside the choice
     };
     same.appendChild(box);
     same.appendChild(document.createTextNode(" Same weeks only (" + shortDay(v.from) + " to " + shortDay(today()) + ")"));
-    c.appendChild(same);
+    panel.appendChild(same);
   }
-  return c;
+  return popMenu(
+    "bv-compare-menu",
+    el("span", "Compared with " + periodName(v.compare) + (v.partial && v.sameWeeks ? ", same weeks" : "")),
+    panel,
+    !!budget.compareOpen,
+    function (open) {
+      budget.compareOpen = open;
+    },
+  );
 }
 
 function compareName(v: BudgetView) {

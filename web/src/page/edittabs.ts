@@ -36,7 +36,7 @@ function drawReview(body: HTMLElement) {
       );
     },
     staged: function (r) {
-      return changedText(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase());
+      return changeNote(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase());
     },
     empty:
       "Choose a question on the left to answer it. A merchant is answered once for all its lines; a single line can also be split.",
@@ -214,7 +214,7 @@ function drawRules(body: HTMLElement) {
       return r.status === "stopped" ? "Stopped" : "In force";
     },
     staged: function (r) {
-      return changedText("payee_rule|" + r.pattern);
+      return changeNote("payee_rule|" + r.pattern);
     },
     empty: "Choose a payee rule to change or stop it.",
     add: [
@@ -264,7 +264,7 @@ function drawCategories(body: HTMLElement) {
       return i.kind === "category" ? "Categories" : "Old names";
     },
     staged: function (i) {
-      return changedText(i.kind === "category" ? "category|" + i.row.category : "alias|" + i.row.alias);
+      return changeNote(i.kind === "category" ? "category|" + i.row.category : "alias|" + i.row.alias);
     },
     empty: "Choose a category to regroup it, or an old name to point it elsewhere.",
     add: [
@@ -313,7 +313,7 @@ function drawSettings(body: HTMLElement) {
       return p.source === "not set" ? "not set: " + p.about : p.value;
     },
     staged: function (p) {
-      return changedText("parameter|" + p.key);
+      return changeNote("parameter|" + p.key);
     },
     empty:
       "Household settings, such as the account transfers come from, the links in the weekly email and " +
@@ -333,13 +333,15 @@ function drawSettings(body: HTMLElement) {
           [
             ["What it's for", p.about || ""],
             ["Value", p.source === "not set" ? "not set" : p.value],
-            ["Source", p.source === "not set" ? "" : p.source],
+            ["Source", p.source === "not set" ? "" : sourceWords(p.source)],
           ] as Fact[]
         ).filter(function (f) {
           return f[1];
         }),
       );
       panel.appendChild(parameterForm(p, done));
+      var history = settingHistory(p.key);
+      if (history) panel.appendChild(history);
     },
   });
 }
@@ -365,7 +367,7 @@ function drawWithholding(body: HTMLElement) {
       );
     },
     staged: function (w) {
-      return changedText("explanation|" + w.jurisdiction + "|" + w.stub_id);
+      return changeNote("explanation|" + w.jurisdiction + "|" + w.stub_id);
     },
     empty: "Choose a stub to say why its withholding differs from the tables (an extra amount asked for, a bonus).",
     none: "Every stub's withholding is explained.",
@@ -531,12 +533,12 @@ function drawDuplicates(body: HTMLElement) {
     },
     staged: function (d) {
       return [
-        changedText("not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|")),
-        changedText("line|" + d.txn_a + "|void"),
-        changedText("line|" + d.txn_b + "|void"),
+        changeNote("not_duplicate|" + [d.txn_a, d.txn_b].sort().join("|")),
+        changeNote("line|" + d.txn_a + "|void"),
+        changeNote("line|" + d.txn_b + "|void"),
       ]
         .filter(Boolean)
-        .join("; ");
+        .join(" ");
     },
     empty: "Choose a pair that looks like one charge recorded twice, then keep both or drop one.",
     none: "No possible duplicates.",

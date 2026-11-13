@@ -98,6 +98,33 @@ async function openReview(page) {
 
 const staged = (page) => page.$$eval("#pending-list li", (lis) => lis.map((li) => li.firstChild.textContent));
 
+test("a setting shows every value it has had, newest first, where it is changed", async () => {
+  const page = await open(
+    "window.__answers.getEditor.parameterHistory = [" +
+      "  { key: 'transfer_account', n: '1', value: 'checking', source: 'seed' }," +
+      "  { key: 'transfer_account', n: '2', value: 'savings', source: 'web' }," +
+      "  { key: 'transfer_account', n: '3', value: 'brokerage', source: 'web 2026-11-13' }," +
+      "  { key: 'target_refund', n: '1', value: '2000', source: 'web' }];" +
+      "window.__answers.getEditor.parameters = [{ key: 'transfer_account', value: 'brokerage', source: 'web 2026-11-13' }," +
+      "  { key: 'target_refund', value: '2000', source: 'web' }];",
+  );
+  await page.click("#status-tabs button[data-tab='edit:settings']");
+  await page.click(".md-row:has-text('transfer_account')");
+  await page.waitForSelector(".md-detail .setting-history");
+  assert.deepEqual(await page.$$eval(".md-detail .setting-history li", (lis) => lis.map((li) => li.textContent)), [
+    "brokerage from the views, Nov 13, 2026, in force",
+    "savings from the views",
+    "checking when the ledger was set up",
+  ]);
+  assert.match(await page.textContent(".md-detail"), /Sourcefrom the views, Nov 13, 2026/);
+  // a setting with one value has no history to show
+  await page.click(".md-row:has-text('target_refund')");
+  await page.waitForSelector(".md-detail:has-text('target_refund')");
+  assert.equal(await page.locator(".md-detail .setting-history").count(), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("a change made while Save runs stays for the next save; only what was sent is cleared", async () => {
   const page = await open("window.__hold.saveChanges = true;");
   await openReview(page);
@@ -374,6 +401,7 @@ test("a scheduled amount on a date that has one says what it replaces, so ingest
   });
   await page.click("#view-budget");
   await page.click("table.bv tr.line:has-text('camp')"); // kids' one budget line, shown by its name
+  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
   for (const [date, amount] of [
     ["2001-06-01", "100"],
     ["2001-07-01", "40"],
@@ -662,11 +690,21 @@ test("a change saved earlier and not yet applied reads as saved when the page op
   );
   await page.waitForSelector(".alert:has-text('Saved, applies at the next run: WILLOW ST: track as recurring')");
   assert.deepEqual(await staged(page), []); // nothing waits to be saved: it is saved
+  // the header counts it on every page, and its menu says what it will do and leads to the full list
+  assert.equal(await page.textContent("#waiting-count summary"), "1 change waits for a run");
+  await page.click("#waiting-count summary");
+  assert.deepEqual(await page.$$eval("#waiting-count li", (lis) => lis.map((li) => li.textContent)), [
+    "WILLOW ST: track as recurring",
+  ]);
+  await page.click("#waiting-count button:has-text('See saved changes')");
+  assert.equal(await page.getAttribute("#view-status", "aria-pressed"), "true");
+  assert.equal(await page.isVisible("#waiting-count .menu-panel"), false);
   await page.evaluate(() => {
     forgetSaved("f9");
-    redrawPage();
+    setView("budget");
   });
   await page.waitForSelector(".alert button:has-text('Track it')");
+  assert.equal(await page.locator("#waiting-count summary").count(), 0); // discarded: no count
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -712,6 +750,7 @@ test("the budget compares any period with another, and a line's target can come 
   assert.match(await page.inputValue(".bv-picker select"), /^\d{4}-Q[1-4]$/);
   await page.click("table.bv tr.line:has-text('food')");
   await page.waitForSelector(".drawer svg.history");
+  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
   await page.selectOption(".drawer label:has-text('Target from') select", "recurring");
   await page.fill(".drawer label:has-text('Allowance') input", "20");
   // none picked: the tracked charges in its category count
@@ -781,7 +820,9 @@ test("a category with two budget lines shows each as its own row, to open and ch
   ]);
   await page.click("table.bv tr.subline:has-text('camp sam')");
   await page.waitForSelector(".drawer h2:has-text('camp sam')");
-  assert.equal(await page.locator(".drawer form.edit").count(), 1); // only this line's form
+  assert.equal(await page.locator(".drawer .line-change").count(), 1); // only this line's
+  assert.equal(await page.locator(".drawer form.edit").count(), 0); // its form behind Change
+  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
   assert.match(await page.textContent(".drawer"), /Budget line: camp sam/);
   assert.doesNotMatch(await page.textContent(".drawer"), /Budget line: camp alex/);
   await page.fill(".drawer label:has-text('Amount') input", "300");
@@ -789,6 +830,14 @@ test("a category with two budget lines shows each as its own row, to open and ch
   assert.match((await staged(page))[0], /^budget line camp sam: fixed 300 annually for kids from /);
   await page.waitForSelector("table.bv tr.subline:has-text('camp sam') .tag.warn");
   assert.equal(await page.locator("table.bv tr.subline:has-text('camp alex') .tag.warn").count(), 0);
+  assert.equal(await page.locator(".drawer form.edit").count(), 1); // kept: still open, for another change
+  await page.click(".drawer .line-change button:has-text('Cancel')");
+  assert.equal(await page.locator(".drawer form.edit").count(), 0);
+  await page.click(".drawer .line-change > button:has-text('Change')");
+  await page.keyboard.press("Escape"); // a drawer opened again leads with the line, not its form
+  await page.click("table.bv tr.subline:has-text('camp sam')");
+  await page.waitForSelector(".drawer .line-change > button:has-text('Change')");
+  assert.equal(await page.locator(".drawer form.edit").count(), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -869,6 +918,79 @@ test("the Lines tab's three views: by group, by kind and a card per group, each 
   await page.click(".layout-switch button:has-text('By group')");
   assert.match(await page.textContent("table.bv tr.line:has-text('Hobby') td.status"), /Overdrawn \$15/); // leak-guard: allow (made up)
   assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("the comparison is one button saying what it is, opening its choices, and closing like a menu", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living' }, recurring: []," +
+      "    days: [[d, 'food', 40]], targets: [{ month: m, category: 'food', priority: 'high', target: 60 }] } };" +
+      "})();",
+  );
+  await page.waitForSelector(".bv-compare-menu summary");
+  const said = () => page.textContent(".bv-compare-menu summary");
+  const shown = () => page.isVisible(".bv-compare-menu .menu-panel");
+  // this month runs on, so it is set beside the same weeks a year earlier, and says so
+  assert.match(await said(), /^Compared with \w+ \d{4}, same weeks$/);
+  assert.equal(await shown(), false); // out of the way until wanted
+  await page.click(".bv-compare-menu summary");
+  assert.equal(await shown(), true);
+  await page.uncheck(".bv-compare-menu .check input");
+  assert.match(await said(), /^Compared with \w+ \d{4}$/); // the page draws again, the menu stays open beside the choice
+  assert.equal(await shown(), true);
+  const before = await page.inputValue(".bv-compare select");
+  const other = await page.$$eval(".bv-compare select option", (os) => os.map((o) => o.value));
+  const pick = other.find((p) => p !== before);
+  await page.selectOption(".bv-compare select", pick);
+  assert.equal(await shown(), false); // chosen: it closes
+  assert.equal(await page.inputValue(".bv-compare select"), pick);
+  await page.click(".bv-compare-menu summary");
+  await page.keyboard.press("Escape");
+  assert.equal(await shown(), false);
+  await page.click(".bv-compare-menu summary");
+  await page.click(".a2-headline"); // anywhere else
+  assert.equal(await shown(), false);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("on a phone the page leads with the answer: cards, the period's judgment under the headline", async () => {
+  const page = await browser.newPage({ viewport: { width: 412, height: 860 } });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.route("https://www.gstatic.com/charts/loader.js", (r) =>
+    r.fulfill({
+      contentType: "text/javascript",
+      body:
+        FAKE +
+        "window.__location = { parameter: { view: 'budget' } };" +
+        "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+        "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family', family: 'family' }, recurring: []," +
+        "    days: [[d, 'kids', 1200], [d, 'family', 5]], targets: [{ month: m, category: 'kids', priority: 'high', target: 100 }," +
+        "      { month: m, category: 'family', priority: 'high', target: 10 }] } };" +
+        "  var bl = function (line, category, rule, amount, per) { return { line: line, effective: '2001-01-01', category: category," +
+        "    account: '', priority: 'high', rule: rule, amount: amount, per: per, note: '', in_force: 'yes', in_words: 'x', this_month: ''," +
+        "    last_12_months: '0', scheduled: '', spends_from: category }; };" +
+        "  window.__answers.getEditor.budgetLines = [bl('kids', 'kids', 'fixed', '1200', 'annually'), bl('family', 'family', 'fixed', '10', 'monthly')];" +
+        "})();",
+    }),
+  );
+  await page.route("https://fonts.googleapis.com/**", (r) => r.fulfill({ contentType: "text/css", body: "" }));
+  await page.route("http://views.test/", (r) => r.fulfill({ contentType: "text/html", body: HTML }));
+  await page.goto("http://views.test/");
+  await page.waitForSelector(".group-cards");
+  assert.equal(await page.getAttribute(".layout-switch button:has-text('Cards')", "aria-pressed"), "true");
+  assert.equal(await page.isVisible(".a2-sub"), true);
+  assert.equal(await page.isVisible(".a2-card .a2-small"), false);
+  // the year's payment landed this month: neither the line item nor its group reads as over
+  assert.equal(await page.locator(".group-card .spent-bar i.over").count(), 0);
+  assert.equal(await page.locator(".group-card .item-num.over").count(), 0);
+  // a choice is kept: the table, once picked, stays
+  await page.click(".layout-switch button:has-text('By group')");
+  await page.waitForSelector("table.bv");
+  assert.deepEqual(errors, []);
   await page.close();
 });
 
@@ -2061,12 +2183,20 @@ test("a setting a number uses is changed beside it: the tax plan's target, a ret
 
 test("a retirement assumption's setting is changed beside it", async () => {
   const page = await open(`window.__answers.getRetirement = ${JSON.stringify(RETIREMENT)};
+                           window.__answers.getEditor.parameterHistory = [
+                             { key: 'retirement_spending:kids', n: '1', value: '0 from 2030', source: 'seed' },
+                             { key: 'retirement_spending:kids', n: '2', value: '0 from 2032', source: 'web 2026-10-01' }];
                            window.__location = { parameter: { view: 'retirement', tab: 'assumptions' } };`);
   const kids = "#retirement-body .setting-control[data-setting='retirement_spending:kids']";
   await page.waitForSelector(kids);
   await page.click(kids + " button:has-text('Change')");
   await page.waitForSelector(kids + " input");
   assert.equal(await page.inputValue(kids + " input"), "0 from 2032");
+  // what it was before, beside the change: an old value can be checked or put back
+  assert.deepEqual(await page.$$eval(kids + " .setting-history li", (lis) => lis.map((li) => li.textContent)), [
+    "0 from 2032 from the views, Oct 1, 2026, in force",
+    "0 from 2030 when the ledger was set up",
+  ]);
   await page.fill(kids + " input", "0 from 2033");
   await page.click(kids + " button:has-text('Keep')");
   assert.deepEqual(await staged(page), ["setting retirement_spending:kids = 0 from 2033"]);

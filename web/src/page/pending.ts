@@ -35,6 +35,7 @@ function keepSaved(set: string, entries: { target: string; entry: StagedEdit }[]
   entries.forEach(function (e) {
     savedEdits[e.target] = { edit: e.entry.edit, text: e.entry.text, set: set };
   });
+  drawWaitingCount();
 }
 
 /** Forget a discarded change set's edits. */
@@ -42,6 +43,41 @@ function forgetSaved(set: string) {
   Object.keys(savedEdits).forEach(function (t) {
     if (savedEdits[t].set === set) delete savedEdits[t];
   });
+  drawWaitingCount();
+}
+
+var WAITING_SHOWN = 8; // the newest saved changes listed in the header's menu; the rest are counted
+
+// The header's count of saved changes no run has applied yet, on every page, so none is forgotten: a menu
+// listing each in words (what it will do), and the way to the full list, where one can be discarded.
+function drawWaitingCount() {
+  var at = document.getElementById("waiting-count");
+  if (!at) return;
+  at.textContent = "";
+  var keys = Object.keys(savedEdits);
+  if (!keys.length) return;
+  var panel = el("div");
+  panel.appendChild(el("p", "Saved, and applied when ingest and compute next run:", "support"));
+  var list = el("ul", null, "waiting-list");
+  keys.slice(-WAITING_SHOWN).forEach(function (k) {
+    list.appendChild(el("li", savedEdits[k].text));
+  });
+  panel.appendChild(list);
+  if (keys.length > WAITING_SHOWN) panel.appendChild(el("p", "and " + (keys.length - WAITING_SHOWN) + " more", "support"));
+  panel.appendChild(
+    button(
+      "See saved changes",
+      function () {
+        (at!.firstChild as HTMLDetailsElement).open = false;
+        openEdit("waiting");
+      },
+      "text",
+    ),
+  );
+  var says = el("span");
+  says.appendChild(icon("sync"));
+  says.appendChild(document.createTextNode(countOf(keys.length, "change waits", "changes wait") + " for a run"));
+  at.appendChild(popMenu("waiting-menu", says, panel, false));
 }
 
 /** The change sets saved and waiting, read once as the page opens; then the page shows them as saved. */

@@ -181,7 +181,17 @@ function budgetTable(v: BudgetView) {
       cell(gr, g.target ? money.format(g.target) : "");
       cell(gr, money.format(g.actual));
       var gUsed = cell(gr, "", "text");
-      gUsed.appendChild(spentBar(g.actual, g.target));
+      gUsed.appendChild(
+        spentBar(
+          g.actual,
+          g.target,
+          totalOver(
+            g.lines.map(function (l) {
+              return judgeLine(v, l, inForce(l.category));
+            }),
+          ),
+        ),
+      );
       cell(gr, "", "text");
       foldRow(gr, gKey, gOpen, function () {
         budget.shut = budget.shut || {};
@@ -249,9 +259,9 @@ function budgetTable(v: BudgetView) {
       kc.appendChild(kindChip(kind));
       cell(row, l.target ? money.format(l.target) : "");
       var st = lineStatus(v, l, lines);
-      var pace = yearPaced(lines) ? yearPace(v, l.category, lines) : null; // judged on its year, not the period
-      var over = pace ? pace.spent > pace.year + 0.5 : l.target > 0 && l.actual > l.target + 0.5;
-      cell(row, money.format(l.actual), over ? "over" : "");
+      var judged = judgeLine(v, l, lines); // by its year for a line set per year, else its period
+      var pace = judged.yearly ? yearPace(v, l.category, lines) : null;
+      cell(row, money.format(l.actual), judged.over ? "over" : "");
       var used = cell(row, "", "text");
       used.appendChild(pace ? yearBar(pace) : spentBar(l.actual, l.target));
       if (!st && l.recipients.length && v.deductible)

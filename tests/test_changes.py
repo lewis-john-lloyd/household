@@ -145,7 +145,9 @@ def test_every_kind_becomes_its_ledger_row():
     assert t["payee_rules"]["category"].tolist() == [""]
     assert t["categories"].values.tolist() == [["gifts", "family", "medium"]]
     assert t["category_aliases"].values.tolist() == [["presents", "gifts", ""]]
-    assert t["parameters"].values.tolist() == [["", "household", "transfer_account", "savings", "web"]]
+    assert t["parameters"].values.tolist() == [
+        ["", "household", "transfer_account", "savings", "web 2026-01-31"]
+    ]  # the day it was saved
     assert set(t["proposal_decisions"]["decided_at"]) == {"2026-01-31T12:00:00.000+00:00"}
     assert result.label == "changes_2026-01-31T120000.000"
     assert "payee rule 'ACME GROCER' stopped from 2026-02-01" in result.notes
@@ -616,8 +618,8 @@ def test_two_saves_in_one_second_stay_in_order(box):
     assert [s["status"] for s in out] == ["ingested", "ingested"]
     rows = sheets.read_table(ledger, schema.table(schema.LEDGER, "parameters"))
     assert rows["value"].tolist() == ["checking", "savings", "brokerage"]
-    times = rows["source"].tolist()  # parameters carry no time; the decisions table shows the recorded order
-    assert times[1:] == ["web", "web"]
+    days = rows["source"].tolist()  # a parameter carries the day it was saved; the rows' order is the time order
+    assert days[1:] == ["web 2026-01-31", "web 2026-01-31"]
     assert (
         changes.parse(doc(first, created_at="2026-01-31T12:00:00.125Z")).label
         != changes.parse(doc(first, created_at="2026-01-31T12:00:00.250Z")).label

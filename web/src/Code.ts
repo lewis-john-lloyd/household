@@ -290,6 +290,7 @@ function getEditor(): EditorData {
     "editor_categories",
     "editor_aliases",
     "editor_parameters",
+    "editor_parameter_history",
     "editor_review",
     "possible_duplicates",
     "withholding_backtest",

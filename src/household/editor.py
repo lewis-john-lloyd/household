@@ -155,6 +155,21 @@ def parameters(params):
     return settings.known(rows).reindex(columns=columns, fill_value="")
 
 
+def parameter_history(params):
+    """Every value each household setting has had, in the order the ledger took them (n from 1, the last in force),
+    with its source ("web 2026-11-13" for one saved from the views on that day), for the views to show a setting's
+    history where it is changed. The ledger keeps every row, so nothing is lost by a change."""
+    columns = _columns("editor_parameter_history")
+    if params is None or params.empty:
+        return pd.DataFrame(columns=columns)
+    rows = params[params["jurisdiction"].astype(str) == "household"].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+    rows["key"] = rows["key"].astype(str).str.strip()
+    rows["n"] = rows.groupby("key").cumcount() + 1
+    return rows.reindex(columns=columns, fill_value="").reset_index(drop=True)
+
+
 def review_queue(review):
     """The review tab as it stands after ingest, for answering in the views."""
     columns = _columns("editor_review")
@@ -187,5 +202,6 @@ def publish(books, review, rules, targets, actuals, month):
         "editor_categories": categories(books["categories"], books["parameters"]),
         "editor_aliases": in_force(books["aliases"], ["alias"], "editor_aliases"),
         "editor_parameters": parameters(books["parameters"]),
+        "editor_parameter_history": parameter_history(books["parameters"]),
         "editor_review": review_queue(review),
     }

@@ -44,14 +44,14 @@ function budgetSummary(v: BudgetView) {
   card("Planned", money.format(v.target), "Every line item's budget, savings included");
   var over = v.actual - v.target;
   var d = v.actual - v.compared;
-  card(
-    "Went out",
-    money.format(v.actual),
+  var against =
     (Math.abs(over) < 0.5 ? "As planned" : money.format(Math.abs(over)) + (over > 0 ? " more than planned" : " under plan")) +
-      "; " +
-      (Math.abs(d) < 0.5 ? "the same as " : signedMoney(d) + " against ") +
-      compareName(v),
-  );
+    "; " +
+    (Math.abs(d) < 0.5 ? "the same as " : signedMoney(d) + " against ") +
+    compareName(v);
+  card("Went out", money.format(v.actual), against);
+  // on a phone the cards keep only their numbers, so the one sentence that judges the period sits under the headline
+  titles.appendChild(el("p", against, "a2-sub"));
   if (came > 0)
     card(
       v.actual > came + 0.5 ? "From cash balances" : "Kept",
@@ -60,6 +60,6 @@ function budgetSummary(v: BudgetView) {
       v.actual > came + 0.5 ? "warn" : "ok",
     );
   else card("Recurring", money.format(v.recurring), "What the recurring charges took");
-  box.appendChild(budget.layout === "kind" ? kindCards(budgetItems(v)) : cards);
+  box.appendChild(layoutNow() === "kind" ? kindCards(budgetItems(v)) : cards);
   return box;
 }

@@ -26,6 +26,7 @@ interface EditorData {
   categories: Row[];
   aliases: Row[];
   parameters: Row[];
+  parameterHistory: Row[]; // every value each household setting has had, in the ledger's order (n from 1)
   review: Row[];
   duplicates: Row[];
   withholding: Row[]; // stubs whose withholding is unexplained, federal and wi
@@ -128,6 +129,7 @@ function editorData(tabs: Record<string, unknown[][]>): EditorData {
     categories: drop(tab("editor_categories")).sort((a, b) => a.category.localeCompare(b.category)),
     aliases: drop(tab("editor_aliases")),
     parameters: drop(tab("editor_parameters")),
+    parameterHistory: drop(tab("editor_parameter_history")),
     review: drop(tab("editor_review")),
     duplicates: drop(tab("possible_duplicates")),
     withholding: drop(

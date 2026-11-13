@@ -449,6 +449,27 @@ def scheduled_vests(schedule, vested=None, prices=None):
     }
 
 
+# the federal_return inputs a household estimate feeds: the ones it reads that no stub, vest or sale gives the
+# projection (inputs_for sets wages, withholding, Medicare and capital gains itself). The views offer these to
+# add an estimate for (TAX_ESTIMATES in web/src/page/taxes.ts, held to this by tests/test_tax_estimates.py).
+ESTIMABLE = (
+    "taxable_interest",
+    "ordinary_dividends",
+    "qualified_dividends",
+    "ira_taxable",
+    "pension_taxable",
+    "other_income",
+    "adjustments",
+    "mortgage_interest",
+    "real_estate_tax",
+    "state_income_tax",
+    "charity",
+    "nonrefundable_credits",
+    "estimated_payments",
+    "additional_tax_5329",
+)
+
+
 def inputs_for(year, paystubs, sales, facts, overrides=None, comp_events=None, vests=None):
     """federal_return inputs for the year: stubs plus projection, equity sales, estimates. vests: the grants'
     schedule and the share price ({"schedule": [(vest_date, shares)], "price": p}), for the vests left."""

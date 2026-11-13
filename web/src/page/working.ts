@@ -217,8 +217,8 @@ function monthLines(box: HTMLElement, bl: Row, month: string, rows: TargetInput[
 var fundOpen: Record<string, boolean> = {}; // "line|month" whose lines are shown
 var fundLines: Record<string, Txn[]> = {}; // "category|month": its lines, once loaded
 
-// How an annual (sinking fund) line's balance was worked out, in its drawer: what it carried into the year, then
-// each month this year to the period's last: set aside, spent from it (every line in its category, one-offs
+// How an annual (sinking fund) line's balance was worked out, in its drawer: each year starts from zero, so
+// this year's months to the period's last: set aside, spent from it (every line in its category, one-offs
 // included), and the balance after. Each month opens its lines, where one that belongs elsewhere is moved out,
 // and the balance after the next run is said once a change is in hand. The amount set aside is the line's own,
 // changed with its Change.
@@ -243,26 +243,17 @@ function drawFund(box: HTMLElement, bl: Row, month: string, all: NonNullable<Bud
     .sort(function (a, b) {
       return a.month < b.month ? -1 : 1;
     });
-  var before = all
-    .filter(function (f) {
-      return f.month < year + "-01";
-    })
-    .sort(function (a, b) {
-      return a.month < b.month ? -1 : 1;
-    });
   box.appendChild(el("h4", "How its balance was worked out"));
   if (!rows.length) {
     box.appendChild(el("p", "It has no months in " + year + " yet.", "support"));
     return;
   }
-  var carried = before.length ? before[before.length - 1].balance : 0;
   box.appendChild(
     el(
       "p",
-      (before.length
-        ? "It carried " + cents.format(carried) + " into " + year + ". "
-        : "It began in " + monthWords(rows[0].month) + ". ") +
-        "Each month it sets aside its amount and pays what its category spent, every line counted, one-offs too.",
+      (rows[0].month > year + "-01" ? "It began in " + monthWords(rows[0].month) + "; " : "It starts " + year + " from zero; ") +
+        "nothing carries over from one year to the next. Each month it sets aside its amount and pays what its " +
+        "category spent, every line counted, one-offs too.",
       "support",
     ),
   );
@@ -308,13 +299,11 @@ function drawFund(box: HTMLElement, bl: Row, month: string, all: NonNullable<Bud
   box.appendChild(
     el(
       "p",
-      cents.format(carried) +
-        " carried, plus " +
-        cents.format(
-          rows.reduce(function (t, f) {
-            return t + (f.set_aside || 0);
-          }, 0),
-        ) +
+      cents.format(
+        rows.reduce(function (t, f) {
+          return t + (f.set_aside || 0);
+        }, 0),
+      ) +
         " set aside, less " +
         cents.format(
           rows.reduce(function (t, f) {

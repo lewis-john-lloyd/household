@@ -484,6 +484,7 @@ function drawTaxes() {
     var panel = el("section", null, "panel");
     panel.appendChild(el("h2", form === "Form 1040" ? "Federal, Form 1040" : form));
     panel.appendChild(formTable(year.forms[form], year.filed, year.filed ? "Computed" : "From stubs", year.year));
+    if (form === "Form 1040" && !year.filed) panel.appendChild(addEstimate(year.year)); // a figure it has none of yet
     returns.appendChild(panel);
   });
   side.appendChild(returns);
@@ -1201,5 +1202,119 @@ function estimateControl(year: string, key: string, label: string, person: strin
     box.appendChild(change);
   };
   draw();
+  return box;
+}
+
+// The figures a household estimate feeds on Form 1040, each by what it is called there: the inputs the
+// projection reads that no stub, vest or sale gives it (projection.ESTIMABLE; tests/test_tax_estimates.py
+// holds this list to it).
+var TAX_ESTIMATES: [string, string][] = [
+  ["taxable_interest", "Taxable interest"],
+  ["ordinary_dividends", "Ordinary dividends"],
+  ["qualified_dividends", "Qualified dividends"],
+  ["ira_taxable", "IRA distributions, taxable"],
+  ["pension_taxable", "Pensions, taxable"],
+  ["other_income", "Other income"],
+  ["adjustments", "Adjustments to income"],
+  ["mortgage_interest", "Mortgage interest"],
+  ["real_estate_tax", "Real estate tax"],
+  ["state_income_tax", "State income tax (in place of what the stubs withheld)"],
+  ["charity", "Gifts to charity"],
+  ["nonrefundable_credits", "Credits"],
+  ["estimated_payments", "Estimated payments"],
+  ["additional_tax_5329", "Additional tax on early distributions (Form 5329)"],
+];
+
+// Add a household estimate for a figure the year has none of: a new `estimate` edit (nothing it replaces), the
+// figure then shown and changed on its line like any other estimate after the next run.
+function addEstimate(year: string) {
+  var box = el("div", null, "add-estimate");
+  var had: Record<string, boolean> = {};
+  Object.keys((taxes && taxes.parts) || {}).forEach(function (k) {
+    var at = k.indexOf("|");
+    if (k.slice(0, at) !== year) return;
+    if (
+      taxes!.parts![k].some(function (p) {
+        return p.part === "estimate";
+      })
+    )
+      had[k.slice(at + 1)] = true;
+  });
+  var open = TAX_ESTIMATES.filter(function (x) {
+    return !had[x[0]];
+  });
+  var waiting = open.filter(function (x) {
+    return edited(editTarget({ kind: "estimate", year: year, key: x[0], person: "" }));
+  });
+  waiting.forEach(function (x) {
+    var t = editTarget({ kind: "estimate", year: year, key: x[0], person: "" });
+    var row = el("p", null, "support");
+    row.appendChild(
+      document.createTextNode(
+        x[1] + ": " + money.format(Number((edited(t)!.edit as Record<string, string>).value)) + ", your estimate ",
+      ),
+    );
+    row.appendChild(el("span", stagedText(t) ? "waiting to be saved" : "applies at the next run", "tag warn"));
+    if (staged[t])
+      row.appendChild(
+        button(
+          "Undo",
+          function () {
+            unstage(t);
+            box.replaceWith(addEstimate(year));
+          },
+          "text",
+        ),
+      );
+    box.appendChild(row);
+  });
+  var choices = open.filter(function (x) {
+    return waiting.indexOf(x) < 0;
+  });
+  if (!choices.length) return box;
+  var form = el("form", null, "edit inline");
+  var pick = document.createElement("select");
+  pick.setAttribute("aria-label", "Which figure");
+  choices.forEach(function (x) {
+    var o = el("option", x[1]);
+    o.value = x[0];
+    pick.appendChild(o);
+  });
+  var amount = textInput("", "", "Amount");
+  amount.setAttribute("aria-label", "Your estimate for " + year);
+  amount.inputMode = "decimal";
+  amount.oninput = function () {
+    amount.setCustomValidity("");
+  };
+  var label = el("label", null, "move-to");
+  label.appendChild(el("span", "Add your estimate"));
+  label.appendChild(pick);
+  form.appendChild(label);
+  form.appendChild(amount);
+  form.appendChild(
+    button(
+      "Add it",
+      function () {
+        var v = amount.value.trim().replace(/[$,]/g, "");
+        if (!/^-?[0-9]+(\.[0-9]+)?$/.test(v)) {
+          amount.setCustomValidity("A number, like 1200");
+          amount.reportValidity();
+          return;
+        }
+        var name = pick.options[pick.selectedIndex].textContent || pick.value;
+        stage(
+          { kind: "estimate", year: year, key: pick.value, value: v, was: null },
+          "your estimate for " + name + ", " + year + ": " + v,
+        );
+        box.replaceWith(addEstimate(year));
+      },
+      "text",
+    ),
+  );
+  form.onsubmit = function (e) {
+    e.preventDefault();
+  };
+  box.appendChild(form);
+  box.appendChild(el("p", "For a figure no pay stub, vest or sale gives the projection, such as interest or gifts.", "support"));
   return box;
 }

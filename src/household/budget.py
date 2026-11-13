@@ -24,8 +24,8 @@ priority, and a rule:
                 months follow the category's own spending (the last month it spent in, and every period
                 after), or `effective` until there is any
   sinking_fund  amount per `per` (usually annually) set aside each month, with a
-                balance: what was set aside since the line began less what the
-                category spent
+                balance: what was set aside this year less what the category
+                spent this year; each year starts from zero
   scheduled     an explicit amount in the month of `effective`; a line can have
                 any number of these rows (tuition installments), and a later
                 row on the same date replaces the amount (0 cancels it)
@@ -330,7 +330,9 @@ def versus(targets_df, actuals, categories=None):
 
 
 def sinking_funds(targets_df, actuals):
-    """Each sinking-fund line's running balance: set aside since it began, less what its category spent.
+    """Each sinking-fund line's running balance within its year: set aside since January (or since the line
+    began, that year), less what its category spent. Each year starts from zero: nothing is carried over, so
+    a year's fund is that year's budget against that year's spending.
 
     The category's whole spending counts against the line, so a category should have one sinking fund.
     """
@@ -340,8 +342,10 @@ def sinking_funds(targets_df, actuals):
     spend = _spend_lookup(actuals)
     out = []
     for line, g in t.sort_values("month").groupby("line"):
-        balance = 0.0
+        balance, year = 0.0, ""
         for row in g.to_dict("records"):
+            if row["month"][:4] != year:  # a new year starts from zero
+                balance, year = 0.0, row["month"][:4]
             spent = float(spend.get((row["category"], row["month"]), 0.0))
             balance += row["target"] - spent
             out.append(

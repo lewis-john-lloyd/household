@@ -499,6 +499,7 @@ function sameRecipient(r: Recipient, category: string, through: string, all: Rec
     box.appendChild(
       el("span", into ? "Counts as " + nameOf(into, all) + " after the next run" : "On its own after the next run", "tag warn"),
     );
+    if (into) box.appendChild(el("span", mergeDeductible(r, into, all), "support merge-after"));
     if (staged[target])
       box.appendChild(
         button(
@@ -575,4 +576,23 @@ function nameOf(key: string, all: Recipient[]) {
     return x.key === key;
   })[0];
   return hit ? hit.name : key;
+}
+
+// What saying a recipient is another does to the year's deductible gifts under its line item: its gifts take
+// the other's deductible answer (a change to that answer in hand counted too).
+function mergeDeductible(r: Recipient, into: string, all: Recipient[]) {
+  var said = function (x: Recipient) {
+    var e = edited("recipient|" + x.key.toUpperCase());
+    return e ? String((e.edit as Record<string, string>).deductible) : x.deductible;
+  };
+  var now = all.reduce(function (t, x) {
+    return t + (said(x) === "yes" ? x.given : 0);
+  }, 0);
+  var target = all.filter(function (x) {
+    return x.key === into;
+  })[0];
+  var after = now - (said(r) === "yes" ? r.given : 0) + (target && said(target) === "yes" ? r.given : 0);
+  return Math.abs(after - now) < 0.5
+    ? "The year's deductible gifts under it stay " + money.format(now) + "."
+    : "The year's deductible gifts under it go from " + money.format(now) + " to about " + money.format(after) + ".";
 }

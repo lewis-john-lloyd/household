@@ -180,6 +180,19 @@ def test_versus_and_sinking_funds():
     assert s["balance"].tolist() == [100.0, -50.0, 50.0]
 
 
+def test_an_annual_fund_starts_each_year_from_zero():
+    planned = budget.targets(
+        rules(["car repairs", "2025-11-01", "car_upkeep", "emergency", "high", "sinking_fund", "1200", "annually", ""]),
+        None,
+        "2026-02",
+    )
+    spent = actuals([["2025-12", "car_upkeep", 50.0], ["2026-01", "car_upkeep", 30.0]])
+    s = budget.sinking_funds(planned, spent).set_index("month")["balance"]
+    assert s.loc["2025-11"] == 100.0 and s.loc["2025-12"] == 150.0  # the first year: set aside, less spent
+    assert s.loc["2026-01"] == 70.0  # January starts from zero: nothing carried from December
+    assert s.loc["2026-02"] == 170.0
+
+
 def test_budget_rules_seed_keys_on_line_and_date():
     from household.parsers import seed
 

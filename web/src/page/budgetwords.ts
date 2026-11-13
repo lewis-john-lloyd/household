@@ -234,15 +234,36 @@ function priceWords(t: Row) {
   return cents.format(Number(t.previous)) + " \u2192 " + cents.format(Number(t.latest));
 }
 
-// An annual line, judged on its year: spent from January 1 to the period's last day against an even pace.
-function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus | null {
-  var year = lines
-    .filter(function (x) {
-      return x.rule === "sinking_fund";
-    })
-    .reduce(function (t, x) {
-      return t + (Number(x.amount) || 0) * (PER_MONTH[x.per] || 1) * 12;
-    }, 0);
+// A line paid less often than monthly (a fixed amount set per quarter, half year or year: tuition, a yearly
+// gift) has a budget of a twelfth of its year each month, so a month says little: most look under and the one
+// the payment lands in looks far over. Such a line item, and an annual (sinking fund) one, is judged on its year.
+var YEARLY_PER: Record<string, boolean> = { quarterly: true, semi_annually: true, annually: true };
+
+function yearlyLine(x: Row) {
+  return x.in_force !== "ended" && (x.rule === "sinking_fund" || (x.rule === "fixed" && !!YEARLY_PER[x.per]));
+}
+
+// Whether a line item is judged on its year rather than its period: every budget line in force is yearly.
+function yearPaced(lines: Row[]) {
+  var now = lines.filter(function (x) {
+    return x.in_force !== "ended";
+  });
+  return now.length > 0 && now.every(yearlyLine);
+}
+
+interface YearPace {
+  year: number; // the year's budget: its yearly lines' amounts, a year's worth
+  spent: number; // spent from January 1 to the period's last day
+  pace: number; // an even pace's share of the year by then
+  through: string;
+  setAside: boolean; // a sinking fund (set aside evenly), not a payment that lands when it lands
+}
+
+function yearPace(v: BudgetView, category: string, lines: Row[]): YearPace | null {
+  var yearly = lines.filter(yearlyLine);
+  var year = yearly.reduce(function (t, x) {
+    return t + (Number(x.amount) || 0) * (PER_MONTH[x.per] || 1) * 12;
+  }, 0);
   if (!year) return null;
   var through = v.through,
     from = through.slice(0, 4) + "-01-01";
@@ -255,11 +276,47 @@ function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus
     }, 0);
   var days = (Date.parse(through) - Date.parse(from)) / 864e5 + 1,
     inYear = (Date.parse(through.slice(0, 4) + "-12-31") - Date.parse(from)) / 864e5 + 1;
-  var pace = (year * days) / inYear;
-  var share = Math.round((100 * spent) / year) + "% of the year";
-  if (spent > year + 0.5) return { text: (spent / year).toFixed(1) + " times the year's " + money.format(year), tone: "over" };
-  if (spent > pace + 0.5) return { text: share + ", " + money.format(spent - pace) + " ahead of pace", tone: "watch" };
+  return {
+    year: year,
+    spent: spent,
+    pace: (year * days) / inYear,
+    through: through,
+    setAside: yearly.some(function (x) {
+      return x.rule === "sinking_fund";
+    }),
+  };
+}
+
+// A line item judged on its year: past the year's budget is over. An annual fund is set aside evenly, so
+// spending ahead of an even pace is worth knowing; a payment set per year lands when it lands, so it isn't.
+function annualStatus(v: BudgetView, category: string, lines: Row[]): LineStatus | null {
+  var p = yearPace(v, category, lines);
+  if (!p) return null;
+  var share = Math.round((100 * p.spent) / p.year) + "% of the year";
+  if (p.spent > p.year + 0.5)
+    return { text: (p.spent / p.year).toFixed(1) + " times the year's " + money.format(p.year), tone: "over" };
+  if (!p.setAside) return { text: share + "'s " + money.format(p.year), tone: "ok" };
+  if (p.spent > p.pace + 0.5) return { text: share + ", " + money.format(p.spent - p.pace) + " ahead of pace", tone: "watch" };
   return { text: share + ", on pace", tone: "ok" };
+}
+
+// The bar for a line item judged on its year: spent this year against the year's budget, with an annual
+// fund's even pace marked.
+function yearBar(p: YearPace) {
+  var bar = spentBar(p.spent, p.year);
+  bar.classList.add("of-year");
+  if (p.setAside && p.spent <= p.year + 0.5) {
+    var mark = el("b", null, "pace");
+    mark.style.left = Math.min(100, (100 * p.pace) / p.year) + "%";
+    bar.appendChild(mark);
+  }
+  bar.title =
+    "This year: " +
+    money.format(p.spent) +
+    " of " +
+    money.format(p.year) +
+    (p.setAside ? "; an even pace is " + money.format(p.pace) + " by " + longDay(p.through) : "");
+  return bar;
 }
 
 // What a line item's row says in its status column.
@@ -269,11 +326,13 @@ function lineStatus(v: BudgetView, l: ViewLine, lines: Row[]): LineStatus | null
   });
   if (checks.length === 1) return { text: checks[0].c.label, tone: "check", open: checks[0].c.open };
   if (checks.length) return { text: checks.length + " things to check", tone: "check", open: "line:" + l.category };
-  var annual = lines.some(function (x) {
-    return x.rule === "sinking_fund";
-  })
-    ? annualStatus(v, l.category, lines)
-    : null;
+  var annual =
+    yearPaced(lines) ||
+    lines.some(function (x) {
+      return x.rule === "sinking_fund";
+    })
+      ? annualStatus(v, l.category, lines)
+      : null;
   if (annual) return annual;
   if (l.recurring.length) {
     var paid = l.recurring.filter(function (r) {

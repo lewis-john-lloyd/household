@@ -248,11 +248,12 @@ function budgetTable(v: BudgetView) {
       var kc = cell(row, "", "text");
       kc.appendChild(kindChip(kind));
       cell(row, l.target ? money.format(l.target) : "");
-      var over = l.target > 0 && l.actual > l.target + 0.5;
+      var st = lineStatus(v, l, lines);
+      var pace = yearPaced(lines) ? yearPace(v, l.category, lines) : null; // judged on its year, not the period
+      var over = pace ? pace.spent > pace.year + 0.5 : l.target > 0 && l.actual > l.target + 0.5;
       cell(row, money.format(l.actual), over ? "over" : "");
       var used = cell(row, "", "text");
-      used.appendChild(spentBar(l.actual, l.target));
-      var st = lineStatus(v, l, lines);
+      used.appendChild(pace ? yearBar(pace) : spentBar(l.actual, l.target));
       if (!st && l.recipients.length && v.deductible)
         st = { text: money.format(v.deductible.given) + " deductible in " + v.deductible.year, tone: "" };
       var sc = cell(row, "", "text status");

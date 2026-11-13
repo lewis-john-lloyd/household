@@ -827,6 +827,32 @@ test("budget checks: each check's row, none before a run writes the tab, and a S
   assert.equal(card?.action, "view:budget");
 });
 
+test("each charge that changed price is its own item on Status, opening that charge", () => {
+  const log: unknown[][] = [
+    ["run_id", "computed_at", "stage", "detail"],
+    ["r2", "2001-03-02T07:00:00+00:00", "compute", JSON.stringify({ subscription_price_changes: 2 })],
+  ];
+  const notes: unknown[][] = [
+    ["run_id", "stage", "at", "n", "message"],
+    ["r2", "compute", "2001-03-02T07:00:00+00:00", 0, "tracked recurring charges: 3, 400 a year, 2 changed price lately"],
+    [
+      "r2",
+      "compute",
+      "2001-03-02T07:00:00+00:00",
+      1,
+      "recurring charge: PAGE TURNER BOOKS now 15.00, was 4.00 (+275%) from 2001-03-01", // leak-guard: allow (made up)
+    ],
+    ["r2", "compute", "2001-03-02T07:00:00+00:00", 2, "recurring charge: QUILL & INK now 9.00, was 8.00 (+12%) from 2001-02-20"], // leak-guard: allow (made up)
+  ];
+  const card = shape.parseStatus(log, notes).attention.find((a) => a.key === "subscription_price_changes");
+  assert.equal(card?.label, "recurring charges changed price");
+  assert.deepEqual(card?.items, [
+    { title: "PAGE TURNER BOOKS", detail: "Now 15.00, was 4.00 (+275%) from 2001-03-01", link: "charge:PAGE TURNER BOOKS" }, // leak-guard: allow (made up)
+    { title: "QUILL & INK", detail: "Now 9.00, was 8.00 (+12%) from 2001-02-20", link: "charge:QUILL & INK" }, // leak-guard: allow (made up)
+  ]);
+  assert.deepEqual(card?.detail, []); // the items say it, so the log lines aren't repeated under them
+});
+
 test("the page's floating preview gives the engine's numbers, from the fixture both check", () => {
   // tests/fixtures/floating_targets.json: worked out by budget.history and checked by tests/test_budget.py too
   const doc = JSON.parse(readFileSync(join(__dirname, "..", "..", "..", "tests", "fixtures", "floating_targets.json"), "utf8"));

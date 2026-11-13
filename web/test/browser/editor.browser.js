@@ -872,6 +872,52 @@ test("the Lines tab's three views: by group, by kind and a card per group, each 
   await page.close();
 });
 
+test("a line set per year is judged on its year: a month a payment lands in isn't over", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget' } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family', family: 'family', hobby: 'fun', media: 'fun' }," +
+      "    recurring: [], days: [[d, 'kids', 1200], [d, 'family', 150], [d, 'hobby', 50], [d, 'media', 9]]," +
+      "    targets: [{ month: m, category: 'kids', priority: 'high', target: 100 }, { month: m, category: 'family', priority: 'high', target: 10 }," +
+      "      { month: m, category: 'hobby', priority: 'low', target: 20 }, { month: m, category: 'media', priority: 'low', target: 10 }] } };" +
+      "  var bl = function (line, category, rule, amount, per) { return { line: line, effective: '2001-01-01', category: category, account: ''," +
+      "    priority: 'high', rule: rule, amount: amount, per: per, note: '', in_force: 'yes', in_words: 'x', this_month: ''," +
+      "    last_12_months: '0', scheduled: '', spends_from: category }; };" +
+      "  window.__answers.getEditor.budgetLines = [bl('kids', 'kids', 'fixed', '1200', 'annually'), bl('family', 'family', 'fixed', '120', 'annually')," +
+      "    bl('hobby', 'hobby', 'fixed', '20', 'monthly'), bl('media', 'media', 'sinking_fund', '10', 'monthly')];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line:has-text('Kids')");
+  const row = (name) => `table.bv tr.line:has-text('${name}')`;
+  // the year's payment, landed this month: the year's budget, spent, not 12 times the month's
+  assert.equal(await page.textContent(`${row("Kids")} td.status .st`), "100% of the year's $1,200"); // leak-guard: allow (made up)
+  assert.equal(await page.getAttribute(`${row("Kids")} td.status .st`, "class"), "st st-ok");
+  assert.equal(await page.locator(`${row("Kids")} td.over`).count(), 0);
+  assert.equal(await page.getAttribute(`${row("Kids")} .spent-bar`, "title"), "This year: $1,200 of $1,200"); // leak-guard: allow (made up)
+  // past the year's budget is still over
+  assert.equal(await page.textContent(`${row("Family")} td.status .st`), "1.3 times the year's $120"); // leak-guard: allow (made up)
+  assert.equal(await page.locator(`${row("Family")} td.over`).count(), 1);
+  // a monthly line is judged on its month as before, and an annual fund's bar marks its even pace
+  assert.equal(await page.textContent(`${row("Hobby")} td.status .st`), "Over by $30"); // leak-guard: allow (made up)
+  assert.equal(await page.locator(`${row("Media")} .spent-bar.of-year b.pace`).count(), 1);
+  assert.equal(await page.locator(`${row("Hobby")} .spent-bar.of-year`).count(), 0);
+  // its drawer says why, and its months aren't marked over
+  await page.click(`${row("Kids")} td:nth-child(2)`);
+  await page.waitForSelector(".drawer p.year-pace");
+  assert.match(
+    await page.textContent(".drawer p.year-pace"),
+    /^\$1,200 of the year's \$1,200 spent from January 1 to .+\. It is paid when it comes, so it is judged on its year/, // leak-guard: allow (made up)
+  );
+  assert.equal(await page.locator(".drawer svg.history rect.over").count(), 0);
+  // the other views say the same
+  await page.keyboard.press("Escape");
+  await page.click(".layout-switch button:has-text('By kind')");
+  await page.waitForSelector(".kind-view");
+  assert.match(await page.textContent(".kind-panel-fixed"), /100% of the year's \$1,200/); // leak-guard: allow (made up)
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("giving: each recipient under its line item, marked deductible here, and the year's deductible gifts", async () => {
   const page = await open(
     "window.__location = { parameter: { view: 'budget' } };" +
@@ -1743,6 +1789,37 @@ test("a check on the Status page opens its line item's drawer on the Budget page
   await page.waitForSelector(".drawer .alert.check");
   assert.match(await page.textContent(".drawer h2"), /Hobby/);
   assert.equal(await page.getAttribute("#view-budget", "aria-pressed"), "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a charge that changed price, on the Status page, opens that charge's drawer and stays open on a redraw", async () => {
+  const page = await open(
+    "var sub = { key: 'PAGE TURNER BOOKS', marked: 'yes', status: 'price changed', cadence: 'monthly', charges: '3'," +
+      "  last: '2001-06-03', latest: '15', previous: '4', yearly: '180', category: 'media', example: 'PAGE TURNER BOOKS'," +
+      "  note: '', includes: '', merged: '', name: 'Books', line: '' };" +
+      "window.__answers.getEditor.subscriptions = [sub];" +
+      "window.__answers.getBudgetBook.tracked = [sub];" +
+      "window.__answers.getBudgetBook.charges = [{ key: 'PAGE TURNER BOOKS', txn_id: 't4', date: '2001-06-03', spend: 15," +
+      "  payee: 'PAGE TURNER BOOKS', counts: true, why: 'sets the latest price' }, { key: 'PAGE TURNER BOOKS', txn_id: 't3'," +
+      "  date: '2001-05-03', spend: 4, payee: 'PAGE TURNER BOOKS', counts: true, why: '' }];" +
+      "window.__answers.getStatus.attention = [{ key: 'subscription_price_changes', label: 'recurring charge changed price', count: 1," +
+      "  note: '', detail: [], flags: [], action: 'view:recurring', items: [{ title: 'PAGE TURNER BOOKS'," +
+      "  detail: 'Now 15.00, was 4.00 (+275%) from 2001-06-03', link: 'charge:PAGE TURNER BOOKS' }] }];", // leak-guard: allow (made up)
+  );
+  await page.waitForSelector(".attention button.thing-link");
+  await page.click(".attention button.thing-link");
+  await page.waitForSelector(".drawer table.charge-lines");
+  assert.equal(await page.textContent(".drawer h2"), "Books");
+  assert.equal(await page.getAttribute("#budget-tabs button[data-tab='recurring']", "aria-pressed"), "true");
+  // marking the line that set the price redraws the page under it; the charge stays open
+  await page.click(".drawer tr[data-txn='t4'] button");
+  await page.click(".drawer tr[data-txn='t4'] button"); // and back
+  await page.evaluate(() => drawBudgetPage());
+  await page.waitForSelector(".drawer table.charge-lines");
+  await page.keyboard.press("Escape"); // closed, it stays closed
+  await page.evaluate(() => drawBudgetPage());
+  assert.equal(await page.locator(".drawer").count(), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

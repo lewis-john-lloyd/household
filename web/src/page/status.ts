@@ -280,13 +280,21 @@ function attentionCard(a: Attention, waiting?: boolean) {
     var list = el("ul", null, "things");
     a.items.forEach(function (i) {
       var li = el("li");
-      if (i.link && i.link.indexOf("budget:") === 0) {
-        // a line item's check: its drawer on the Budget page, where what it rests on is one click away
+      if (i.link && /^(budget|charge):/.test(i.link)) {
+        // a line item's check opens its drawer on the Budget page, where what it rests on is one click away; a
+        // recurring charge opens its own drawer on the Recurring tab, its lines there to mark
+        var link = i.link;
         var go = button(
           "",
           function () {
-            budget.tab = "lines";
-            budget.open = { category: i.link!.slice("budget:".length) };
+            var at = link.indexOf(":");
+            if (link.slice(0, at) === "charge") {
+              budget.tab = "recurring";
+              budget.open = { charge: link.slice(at + 1) };
+            } else {
+              budget.tab = "lines";
+              budget.open = { category: link.slice(at + 1) };
+            }
             setView("budget");
           },
           "thing-link",

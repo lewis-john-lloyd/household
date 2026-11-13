@@ -91,7 +91,10 @@ function openLine(category: string, v: BudgetView, only?: string) {
       ".",
   );
   lineChecks(d, line, v);
-  lineHistory(d, category, v);
+  var inForce = linesFor(category);
+  var pace = yearPaced(inForce) ? yearPace(v, category, inForce) : null;
+  if (pace) d.appendChild(yearWords(pace));
+  lineHistory(d, category, v, !!pace);
   var txns = el("div", null, "drawer-section");
   var show = button(
     "Show its transactions",
@@ -171,9 +174,29 @@ function openNewLine() {
   );
 }
 
-// A line's twelve months up to the period's last: what it spent each month (red past its target) and
-// the target as a dashed step line. The period's own months are drawn full, the others lighter.
-function lineHistory(d: HTMLElement, category: string, v: BudgetView) {
+// How a line item judged on its year stands, in its drawer: what it spent since January 1 against the year's
+// budget, and why a month alone says little.
+function yearWords(p: YearPace) {
+  var box = el("p", null, "year-pace");
+  var st = el("strong", money.format(p.spent) + " of the year's " + money.format(p.year));
+  box.appendChild(st);
+  box.appendChild(
+    document.createTextNode(
+      " spent from January 1 to " +
+        longDay(p.through) +
+        (p.setAside
+          ? "; an even pace is " + money.format(p.pace) + ". It is set aside each month and spent from its balance, "
+          : ". It is paid when it comes, ") +
+        "so it is judged on its year rather than the month: each month's budget is only a twelfth of the year.",
+    ),
+  );
+  return box;
+}
+
+// A line's twelve months up to the period's last: what it spent each month (red past its target, unless it is
+// judged on its year) and the target as a dashed step line. The period's own months are drawn full, the others
+// lighter.
+function lineHistory(d: HTMLElement, category: string, v: BudgetView, yearly?: boolean) {
   var NS = "http://www.w3.org/2000/svg";
   var book = budget.data!.book;
   var lastMonth = periodDays(v.period)[1].slice(0, 7);
@@ -241,7 +264,7 @@ function lineHistory(d: HTMLElement, category: string, v: BudgetView) {
   months.forEach(function (m, n) {
     var s = spent[m] || 0,
       x = L + n * bw;
-    var over = target[m] > 0 && s > target[m] + 0.5;
+    var over = !yearly && target[m] > 0 && s > target[m] + 0.5;
     var bar = add("rect", {
       x: x + 4,
       width: bw - 8,

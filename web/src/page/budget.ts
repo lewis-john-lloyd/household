@@ -12,7 +12,7 @@ var budget: {
   compare: string;
   sameWeeks: boolean;
   data: Answer<"getBudgetBook"> | null;
-  open: { category?: string; line?: string } | null; // the drawer open: a line's category, or a new line
+  open: { category?: string; line?: string; charge?: string } | null; // the drawer open: a line's category, a new line, or a charge
   sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
   unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
   shut?: Record<string, boolean>; // the groups shut ("group:<name>"); every group is open at first
@@ -99,6 +99,7 @@ function drawBudgetPage() {
   closeDrawer(true);
   if (budget.tab === "recurring") drawRecurring(body);
   else drawLinesTab(body);
+  if (budget.open && budget.open.charge) openCharge(budget.open.charge); // on either tab: a check opens one too
   body.style.minHeight = "";
   var again = document.querySelector<HTMLElement>("#budget-body .scroll");
   if (again) again.scrollLeft = left;

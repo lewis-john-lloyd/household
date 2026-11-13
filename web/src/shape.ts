@@ -434,7 +434,7 @@ interface StageRun {
 interface AttentionItem {
   title: string;
   detail: string;
-  link?: string; // where it opens: "budget:<category>" for a line item's drawer
+  link?: string; // where it opens: "budget:<category>" for a line item's drawer, "charge:<key>" for a charge's
 }
 
 interface Attention {
@@ -565,6 +565,23 @@ function categoryBreakdown(summary: Record<string, unknown>): Status["categories
 }
 
 /** The downloads due, from Reports coverage: each source with how far it reaches and what waits for it. */
+const CHANGED_KEY = "subscription_price_changes";
+const CHANGED_PREFIX = "recurring charge: ";
+
+/** Each recurring charge that changed price lately, from compute's notes ("recurring charge: <key> now <change>"),
+ * opening its own drawer, where the line that set the new price can be marked not part of it. */
+function priceChangeItems(lines: string[]): AttentionItem[] {
+  return lines
+    .filter((l) => l.startsWith(CHANGED_PREFIX))
+    .map((l) => {
+      const rest = l.slice(CHANGED_PREFIX.length);
+      const at = rest.indexOf(" now ");
+      const key = (at >= 0 ? rest.slice(0, at) : rest).trim();
+      return { title: key, detail: at >= 0 ? "Now " + rest.slice(at + 5).trim() : "", link: "charge:" + key };
+    })
+    .filter((i) => i.title);
+}
+
 function downloadsDue(coverage: unknown[][]): AttentionItem[] {
   if (!coverage.length) return [];
   const header = coverage[0].map((h) => String(h).trim());
@@ -684,7 +701,7 @@ function parseStatus(
     for (const [key, one, many, prefix, action] of CHECKS) {
       const count = Number(compute.summary[key] ?? 0);
       if (!count) continue;
-      const items = key === "downloads_due" ? downloadsDue(coverage) : [];
+      const items = key === "downloads_due" ? downloadsDue(coverage) : key === CHANGED_KEY ? priceChangeItems(compute.lines) : [];
       let note = "";
       if (key === "review_open_lines") {
         const waiting = sumOf((compute.summary.categories as { waiting?: unknown } | undefined)?.waiting);

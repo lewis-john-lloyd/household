@@ -187,6 +187,7 @@ function openCharge(key: string) {
   var r = editorCharge(key);
   var t = trackByKey(key);
   var d = drawer(chargeName(t || r), r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
+  budget.open = { charge: key }; // kept open when the page draws again (Status opens a charge this way too)
   facts(d, [
     ["Every", (t && t.cadence) || r.cadence],
     ["Latest", t && t.latest ? cents.format(Number(t.latest)) : r.latest ? cents.format(Number(r.latest)) : ""],

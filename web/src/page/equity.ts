@@ -100,7 +100,7 @@ function vestTaxPanel(s: EquitySymbol, grants: EquityGrant[], d: EquityPage): HT
   );
   var knob = el("label", null, "plan-knob");
   knob.appendChild(el("span", "Vests withheld at"));
-  var input = textInput(String(Math.round((planKnobs.rate || 0) * 1000) / 10), "knob-input");
+  var input = textInput(String(ratePercent(planKnobs.rate || 0)), "knob-input");
   input.inputMode = "decimal";
   input.setAttribute("aria-label", "Rate future vests are withheld at, percent");
   knob.appendChild(input);
@@ -121,7 +121,7 @@ function vestTaxPanel(s: EquitySymbol, grants: EquityGrant[], d: EquityPage): HT
     [
       ["Month", ""],
       ["Vests", "num"],
-      ["Withheld at " + Math.round(rate * 1000) / 10 + "%", "num"],
+      ["Withheld at " + ratePercent(rate) + "%", "num"],
       ["Tax it adds at " + Math.round(marginal * 100) + "%", "num"],
       ["Over or under withheld", "num"],
     ].forEach(function (h) {
@@ -154,9 +154,9 @@ function vestTaxPanel(s: EquitySymbol, grants: EquityGrant[], d: EquityPage): HT
     var gap = total.withheld - total.adds;
     words.textContent =
       Math.abs(gap) < 0.5
-        ? "At " + Math.round(rate * 1000) / 10 + "%, these vests withhold about what they add to the tax."
+        ? "At " + ratePercent(rate) + "%, these vests withhold about what they add to the tax."
         : "At " +
-          Math.round(rate * 1000) / 10 +
+          ratePercent(rate) +
           "%, these vests withhold about " +
           money.format(Math.abs(gap)) +
           (gap > 0 ? " more than they add: a bigger refund" : " less than they add: a smaller refund, or more owed") +
@@ -168,7 +168,7 @@ function vestTaxPanel(s: EquitySymbol, grants: EquityGrant[], d: EquityPage): HT
     if (planned !== null && Math.abs(rate - planned) > 1e-9) {
       actions.appendChild(
         button(
-          "Keep " + Math.round(rate * 1000) / 10 + "% for vests",
+          "Keep " + ratePercent(rate) + "% for vests",
           function () {
             keepVestRate(rate, panel.id, drawEquity);
           },

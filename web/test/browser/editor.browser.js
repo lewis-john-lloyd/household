@@ -2876,6 +2876,84 @@ test("home: the settings its figures rest on are changed beside them, the stored
   await page.close();
 });
 
+test("the withholding plan offers the vest rate that closes what the extra a paycheck can't", async () => {
+  // a refund too big with nothing extra withheld already: only the rate on the vests still to come takes it down
+  const row = (ret, target, more) => ({
+    year: "2002",
+    return: ret,
+    person: "alex",
+    employer: "Acme Widgets",
+    paychecks_left: "5",
+    vest_rate: "0.35",
+    projected: ret === "federal" ? "9000" : "0",
+    target: String(target),
+    current_extra: "0",
+    suggested_extra: "0",
+    lands_at: ret === "federal" ? "9000" : "0",
+    penalty_free: ret === "federal" ? "TRUE" : "",
+    vest_wages_left: "80000",
+    marginal_rate: ret === "federal" ? "0.24" : "0.05",
+    withheld: ret === "federal" ? "60000" : "",
+    total_tax: ret === "federal" ? "51000" : "",
+    safe_harbor: "",
+    suggested_rate: "",
+    rate_lands_at: "",
+    vests_left: "",
+    next_vest: "",
+    rate_by: "",
+    note: "W-4 Step 4(c): extra withholding per paycheck",
+    ...more,
+  });
+  const by = { vests_left: "2", next_vest: "2002-11-25" };
+  const plan = [
+    row("federal", 2000, { ...by, suggested_rate: "0.2625", rate_lands_at: "2000", rate_by: "2002-11-25" }),
+    row("federal", 0, { ...by, suggested_rate: "0.2375", rate_lands_at: "0", rate_by: "2002-11-25" }),
+    row("federal", -2000, { ...by, suggested_rate: "0.22", rate_lands_at: "-1400", rate_by: "2002-11-25" }),
+  ];
+  const page = await open(
+    "window.__answers.getTaxes = " +
+      JSON.stringify({
+        years: [
+          {
+            year: "2002",
+            filed: false,
+            forms: { "Form 1040": [{ form: "Form 1040", line: "24", key: "24", label: "Total tax", value: 90, filed: null }] },
+          },
+        ],
+        plan,
+        accounts: [],
+        notes: [],
+        filed: {},
+        history: [],
+        totals: [],
+      }) +
+      ";",
+  );
+  await page.click("#view-taxes");
+  await page.waitForSelector("#tax-plan .plan-knobs");
+  const note = (goal) => page.textContent(`#tax-plan tr:has-text('${goal}') td.plan-note`);
+  // as the plan ran: what the rate has to be, and the vest it has to change before
+  assert.match(
+    await page.textContent("#tax-plan .plan-by"),
+    /The extra a paycheck can't reach a refund of \$2,000 by itself\. Vests at 26\.25% do, if the rate changes before the Nov 25, 2002 vest \(2 vests left this year\)\. Try 26\.25%/, // leak-guard: allow (made up)
+  );
+  // each goal the extra can't land offers the rate that does; the one out of reach says it is the nearest
+  assert.equal(await note("a refund of $2,000"), "gets to a refund of $9,000 at most; vests at 26.25%"); // leak-guard: allow (made up)
+  assert.equal(await note("no balance"), "gets to a refund of $9,000 at most; vests at 23.75%"); // leak-guard: allow (made up)
+  assert.equal(await note("owing $2,000"), "gets to a refund of $9,000 at most; nearest: vests at 22%"); // leak-guard: allow (made up)
+  await page.click("#tax-plan tr:has-text('no balance') td.plan-note button");
+  assert.equal(await page.inputValue("#tax-plan input[aria-label^='Rate future vests']"), "23.75");
+  assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: no balance \(as things stand, a refund of \$9,000\)/); // leak-guard: allow (made up)
+  assert.equal(await note("no balance"), ""); // reached, so nothing more to offer
+  assert.equal(await page.locator("#tax-plan .plan-by").count(), 0); // the knob has moved: the plan's own advice steps aside
+  // the rate tried is kept as the setting the next run plans with
+  await page.click("#tax-plan button:has-text('Keep 23.75% for vests')");
+  await page.waitForSelector("#pending-list li", { state: "attached" });
+  assert.deepEqual(await staged(page), ["setting planned_supplemental_rate = 0.2375"]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("the withholding plan's two knobs preview at once, and a vest rate kept is staged and planned with", async () => {
   const line = (key, label, value) => ({ form: "Form 1040", line: key, key, label, value, filed: null });
   const row = (ret, target, extra, projected, more) => ({

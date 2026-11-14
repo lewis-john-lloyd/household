@@ -154,6 +154,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
         "paychecks_left": 0,
         "vests_left": 0,
         "vest_wages_left": 0.0,
+        "vests": [],  # (date, wages) of each vest still to come this year, soonest first
         "extra_withholding": 0.0,
         "notes": [],
     }
@@ -240,6 +241,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
             _add_medicare(out, amount, year)
         out["vests_left"] = len(by_date)
         out["vest_wages_left"] = sum(by_date.values()) * price
+        out["vests"] = [(d.isoformat(), shares * price) for d, shares in sorted(by_date.items())]
         out["vest_rate"] = rate
         out["notes"].append(
             f"{len(by_date)} more scheduled vests, {sum(by_date.values()):,.0f} shares at about "
@@ -249,11 +251,9 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
     elif len(vest_days) >= 2:
         latest_vest = date.fromisoformat(vest_days.index.max()[:10])
         # a vest on the same day of each month after the latest, before the job ends
-        months_left = sum(
-            1
-            for m in range(latest_vest.month + 1, 13)
-            if ends is None or date(year, m, min(latest_vest.day, 28)) < ends
-        )
+        days = [date(year, m, min(latest_vest.day, 28)) for m in range(latest_vest.month + 1, 13)]
+        days = [d for d in days if ends is None or d < ends]
+        months_left = len(days)
         amount = float(vest_days.mean()) * overrides.get("stock_price", 1.0)
         rate = overrides.get("supplemental_rate", float((recent["withheld"].sum() / recent["base"].sum()).round(2)))
         out["wages"] += amount * months_left
@@ -266,6 +266,7 @@ def employer_position(rows, backtest, year, overrides, wi_backtest=None, ended=F
             _add_medicare(out, amount, year)
         out["vests_left"] = months_left
         out["vest_wages_left"] = amount * months_left
+        out["vests"] = [(d.isoformat(), amount) for d in days]
         out["vest_rate"] = rate
         out["notes"].append(f"{months_left} more monthly vests of about {amount:,.0f} at {rate:.0%}")
         _parts(out, "vests", out["notes"][-1] + ", from the recent vests (no schedule on file)", before)
@@ -742,6 +743,11 @@ PLAN_COLUMNS = [
     "withheld",
     "total_tax",
     "safe_harbor",
+    "suggested_rate",
+    "rate_lands_at",
+    "vests_left",
+    "next_vest",
+    "rate_by",
     "note",
 ]
 
@@ -767,6 +773,31 @@ def plan_extra(row, rate, goal):
     vest_rate = row["vest_rate"] if row["vest_rate"] is not None and not pd.isna(row["vest_rate"]) else rate
     projected = row["projected"] + ((rate - vest_rate) * row["vest_wages_left"] if federal else 0.0)
     return round(max(row["current_extra"] + (goal - projected) / row["paychecks_left"], 0.0), 2)
+
+
+def plan_rate(row, extra, goal, floor, ceiling):
+    """The rate future vests are withheld at that lands a federal plan row's return on goal with extra withheld
+    a paycheck: the other knob, for when the extra can't get there (it can't go below nothing). Held between
+    the flat rate on supplemental pay (floor) and the top rate (ceiling); None for Wisconsin, or with no vest
+    left to change. The page's planRate (budgetview.ts) is the same rule, checked against
+    tests/fixtures/withholding_preview.json."""
+    vest_rate = row["vest_rate"] if row["vest_rate"] is not None and not pd.isna(row["vest_rate"]) else None
+    if row["return"] != "federal" or vest_rate is None or not row["vest_wages_left"]:
+        return None
+    lands, _ = plan_preview(row, vest_rate, extra)
+    return round(min(max(vest_rate + (goal - lands) / row["vest_wages_left"], floor), ceiling), 4)
+
+
+def rate_by(vests, gap, reach):
+    """The vest the rate has to change before: the latest one from which the vests still to come can move the
+    return by gap, each moving it by reach of its wages (how far the rate can go). The next vest, when even
+    all of them can't. vests: [(date, wages)], soonest first."""
+    moved = 0.0
+    for day, wages in reversed(vests):
+        moved += wages * reach
+        if moved + 0.005 >= gap:
+            return day
+    return vests[0][0]
 
 
 def _harbor(year, facts):
@@ -800,26 +831,45 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
         "wisconsin": round((w_more["wi_net_tax"] - w["wi_net_tax"]) / 100, 4),
     }
     vest_wages = round(sum(v.get("vest_wages_left", 0.0) for v in pos.values()), 2)
+    vests = sorted(day_wages for v in pos.values() for day_wages in v.get("vests", []))
     harbor = _harbor(year, facts)
     federal = {"withheld": round(r["25a"] + r["25c"], 2), "total_tax": round(r["24"], 2), "safe_harbor": harbor}
     left = [(k, v) for k, v in pos.items() if v["paychecks_left"]]
     vest = next((v.get("vest_rate") for v in pos.values() if v.get("vest_rate") is not None), None)
+    p = taxdata.params(year)
+    floor, ceiling = p["supplemental_flat_rate"], p["supplemental_mandatory_rate"]
+
+    def by_rate(row, extra, lands, goal):
+        """The vest rate that closes what the extra leaves of a federal row's goal, where that lands, and the
+        vest it has to change before (the row's last columns)."""
+        out = {"vests_left": len(vests), "next_vest": vests[0][0] if vests else ""}
+        rate = plan_rate(row, extra, goal, floor, ceiling) if vests and abs(lands - goal) > 1 else None
+        if rate is None or abs(rate - vest) < 0.00005:
+            return out
+        reach = vest - floor if lands > goal else ceiling - vest
+        return {
+            **out,
+            "suggested_rate": rate,
+            "rate_lands_at": plan_preview(row, rate, extra)[0],
+            "rate_by": rate_by(vests, abs(lands - goal), reach),
+        }
+
     if not left:
-        return pd.DataFrame(
-            [
-                {
-                    "return": "federal",
-                    "projected": -r["37"],
-                    "target": target,
-                    "vest_rate": vest,
-                    "vest_wages_left": vest_wages,
-                    "marginal_rate": marginal["federal"],
-                    **federal,
-                    "note": "no paychecks left this year to change",
-                }
-            ],
-            columns=PLAN_COLUMNS,
-        )
+        row = {
+            "return": "federal",
+            "projected": -r["37"],
+            "target": target,
+            "vest_rate": vest,
+            "current_extra": 0.0,
+            "paychecks_left": 0,
+            "vest_wages_left": vest_wages,
+            "marginal_rate": marginal["federal"],
+            **federal,
+            "note": "no paychecks left this year to change",
+        }
+        row.update(by_rate(row, 0.0, -r["37"], target))
+        row.update(current_extra=None, paychecks_left=None)  # as before: there is no paycheck to say them of
+        return pd.DataFrame([row], columns=PLAN_COLUMNS)
     (person, employer), v = max(left, key=lambda kv: kv[1]["paychecks_left"])
     n = v["paychecks_left"]
     returns = (
@@ -857,6 +907,7 @@ def withholding_plan(year, paystubs, sales, facts, target=2000.0, supplemental_r
             }
             if name == "federal":
                 row["penalty_free"] = tax.penalty_free(-lands, r["25a"] + r["25c"] + (extra - now) * n, r["24"], harbor)
+                row.update(by_rate(row, extra, lands, goal))
             rows.append(row)
     return pd.DataFrame(rows, columns=PLAN_COLUMNS)
 

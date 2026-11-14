@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -34,6 +34,7 @@ const shape = new Function(
   priceChanged: (latest: number, previous: number | null) => boolean;
   planPreview: (row: PlanBasis, rate: number, extra: number) => { lands: number; penaltyFree: boolean | null };
   planExtra: (row: PlanBasis, rate: number, goal: number) => number;
+  planRate: (row: PlanBasis, extra: number, goal: number, floor?: number, ceiling?: number) => number | null;
   spendingOverTime: (
     book: BudgetBook,
     by: "group" | "category",
@@ -1011,6 +1012,8 @@ test("the withholding plan previews a vest rate and an extra as the engine would
   for (const c of doc.cases) {
     assert.deepEqual(shape.planPreview(c.row, c.rate, c.extra), { lands: c.lands, penaltyFree: c.penalty_free }, c.why);
     assert.equal(shape.planExtra(c.row, c.rate, 0), c.goal_extra, c.why);
+    assert.equal(shape.planRate(c.row, c.extra, 0, doc.floor, doc.ceiling), c.goal_rate, c.why);
+    assert.equal(shape.planRate(c.row, c.extra, 0), c.goal_rate, c.why); // the page's own bounds are the same
   }
 });
 

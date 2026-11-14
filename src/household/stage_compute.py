@@ -915,9 +915,23 @@ def _withholding_plan(c: Compute, year, books, stubs, sales, facts, jobs, vests)
             f"{row['person']} ({row['employer']}) withholds {row['suggested_extra']:,.2f} extra a "
             f"paycheck (now {row['current_extra']:,.2f}) for {row['paychecks_left']} paychecks"
             + ("" if abs(row["lands_at"] - row["target"]) <= 1 else f", which can only get to {row['lands_at']:,.0f}")
-            + (" (an underpayment penalty is possible)" if row["penalty_free"] is False else ""),
+            + (" (an underpayment penalty is possible)" if row["penalty_free"] is False else "")
+            + _by_rate(row),
         )
     return tax_plan
+
+
+def _by_rate(row):
+    """What the vest rate does for a plan row the extra can't land: "; vests at 31.25% from the next one
+    (2030-06-14) land at 2,000"."""
+    if pd.isna(row.get("suggested_rate")):
+        return ""
+    lands = float(row["rate_lands_at"])
+    return (
+        f"; vests at {nudges._rate(row['suggested_rate'])} from the next one ({row['next_vest']}) "
+        f"{'land at' if abs(lands - row['target']) <= 1 else 'get to'} {lands:,.0f}"
+        + ("" if row["rate_by"] == row["next_vest"] else f" (it can still be reached until the {row['rate_by']} vest)")
+    )
 
 
 def _say_projection(c: Compute, result, year, lines, notes):

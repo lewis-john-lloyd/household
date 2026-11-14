@@ -69,6 +69,11 @@ def _day(text):
         return None
 
 
+def _rate(rate):
+    """A rate as a percent to a hundredth of a point, as the plan works it out: 31.25%, 22%."""
+    return f"{float(rate) * 100:.2f}".rstrip("0").rstrip(".") + "%"
+
+
 def _lines(n):
     return f"{n} line" if n == 1 else f"{n} lines"
 
@@ -276,7 +281,25 @@ def build(
                         else f", which gets to {'a refund of ' if lands >= 0 else 'owing '}{_money(lands)}"
                     )
                 )
-            if supplemental:
+            show_from, show_until = last - timedelta(days=LEAD_DAYS), last
+            if supplemental and pd.notna(r.get("suggested_rate")) and _day(r.get("next_vest")):
+                # the plan worked the rate out for the vests still to come (changed before the next one), and
+                # the last vest from which it can still close the gap: that one is the deadline, so the email
+                # says so while it can, not only before the last paychecks
+                soon, by = _day(r["next_vest"]), _day(r.get("rate_by")) or _day(r["next_vest"])
+                at, left = float(r["rate_lands_at"]), int(r["vests_left"])
+                steps.append(
+                    f"{'then ' if steps else ''}set the supplemental rate for vests and bonuses to "
+                    f"{_rate(r['suggested_rate'])} (now {vest:.0%}) before the {soon:%B} {soon.day} vest: "
+                    f"with the {left} vest{'' if left == 1 else 's'} left that "
+                    + (
+                        "lands on it"
+                        if abs(at - target) <= 1
+                        else f"gets to {'a refund of ' if at >= 0 else 'owing '}{_money(at)}, as near as the rate goes"
+                    )
+                )
+                show_from, show_until = min(show_from, by - timedelta(days=LEAD_DAYS)), max(last, by)
+            elif supplemental:
                 steps.append(
                     f"{'then ' if steps else ''}{'lower' if lands > target else 'raise'} the supplemental "
                     f"rate for vests and bonuses (now {vest:.0%}) to close the rest"
@@ -286,8 +309,8 @@ def build(
                 "tax",
                 f"{which} withholding",
                 f"projected {verdict} against a target refund of {_money(target)}: " + "; ".join(steps),
-                last - timedelta(days=LEAD_DAYS),
-                last,
+                show_from,
+                show_until,
                 settings.link(params, "payroll_url"),
             )
     if elections is not None and len(elections) and stubs is not None:

@@ -473,6 +473,14 @@ REPORTS = (
             "withheld",
             "total_tax",
             "safe_harbor",
+            # the other knob, when the extra can't reach the goal: the rate on the vests still to come that does
+            # (or gets nearest), where it lands, how many vests are left and the next, and the vest it has to
+            # change before
+            "suggested_rate",
+            "rate_lands_at",
+            "vests_left",
+            "next_vest",
+            "rate_by",
             "note",
             "run_id",
         ),

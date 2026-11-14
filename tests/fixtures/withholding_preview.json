@@ -1,5 +1,5 @@
 {
-  "about": "Where the withholding plan lands with the two knobs turned: future vests withheld at rate, and extra withheld each paycheck (projection.plan_preview and plan_extra; the Taxes page's planPreview and planExtra in budgetview.ts). goal_extra is the extra that lands the return on no balance at that rate. Python (tests/test_projection.py) and the page (web/test/shape.test.ts) both check these. Made-up values.",
+  "about": "Where the withholding plan lands with the two knobs turned: future vests withheld at rate, and extra withheld each paycheck (projection.plan_preview, plan_extra and plan_rate; the Taxes page's planPreview, planExtra and planRate in budgetview.ts). goal_extra is the extra that lands the return on no balance at that rate; goal_rate is the vest rate that lands it there with that extra, held between floor (the flat rate on supplemental pay) and ceiling (the top rate), or null where there is no vest rate to turn. Python (tests/test_projection.py) and the page (web/test/shape.test.ts) both check these. Made-up values.",
   "cases": [
     {
       "why": "as the plan has it: lands where it stands",
@@ -18,7 +18,8 @@
       "extra": 50,
       "lands": 3000,
       "penalty_free": true,
-      "goal_extra": 0
+      "goal_extra": 0,
+      "goal_rate": 0.22
     },
     {
       "why": "vests at 22%: 13 points less on 20,000 of vests to come",
@@ -37,7 +38,8 @@
       "extra": 50,
       "lands": 400,
       "penalty_free": true,
-      "goal_extra": 0
+      "goal_extra": 0,
+      "goal_rate": 0.22
     },
     {
       "why": "and no extra: 50 less on each of 6 paychecks",
@@ -56,7 +58,8 @@
       "extra": 0,
       "lands": 100,
       "penalty_free": true,
-      "goal_extra": 0
+      "goal_extra": 0,
+      "goal_rate": 0.22
     },
     {
       "why": "owing 2,000 with 90% of this year's tax withheld",
@@ -75,7 +78,8 @@
       "extra": 0,
       "lands": -2000,
       "penalty_free": true,
-      "goal_extra": 500
+      "goal_extra": 500,
+      "goal_rate": 0.37
     },
     {
       "why": "owing more, still at 90% exactly",
@@ -94,7 +98,8 @@
       "extra": 0,
       "lands": -3200,
       "penalty_free": true,
-      "goal_extra": 800
+      "goal_extra": 800,
+      "goal_rate": 0.37
     },
     {
       "why": "vests withheld at nothing: under 90% and under last year's tax, so a penalty is possible",
@@ -113,7 +118,8 @@
       "extra": 0,
       "lands": -4200,
       "penalty_free": false,
-      "goal_extra": 1050
+      "goal_extra": 1050,
+      "goal_rate": 0.37
     },
     {
       "why": "an extra 100 on 4 paychecks",
@@ -132,7 +138,8 @@
       "extra": 100,
       "lands": -3800,
       "penalty_free": false,
-      "goal_extra": 1050
+      "goal_extra": 1050,
+      "goal_rate": 0.37
     },
     {
       "why": "Wisconsin: the federal vest rate leaves it alone; only the extra moves it",
@@ -151,7 +158,8 @@
       "extra": 100,
       "lands": 0,
       "penalty_free": null,
-      "goal_extra": 100
+      "goal_extra": 100,
+      "goal_rate": null
     },
     {
       "why": "no vests to come: the rate changes nothing",
@@ -170,7 +178,90 @@
       "extra": 20,
       "lands": 1000,
       "penalty_free": true,
-      "goal_extra": 0
+      "goal_extra": 0,
+      "goal_rate": null
+    },
+    {
+      "why": "too big a refund with no extra left to drop: only the vest rate can take it down",
+      "row": {
+        "return": "federal",
+        "projected": 9000,
+        "vest_rate": 0.35,
+        "vest_wages_left": 80000,
+        "current_extra": 0,
+        "paychecks_left": 5,
+        "withheld": 60000,
+        "total_tax": 51000,
+        "safe_harbor": null
+      },
+      "rate": 0.35,
+      "extra": 0,
+      "lands": 9000,
+      "penalty_free": true,
+      "goal_extra": 0,
+      "goal_rate": 0.2375
+    },
+    {
+      "why": "so much refund that even the flat rate on vests leaves some",
+      "row": {
+        "return": "federal",
+        "projected": 12000,
+        "vest_rate": 0.35,
+        "vest_wages_left": 40000,
+        "current_extra": 0,
+        "paychecks_left": 5,
+        "withheld": 60000,
+        "total_tax": 51000,
+        "safe_harbor": null
+      },
+      "rate": 0.35,
+      "extra": 0,
+      "lands": 12000,
+      "penalty_free": true,
+      "goal_extra": 0,
+      "goal_rate": 0.22
+    },
+    {
+      "why": "owing, with the extra tried at 100 a paycheck: the rate makes up the rest, up to the top rate",
+      "row": {
+        "return": "federal",
+        "projected": -9000,
+        "vest_rate": 0.35,
+        "vest_wages_left": 20000,
+        "current_extra": 0,
+        "paychecks_left": 5,
+        "withheld": 60000,
+        "total_tax": 51000,
+        "safe_harbor": null
+      },
+      "rate": 0.35,
+      "extra": 100,
+      "lands": -8500,
+      "penalty_free": true,
+      "goal_extra": 1800,
+      "goal_rate": 0.37
+    },
+    {
+      "why": "Wisconsin has no vest rate to turn",
+      "row": {
+        "return": "wisconsin",
+        "projected": 9000,
+        "vest_rate": 0.35,
+        "vest_wages_left": 80000,
+        "current_extra": 0,
+        "paychecks_left": 5,
+        "withheld": null,
+        "total_tax": null,
+        "safe_harbor": null
+      },
+      "rate": 0.35,
+      "extra": 0,
+      "lands": 9000,
+      "penalty_free": null,
+      "goal_extra": 0,
+      "goal_rate": null
     }
-  ]
+  ],
+  "floor": 0.22,
+  "ceiling": 0.37
 }

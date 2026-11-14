@@ -305,3 +305,30 @@ def test_a_budget_lifted_by_one_big_line_is_in_the_email_and_price_changes_stay_
     assert list(budget["item"]) == ["hobby"]
     assert list(budget["detail"]) == ["Budget $55.00, usually $20.00"]  # leak-guard: allow (made up)
     assert list(budget["link"]) == ["https://example.test/exec?view=budget"]
+
+
+def test_withholding_names_the_vest_rate_and_opens_before_the_last_vest_that_can_still_reach_the_target():
+    # the extra is at nothing already; the plan worked out the rate on the vests still to come, and the last
+    # vest it can still be reached from. Last paycheck: December 25, so the old window opened November 25.
+    stubs = pd.DataFrame([stub("2026-10-30", "Dependent Care FSA", 100, 2200)])
+    rate = {"suggested_rate": 0.3125, "rate_lands_at": 2000.0, "vests_left": 3, "next_vest": "2026-10-14"}
+    fed = plan_row("federal", 9000.0, 0.0, now=0.0) | {"lands_at": 9000.0} | rate | {"rate_by": "2026-11-14"}
+    rows = nudges.build(date(2026, 10, 1), params(), plan=pd.DataFrame([fed]), stubs=stubs)
+    assert rows["detail"].tolist() == [
+        "projected a refund of 9,000 against a target refund of 2,000: set the supplemental rate for vests and "
+        "bonuses to 31.25% (now 35%) before the October 14 vest: with the 3 vests left that lands on it"
+    ]
+    # shown from 30 days before the last vest that can still reach it, through the last paycheck
+    assert (rows.iloc[0]["show_from"], rows.iloc[0]["show_until"]) == ("2026-10-15", "2026-12-25")
+
+    # the rate can't go low enough: the email says how near it gets, from before the next vest
+    floor = {"suggested_rate": 0.22, "rate_lands_at": 4400.0, "vests_left": 1, "next_vest": "2026-12-14"}
+    late = plan_row("federal", 9000.0, 0.0, now=80.0) | {"lands_at": 8680.0} | floor | {"rate_by": "2026-12-14"}
+    rows = nudges.build(date(2026, 11, 20), params(), plan=pd.DataFrame([late]), stubs=stubs)
+    assert rows["detail"].tolist() == [
+        "projected a refund of 9,000 against a target refund of 2,000: set the extra withholding to 0.00 a paycheck "
+        "(now 80.00) for the last 4 paychecks, which gets to a refund of 8,680; then set the supplemental rate for "
+        "vests and bonuses to 22% (now 35%) before the December 14 vest: with the 1 vest left that gets to a "
+        "refund of 4,400, as near as the rate goes"
+    ]
+    assert rows.iloc[0]["show_from"] == "2026-11-14"

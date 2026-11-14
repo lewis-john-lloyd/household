@@ -768,6 +768,11 @@ function plannedVestRate(plan: Row[]): number | null {
   return ran ? Number(ran.vest_rate) : null;
 }
 
+/** A rate as a percent to a hundredth of a point, the precision the plan works a rate out to: 31.25, 22. */
+function ratePercent(rate: number) {
+  return Math.round(rate * 10000) / 100;
+}
+
 function landWords(lands: number) {
   return Math.abs(lands) < 0.5 ? "no balance" : (lands > 0 ? "a refund of " : "owing ") + money.format(Math.abs(lands));
 }
@@ -798,7 +803,7 @@ function keepVestRate(rate: number, where: string, after: () => void) {
     var known = (editor!.parameters || []).filter(function (p) {
       return p.key === "planned_supplemental_rate";
     })[0];
-    var value = String(Math.round(rate * 1000) / 1000);
+    var value = String(Math.round(rate * 10000) / 10000);
     stage(
       {
         kind: "parameter",
@@ -843,7 +848,7 @@ function planCard(plan: Row[]) {
   if (vestWages > 0 && planKnobs.rate !== null) {
     var rateRow = el("label", null, "plan-knob");
     rateRow.appendChild(el("span", "Vests withheld at"));
-    rateInput = textInput(String(Math.round(planKnobs.rate * 1000) / 10), "knob-input");
+    rateInput = textInput(String(ratePercent(planKnobs.rate)), "knob-input");
     rateInput.inputMode = "decimal";
     rateInput.setAttribute("aria-label", "Rate future vests are withheld at, percent");
     rateRow.appendChild(rateInput);
@@ -908,6 +913,53 @@ function planCard(plan: Row[]) {
       if (now.penaltyFree === false) line.appendChild(el("span", " an underpayment penalty is possible", "off"));
       result.appendChild(line);
     });
+    // as the plan ran: what the vest rate has to be, and the vest it has to change before
+    var atBase =
+      federal &&
+      planKnobs.rate === planned &&
+      Object.keys(extraInputs).every(function (name) {
+        return planKnobs.extra[name] === Number(byReturn[name][0].current_extra || 0);
+      });
+    if (atBase && federal.suggested_rate !== "" && federal.suggested_rate !== undefined && federal.rate_by) {
+      var suggested = Number(federal.suggested_rate),
+        landsAt = Number(federal.rate_lands_at),
+        left = Number(federal.vests_left) || 0;
+      var by = el("p", null, "plan-by");
+      by.appendChild(
+        document.createTextNode(
+          "The extra a paycheck can't reach " +
+            landWords(Number(federal.target)) +
+            " by itself. Vests at " +
+            ratePercent(suggested) +
+            "% " +
+            (Math.abs(landsAt - Number(federal.target)) <= 1
+              ? "do"
+              : "get to " + landWords(landsAt) + ", as near as the rate goes") +
+            ", if the rate changes before the " +
+            longDate(federal.next_vest || federal.rate_by) +
+            " vest (" +
+            left +
+            (left === 1 ? " vest" : " vests") +
+            " left this year" +
+            (federal.next_vest && federal.rate_by !== federal.next_vest
+              ? "; the " + longDate(federal.rate_by) + " vest is the last it can still be reached from"
+              : "") +
+            "). ",
+        ),
+      );
+      by.appendChild(
+        button(
+          "Try " + ratePercent(suggested) + "%",
+          function () {
+            planKnobs.rate = suggested;
+            if (rateInput) rateInput.value = String(ratePercent(suggested));
+            redraw();
+          },
+          "link",
+        ),
+      );
+      result.appendChild(by);
+    }
     if (vestWages > 0 && marginal !== null) {
       var per = 1000;
       result.appendChild(
@@ -936,7 +988,7 @@ function planCard(plan: Row[]) {
     if (rateInput && rate !== null && Math.abs(rate - (planned === null ? -1 : planned)) > 1e-9)
       actions.appendChild(
         button(
-          "Keep " + Math.round(rate * 1000) / 10 + "% for vests",
+          "Keep " + ratePercent(rate) + "% for vests",
           function () {
             keepVestRate(rate!, "tax-plan", drawTaxes);
           },
@@ -988,7 +1040,7 @@ function planCard(plan: Row[]) {
       section.appendChild(
         el(
           "p",
-          (rateMoved ? "With vests at " + Math.round(rate * 1000) / 10 + "%: " : "As things stand: ") +
+          (rateMoved ? "With vests at " + ratePercent(rate) + "%: " : "As things stand: ") +
             (now >= 0 ? "refund " : "owe ") +
             money.format(Math.abs(now)) +
             ". " +
@@ -1039,7 +1091,27 @@ function planCard(plan: Row[]) {
           notes.push("gets to " + (at.lands >= 0 ? "a refund of " : "owing ") + money.format(Math.abs(at.lands)) + " at most");
         if (at.penaltyFree === false) notes.push("an underpayment penalty is possible");
         else if (at.lands < -1 && name === "federal") notes.push("no underpayment penalty");
-        cell(row, notes.join("; "), "text plan-note" + (at.penaltyFree === false ? " off" : ""));
+        var note = cell(row, notes.join("; "), "text plan-note" + (at.penaltyFree === false ? " off" : ""));
+        // the extra can't get there (it can't go below nothing): the rate on the vests still to come is the
+        // other knob, and the one that closes the rest is offered to try
+        var closing = Math.abs(at.lands - goal) > 1 && rateInput ? planRate(planBasis(p), extra, goal) : null;
+        if (closing !== null && Math.abs(closing - rate) > 1e-9) {
+          var reaches = Math.abs(planPreview(planBasis(p), closing, extra).lands - goal) <= 1;
+          var tryRate = button(
+            (reaches ? "vests at " : "nearest: vests at ") + ratePercent(closing) + "%",
+            function () {
+              planKnobs.rate = closing;
+              planKnobs.extra[name] = extra;
+              if (rateInput) rateInput.value = String(ratePercent(closing!));
+              if (extraInputs[name]) extraInputs[name].value = String(extra);
+              redraw();
+            },
+            "text plan-use",
+          );
+          tryRate.title = "Try " + ratePercent(closing) + "% for vests above";
+          note.appendChild(document.createTextNode(notes.length ? "; " : ""));
+          note.appendChild(tryRate);
+        }
         body.appendChild(row);
       });
       table.appendChild(body);
@@ -1069,9 +1141,7 @@ function planCard(plan: Row[]) {
     el(
       "p",
       "From the year so far plus the projection" +
-        (ranRate !== null && vestWages > 0
-          ? ", run with future vests withheld at " + Math.round(ranRate * 1000) / 10 + "%"
-          : "") +
+        (ranRate !== null && vestWages > 0 ? ", run with future vests withheld at " + ratePercent(ranRate) + "%" : "") +
         ".",
       "support small-print",
     ),

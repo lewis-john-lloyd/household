@@ -497,6 +497,27 @@ function planExtra(row: PlanBasis, rate: number, goal: number): number {
   return Math.round(Math.max(row.current_extra + (goal - projected) / row.paychecks_left, 0) * 100) / 100;
 }
 
+const SUPPLEMENTAL_FLAT = 0.22; // taxdata supplemental_flat_rate: the lowest rate vests can be withheld at
+const SUPPLEMENTAL_TOP = 0.37; // taxdata supplemental_mandatory_rate
+
+/**
+ * The rate future vests are withheld at that lands a federal row's return on goal with extra withheld a
+ * paycheck: the other knob, for when the extra can't get there. Held between the flat rate and the top one;
+ * null for Wisconsin, or with no vest left to change (projection.plan_rate).
+ */
+function planRate(
+  row: PlanBasis,
+  extra: number,
+  goal: number,
+  floor: number = SUPPLEMENTAL_FLAT,
+  ceiling: number = SUPPLEMENTAL_TOP,
+): number | null {
+  if (row.return !== "federal" || row.vest_rate === null || !row.vest_wages_left) return null;
+  var lands = planPreview(row, row.vest_rate, extra).lands;
+  var rate = Math.min(Math.max(row.vest_rate + (goal - lands) / row.vest_wages_left, floor), ceiling);
+  return Math.round(rate * 10000) / 10000;
+}
+
 // Spending month by month, by group or by category (the Over time part of Where the money went): what was spent,
 // from daily_actuals, never what was budgeted. Keys come in order of their spending over all the months the book
 // holds, whatever the range shown, so a key keeps its place (and its color) when the range or the filter changes.

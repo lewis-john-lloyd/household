@@ -433,3 +433,43 @@ def test_the_plan_preview_matches_the_shared_cases():
     for c in doc["cases"]:
         assert projection.plan_preview(c["row"], c["rate"], c["extra"]) == (c["lands"], c["penalty_free"]), c["why"]
         assert projection.plan_extra(c["row"], c["rate"], 0) == c["goal_extra"], c["why"]
+        assert projection.plan_rate(c["row"], c["extra"], 0, doc["floor"], doc["ceiling"]) == c["goal_rate"], c["why"]
+    # the bounds are the law's: the flat rate on supplemental pay and the top rate
+    p = projection.taxdata.params(2026)
+    assert (doc["floor"], doc["ceiling"]) == (p["supplemental_flat_rate"], p["supplemental_mandatory_rate"])
+
+
+def test_the_plan_names_the_vest_rate_when_the_extra_cannot_reach_the_goal():
+    # two monthly vests so far (5,000 each): four more to come, September to December
+    stubs = pd.concat(
+        [stubs_through(20), pd.DataFrame(vest_stub("2026-07-15", "v1") + vest_stub("2026-08-14", "v2"))],
+        ignore_index=True,
+    )
+    facts = pd.DataFrame(columns=["year", "kind", "key", "person", "value"])
+    sales = pd.DataFrame(columns=["sale_date", "gain", "term"])
+    plan = projection.withholding_plan(2026, stubs, sales, facts, target=6000, supplemental_rate=0.35)
+    fed = plan[plan["return"] == "federal"].set_index("target")
+    aimed = fed.loc[6000]
+    # dropping the extra to nothing leaves more refund than the goal: the rate on the four vests makes it up
+    assert aimed["suggested_extra"] == 0 and aimed["lands_at"] > 6000
+    shift = (aimed["suggested_rate"] - 0.35) * aimed["vest_wages_left"]
+    assert aimed["rate_lands_at"] == 6000 and abs(aimed["lands_at"] + shift - 6000) < 2  # to a hundredth of a point
+    assert (aimed["vests_left"], aimed["next_vest"]) == (4, "2026-09-14")
+    # each vest moves it by 13 points of 5,000: the gap needs three of them, so October's is the last chance
+    assert aimed["rate_by"] == "2026-10-14"
+    # a goal even the flat rate can't reach: as near as it goes, and no later than the next vest
+    owing = fed.loc[-6000]
+    assert owing["suggested_rate"] == 0.22 and owing["rate_lands_at"] > -6000 and owing["rate_by"] == "2026-09-14"
+    # Wisconsin has no vest rate, and a plan the extra lands needs none
+    wi = plan[plan["return"] == "wisconsin"]
+    assert wi["suggested_rate"].isna().all() and wi["rate_by"].isna().all()
+    reached = projection.withholding_plan(2026, stubs, sales, facts, target=8000, supplemental_rate=0.35)
+    assert pd.isna(reached[reached["return"] == "federal"].iloc[0]["suggested_rate"])
+
+
+def test_the_last_vest_that_can_still_close_a_gap():
+    vests = [("2026-10-14", 5000.0), ("2026-11-14", 5000.0), ("2026-12-14", 5000.0)]
+    assert projection.rate_by(vests, 600, 0.13) == "2026-12-14"  # one vest's 650 is enough: the last will do
+    assert projection.rate_by(vests, 700, 0.13) == "2026-11-14"  # two are needed
+    assert projection.rate_by(vests, 1900, 0.13) == "2026-10-14"  # all three
+    assert projection.rate_by(vests, 5000, 0.13) == "2026-10-14"  # more than they can move: as soon as can be

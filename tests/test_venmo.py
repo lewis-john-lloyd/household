@@ -104,3 +104,39 @@ def test_venmo_and_apple_lines_nothing_names_are_asked_about_one_by_one():
     review = categorize.queue(df)
     assert sorted(review.loc[review["kind"] == "line", "key"]) == ["t1", "t2", "t3"]
     assert review.loc[review["kind"] == "payee", "lines"].tolist() == [2]
+
+
+def test_a_card_line_that_names_who_paypal_paid_is_one_merchant_question_and_a_bank_debit_to_paypal_is_not():
+    lines = pd.DataFrame(
+        [
+            line(1, "2026-07-15", "PAYPAL *QUILL INK 402-555-0100 NY", -25.00),
+            line(2, "2026-07-20", "PAYPAL *QUILL INK 402-555-0100 NY", -40.00),
+            line(3, "2026-07-21", "PAYPAL INST XFER 0000", -30.00),
+        ]
+    )
+    found = explain.explain(lines)
+    found["coverage"]["paypal"] = ("2026-01-01", "2026-12-31")  # inside PayPal's download, which names none of them
+    df = categorize.categorize(lines, pd.DataFrame(), pd.DataFrame(), explanations=found)
+    status = df.set_index("txn_id")
+    assert list(status.loc[["t1", "t2"], "ask"]) == ["payee"] * 2 and set(status.loc[["t1", "t2"], "key"]) == {
+        "QUILL INK"
+    }
+    assert (status.at["t3", "ask"], status.at["t3", "decided_by"]) == ("line", "paypal, not in its emails or downloads")
+    review = categorize.queue(df)
+    assert review.loc[review["kind"] == "payee", ["key", "lines"]].values.tolist() == [["QUILL INK", 2]]
+    # an answer for the merchant settles both, and the next one from it
+    answered = pd.DataFrame(
+        [
+            {
+                "proposal_key": "payee:QUILL INK",
+                "kind": "category",
+                "decided_at": "2026-09-01",
+                "decision": "approve",
+                "note": "hobby",
+            }
+        ]
+    )
+    again = categorize.categorize(lines, pd.DataFrame(), answered, explanations=found).set_index("txn_id")
+    assert (
+        list(again.loc[["t1", "t2"], "category"]) == ["hobby"] * 2 and again.at["t1", "decided_by"] == "your decision"
+    )

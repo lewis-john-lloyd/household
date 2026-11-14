@@ -80,6 +80,9 @@ WAITING = (
 # services whose bank line names only the service (a Venmo payment, an Apple charge): with nothing from the
 # service to name it, each line is asked about on its own rather than as one merchant
 BY_LINE = ("paypal", "venmo", "apple", "google")
+# but a card's PayPal line names who was paid after the star ("PAYPAL *QUILL INK"): that is a merchant, asked
+# about once like any other, where a bank's debit to PayPal ("PAYPAL INST XFER") names no one
+NAMES_MERCHANT = re.compile(r"^PAYPAL\s?\*\s*[A-Z]")
 
 # the bank's category (USAA's CSV) to a household category, for guesses only
 BANK_HINTS = {
@@ -535,7 +538,7 @@ def categorize(
             out.append({"category": answered[hit], "decided_by": "your decision", "status": "decided"})
         elif service and r.txn_id not in named and _waits(covered.get(service), r.date):
             out.append({"decided_by": f"waiting for {service}", "status": "waiting", "ask": "wait"})
-        elif service in BY_LINE and r.txn_id not in named:
+        elif service in BY_LINE and r.txn_id not in named and not (r.key and NAMES_MERCHANT.match(payee.upper())):
             # nothing named it, and its payee names the service, not who was paid: ask about each line
             out.append({"decided_by": f"{service}, not in its emails or downloads", "ask": "line"})
         elif not r.key:  # no letters to name a merchant by: ask about the line itself

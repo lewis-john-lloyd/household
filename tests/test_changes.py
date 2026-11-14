@@ -906,3 +906,16 @@ def test_work_on_a_home_names_a_home_the_ledger_has_and_a_receipt_it_can_open():
     assert "receipt link must be https" in refused(doc(base | {"cost": "90", "receipt": "http://x.test"}), reader)
     assert "cost '' is not a number" in refused(doc(base), reader)
     assert "work must be one of" in refused(doc(base | {"cost": "90", "work": "fancy"}), reader)
+
+
+def test_an_asset_class_reads_one_way_and_a_long_run_of_spaces_cannot_stall_it():
+    import time
+
+    for good in ("SDT", "SDT 60", "SDT: 60", "SDT 60, BT 40", "SDT:60,BT:40", "US_STOCK 82.5, BOND 17.5"):
+        assert changes.CLASS_RE.match(good), good
+    for bad in ("SDT 60 BT", "60", "SDT,", "SDT 60,", ":60", "SDT :: 60"):
+        assert not changes.CLASS_RE.match(bad), bad
+    start = time.perf_counter()
+    for text in ("A" + " " * 5_000 + "!", "A 1, A" + " " * 5_000 + "!"):
+        assert not changes.CLASS_RE.match(text)
+    assert time.perf_counter() - start < 0.05

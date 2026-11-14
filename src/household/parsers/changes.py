@@ -92,7 +92,9 @@ SOURCE = "web"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")  # a category, the shape a split can name
 SYMBOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 .\-_/]{0,39}$")  # a ticker, or a plan fund's name
-CLASS_RE = re.compile(r"^[A-Za-z_]+(\s*[: ]\s*[0-9.]+)?(\s*,\s*[A-Za-z_]+\s*[: ]\s*[0-9.]+)*$")  # SDT, or SDT 60, BT 40
+# SDT, or SDT 60, BT 40 (or SDT: 60); a class and its weight part at a colon or spaces, never both ways at once, so
+# a long run of spaces can't make the match try every split of it (CodeQL's inefficient regular expression)
+CLASS_RE = re.compile(r"^[A-Za-z_]+(?:(?:\s*:\s*|\s+)[0-9.]+)?(?:\s*,\s*[A-Za-z_]+(?:\s*:\s*|\s+)[0-9.]+)*$")
 YEAR_RE = re.compile(r"^(19|20)[0-9]{2}$")
 PARAMETER_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z0-9_]+)?$")
 PATTERN_PARAMETERS = ("order_payee:", "transfer_payee:")  # parameters whose value is a payee pattern

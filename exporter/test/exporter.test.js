@@ -273,3 +273,9 @@ test("a message's own words can't start a message of their own", () => {
   assert.deepEqual(separators, ["===== RECEIPT m009 ====="]);
   assert.match(run.files[0].text, /\n ===== RECEIPT fake1 =====/);  // kept, indented, read as body text
 });
+
+test("entities are read once: a decoded & never starts another one", () => {
+  const run = exporter({});
+  const html = "<p>Q&amp;A &amp;lt;b&amp;gt; &#38;nbsp; &amp;amp; &#x26;quot; &nbsp;x &unknown; &#0;</p>";
+  assert.equal(run.body({ mimeType: "text/html", body: { data: b64url(html) } }).trim(), "Q&A &lt;b&gt; &nbsp; &amp; &quot; x &unknown; &#0;");
+});

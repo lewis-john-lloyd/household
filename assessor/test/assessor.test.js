@@ -66,3 +66,10 @@ test("the page address is the parcel number's twelve digits, and anything else i
   assert.deepEqual(JSON.parse(JSON.stringify(c.readParcels('{"version":1,"parcels":[{"property_id":"willow"}]}'))), [{ property_id: "willow" }]);
   assert.deepEqual(JSON.parse(JSON.stringify(c.readParcels(""))), []);
 });
+
+test("the page's entities are read once: a decoded & never starts another one", () => {
+  const run = load();
+  assert.deepEqual([...run.pieces("<td>A &amp;lt;b&amp;gt; &amp;amp; &lt;c&gt; &#39;d&#x27; &quot;e&quot;</td>")], [
+    "A &lt;b&gt; &amp; <c> 'd' \"e\"",
+  ]);
+});

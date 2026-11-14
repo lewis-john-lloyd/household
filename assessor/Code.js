@@ -37,13 +37,15 @@ const BILL = { "Net Assessed Value Rate (mill rate)": "mill_rate", "School Levy 
                "FIRST DOLLAR CREDIT": "first_dollar_credit", "Specials": "specials",
                "Total Taxes Less Credits": "net_taxes", "Total Amount Due": "amount_due" };
 
+const ENTITIES = { nbsp: " ", amp: "&", quot: '"', lt: "<", gt: ">", "#39": "'", "#x27": "'" };
+
 /** The page's text as a list of its pieces in reading order: each cell, heading and label apart. */
 function pieces(html) {
   return String(html)
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<[^>]*>/g, "\n")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&#x27;/g, "'").replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    // one pass, so a decoded "&" never starts another entity ("&amp;lt;" stays "&lt;")
+    .replace(/&(nbsp|amp|quot|lt|gt|#39|#x27);/gi, (_, e) => ENTITIES[e.toLowerCase()])
     .split("\n").map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t);
 }
 

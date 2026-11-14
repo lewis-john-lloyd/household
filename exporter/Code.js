@@ -324,6 +324,18 @@ function decode_(data) {
   return Utilities.newBlob(Utilities.base64Decode(text)).getDataAsString("UTF-8");
 }
 
+// The entities receipts use, read in one pass so a decoded "&" never starts another entity ("&amp;lt;" stays
+// "&lt;", as written); a name not listed stays as it is.
+const ENTITIES = { nbsp: " ", amp: "&", quot: "\"", rsquo: "'", zwnj: "", shy: "", copy: "" };
+
+function entity_(whole, name) {
+  if (name[0] === "#") {
+    const code = /^#x/i.test(name) ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+    return code > 0 && code <= 0xffff ? String.fromCharCode(code) : whole;
+  }
+  return Object.prototype.hasOwnProperty.call(ENTITIES, name) ? ENTITIES[name] : whole;
+}
+
 /** The message's plain text, or its HTML reduced to text when the plain part says too little. */
 function body_(payload) {
   const found = { plain: "", html: "" };
@@ -341,10 +353,7 @@ function body_(payload) {
     .replace(/<(style|script)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d|table|pre)>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&zwnj;|&shy;|&copy;/g, "")
-    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#39;|&rsquo;/g, "'").replace(/&quot;/g, "\"")
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, entity_)
     .replace(/\r/g, "")
     .replace(/[ \t ]+/g, " ")
     .replace(/\n\s*\n+/g, "\n");

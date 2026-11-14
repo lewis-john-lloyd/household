@@ -872,7 +872,8 @@ def _wisconsin_notes(year):
     return out
 
 
-ELECTION_COLUMNS = ["year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status"]
+# detail: what a row is made of when it isn't the pay stubs (a backdoor Roth IRA's contributions and conversions)
+ELECTION_COLUMNS = ["year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status", "detail"]
 MEGA_BACKDOOR = "Mega backdoor Roth (after-tax 401(k))"
 HEALTH_FSA_PLAN = "Limited-purpose FSA"
 BACKDOOR_ROTH = "Backdoor Roth IRA"
@@ -1017,6 +1018,12 @@ def backdoor_roth(year, activity, accounts, values_today=None, birth_dates=None)
         if not born[:4].isdigit():
             notes.append(f"no birth date (birth_date:{person}), so no age-50 catch-up")
         row["status"] = "; ".join(notes)
+        # each contribution and conversion behind the row, oldest first, so the figures can be checked
+        moves = mine[mine["kind"].isin(["contribution", "conversion_in"]) & (mine["amount"] > 0)].sort_values("date")
+        row["detail"] = "; ".join(
+            f"{str(d)[:10]} {'converted' if k == 'conversion_in' else 'contribution'} {a:,.2f} ({acct})"
+            for d, k, a, acct in zip(moves["date"], moves["kind"], moves["amount"], moves["account_id"])
+        )
         out.append(row)
     return out
 
@@ -1034,4 +1041,5 @@ def _election(year, person, employer, plan, ytd, projected, limit):
         "limit": limit,
         "gap": gap,
         "status": status,
+        "detail": "",
     }

@@ -610,7 +610,15 @@ function drawTransactionPage(body: HTMLElement) {
     var from = txnPage.from;
     page.appendChild(
       button(
-        "Back to " + { budget: "Budget against actual", flows: "Cashflow", status: "Status" }[from],
+        "Back to " +
+          ((txnPage.part === "search" ? "Search" : txnPage.part === "overtime" ? "Over time" : "") ||
+            (
+              { budget: "Budget", flows: "Cashflow", status: "Status", home: "Home", taxes: "Taxes", equity: "Equity" } as Record<
+                string,
+                string
+              >
+            )[from] ||
+            "where you were"),
         function () {
           setView(from);
         },

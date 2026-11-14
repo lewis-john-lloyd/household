@@ -1229,6 +1229,17 @@ function accountsPanel(accounts: Row[]) {
               "support",
             ),
           );
+          if (a.detail) {
+            // what the row was counted from: each contribution and conversion in the IRA histories
+            var from = el("details", null, "election-detail");
+            from.appendChild(el("summary", "What this is counted from"));
+            var list = el("ul");
+            a.detail.split("; ").forEach(function (d) {
+              list.appendChild(el("li", d));
+            });
+            from.appendChild(list);
+            row.appendChild(from);
+          }
         }
         panel.appendChild(row);
       });

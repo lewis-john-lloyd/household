@@ -263,6 +263,11 @@ function openFrom(location: PageLocation | null) {
     })
   )
     retireView = p.tab;
+  // ?view=flows&tab=search (or overtime, table) opens that part of Where the money went
+  if (p.view === "flows" && ["sankey", "table", "overtime", "search"].indexOf(p.tab) >= 0) {
+    openPart("flows", p.tab);
+    return;
+  }
   if (
     p.view === "investments" &&
     p.tab &&

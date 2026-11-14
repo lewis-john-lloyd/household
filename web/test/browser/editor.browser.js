@@ -1282,6 +1282,8 @@ test("each editor part lives on the page it is about, in that page's submenu", a
   assert.deepEqual(await page.$$eval("#edit-tabs button", (b) => b.map((x) => x.textContent)), [
     "Sankey",
     "Table",
+    "Over time",
+    "Search",
     "Review",
     "Payee rules",
     "Duplicates",
@@ -2349,6 +2351,16 @@ test("performance: ten years of a household's spending draws and redraws quickly
     window.__answers.getEquity = { symbols: [{ symbol: "ACME", price: 50, price_date: "2026-11-12", held: 3000, basis: 90000, value: 150000,
       gain: 60000, unvested: 4800, unvested_value: 200000 }], grants: grants, months: months, steps: [5, 10, 20], stepsSet: null };
     window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [], inputs: inputs, book: { groups: groups, recurring: [], days: days, targets: targets } };
+    // ten years of lines to search: about 20,000, each with every field
+    var lines = [], payees = ["ACME GROCER", "BLUE PUMP FUEL", "PAGE TURNER BOOKS", "QUILL & INK", "WILLOW ST"];
+    for (var n = 0; n < 20000; n++) {
+      var when = new Date(end.getTime() - n * 4 * 3600 * 1000).toISOString().slice(0, 10), p = n % 5;
+      lines.push({ id: "t" + n, date: when, account: n % 3 ? "card" : "checking", payee: payees[p], raw: payees[p] + " #" + (1000 + (n % 900)),
+        amount: -((n * 37) % 90) - 1, category: cats[n % 60], split: n % 17 ? "" : "cat1 -5.00; cat2 -1.00", items: "", key: payees[p],
+        note: n % 11 ? "" : "made up", oneOff: n % 13 === 0, decidedBy: "rule", status: "decided", recurring: p === 2 ? payees[2] : "",
+        recurringName: p === 2 ? "Book club" : "", recurringCounts: true, source: "csv", doc: "d" + (n % 40) });
+    }
+    window.__answers.getSearch = { lines: lines, groups: groups, categories: cats, charges: [] };
     window.__location = { parameter: { view: "budget" } };
   })();`);
   await page.waitForSelector("table.bv tr.line");
@@ -2387,6 +2399,20 @@ test("performance: ten years of a household's spending draws and redraws quickly
   });
   assert.ok(overTime.bars > 115, "ten years of months drew");
   assert.ok(overTime.ms < 150, `spending over time took ${Math.round(overTime.ms)} ms`);
+  // search: twenty thousand lines filtered by patterns on three fields, sorted and drawn (200 rows at a time)
+  await page.click("#flows-tabs button:has-text('Search')");
+  await page.waitForSelector("#flows-search .search-table");
+  const search = await page.evaluate(() => {
+    const t0 = performance.now();
+    for (let i = 0; i < 10; i++) {
+      searchState.query.text = i % 2 ? { payee: ".*fuel.*", raw: ".*#1\\d{3}", group: "group[0-3]" } : { payee: "acme.*" };
+      searchState.sort = i % 2 ? "amount" : "payee";
+      drawSearch();
+    }
+    return { ms: (performance.now() - t0) / 10, rows: document.querySelectorAll("#flows-search .search-row").length };
+  });
+  assert.equal(search.rows, 200);
+  assert.ok(search.ms < 200, `a search took ${Math.round(search.ms)} ms`);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -2795,6 +2821,7 @@ test("the withholding plan's two knobs preview at once, and a vest rate kept is 
             limit: "70",
             gap: "20",
             status: "room left; not converted to Roth yet",
+            detail: "2002-05-01 contribution 50.00 (alex_trad_ira)",
           },
         ],
         notes: [],
@@ -2810,7 +2837,7 @@ test("the withholding plan's two knobs preview at once, and a vest rate kept is 
   // the backdoor Roth IRA, read from the IRA histories: what went in, not a projection to December 31
   assert.match(
     await page.textContent("#taxes-body"),
-    /Backdoor Roth IRA\s*room left; not converted to Roth yet\s*\$50 in this year, of \$70; \$20 of room left/, // leak-guard: allow (made up)
+    /Backdoor Roth IRA\s*room left; not converted to Roth yet\s*\$50 in this year, of \$70; \$20 of room leftWhat this is counted from2002-05-01 contribution 50\.00 \(alex_trad_ira\)/, // leak-guard: allow (made up)
   );
   assert.equal(await noBalance(), "$250.00"); // leak-guard: allow (made up)
   assert.match(await page.textContent("#tax-plan .plan-result"), /Federal: owing \$1,000, as things stand/); // leak-guard: allow (made up)
@@ -3172,6 +3199,7 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
     groups: { media: "fun", food: "living", household: "living", misc: "other", family: "family", petrol: "car" },
     categories: ["family", "food", "household", "media", "misc", "petrol"],
     charges: [{ key: "PAGE TURNER BOOKS", name: "Book club" }],
+    ascribed: true,
   };
   const t3 = {
     id: "t3",
@@ -3239,6 +3267,10 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
   assert.equal(await page.getAttribute("#flows-search th:has(button:has-text('Amount'))", "aria-sort"), "ascending");
   await page.click("#flows-search th button:has-text('Account')");
   assert.deepEqual((await ids()).slice(0, 3), ["Page Turner Books", "ACME GROCER", "ACME GROCER"]); // card, newest first
+  // any field sorts, the ones with no column from the menu
+  await page.selectOption("#flows-search select[aria-label='Sort by']", "status");
+  assert.deepEqual((await ids()).slice(-1), ["WILLOW ST"]); // decided before open
+  assert.match(await page.textContent("#flows-search .search-row"), /by rule/); // why it has its category
   // the misc lines moved together; each its own change, shown at once
   await page.fill("#flows-search input[data-field='category']", "misc");
   await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
@@ -3247,7 +3279,13 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
   assert.match(await page.textContent("#flows-search .search-flash"), /2 moved to Petrol\. Not saved yet\./);
   assert.equal(await page.locator("#flows-search .search-row.changed").count(), 2);
   assert.match(await page.textContent("#flows-search .search-row"), /Petrol.*Car.*changed, not saved/); // in the order shown
-  assert.deepEqual(await staged(page), [
+  // undone in one step, and done again
+  await page.click("#flows-search .search-flash button:has-text('Undo')");
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await page.locator("#flows-search .search-row.changed").count(), 0);
+  await page.selectOption("#flows-search .search-bulk select", "petrol");
+  await page.click("#flows-search .search-bulk button:has-text('Move 2 lines')");
+  assert.deepEqual((await staged(page)).sort(), [
     "2025-12-20 ACME GROCER -$9.00: petrol", // leak-guard: allow (made up)
     "2026-02-10 BLUE PUMP FUEL -$30.00: petrol", // leak-guard: allow (made up)
   ]);
@@ -3255,10 +3293,27 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
   await page.click("#flows-search .search-row:has-text('BLUE PUMP FUEL')");
   await page.waitForSelector('dl.facts dt:has-text("Bank\'s text")');
   assert.match(await page.textContent("dl.facts"), /Read fromcsv \(file d1\)/);
+  // the line's page keeps the whole tab bar, and Back says where it goes: the search as it was left
+  assert.equal(await page.locator("#edit-tabs button:has-text('Search')").count(), 1);
+  await page.click("button:has-text('Back to Search')");
+  await page.waitForSelector("#flows-search .search-table");
+  assert.equal(await page.inputValue("#flows-search input[data-field='category']"), "misc");
+  await page.click("#flows-search .search-row:has-text('BLUE PUMP FUEL')");
   await page.click("button:has-text('Count it with another charge')");
   await page.selectOption("[aria-label='The recurring charge BLUE PUMP FUEL is part of']", "PAGE TURNER BOOKS");
   await page.click("button:has-text('Count it')");
   assert.ok((await staged(page)).includes("BLUE PUMP FUEL: part of Book club"));
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("search says when the last run was before lines carried their recurring charge; a link opens it", async () => {
+  const page = await open(
+    `window.__answers.getSearch = ${JSON.stringify({ lines: [], groups: {}, categories: [], charges: [], ascribed: false })}; window.__location = { parameter: { view: "flows", tab: "search" } };`,
+  );
+  await page.waitForSelector("#flows-search .search-results");
+  assert.match(await page.textContent("#flows-search .search-results"), /show after the next run/);
+  assert.equal(await page.getAttribute("#flows-tabs button[data-tab='search']", "aria-pressed"), "true");
   assert.deepEqual(page.errors, []);
   await page.close();
 });

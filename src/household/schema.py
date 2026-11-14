@@ -438,7 +438,10 @@ REPORTS = (
             "run_id",
         ),
     ),
-    Table("elections", ("year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status", "run_id")),
+    Table(
+        "elections",
+        ("year", "person", "employer", "plan", "ytd", "projected", "limit", "gap", "status", "detail", "run_id"),
+    ),
     # both returns line by line per scenario, beside the filed value once the return is in (projection.py)
     Table("tax_lines", ("year", "scenario", "order", "form", "line", "key", "label", "value", "filed", "run_id")),
     # what each projected line is made of (projection.working): wages and withholding so far and to come per

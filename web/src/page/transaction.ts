@@ -2,7 +2,7 @@
 
 // --- one transaction -------------------------------------------------------------------------------
 function openTransaction(id: string) {
-  txnPage = { id: id, from: view };
+  txnPage = { id: id, from: view, part: view === "flows" ? flowsTab : "" }; // where Back returns to
   openEdit("transaction");
 }
 
@@ -401,7 +401,7 @@ function recurringSection(panel: HTMLElement, t: Line, said: string, done: () =>
   var once = edited(editTarget({ kind: "line", txn_id: t.id, field: "one_off" }));
   if (t.recurring && t.recurringCounts && !once)
     acts.appendChild(
-      button("Leave this line out", function () {
+      button("Mark one-off: leave it out of the charge and of budget averages", function () {
         stage({ kind: "line", txn_id: t.id, field: "one_off", value: "TRUE" }, said + ": one-off");
         done();
       }),

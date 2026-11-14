@@ -169,6 +169,9 @@ def test_a_backdoor_roth_ira_is_read_from_the_ira_histories():
     assert (alex["ytd"], alex["limit"], alex["gap"]) == (7_500, 7_500, 0)
     assert alex["status"].startswith("at limit; 7,500 converted to Roth")
     assert "no birth date" in alex["status"]
+    assert alex["detail"] == (
+        "2026-05-01 contribution 7,500.00 (alex_trad_ira); 2026-05-03 converted 7,500.00 (alex_roth_ira)"
+    )
     # sam has a Roth IRA and nothing in it this year
     assert rows["sam"]["status"].startswith("room left; nothing in yet this year")
     assert set(rows) == {"alex", "sam"}  # a joint account is nobody's IRA

@@ -4,7 +4,7 @@
 // Every editor part is a list on the left, one row per item (its name, a line about it, and what is staged
 // for it), and the chosen item's editor on the right. On a phone the editor replaces the list, with Back.
 var selected: Record<string, string | null> = {}; // the item chosen in each tab, by key
-var txnPage: { id: string; from: string } | null = null; // the transaction the transaction page shows, and the view it was opened from
+var txnPage: { id: string; from: string; part?: string } | null = null; // the transaction the transaction page shows, and the view it was opened from
 
 /** A fact to show: its name, and its value as text or an element (left out when blank). */
 type Fact = [string, string | number | Node | null | undefined];

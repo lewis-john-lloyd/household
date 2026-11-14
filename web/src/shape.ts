@@ -1126,6 +1126,7 @@ interface SearchPage {
   groups: Record<string, string>; // category -> group
   categories: string[];
   charges: { key: string; name: string }[]; // the recurring charges you track, to count a line with
+  ascribed: boolean; // false for a Reports tab from before lines carried their recurring charge and source
 }
 
 // a tab's rows by column name (edits.ts has the same, but this file stands alone under Node)
@@ -1181,5 +1182,6 @@ function searchPage(categorized: unknown[][], categories: unknown[][], subscript
     .filter((s) => s.key)
     .map((s) => ({ key: s.key, name: s.name || s.key }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { lines, groups, categories: names.sort(), charges };
+  const header = (categorized[0] || []).map((h) => String(h).trim());
+  return { lines, groups, categories: names.sort(), charges, ascribed: header.indexOf("recurring") >= 0 };
 }

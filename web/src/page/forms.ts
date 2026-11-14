@@ -18,6 +18,8 @@ var PAGE_PARTS: Record<string, string[][]> = {
   flows: [
     ["sankey", "Sankey"],
     ["table", "Table"],
+    ["overtime", "Over time"],
+    ["search", "Search"],
     ["edit:review", "Review"],
     ["edit:rules", "Payee rules"],
     ["edit:duplicates", "Duplicates"],

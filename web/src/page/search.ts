@@ -28,6 +28,25 @@ var SEARCH_FIELDS: [SearchTextField, string, string][] = [
   ["decidedBy", "Decided by", "rule, you, a service"],
   ["id", "Line id", "txn_id"],
 ];
+// every field the lines found can be sorted by
+var SEARCH_SORTS: [string, string][] = [
+  ["date", "Date"],
+  ["amount", "Amount"],
+  ["payee", "Payee"],
+  ["raw", "Bank's text"],
+  ["category", "Category"],
+  ["group", "Group"],
+  ["account", "Account"],
+  ["recurring", "Recurring charge"],
+  ["key", "Merchant key"],
+  ["note", "Note"],
+  ["oneOff", "One-off"],
+  ["status", "Status"],
+  ["decidedBy", "Decided by"],
+  ["source", "Read from"],
+  ["doc", "File"],
+  ["id", "Line id"],
+];
 var SEARCH_MAIN = 6; // the first fields stand out; the rest wait under More fields
 
 function loadSearch() {
@@ -243,7 +262,31 @@ function drawSearch() {
       ),
     );
     results.appendChild(head);
-    if (found.length) results.appendChild(searchBulk(found, d));
+    if (!d.ascribed)
+      results.appendChild(el("p", "Recurring charges and where each line was read from show after the next run.", "support"));
+    if (found.length) {
+      var tools = searchBulk(found, d);
+      // any field sorts, the table's columns by their headings and the rest from here
+      var sortNames: Record<string, string> = {};
+      SEARCH_SORTS.forEach(function (f) {
+        sortNames[f[0]] = "Sort by " + f[1].toLowerCase();
+      });
+      var sorter = choice(
+        SEARCH_SORTS.map(function (f) {
+          return f[0];
+        }),
+        searchState.sort,
+        sortNames,
+      );
+      sorter.setAttribute("aria-label", "Sort by");
+      sorter.onchange = function () {
+        searchState.sort = sorter.value;
+        searchState.descending = sorter.value === "date";
+        drawResults();
+      };
+      tools.appendChild(sorter);
+      results.appendChild(tools);
+    }
     if (!found.length) {
       results.appendChild(el("p", "No line matches. Loosen a pattern, or Clear.", "support"));
       return;
@@ -308,6 +351,7 @@ function drawSearch() {
       var tags: string[] = [];
       if (d.groups[cat.category]) tags.push(pretty(d.groups[cat.category]));
       if (once.oneOff) tags.push("one-off");
+      if (l.decidedBy && !cat.changed) tags.push("by " + l.decidedBy); // why it has this category
       if (l.status === "open") tags.push("open in review");
       if (l.status === "waiting") tags.push("waiting");
       if (cat.changed || once.changed) tags.push("changed, not saved");
@@ -369,8 +413,10 @@ function searchBulk(found: SearchLine[], d: SearchPage) {
           return;
         }
         var moved = 0;
+        searchUndo = [];
         whole.forEach(function (l) {
           if (l.category === to.value && !edited(editTarget({ kind: "line", txn_id: l.id, field: "category" }))) return;
+          rememberStaged(editTarget({ kind: "line", txn_id: l.id, field: "category" }));
           stage(
             { kind: "line", txn_id: l.id, field: "category", value: to.value },
             l.date + " " + l.payee + " " + cents.format(l.amount) + ": " + to.value,
@@ -403,9 +449,11 @@ function searchBulk(found: SearchLine[], d: SearchPage) {
           return;
         }
         var n = 0;
+        searchUndo = [];
         found.forEach(function (l) {
           var now = searchOneOff(l).oneOff;
           if (now === yes) return;
+          rememberStaged(editTarget({ kind: "line", txn_id: l.id, field: "one_off" }));
           stage(
             { kind: "line", txn_id: l.id, field: "one_off", value: yes ? "TRUE" : "FALSE" },
             l.date + " " + l.payee + ": " + (yes ? "one-off" : "not one-off"),
@@ -427,11 +475,34 @@ function searchBulk(found: SearchLine[], d: SearchPage) {
   return bar;
 }
 
-// a short word on what just happened, under the results' count
+// what the last change to the lines found staged, and what each of those lines had staged before it, so the
+// whole change is undone in one step (each is also its own entry in the pending bar)
+var searchUndo: { target: string; before: StagedEdit | null }[] = [];
+
+function rememberStaged(target: string) {
+  searchUndo.push({ target: target, before: staged[target] || null });
+}
+
+// a short word on what just happened, under the results' count, with its undo
 function flash(words: string) {
   var head = document.querySelector("#flows-search .search-head");
   if (!head) return;
-  var p = el("p", words, "search-flash");
+  var p = el("p", words + " ", "search-flash");
   p.setAttribute("role", "status");
+  if (searchUndo.length)
+    p.appendChild(
+      button(
+        "Undo",
+        function () {
+          searchUndo.forEach(function (u) {
+            unstage(u.target);
+            if (u.before) stage(u.before.edit, u.before.text);
+          });
+          searchUndo = [];
+          drawSearch();
+        },
+        "text",
+      ),
+    );
   head.appendChild(p);
 }

@@ -34,15 +34,22 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   var said = t.date + " " + t.payee + " " + cents.format(t.amount);
   var id = el("code", t.id);
   id.title = "the line's txn_id";
+  // what came from the bank, as it came: never changed here (a correction is kept beside it, not over it)
   facts(panel, [
     ["Date", t.date],
     ["Account", t.account],
     ["Amount", cents.format(t.amount)],
+    ["Bank's text", t.payeeRaw],
+    ["Read from", (t.source || "") + (t.doc ? " (file " + t.doc + ")" : "")],
+    ["Transaction", id],
+  ]);
+  facts(panel, [
+    ["Called", t.payee !== t.payeeRaw ? t.payee : ""],
+    ["Merchant key", t.key],
     ["Category", t.parts.length ? "split" : t.category],
     ["Decided by", t.decidedBy],
-    ["Bank's name", t.payeeRaw !== t.payee ? t.payeeRaw : ""],
+    ["Recurring", t.recurring ? (t.recurringName || t.recurring) + (t.recurringCounts ? "" : " (listed, not counted)") : ""],
     ["Note", t.note],
-    ["Transaction", id],
   ]);
   // each item's category as it stands, a change not yet saved included; the split below follows them
   var itemCats = t.items.map(function (i) {
@@ -172,6 +179,7 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
   );
   moreForm.appendChild(moreActions);
   more.appendChild(moreForm);
+  recurringSection(panel, t, said, done);
   if (t.amount < 0) {
     // a payment for work on a home: its date, payee and amount carried to the Home page's form, this line its receipt
     var work = section(panel, "Work on a home", "Capital improvements and energy-credit work add to the home's basis.");
@@ -368,4 +376,110 @@ function splitEditor(box: HTMLElement, t: Line, said: string, done: () => void, 
   box.appendChild(actions);
   check();
   return { fromItems: fromItems };
+}
+
+// The recurring charge a line counts toward, and the ways to change that: leave this line out (one-off), track its
+// merchant, stop tracking the charge, or count its merchant with another charge (a recurring_merge). Every one is a
+// change in the pending bar; the charges you track come from getSearch, loaded once a page life.
+function recurringSection(panel: HTMLElement, t: Line, said: string, done: () => void) {
+  if (t.amount >= 0 && !t.recurring) return;
+  var part = section(
+    panel,
+    "Recurring",
+    t.recurring
+      ? "Part of " +
+          (t.recurringName || t.recurring) +
+          (t.recurringCounts
+            ? ", and counts toward its price and cadence."
+            : ", listed but not counted: it is one-off or a purchase an order history shows.")
+      : t.key
+        ? "Not part of a recurring charge you track."
+        : "No merchant key, so it can't be part of a recurring charge.",
+  );
+  var acts = el("div", null, "actions");
+  part.appendChild(acts);
+  var once = edited(editTarget({ kind: "line", txn_id: t.id, field: "one_off" }));
+  if (t.recurring && t.recurringCounts && !once)
+    acts.appendChild(
+      button("Leave this line out", function () {
+        stage({ kind: "line", txn_id: t.id, field: "one_off", value: "TRUE" }, said + ": one-off");
+        done();
+      }),
+    );
+  if (t.recurring && !edited("subscription|" + t.recurring.toUpperCase()))
+    acts.appendChild(
+      button(
+        "Stop tracking " + (t.recurringName || t.recurring),
+        function () {
+          stage({ kind: "subscription", key: t.recurring, subscription: "no" }, t.recurring + ": don't track");
+          done();
+        },
+        "text",
+      ),
+    );
+  if (!t.recurring && t.key) {
+    acts.appendChild(
+      button("Track " + t.key + " as recurring", function () {
+        stage({ kind: "subscription", key: t.key, subscription: "yes" }, t.key + ": track as recurring");
+        done();
+      }),
+    );
+    var join = el("span", null, "recurring-join");
+    acts.appendChild(join);
+    join.appendChild(
+      button(
+        "Count it with another charge\u2026",
+        function () {
+          join.textContent = "Loading…";
+          join.id = "join-" + t.id;
+          var show = function (charges: { key: string; name: string }[]) {
+            join.textContent = "";
+            if (!charges.length) {
+              join.appendChild(el("span", "You track no recurring charges yet.", "support"));
+              return;
+            }
+            var names: Record<string, string> = { "": "Pick the charge" };
+            charges.forEach(function (c) {
+              names[c.key] = c.name;
+            });
+            var which = choice(
+              [""].concat(
+                charges.map(function (c) {
+                  return c.key;
+                }),
+              ),
+              "",
+              names,
+            );
+            which.setAttribute("aria-label", "The recurring charge " + t.key + " is part of");
+            join.appendChild(which);
+            join.appendChild(
+              button("Count it", function () {
+                if (!which.value) return;
+                stage({ kind: "recurring_merge", key: t.key, same_as: which.value }, t.key + ": part of " + names[which.value]);
+                done();
+              }),
+            );
+          };
+          if (searchData) show(searchData.charges);
+          else
+            cachedCall(
+              "getSearch",
+              [],
+              function (d) {
+                searchData = d;
+                show(d.charges);
+              },
+              join.id,
+            );
+        },
+        "text",
+      ),
+    );
+  }
+  var waiting = [
+    stagedText("subscription|" + (t.recurring || t.key).toUpperCase()),
+    stagedText("recurring_merge|" + t.key.toUpperCase()),
+  ].filter(Boolean);
+  if (waiting.length) part.appendChild(el("p", "Not saved yet: " + waiting.join("; "), "staged-banner"));
 }

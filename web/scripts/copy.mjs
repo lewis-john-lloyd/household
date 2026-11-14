@@ -9,6 +9,7 @@ export const PAGE = [
   "cashflow",
   "budget",
   "spendchart",
+  "search",
   "budgetwords",
   "budgethead",
   "budgettable",

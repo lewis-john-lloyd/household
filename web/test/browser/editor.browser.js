@@ -3132,3 +3132,133 @@ test("over time: each month's spending stacked by group, as dollars or shares, o
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("search: lines found by anchored patterns on any field, sorted by any column, moved together, opened to correct", async () => {
+  const L = (id, date, account, amount, payee, category, more = {}) => ({
+    id,
+    date,
+    account,
+    payee,
+    raw: payee,
+    amount,
+    category,
+    split: "",
+    items: "",
+    key: payee.toUpperCase(),
+    note: "",
+    oneOff: false,
+    decidedBy: "rule",
+    status: "decided",
+    recurring: "",
+    recurringName: "",
+    recurringCounts: false,
+    source: "csv",
+    doc: "d1",
+    ...more,
+  });
+  const search = {
+    lines: [
+      L("t1", "2026-03-04", "card", -12, "Page Turner Books", "media", {
+        raw: "PAGE TURNER BOOKS 0042",
+        recurring: "PAGE TURNER BOOKS",
+        recurringName: "Book club",
+        recurringCounts: true,
+      }),
+      L("t2", "2026-03-02", "card", -50, "ACME GROCER", "food", { split: "food -30.00; household -20.00" }),
+      L("t3", "2026-02-10", "checking", -30, "BLUE PUMP FUEL", "misc"),
+      L("t4", "2026-01-15", "checking", 80, "WILLOW ST", "family", { status: "open" }),
+      L("t5", "2025-12-20", "card", -9, "ACME GROCER", "misc", { note: "party ice" }),
+    ],
+    groups: { media: "fun", food: "living", household: "living", misc: "other", family: "family", petrol: "car" },
+    categories: ["family", "food", "household", "media", "misc", "petrol"],
+    charges: [{ key: "PAGE TURNER BOOKS", name: "Book club" }],
+  };
+  const t3 = {
+    id: "t3",
+    date: "2026-02-10",
+    account: "checking",
+    payee: "BLUE PUMP FUEL",
+    payeeRaw: "BLUE PUMP FUEL",
+    amount: -30,
+    category: "misc",
+    parts: [],
+    items: [],
+    decidedBy: "rule",
+    status: "decided",
+    note: "",
+    key: "BLUE PUMP FUEL",
+    oneOff: false,
+    recurring: "",
+    recurringName: "",
+    recurringCounts: false,
+    source: "csv",
+    doc: "d1",
+  };
+  const page = await open(
+    `window.__answers.getSearch = ${JSON.stringify(search)}; window.__answers.getTransaction = ${JSON.stringify(t3)};`,
+  );
+  await page.click("#view-flows");
+  await page.click("#flows-tabs button:has-text('Search')");
+  await page.waitForSelector("#flows-search .search-table");
+  assert.equal(await page.isHidden("#controls"), true);
+  const ids = () => page.$$eval("#flows-search .search-row td:nth-child(3) div:first-child", (d) => d.map((x) => x.textContent));
+  const count = () => page.textContent("#flows-search .search-count");
+  assert.match(await count(), /^5 of 5 lines: \$101\.00 out, \$80\.00 in\./); // leak-guard: allow (made up)
+  // a pattern the whole field must match, ignoring case
+  await page.fill("#flows-search input[data-field='payee']", "acme.*");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  await page.fill("#flows-search input[data-field='payee']", "grocer");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 0);
+  // a broken pattern says why and filters nothing
+  await page.fill("#flows-search input[data-field='payee']", "(acme");
+  await page.waitForSelector("#flows-search .search-error:not(:empty)");
+  assert.match(await page.textContent("#flows-search label:has(input[data-field='payee']) .search-error"), /Not a pattern/);
+  assert.equal(await page.getAttribute("#flows-search input[data-field='payee']", "aria-invalid"), "true");
+  assert.match(await count(), /^5 of 5/);
+  await page.fill("#flows-search input[data-field='payee']", "");
+  // the bank's own text, a split's part, a group, a recurring charge, dates and amounts
+  await page.fill("#flows-search input[data-field='raw']", ".*\\d{4}");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 1);
+  assert.match(await page.textContent("#flows-search .search-row"), /Book club/);
+  await page.fill("#flows-search input[data-field='raw']", "");
+  await page.fill("#flows-search input[data-field='category']", "household");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 1);
+  await page.fill("#flows-search input[data-field='category']", "");
+  await page.fill("#flows-search input[aria-label='From date']", "2026");
+  await page.fill("#flows-search input[aria-label='Largest amount, dollars']", "40");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  assert.deepEqual(await ids(), ["Page Turner Books", "BLUE PUMP FUEL"]);
+  await page.fill("#flows-search input[aria-label='From date']", "");
+  await page.fill("#flows-search input[aria-label='Largest amount, dollars']", "");
+  await page.selectOption("#flows-search label:has-text('In a recurring charge') select", "yes");
+  assert.deepEqual(await ids(), ["Page Turner Books"]);
+  await page.selectOption("#flows-search label:has-text('In a recurring charge') select", "any");
+  // sorted by any column: amount, smallest first, then back
+  await page.click("#flows-search th button:has-text('Amount')");
+  assert.deepEqual(await ids(), ["ACME GROCER", "BLUE PUMP FUEL", "Page Turner Books", "ACME GROCER", "WILLOW ST"]);
+  assert.equal(await page.getAttribute("#flows-search th:has(button:has-text('Amount'))", "aria-sort"), "ascending");
+  await page.click("#flows-search th button:has-text('Account')");
+  assert.deepEqual((await ids()).slice(0, 3), ["Page Turner Books", "ACME GROCER", "ACME GROCER"]); // card, newest first
+  // the misc lines moved together; each its own change, shown at once
+  await page.fill("#flows-search input[data-field='category']", "misc");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  await page.selectOption("#flows-search .search-bulk select", "petrol");
+  await page.click("#flows-search .search-bulk button:has-text('Move 2 lines')");
+  assert.match(await page.textContent("#flows-search .search-flash"), /2 moved to Petrol\. Not saved yet\./);
+  assert.equal(await page.locator("#flows-search .search-row.changed").count(), 2);
+  assert.match(await page.textContent("#flows-search .search-row"), /Petrol.*Car.*changed, not saved/); // in the order shown
+  assert.deepEqual(await staged(page), [
+    "2025-12-20 ACME GROCER -$9.00: petrol", // leak-guard: allow (made up)
+    "2026-02-10 BLUE PUMP FUEL -$30.00: petrol", // leak-guard: allow (made up)
+  ]);
+  // a line opens on its page: the bank's fields as they came, and its recurring charge to set
+  await page.click("#flows-search .search-row:has-text('BLUE PUMP FUEL')");
+  await page.waitForSelector('dl.facts dt:has-text("Bank\'s text")');
+  assert.match(await page.textContent("dl.facts"), /Read fromcsv \(file d1\)/);
+  await page.click("button:has-text('Count it with another charge')");
+  await page.selectOption("[aria-label='The recurring charge BLUE PUMP FUEL is part of']", "PAGE TURNER BOOKS");
+  await page.click("button:has-text('Count it')");
+  assert.ok((await staged(page)).includes("BLUE PUMP FUEL: part of Book club"));
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

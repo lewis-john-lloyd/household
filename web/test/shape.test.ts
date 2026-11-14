@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, spendingOverTime, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -39,6 +39,12 @@ const shape = new Function(
     by: "group" | "category",
     opts: { from?: string; to?: string; withoutOneOffs?: boolean; group?: string },
   ) => SpendOverTime;
+  compileSearch: (
+    query: SearchQuery,
+    groups: Record<string, string>,
+  ) => { test: (line: SearchLine) => boolean; errors: Record<string, string> };
+  sortSearch: (lines: SearchLine[], by: string, descending: boolean, groups: Record<string, string>) => SearchLine[];
+  searchPage: (categorized: unknown[][], categories: unknown[][], subscriptions: unknown[][]) => SearchPage;
   chargeCadence: (dates: string[]) => string | null;
   sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
   grantKey: (grantId: string) => string;
@@ -1062,4 +1068,164 @@ test("spending over time keeps a refund month at zero and says how far below it 
     ],
   );
   assert.equal(book.oneOffs, undefined); // a Reports tab from before the one_off column
+});
+
+const SEARCH_TAB = [
+  [
+    "txn_id",
+    "date",
+    "account_id",
+    "amount",
+    "payee_raw",
+    "payee_text",
+    "key",
+    "category",
+    "splits",
+    "items",
+    "decided_by",
+    "status",
+    "note",
+    "one_off",
+    "recurring",
+    "recurring_name",
+    "recurring_counts",
+    "source",
+    "doc_id",
+  ],
+  [
+    "t1",
+    "2026-03-04",
+    "card",
+    -12.5,
+    "PAGE TURNER BOOKS 0042",
+    "Page Turner Books",
+    "PAGE TURNER BOOKS",
+    "media",
+    "",
+    "",
+    "rule",
+    "decided",
+    "",
+    "FALSE",
+    "PAGE TURNER BOOKS",
+    "Book club",
+    "yes",
+    "csv",
+    "d1",
+  ],
+  [
+    "t2",
+    "2026-03-09",
+    "card",
+    -50,
+    "ACME GROCER",
+    "ACME GROCER",
+    "ACME GROCER",
+    "food",
+    "food -30.00; household -20.00",
+    '[["household","Broom",20,"i1"]]',
+    "you, split",
+    "decided",
+    "party",
+    "TRUE",
+    "",
+    "",
+    "",
+    "ofx",
+    "d2",
+  ],
+  [
+    "t3",
+    "2025-12-30",
+    "checking",
+    80,
+    "WILLOW ST REFUND",
+    "WILLOW ST REFUND",
+    "WILLOW ST",
+    "family",
+    "",
+    "",
+    "",
+    "open",
+    "",
+    "FALSE",
+    "",
+    "",
+    "",
+    "csv",
+    "d3",
+  ],
+];
+
+test("search reads every line with what can be corrected beside what came from the bank", () => {
+  const page = shape.searchPage(
+    SEARCH_TAB,
+    [
+      ["category", "group"],
+      ["food", "living"],
+      ["media", "fun"],
+    ],
+    [
+      ["key", "name"],
+      ["PAGE TURNER BOOKS", "Book club"],
+    ],
+  );
+  assert.deepEqual(
+    page.lines.map((l) => l.id),
+    ["t2", "t1", "t3"],
+  ); // newest first
+  const t2 = page.lines[0];
+  assert.deepEqual(
+    [t2.items, t2.oneOff, t2.split, t2.source, t2.doc],
+    ["Broom", true, "food -30.00; household -20.00", "ofx", "d2"],
+  );
+  assert.deepEqual([page.lines[1].recurringName, page.lines[1].recurringCounts], ["Book club", true]);
+  assert.deepEqual(page.charges, [{ key: "PAGE TURNER BOOKS", name: "Book club" }]);
+});
+
+test("each search field is an anchored pattern, ignoring case; dates by prefix, amounts either way of zero", () => {
+  const page = shape.searchPage(
+    SEARCH_TAB,
+    [
+      ["category", "group"],
+      ["food", "living"],
+      ["media", "fun"],
+    ],
+    [],
+  );
+  const ids = (q: SearchQuery) => page.lines.filter(shape.compileSearch(q, page.groups).test).map((l) => l.id);
+  assert.deepEqual(ids({ text: { payee: "page.*" } }), ["t1"]);
+  assert.deepEqual(ids({ text: { payee: "turner" } }), []); // anchored: the whole field must match
+  assert.deepEqual(ids({ text: { payee: ".*turner.*" } }), ["t1"]);
+  assert.deepEqual(ids({ text: { raw: ".*\\d{4}" } }), ["t1"]); // the bank's own text
+  assert.deepEqual(ids({ text: { category: "household" } }), ["t2"]); // a split's part counts
+  assert.deepEqual(ids({ text: { group: "living" } }), ["t2"]);
+  assert.deepEqual(ids({ text: { recurring: "book club|x" } }), ["t1"]);
+  assert.deepEqual(ids({ text: { items: "broom" }, oneOff: "yes", split: "yes" }), ["t2"]);
+  assert.deepEqual(ids({ text: {}, from: "2026", to: "2026-03-05" }), ["t1"]);
+  assert.deepEqual(ids({ text: {}, min: 40, max: 60 }), ["t2"]);
+  assert.deepEqual(ids({ text: {}, direction: "in" }), ["t3"]);
+  assert.deepEqual(ids({ text: {}, recurring: "no", status: "open" }), ["t3"]);
+  const bad = shape.compileSearch({ text: { payee: "(", note: "x".repeat(201) } }, {});
+  assert.ok(bad.errors.payee && bad.errors.note === "at most 200 characters");
+  assert.equal(bad.test(page.lines[0]), true); // a broken pattern filters nothing until it is fixed
+});
+
+test("search sorts by any field, newest first among equals", () => {
+  const page = shape.searchPage(
+    SEARCH_TAB,
+    [
+      ["category", "group"],
+      ["food", "living"],
+      ["media", "fun"],
+      ["family", "family"],
+    ],
+    [],
+  );
+  const by = (f: string, d = false) => shape.sortSearch(page.lines, f, d, page.groups).map((l) => l.id);
+  assert.deepEqual(by("amount"), ["t2", "t1", "t3"]);
+  assert.deepEqual(by("amount", true), ["t3", "t1", "t2"]);
+  assert.deepEqual(by("account"), ["t2", "t1", "t3"]); // card, card (newest first), checking
+  assert.deepEqual(by("group"), ["t3", "t1", "t2"]);
+  assert.deepEqual(by("oneOff", true)[0], "t2");
 });

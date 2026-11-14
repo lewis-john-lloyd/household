@@ -396,6 +396,28 @@ def tracked(decisions):
     return out
 
 
+def membership(categorized, decisions):
+    """categorized with each line's recurring charge: recurring, the key of the tracked charge it is ascribed
+    to (its key is the charge's, a key merged into it, or starts with one and a space), "" when none;
+    recurring_name, the name given that charge; and recurring_counts, whether it counts toward the charge's
+    price and cadence ("no" for a line marked one-off or a purchase an order history itemized). The Search
+    part of Where the money went shows and filters these."""
+    df = categorized.copy()
+    df["recurring"], df["recurring_name"], df["recurring_counts"] = "", "", ""
+    if df.empty:
+        return df
+    merged, given = merges(decisions), names(decisions)
+    spent = _spent(df)
+    counts = ~(_bought(spent) | one_off(spent))
+    for key in sorted(tracked(decisions), key=len):  # a line two charges cover goes to the longer key
+        df.loc[group_lines(spent, key, merged).index, "recurring"] = key
+    for i in df.index[df["recurring"] != ""]:
+        key = df.at[i, "recurring"]
+        df.at[i, "recurring_name"] = given.get(key, key)
+        df.at[i, "recurring_counts"] = "yes" if bool(counts.get(i, False)) else "no"
+    return df
+
+
 def subscriptions(categorized, decisions, today=None):
     """One row per recurring charge you track (SUB_COLUMNS), newest price change first, then by yearly cost.
     A key merged into another adds its charges to that one's, so a merchant that changed its name on the

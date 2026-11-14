@@ -568,3 +568,165 @@ function spendingOverTime(
   });
   return out;
 }
+
+// Search (Where the money went): each text field is a regular expression the whole field must match, ignoring
+// case ("AMAZON.*" begins with AMAZON, ".*coffee.*" holds coffee anywhere), so a pattern means the same on every
+// field. Dates take a prefix ("2026", "2026-03"), amounts are dollars either way of zero with a direction, and the
+// rest are yes, no or either.
+var SEARCH_TEXT_FIELDS = [
+  "payee",
+  "raw",
+  "category",
+  "group",
+  "account",
+  "key",
+  "recurring",
+  "note",
+  "items",
+  "source",
+  "decidedBy",
+  "id",
+] as const;
+type SearchTextField = (typeof SEARCH_TEXT_FIELDS)[number];
+
+interface SearchQuery {
+  text: Partial<Record<SearchTextField, string>>;
+  from?: string; // a date or its prefix, inclusive
+  to?: string;
+  min?: number | null; // dollars, either way of zero
+  max?: number | null;
+  direction?: "any" | "out" | "in";
+  recurring?: "any" | "yes" | "no";
+  oneOff?: "any" | "yes" | "no";
+  split?: "any" | "yes" | "no";
+  status?: "any" | "decided" | "open" | "waiting";
+}
+
+/** The query as one test of a line, and what is wrong with any pattern that doesn't compile. */
+function compileSearch(
+  query: SearchQuery,
+  groups: Record<string, string>,
+): { test: (line: SearchLine) => boolean; errors: Partial<Record<SearchTextField, string>> } {
+  var errors: Partial<Record<SearchTextField, string>> = {};
+  var tests: ((line: SearchLine) => boolean)[] = [];
+  var fieldText = function (line: SearchLine, f: SearchTextField): string[] {
+    switch (f) {
+      case "category": // a split line answers to each of its parts' categories too
+        return [line.category].concat(
+          line.split
+            ? line.split.split("; ").map(function (p) {
+                return p.slice(0, p.lastIndexOf(" "));
+              })
+            : [],
+        );
+      case "group":
+        return [groups[line.category] || ""];
+      case "recurring":
+        return [line.recurringName, line.recurring];
+      default:
+        return [String(line[f] ?? "")];
+    }
+  };
+  SEARCH_TEXT_FIELDS.forEach(function (f) {
+    var pattern = (query.text[f] || "").trim();
+    if (!pattern) return;
+    if (pattern.length > 200) {
+      errors[f] = "at most 200 characters";
+      return;
+    }
+    var re: RegExp;
+    try {
+      re = new RegExp("^(?:" + pattern + ")$", "i");
+    } catch (e) {
+      errors[f] = String((e as Error).message || e).replace(/^Invalid regular expression: /, "");
+      return;
+    }
+    tests.push(function (line) {
+      return fieldText(line, f).some(function (t) {
+        return re.test(t);
+      });
+    });
+  });
+  if (query.from) {
+    var from = query.from;
+    tests.push(function (line) {
+      return line.date.slice(0, from.length) >= from;
+    });
+  }
+  if (query.to) {
+    var to = query.to;
+    tests.push(function (line) {
+      return line.date.slice(0, to.length) <= to;
+    });
+  }
+  if (query.min !== null && query.min !== undefined && !isNaN(query.min)) {
+    var lo = Math.round(query.min * 100);
+    tests.push(function (line) {
+      return Math.abs(Math.round(line.amount * 100)) >= lo;
+    });
+  }
+  if (query.max !== null && query.max !== undefined && !isNaN(query.max)) {
+    var hi = Math.round(query.max * 100);
+    tests.push(function (line) {
+      return Math.abs(Math.round(line.amount * 100)) <= hi;
+    });
+  }
+  if (query.direction === "out" || query.direction === "in") {
+    var out = query.direction === "out";
+    tests.push(function (line) {
+      return out ? line.amount < 0 : line.amount > 0;
+    });
+  }
+  var yesNo = function (want: string | undefined, has: (line: SearchLine) => boolean) {
+    if (want === "yes" || want === "no")
+      tests.push(function (line) {
+        return has(line) === (want === "yes");
+      });
+  };
+  yesNo(query.recurring, function (l) {
+    return !!l.recurring;
+  });
+  yesNo(query.oneOff, function (l) {
+    return l.oneOff;
+  });
+  yesNo(query.split, function (l) {
+    return !!l.split;
+  });
+  if (query.status && query.status !== "any") {
+    var status = query.status;
+    tests.push(function (line) {
+      return line.status === status;
+    });
+  }
+  return {
+    test: function (line) {
+      for (var i = 0; i < tests.length; i++) if (!tests[i](line)) return false;
+      return true;
+    },
+    errors,
+  };
+}
+
+/** The lines sorted by a field, newest first among equals, so the order never changes between draws. */
+function sortSearch(lines: SearchLine[], by: string, descending: boolean, groups: Record<string, string>): SearchLine[] {
+  var value = function (l: SearchLine): string | number {
+    if (by === "amount") return l.amount;
+    if (by === "group") return (groups[l.category] || "").toLowerCase();
+    if (by === "recurring") return (l.recurringName || "").toLowerCase();
+    if (by === "oneOff") return l.oneOff ? 1 : 0;
+    var v = (l as unknown as Record<string, unknown>)[by];
+    return typeof v === "number" ? v : String(v ?? "").toLowerCase();
+  };
+  var keyed = lines.map(function (l) {
+    return { l: l, v: value(l) };
+  });
+  keyed.sort(function (a, b) {
+    var c = a.v < b.v ? -1 : a.v > b.v ? 1 : 0;
+    if (descending) c = -c;
+    if (c) return c;
+    return a.l.date < b.l.date ? 1 : a.l.date > b.l.date ? -1 : a.l.id < b.l.id ? -1 : a.l.id > b.l.id ? 1 : 0;
+  });
+  return keyed.map(function (k) {
+    return k.l;
+  });
+}

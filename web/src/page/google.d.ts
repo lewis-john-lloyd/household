@@ -24,6 +24,7 @@ interface ServerCalls {
   getInvestments: typeof getInvestments;
   getHome: typeof getHome;
   getEquity: typeof getEquity;
+  getSearch: typeof getSearch;
   getRetirement: typeof getRetirement;
 }
 

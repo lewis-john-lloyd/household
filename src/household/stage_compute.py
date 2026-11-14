@@ -364,7 +364,7 @@ def _categories(c: Compute, books):
     """Every line categorized, and the monthly and daily actuals, into Reports."""
     reports, run_id, computed_at, log = c.reports, c.run_id, c.computed_at, c.log
     categorized = categorize_books(books)
-    recent = categorized[categorized["era"] != "legacy"]
+    recent = recurring.membership(categorized[categorized["era"] != "legacy"], books["decisions"])
     sheets.replace_table(reports, schema.table(schema.REPORTS, "categorized"), recent.assign(run_id=run_id))
     counts = categorize.summary(categorized)
     say(

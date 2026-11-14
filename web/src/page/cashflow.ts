@@ -91,8 +91,10 @@ function setFlowsTab(tab: string) {
   byId("flows-sankey").hidden = tab !== "sankey";
   byId("flow-summary").hidden = tab !== "table";
   byId("flows-overtime").hidden = tab !== "overtime";
-  byId("controls").hidden = tab === "overtime"; // one period's controls; Over time sets its own range
+  byId("flows-search").hidden = tab !== "search";
+  byId("controls").hidden = tab === "overtime" || tab === "search"; // one period's controls; these set their own
   if (tab === "overtime") loadSpendOverTime();
+  else if (tab === "search") loadSearch();
   else if (tab === "sankey" && lastFlows) drawFlows(lastFlows);
   else if (!lastFlows && view === "flows") load();
 }

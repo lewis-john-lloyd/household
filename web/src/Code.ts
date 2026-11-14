@@ -607,6 +607,13 @@ function getTransaction(id: string): Line | null {
   return findLine(readTab_("categorized"), String(id || "").trim());
 }
 
+/** Every categorized line, for Where the money went's Search (shape.ts searchPage). */
+function getSearch(): SearchPage {
+  allow_();
+  const tabs = readTabsIfAny_(["categorized", "editor_categories", "subscriptions"]);
+  return searchPage(tabs.categorized || [], tabs.editor_categories || [], tabs.subscriptions || []);
+}
+
 /** The open lines a review question covers, to answer them one by one (shape.ts reviewLines). */
 function getReviewLines(key: string): ReviewLine[] {
   allow_();

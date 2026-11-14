@@ -769,6 +769,11 @@ interface Line {
   note: string;
   key: string;
   oneOff: boolean;
+  recurring: string; // the tracked recurring charge it is ascribed to, "" for none (recurring.membership)
+  recurringName: string;
+  recurringCounts: boolean;
+  source: string; // how the line was read (csv, ofx, pdf, hand)
+  doc: string; // the file it came from, in the record store
 }
 
 function findLine(values: unknown[][], id: string): Line | null {
@@ -802,6 +807,11 @@ function findLine(values: unknown[][], id: string): Line | null {
     note: col("note"),
     key: col("key"),
     oneOff: col("one_off").toUpperCase() === "TRUE",
+    recurring: col("recurring"),
+    recurringName: col("recurring_name") || col("recurring"),
+    recurringCounts: col("recurring_counts") === "yes",
+    source: col("source"),
+    doc: col("doc_id"),
   };
 }
 
@@ -1083,4 +1093,93 @@ function flowSummary(totals: NodeTotal[]): FlowSummary {
   out.went.sort(biggest);
   out.through.sort(biggest);
   return out;
+}
+
+// Where the money went, Search: every line compute categorized (since the ledger's own downloads; the old
+// workbooks' lines are not in Reports), with what each says about it. The bank's fields (date, account, amount,
+// its text, the line's id, the file it came from) are the record and never change; category, split, note,
+// one-off and the recurring charge it counts toward are what can be corrected (a line edit, or a recurring one).
+interface SearchLine {
+  id: string;
+  date: string;
+  account: string;
+  payee: string; // the name an explanation gave it, else the bank's text
+  raw: string; // the bank's text, as downloaded
+  amount: number; // signed as the ledger has it: money out is negative
+  category: string;
+  split: string; // a split's parts ("household -30.00; food -20.00"), "" for a whole line
+  items: string; // what an order history says it bought, the names joined
+  key: string; // the merchant it is answered under
+  note: string;
+  oneOff: boolean;
+  decidedBy: string;
+  status: string; // decided, open or waiting
+  recurring: string; // the tracked recurring charge it is ascribed to (its key), "" for none
+  recurringName: string;
+  recurringCounts: boolean; // whether it counts toward that charge's price and cadence
+  source: string; // how it was read (csv, ofx, pdf, hand)
+  doc: string; // the file it came from, in the record store
+}
+
+interface SearchPage {
+  lines: SearchLine[];
+  groups: Record<string, string>; // category -> group
+  categories: string[];
+  charges: { key: string; name: string }[]; // the recurring charges you track, to count a line with
+}
+
+// a tab's rows by column name (edits.ts has the same, but this file stands alone under Node)
+function searchRows(values: unknown[][]): Record<string, string>[] {
+  if (!values.length) return [];
+  const header = values[0].map((h) => String(h).trim());
+  return values.slice(1).map((v) => {
+    const r: Record<string, string> = {};
+    header.forEach((h, i) => {
+      if (h) r[h] = String(v[i] ?? "").trim();
+    });
+    return r;
+  });
+}
+
+function searchPage(categorized: unknown[][], categories: unknown[][], subscriptions: unknown[][]): SearchPage {
+  const rows = searchRows(categorized).filter((r) => r.txn_id);
+  const lines: SearchLine[] = rows.map((r) => {
+    const items = parseItems(r.items || "")
+      .map((i) => i[1])
+      .join("; ");
+    return {
+      id: r.txn_id || "",
+      date: (r.date || "").slice(0, 10),
+      account: r.account_id || "",
+      payee: r.payee_text || r.payee_raw || "",
+      raw: r.payee_raw || "",
+      amount: Number(r.amount) || 0,
+      category: r.category || "",
+      split: r.splits || "",
+      items,
+      key: r.key || "",
+      note: r.note || "",
+      oneOff: (r.one_off || "").toUpperCase() === "TRUE",
+      decidedBy: r.decided_by || "",
+      status: r.status || "",
+      recurring: r.recurring || "",
+      recurringName: r.recurring_name || r.recurring || "",
+      recurringCounts: r.recurring_counts === "yes",
+      source: r.source || "",
+      doc: r.doc_id || "",
+    };
+  });
+  lines.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? -1 : 1));
+  const groups: Record<string, string> = {};
+  const names: string[] = [];
+  searchRows(categories).forEach((c) => {
+    if (!c.category) return;
+    groups[c.category] = c.group || "";
+    names.push(c.category);
+  });
+  const charges = searchRows(subscriptions)
+    .filter((s) => s.key)
+    .map((s) => ({ key: s.key, name: s.name || s.key }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { lines, groups, categories: names.sort(), charges };
 }

@@ -1,7 +1,7 @@
 // Loading each view, switching views, and starting the page.
 
 function load() {
-  byId("controls").hidden = view !== "flows" || flowsTab === "overtime";
+  byId("controls").hidden = view !== "flows" || flowsTab === "overtime" || flowsTab === "search";
   if (view === "status") {
     byId("status-title").textContent = "Loading…";
     call(
@@ -50,6 +50,10 @@ function load() {
   }
   if (flowsTab === "overtime") {
     loadSpendOverTime();
+    return;
+  }
+  if (flowsTab === "search") {
+    loadSearch();
     return;
   }
   if (!periodsLoaded.flows) {

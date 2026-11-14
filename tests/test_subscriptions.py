@@ -439,3 +439,34 @@ def test_a_charges_cadence_follows_the_fixture_the_views_preview_checks_too():
     assert len(doc["cases"]) >= 5
     for case in doc["cases"]:
         assert recurring.cadence_of(case["dates"]) == case["cadence"], case["why"]
+
+
+def test_each_line_names_the_recurring_charge_it_counts_toward():
+    lines = pd.concat(
+        [
+            LINES,
+            pd.DataFrame(
+                [
+                    charge(60, "2026-10-12", "BLUE PUMP FUEL", 30),  # merged into WILLOW ST below
+                    {**charge(61, "2026-10-13", "PAGE TURNER BOOKS", 9.99), "one_off": "TRUE"},
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    decisions = pd.concat(
+        [DECISIONS, pd.DataFrame([answer("WILLOW ST", True), merge("BLUE PUMP FUEL", "WILLOW ST")])], ignore_index=True
+    )
+    decisions = pd.concat([decisions, pd.DataFrame([named("WILLOW ST", "Lessons")])], ignore_index=True)
+    out = recurring.membership(lines, decisions).set_index("txn_id")
+    cols = ["recurring", "recurring_name", "recurring_counts"]
+    assert out.loc["t1", cols].tolist() == ["PAGE TURNER BOOKS", "PAGE TURNER BOOKS", "yes"]
+    assert out.loc["t21", cols].tolist() == ["QUILL & INK", "QUILL & INK", "yes"]  # a longer key it starts with
+    assert out.loc["t60", cols].tolist() == ["WILLOW ST", "Lessons", "yes"]  # merged in, and named
+    assert out.loc["t61", cols].tolist() == [
+        "PAGE TURNER BOOKS",
+        "PAGE TURNER BOOKS",
+        "no",
+    ]  # one-off: listed, not counted
+    assert out.loc["t35", cols].tolist() == ["", "", ""]  # ACME GROCER: not tracked
+    assert recurring.membership(lines.iloc[:0], decisions).empty

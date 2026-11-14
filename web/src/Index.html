@@ -457,6 +457,36 @@
       .equity-grants .setting-control { flex-wrap: wrap; }
       .equity-tax .plan-knob { margin: 4px 0; }
       /* Where the money went, Over time: spending each month, stacked (spendchart.ts) */
+      /* Where the money went, Search: every line by any field (search.ts) */
+      .search-filters { margin-bottom: 12px; }
+      .search-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13em, 1fr)); gap: 8px 12px; margin: 8px 0; }
+      .search-field { display: grid; gap: 2px; align-content: start; }
+      .search-field > span:first-child { font-size: 13px; color: var(--on-surface-variant); }
+      .search-field input, .search-field select { width: 100%; box-sizing: border-box; font: inherit; min-height: 36px; padding: 0 8px; border: 1px solid var(--outline); border-radius: 4px; background: var(--surface); color: var(--on-surface); }
+      .search-field input[data-field] { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+      .search-field input.bad { outline: 2px solid var(--error); }
+      .search-error { color: var(--error); font-size: 12px; min-height: 0; }
+      .search-both { display: flex; align-items: center; gap: 6px; }
+      .search-both input { min-width: 0; }
+      .search-more summary { cursor: pointer; color: var(--primary); min-height: 32px; display: flex; align-items: center; }
+      .search-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+      .search-count { font-weight: 500; margin: 0; }
+      .search-flash { margin: 0; color: var(--on-surface-variant); }
+      .search-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
+      .search-bulk select { font: inherit; min-height: 36px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); padding: 0 8px; }
+      .search-table th button.sort { color: inherit; font: inherit; font-weight: 500; padding: 0; min-height: 0; }
+      .search-table tr.search-row { cursor: pointer; }
+      .search-table tr.search-row:hover td, .search-table tr.search-row:focus-visible td { background: var(--surface-container-high); }
+      .search-table td.in { color: var(--good, inherit); }
+      .search-table td.nowrap { white-space: nowrap; }
+      .search-table .search-note { max-width: 16em; overflow-wrap: anywhere; }
+      .search-table .small { font-size: 12px; }
+      .search-filters code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: var(--surface-container-high); padding: 0 3px; border-radius: 3px; }
+      @media (max-width: 600px) {
+        .search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .search-pair { grid-column: 1 / -1; }
+        .search-table th:nth-child(2), .search-table td:nth-child(2), .search-table th:nth-child(7), .search-table td:nth-child(7) { display: none; }
+      }
       .spend-bar { margin-bottom: 12px; }
       .spend-bar select { font: inherit; min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
       .spend-oneoff { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
@@ -999,6 +1029,7 @@
         <button data-tab="sankey" aria-pressed="true">Sankey</button>
         <button data-tab="table" aria-pressed="false">Table</button>
         <button data-tab="overtime" aria-pressed="false">Over time</button>
+        <button data-tab="search" aria-pressed="false">Search</button>
         <button data-tab="edit:review" aria-pressed="false">Review</button>
         <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
         <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
@@ -1017,6 +1048,7 @@
       </div>
       <div id="flow-summary" class="flow-summary" hidden></div>
       <div id="flows-overtime" hidden></div>
+      <div id="flows-search" hidden></div>
     </section>
 
     <section id="budget" hidden>

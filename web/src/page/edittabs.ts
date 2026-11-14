@@ -15,12 +15,172 @@ function splitAnswered(r: Row) {
   );
 }
 
+// --- Review -----------------------------------------------------------------------------------------
+// Answering is meant to go quickly: the model's guess is already chosen, Enter keeps the answer and opens the
+// next question that has none, and a single line is answered from what the question itself says, with no
+// wait for the server. The last answer kept can be taken back from the question that follows it.
+var reviewFocus = false; // the next draw puts the cursor on the answer: set when an answer moved on to a question
+var reviewKept: { targets: string[]; words: string; key: string } | null = null; // the last answer, for its undo
+
+function reviewTarget(r: Row) {
+  return r.kind === "line" ? "line|" + r.key + "|category" : "payee|" + r.key.toUpperCase();
+}
+
+function reviewAnswered(r: Row) {
+  return !!edited(reviewTarget(r)) || (r.kind !== "line" && splitAnswered(r));
+}
+
+function reviewOpen() {
+  return editor!.review.filter(function (r) {
+    return r.kind === "line" || !splitAnswered(r);
+  });
+}
+
+/** The question to answer after this one: the next in the list with no answer, from the top again if need be. */
+function reviewNext(key: string): string | null {
+  var open = reviewOpen();
+  var at = open.findIndex(function (r) {
+    return r.key === key;
+  });
+  for (var i = 1; i <= open.length; i++) {
+    var r = open[(at + i) % open.length];
+    if (r.key !== key && !reviewAnswered(r)) return r.key;
+  }
+  return null;
+}
+
+function reviewMoveOn(key: string, done: () => void) {
+  selected[editTab] = reviewNext(key);
+  reviewFocus = true;
+  done();
+}
+
+/** A single line's text without what a store's order history added after it ("| maybe: ..."). */
+function reviewText(r: Row) {
+  return String(r.example || "")
+    .split(" | ")[0]
+    .trim();
+}
+
+// Lines asked about one by one that read the same but for their numbers (a payment app's lines differ only
+// in a reference), from the same account: offered beside the line being answered, to be given its answer too.
+function reviewShape(r: Row) {
+  return (
+    reviewText(r)
+      .replace(/[\d*#]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toUpperCase() +
+    "|" +
+    r.accounts
+  );
+}
+
+function reviewAlike(r: Row): Row[] {
+  var shape = reviewShape(r);
+  return editor!.review.filter(function (q) {
+    return q.kind === "line" && q.key !== r.key && !reviewAnswered(q) && reviewShape(q) === shape;
+  });
+}
+
+// The answer's control: the usual list of categories, the guess chosen. Typing a category's first letters
+// picks it, Enter keeps the answer and Shift+Enter passes to the next question.
+function reviewPick(form: HTMLFormElement, label: string, value: string, skip: () => void) {
+  var pick = field(form, label, categoryChoice(value));
+  pick.onkeydown = function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (e.shiftKey) skip();
+    else form.requestSubmit();
+  };
+  if (reviewFocus) {
+    reviewFocus = false;
+    setTimeout(function () {
+      pick.focus();
+    }, 0);
+  }
+  return pick;
+}
+
+function reviewActions(form: HTMLFormElement, r: Row, done: () => void, more: HTMLElement[]) {
+  var target = reviewTarget(r);
+  var actions = el("div", null, "actions");
+  var keep = el("button", "Keep answer", "filled");
+  keep.type = "submit";
+  actions.appendChild(keep);
+  if (reviewNext(r.key))
+    actions.appendChild(
+      button(
+        "Skip",
+        function () {
+          reviewMoveOn(r.key, done);
+        },
+        "text",
+      ),
+    );
+  if (edited(target))
+    actions.appendChild(
+      button(
+        "Undo",
+        function () {
+          unstage(target);
+          done();
+        },
+        "text",
+      ),
+    );
+  more.forEach(function (b) {
+    actions.appendChild(b);
+  });
+  form.appendChild(actions);
+  form.appendChild(el("p", "Enter keeps the answer and opens the next question; Shift+Enter skips this one.", "support keys"));
+  return keep;
+}
+
+/** The answer just kept, above the question it moved on to, with its undo. */
+function reviewLast(panel: HTMLElement, done: () => void) {
+  var kept = reviewKept;
+  if (
+    !kept ||
+    !kept.targets.every(function (t) {
+      return !!staged[t];
+    })
+  )
+    return;
+  var p = el("p", "Kept: " + kept.words + ". ", "review-kept");
+  p.setAttribute("role", "status");
+  p.appendChild(
+    button(
+      "Undo",
+      function () {
+        kept!.targets.forEach(unstage);
+        selected[editTab] = kept!.key;
+        reviewKept = null;
+        reviewFocus = true;
+        done();
+      },
+      "text",
+    ),
+  );
+  panel.appendChild(p);
+}
+
+function reviewKeep(r: Row, edits: { edit: Edit; text: string }[], words: string, done: () => void) {
+  var targets = edits.map(function (e) {
+    return stage(e.edit, e.text);
+  });
+  reviewKept = { targets: targets, words: words, key: r.key };
+  reviewMoveOn(r.key, done);
+}
+
 function drawReview(body: HTMLElement) {
+  var open = reviewOpen();
+  var answered = open.filter(reviewAnswered).length;
+  var advanced = reviewFocus; // an answer or a skip brought this draw: on a phone the next question stays open
   masterDetail(body, {
-    items: editor!.review.filter(function (r) {
-      return r.kind === "line" || !splitAnswered(r);
-    }),
-    noun: "questions",
+    items: open,
+    noun: "questions" + (answered ? ", " + answered.toLocaleString() + " answered" : ""),
+    open: advanced,
     key: function (r) {
       return r.key;
     },
@@ -29,87 +189,230 @@ function drawReview(body: HTMLElement) {
     },
     sub: function (r) {
       return (
-        (r.kind === "line" ? "one line, " + r.first : r.lines + " lines") +
+        (r.kind === "line" ? "one line, " + r.first : r.lines === "1" ? "1 line" : r.lines + " lines") +
         ", " +
         cents.format(Number(r.total) || 0) +
         (r.guess ? ", guess " + r.guess : "")
       );
     },
+    section: function (r) {
+      return r.kind === "line" ? "Single lines" : "Merchants";
+    },
     staged: function (r) {
-      return changeNote(r.kind === "line" ? "line|" + r.key : "payee|" + r.key.toUpperCase());
+      return changeNote(reviewTarget(r));
     },
     empty:
-      "Choose a question on the left to answer it. A merchant is answered once for all its lines; a single line can also be split.",
+      "Choose a question on the left to answer it. A merchant is answered once for all its lines; a single line can also be split. " +
+      "Each answer opens the next question, so Enter after Enter goes through the list.",
     none: "No questions: every line has a category.",
     detail: function (r, panel, done) {
-      if (r.kind === "line") {
-        loadTransaction(r.key, panel, done);
-        return;
-      }
-      facts(panel, [
-        ["Lines", r.lines],
-        ["Total", cents.format(Number(r.total) || 0)],
-        ["Dates", r.first === r.last ? r.first : r.first + " to " + r.last],
-        ["Accounts", r.accounts],
-        ["Spelled", r.example],
-        ["Guess", r.guess ? r.guess + " (" + r.guessed_by + ")" : ""],
-      ]);
-      if (r.note) panel.appendChild(el("p", r.note, "error"));
-      var target = "payee|" + r.key.toUpperCase();
-      var now = edited(target) ? edited(target)!.edit : null;
-      var form = el("form", null, "edit");
-      var key = field(
-        form,
-        "Merchant (shorten it to cover more spellings)",
-        textInput(now ? (now.key as string) : r.key, "wide"),
-      );
-      var pick = field(form, "Category for all its lines", categoryChoice(now ? (now.category as string) : r.guess));
-      var error = el("div", "", "error");
-      var actions = el("div", null, "actions");
-      actions.appendChild(
-        button(
-          "Keep answer",
-          function () {
-            if (!pick.value || !key.value.trim()) {
-              error.textContent = "Give the merchant and a category.";
-              return;
-            }
-            unstage(target);
-            stage(
-              { kind: "payee", key: key.value.trim(), category: pick.value },
-              "every " + key.value.trim() + " line: " + pick.value,
-            );
-            done();
-          },
-          "filled",
-        ),
-      );
-      if (now)
-        actions.appendChild(
-          button(
-            "Undo",
-            function () {
-              unstage(target);
-              done();
-            },
-            "text",
-          ),
-        );
-      actions.appendChild(
-        button(
-          "Split into its lines",
-          function () {
-            form.remove();
-            splitIntoLines(r, panel, done);
-          },
-          "text",
-        ),
-      );
-      form.appendChild(actions);
-      form.appendChild(error);
-      panel.appendChild(form);
+      reviewLast(panel, done);
+      if (r.kind === "line") reviewLine(r, panel, done);
+      else reviewMerchant(r, panel, done);
     },
   });
+  if (advanced && !selected[editTab] && open.length) {
+    // the last question was answered: say so where the next one would have been
+    var panel = body.querySelector<HTMLElement>(".md-detail");
+    var wrap = body.querySelector<HTMLElement>(".md");
+    if (panel && wrap) {
+      panel.textContent = "";
+      panel.appendChild(
+        button(
+          "Back to the list",
+          function () {
+            wrap!.classList.remove("showing");
+          },
+          "text md-back",
+        ),
+      );
+      panel.appendChild(el("h2", "Every question has an answer", "md-heading"));
+      reviewLast(panel, redrawEditor);
+      panel.appendChild(
+        el("p", "Save the changes below; the next run of the engine applies them and asks about whatever is new.", "support"),
+      );
+      wrap.classList.add("showing"); // on a phone, said where the next question would have been
+    }
+    reviewFocus = false;
+  }
+}
+
+function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
+  facts(panel, [
+    ["Lines", r.lines],
+    ["Total", cents.format(Number(r.total) || 0)],
+    ["Dates", r.first === r.last ? r.first : r.first + " to " + r.last],
+    ["Accounts", r.accounts],
+    ["Spelled", r.example],
+    ["Guess", r.guess ? r.guess + " (" + r.guessed_by + ")" : ""],
+  ]);
+  if (r.note) panel.appendChild(el("p", r.note, "error"));
+  var target = reviewTarget(r);
+  var now = edited(target) ? edited(target)!.edit : null;
+  var form = el("form", null, "edit");
+  var key = field(form, "Merchant (shorten it to cover more spellings)", textInput(now ? (now.key as string) : r.key, "wide"));
+  var pick = reviewPick(form, "Category for all its lines", now ? (now.category as string) : r.guess, function () {
+    reviewMoveOn(r.key, done);
+  });
+  var error = el("div", "", "error");
+  form.onsubmit = function (e) {
+    e.preventDefault();
+    if (!pick.value || !key.value.trim()) {
+      error.textContent = "Give the merchant and a category.";
+      return;
+    }
+    unstage(target);
+    var words = "every " + key.value.trim() + " line: " + pick.value;
+    reviewKeep(r, [{ edit: { kind: "payee", key: key.value.trim(), category: pick.value }, text: words }], words, done);
+  };
+  reviewActions(form, r, done, [
+    button(
+      "Split into its lines",
+      function () {
+        form.remove();
+        splitIntoLines(r, panel, done);
+      },
+      "text",
+    ),
+  ]);
+  form.appendChild(error);
+  panel.appendChild(form);
+}
+
+// One line, answered from what its question says. Lines that read the same can be ticked to take the same
+// answer; the whole line (its split, note and flags) opens below when asked for.
+function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
+  facts(panel, [
+    ["Date", r.first],
+    ["Amount", cents.format(Number(r.total) || 0)],
+    ["Account", r.accounts],
+    ["Bank's text", r.example],
+    ["Guess", r.guess ? r.guess + (r.confidence ? " (" + Math.round(Number(r.confidence) * 100) + "% sure)" : "") : ""],
+    ["Asked by itself", /^model$|^$/.test(r.guessed_by) ? "" : r.guessed_by],
+  ]);
+  if (r.note) panel.appendChild(el("p", r.note, "error"));
+  var target = reviewTarget(r);
+  var now = edited(target) ? edited(target)!.edit : null;
+  var form = el("form", null, "edit");
+  var pick = reviewPick(form, "Category", now ? (now.value as string) : r.guess, function () {
+    reviewMoveOn(r.key, done);
+  });
+  var alike = reviewAlike(r);
+  var ticks: [Row, HTMLInputElement][] = [];
+  var error = el("div", "", "error");
+  var keep: HTMLButtonElement;
+  function count() {
+    var n = ticks.filter(function (t) {
+      return t[1].checked;
+    }).length;
+    keep.textContent = n ? "Keep answer for " + (n + 1) + " lines" : "Keep answer";
+  }
+  if (alike.length) {
+    var same = el("fieldset", null, "review-alike");
+    same.appendChild(
+      el("legend", alike.length === 1 ? "1 more line reads the same" : alike.length + " more lines read the same"),
+    );
+    same.appendChild(
+      el("p", "From the same account, differing only in their numbers. Tick the ones this answer is also for.", "support"),
+    );
+    var quick = el("div", null, "actions");
+    var tick = function (which: (q: Row) => boolean) {
+      return function () {
+        ticks.forEach(function (t) {
+          t[1].checked = which(t[0]);
+        });
+        count();
+      };
+    };
+    var guessed = alike.filter(function (q) {
+      return q.guess === r.guess;
+    });
+    quick.appendChild(
+      button(
+        "All " + alike.length,
+        tick(function () {
+          return true;
+        }),
+        "small",
+      ),
+    );
+    if (r.guess && guessed.length && guessed.length < alike.length)
+      quick.appendChild(
+        button(
+          "The " + guessed.length + " guessed " + r.guess,
+          tick(function (q) {
+            return q.guess === r.guess;
+          }),
+          "small",
+        ),
+      );
+    quick.appendChild(
+      button(
+        "None",
+        tick(function () {
+          return false;
+        }),
+        "small",
+      ),
+    );
+    same.appendChild(quick);
+    var list = el("ul", null, "review-alike-list");
+    alike.forEach(function (q) {
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.onchange = count;
+      var l = el("label");
+      l.appendChild(box);
+      l.appendChild(
+        document.createTextNode(
+          " " + q.first + ", " + cents.format(Number(q.total) || 0) + (q.guess ? ", guess " + q.guess : ""),
+        ),
+      );
+      list.appendChild(el("li")).appendChild(l);
+      ticks.push([q, box]);
+    });
+    same.appendChild(list);
+    form.appendChild(same);
+  }
+  form.onsubmit = function (e) {
+    e.preventDefault();
+    if (!pick.value) {
+      error.textContent = "Choose a category.";
+      return;
+    }
+    var rows = [r].concat(
+      ticks
+        .filter(function (t) {
+          return t[1].checked;
+        })
+        .map(function (t) {
+          return t[0];
+        }),
+    );
+    var edits = rows.map(function (q) {
+      return {
+        edit: { kind: "line", txn_id: q.key, field: "category", value: pick.value } as Edit,
+        text: reviewText(q) + " " + q.first + ": " + pick.value,
+      };
+    });
+    var words =
+      rows.length > 1
+        ? rows.length + " lines reading " + reviewText(r) + ": " + pick.value
+        : reviewText(r) + " " + r.first + ": " + pick.value;
+    reviewKeep(r, edits, words, done);
+  };
+  keep = reviewActions(form, r, done, [
+    button(
+      "Open the whole line",
+      function () {
+        form.remove();
+        loadTransaction(r.key, panel, done);
+      },
+      "text",
+    ),
+  ]);
+  form.appendChild(error);
+  panel.appendChild(form);
 }
 
 // A merchant question's lines, each with its own category: the answers are line edits, so the merchant

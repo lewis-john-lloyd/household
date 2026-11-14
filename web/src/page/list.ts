@@ -43,6 +43,8 @@ interface MasterDetail<T> {
   noun: string;
   empty: string;
   none?: string;
+  /** The chosen item's editor stays over the list on a phone as the part draws (an answer moved on to it). */
+  open?: boolean;
 }
 
 function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
@@ -164,7 +166,7 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
   if (chosen) {
     mark();
     show(chosen.item);
-    wrap.classList.remove("showing");
+    if (!opts.open) wrap.classList.remove("showing");
   } else if (!rows.length) panel.appendChild(el("p", opts.none || "Nothing here.", "support"));
   else panel.appendChild(el("p", opts.empty, "support md-empty"));
 }

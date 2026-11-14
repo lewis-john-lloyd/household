@@ -633,6 +633,108 @@ test("a merchant split into its lines leaves review once every line has a catego
   await page.close();
 });
 
+// five made-up questions: two merchants, then three single lines that read the same but for their numbers
+const QUESTIONS =
+  "window.__location = { parameter: { view: 'edit', tab: 'review' } };" +
+  "window.__answers.getEditor.categories = [{ category: 'food', group: 'living', priority: 'high' }, " +
+  "{ category: 'household', group: 'living', priority: '' }, { category: 'kids', group: 'family', priority: '' }];" +
+  "window.__answers.getEditor.review = [" +
+  "{ key: 'ACME GROCER', kind: 'payee', lines: '3', total: '-60', first: '2001-02-01', last: '2001-02-15', accounts: 'checking', " +
+  "example: 'ACME GROCER 12', guess: 'food', guessed_by: 'model', confidence: '0.9', note: '' }," +
+  "{ key: 'BLUE PUMP FUEL', kind: 'payee', lines: '1', total: '-40', first: '2001-02-03', last: '2001-02-03', accounts: 'card', " +
+  "example: 'BLUE PUMP FUEL 7', guess: '', guessed_by: '', confidence: '', note: '' }," +
+  "{ key: 't1', kind: 'line', lines: '1', total: '-20', first: '2001-02-05', last: '2001-02-05', accounts: 'checking', " +
+  "example: 'PAY APP PAYMENT ***111', guess: 'kids', guessed_by: 'pay app, not in its emails or downloads', confidence: '0.6', note: '' }," +
+  "{ key: 't2', kind: 'line', lines: '1', total: '-30', first: '2001-02-08', last: '2001-02-08', accounts: 'checking', " +
+  "example: 'PAY APP PAYMENT ***222', guess: 'kids', guessed_by: 'pay app, not in its emails or downloads', confidence: '0.6', note: '' }," +
+  "{ key: 't3', kind: 'line', lines: '1', total: '-50', first: '2001-02-09', last: '2001-02-09', accounts: 'checking', " +
+  "example: 'PAY APP PAYMENT ***333', guess: 'food', guessed_by: 'pay app, not in its emails or downloads', confidence: '0.3', note: '' }];";
+const heading = (page) => page.textContent(".md-detail .md-heading");
+const focused = (page) => page.evaluate(() => document.activeElement && document.activeElement.tagName);
+
+test("review: Enter keeps the answer and opens the next question, and the answer just kept can be undone there", async () => {
+  const page = await open(QUESTIONS);
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  assert.equal(await page.textContent(".md-count"), "5 questions");
+  assert.deepEqual(await page.$$eval(".md-section", (s) => s.map((x) => x.textContent)), ["Merchants", "Single lines"]);
+  await page.click(".md-row:has-text('ACME GROCER')");
+  await page.focus(".md-detail select");
+  await page.keyboard.press("Enter"); // the guess is already chosen
+  assert.deepEqual(await staged(page), ["every ACME GROCER line: food"]);
+  assert.equal(await heading(page), "BLUE PUMP FUEL"); // moved on
+  assert.equal(await focused(page), "SELECT"); // with the cursor on its answer
+  assert.equal(await page.textContent(".md-count"), "5 questions, 1 answered");
+  assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: food\. Undo$/);
+
+  await page.keyboard.press("Enter"); // no guess here, and none chosen
+  assert.match(await page.textContent(".md-detail .error"), /Give the merchant and a category/);
+  assert.equal(await heading(page), "BLUE PUMP FUEL");
+  await page.keyboard.press("Shift+Enter"); // skip it
+  assert.equal(await heading(page), "PAY APP PAYMENT ***111");
+  assert.deepEqual(await staged(page), ["every ACME GROCER line: food"]);
+
+  await page.click(".review-kept button:has-text('Undo')"); // the answer before the skip, taken back
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await heading(page), "ACME GROCER");
+  assert.equal(await page.locator(".review-kept").count(), 0);
+  assert.equal(await page.inputValue(".md-detail select"), "food"); // its guess again, ready to keep
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("review: a single line is answered without the server, and lines that read the same take its answer when ticked", async () => {
+  const page = await open(QUESTIONS + "window.__answers.getTransaction = null;");
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  await page.click(".md-row:has-text('***111')");
+  await page.waitForSelector("fieldset.review-alike");
+  assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getTransaction").length), 0);
+  const facts = await page.textContent(".md-detail dl.facts");
+  assert.match(facts, /Date2001-02-05/);
+  assert.match(facts, /Guesskids \(60% sure\)/);
+  assert.match(facts, /Asked by itselfpay app, not in its emails or downloads/);
+  assert.equal(await page.textContent("fieldset.review-alike legend"), "2 more lines read the same");
+  const ticked = () => page.$$eval(".review-alike-list input", (boxes) => boxes.map((b) => b.checked));
+  assert.deepEqual(await ticked(), [false, false]); // none until asked for: an answer is never spread unseen
+  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep answer");
+  await page.click("fieldset.review-alike button:has-text('The 1 guessed kids')");
+  assert.deepEqual(await ticked(), [true, false]);
+  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep answer for 2 lines");
+  await page.click(".md-detail button[type=submit]");
+  assert.deepEqual(await staged(page), ["PAY APP PAYMENT ***111 2001-02-05: kids", "PAY APP PAYMENT ***222 2001-02-08: kids"]);
+  assert.equal(await heading(page), "PAY APP PAYMENT ***333"); // the one left of the three
+  assert.equal(await page.locator("fieldset.review-alike").count(), 0); // nothing left that reads the same
+  assert.match(await page.textContent(".review-kept"), /Kept: 2 lines reading PAY APP PAYMENT \*\*\*111: kids/);
+  await page.click(".review-kept button:has-text('Undo')"); // both at once
+  assert.deepEqual(await staged(page), []);
+
+  await page.click(".md-row:has-text('***333')");
+  await page.click(".md-detail button:has-text('Open the whole line')"); // its split, note and flags, on request
+  await page.waitForFunction(() => window.__calls.some((c) => c.name === "getTransaction" && c.args[0] === "t3"));
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("review: after the last answer it says so, and on a phone the next question stays open", async () => {
+  const page = await open(QUESTIONS);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  await page.click(".md-row:has-text('ACME GROCER')");
+  await page.click(".md-detail button[type=submit]");
+  assert.equal(await heading(page), "BLUE PUMP FUEL");
+  assert.equal(await page.isVisible(".md-detail"), true); // not back at the list
+  assert.equal(await page.isVisible(".md-list"), false);
+  await page.selectOption(".md-detail select", "household");
+  await page.click(".md-detail button[type=submit]");
+  for (const _ of [1, 2, 3]) await page.click(".md-detail button[type=submit]"); // the three lines, each its guess
+  assert.equal(await heading(page), "Every question has an answer");
+  assert.equal((await staged(page)).length, 5);
+  assert.equal(await page.locator(".md-detail button:has-text('Skip')").count(), 0);
+  await page.click(".md-detail button:has-text('Back to the list')");
+  assert.equal(await page.textContent(".md-count"), "5 questions, 5 answered");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("recurring: a charge that comes back is offered to track, and one that stopped merges into the one that replaced it", async () => {
   const row = (key, status, last) => ({
     key,

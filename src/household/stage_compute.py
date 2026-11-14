@@ -1,12 +1,14 @@
 """The compute stage: Reports rebuilt from the ledger, every table every run."""
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
+from typing import Any, Callable
 
 import pandas as pd
 
 from . import (
+    __version__,
     allocation,
     budget,
     budget_checks,
@@ -15,6 +17,7 @@ from . import (
     compute,
     editor,
     equity,
+    fingerprints,
     flows,
     giving,
     house,
@@ -42,7 +45,7 @@ from . import (
     wisconsin,
     withholding,
 )
-from .books import categorize_books, read_books
+from .books import read_and_categorize
 from .kinds import Log, Session, Spreadsheet, StageResult
 from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
@@ -61,12 +64,29 @@ class Compute:
     run_id: str
     computed_at: str
     log: Log
+    seconds: dict[str, float] = field(default_factory=dict)  # how long each part took (timed)
 
     @property
     def today(self) -> str:
         return self.computed_at[:10]
 
 
+def timed(part: Callable[..., Any]) -> Callable[..., Any]:
+    """A part of compute, with how long it took kept under its name (c.seconds), for the run's log."""
+
+    def run(c: Compute, *args: Any, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return part(c, *args, **kwargs)
+        finally:
+            name = part.__name__.strip("_").replace("_", " ")
+            c.seconds[name] = round(c.seconds.get(name, 0.0) + time.perf_counter() - started, 2)
+
+    run.__name__, run.__doc__ = part.__name__, part.__doc__
+    return run
+
+
+@timed
 def _investments_and_homes(c: Compute, books, sched):
     """Investment values, the allocation and a rebalance, homes, and net worth (valuation.py, allocation.py,
     house.py, networth.py) into Reports. Returns figures for the run's result."""
@@ -183,6 +203,7 @@ def _investments_and_homes(c: Compute, books, sched):
     }
 
 
+@timed
 def _lots(c: Compute, books):
     """Tax lots and wash sales (lots.py) into Reports: form_8949 and open_lots. Returns form_8949 and figures for
     the run's result."""
@@ -267,11 +288,18 @@ RETIREMENT_TABLES = (
     "retirement_assumptions",
     "retirement_budget",
 )
+SIMULATED = RETIREMENT_TABLES[:5]  # what the simulation makes: kept from the last run when it rests on the same
 
 
+@timed
 def _retirement(c: Compute, books, actuals, sched):
     """The retirement plan (the retirement package) into Reports. A failure is logged and leaves the tables empty, so the
-    rest of the run goes on. Returns figures for the run's result."""
+    rest of the run goes on. Returns figures for the run's result.
+
+    The simulation is the slowest part of a run, so it is skipped when nothing it rests on has changed: the
+    household it is given (all but the budget's breakdown, which only the Budget table reads), the strategy
+    and year settings, the year and the package's version make a fingerprint (fingerprints.py), and a run that
+    finds the same one, with the tables still as that run wrote them, leaves them and says what that run said."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
     started = time.perf_counter()
     empty = {
@@ -280,6 +308,7 @@ def _retirement(c: Compute, books, actuals, sched):
     }
     out = dict(empty)
     found = {}
+    kept = None  # the run whose simulation stands, when this one skips it
     try:
         params = books["parameters"]
         people = valuation.adults(params, read_ledger(ledger, "paystubs"))
@@ -305,34 +334,78 @@ def _retirement(c: Compute, books, actuals, sched):
             for line in notes:
                 say(log, line, "WARN")
         else:
-            years, table, plan, ss, earned, more = retirement.run(h, params, today)
-            out.update(
-                retirement_years=years,
-                retirement_strategies=table,
-                retirement_plan=plan,
-                retirement_social_security=ss,
-                retirement_earnings=earned,
-            )
             for line in notes:
                 say(log, line, "WARN")
-            for line in more:
-                say(log, line)
-            chosen = years[years["chosen"] == "yes"]
-            found = {"retirement_year": int(chosen["retire_year"].iloc[0]) if len(chosen) else None}
+            rests_on = fingerprints.of(
+                "retirement",
+                __version__,
+                replace(h, budget={}),
+                settings.value(params, "retirement_strategy"),
+                settings.value(params, "retirement_year"),
+                today[:4],
+            )
+            last = fingerprints.read(reports).get("retirement")
+            if (
+                last
+                and last["fingerprint"] == rests_on
+                and fingerprints.holds(reports, last["detail"].get("rows") or {}, last["run_id"])
+            ):
+                kept = last
+                for line in kept["detail"].get("said") or []:
+                    say(log, line)
+                found = {"retirement_year": kept["detail"].get("retirement_year")}
+            else:
+                years, table, plan, ss, earned, more = retirement.run(h, params, today)
+                out.update(
+                    retirement_years=years,
+                    retirement_strategies=table,
+                    retirement_plan=plan,
+                    retirement_social_security=ss,
+                    retirement_earnings=earned,
+                )
+                for line in more:
+                    say(log, line)
+                chosen = years[years["chosen"] == "yes"]
+                found = {"retirement_year": int(chosen["retire_year"].iloc[0]) if len(chosen) else None}
+                fingerprints.write(
+                    reports,
+                    "retirement",
+                    rests_on,
+                    run_id,
+                    c.computed_at,
+                    {
+                        "said": [str(line) for line in more],
+                        "retirement_year": found["retirement_year"],
+                        "rows": {name: len(out[name]) for name in SIMULATED},
+                        "strategies": len(table) // 2,
+                        "years": int(years["retire_year"].nunique()) if len(years) else 0,
+                    },
+                )
             out["retirement_budget"] = retirement.budget_table(h, found["retirement_year"] or h.start)
     except Exception as e:  # the rest of the run doesn't wait on the retirement plan
+        kept = None
         say(log, f"retirement: failed: {type(e).__name__}: {e}", "ERROR")
     for name in RETIREMENT_TABLES:
-        sheets.replace_table(reports, schema.table(schema.REPORTS, name), out[name].assign(run_id=run_id))
-    say(
-        log,
-        f"retirement: {len(out['retirement_strategies']) // 2} strategies and "
-        f"{out['retirement_years']['retire_year'].nunique() if len(out['retirement_years']) else 0} retirement "
-        f"years modeled in {time.perf_counter() - started:.0f}s",
-    )
+        if kept is None or name not in SIMULATED:
+            sheets.replace_table(reports, schema.table(schema.REPORTS, name), out[name].assign(run_id=run_id))
+    if kept is not None:
+        say(
+            log,
+            f"retirement: nothing the plan rests on has changed since run {kept['run_id']}: its "
+            f"{kept['detail'].get('strategies', 0)} strategies and {kept['detail'].get('years', 0)} retirement "
+            "years stand as modeled then",
+        )
+    else:
+        say(
+            log,
+            f"retirement: {len(out['retirement_strategies']) // 2} strategies and "
+            f"{out['retirement_years']['retire_year'].nunique() if len(out['retirement_years']) else 0} retirement "
+            f"years modeled in {time.perf_counter() - started:.0f}s",
+        )
     return found
 
 
+@timed
 def _transfers(c: Compute, books):
     """Transfer pairs between the household's accounts, and the lines with no partner, into Reports."""
     reports, run_id, log = c.reports, c.run_id, c.log
@@ -360,10 +433,10 @@ def _transfers(c: Compute, books):
     return {"paired": paired, "lonely": lonely, "waiting": waiting}
 
 
-def _categories(c: Compute, books):
-    """Every line categorized, and the monthly and daily actuals, into Reports."""
+@timed
+def _categories(c: Compute, books, categorized):
+    """Every line as categorized, and the monthly and daily actuals, into Reports."""
     reports, run_id, computed_at, log = c.reports, c.run_id, c.computed_at, c.log
-    categorized = categorize_books(books)
     recent = recurring.membership(categorized[categorized["era"] != "legacy"], books["decisions"])
     sheets.replace_table(reports, schema.table(schema.REPORTS, "categorized"), recent.assign(run_id=run_id))
     counts = categorize.summary(categorized)
@@ -381,6 +454,7 @@ def _categories(c: Compute, books):
     return {"categorized": categorized, "counts": counts, "actuals": actuals}
 
 
+@timed
 def _investment_flows(c: Compute):
     """Each investment account's money in and out by year and kind (investments.flows)."""
     ledger, reports, run_id, log = c.ledger, c.reports, c.run_id, c.log
@@ -419,6 +493,7 @@ def _say_links(log, rules, decisions):
     say(log, f"recurring: {len(paid)} charges linked to budget lines")
 
 
+@timed
 def _budget(c: Compute, books, categorized, actuals):
     """Budget targets, budget against actual and the sinking funds (budget.py). Returns the rules and the targets."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
@@ -459,6 +534,7 @@ def _budget(c: Compute, books, categorized, actuals):
     return {"rules": rules, "planned": planned}
 
 
+@timed
 def _giving(c: Compute, books, categorized):
     """Each month's gifts by recipient, and whether each recipient is deductible (giving.py)."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
@@ -476,6 +552,7 @@ def _giving(c: Compute, books, categorized):
         )
 
 
+@timed
 def _editor(c: Compute, books, rules, planned, actuals):
     """What the views' editors show: each setting in force, budget lines in words, the review queue."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
@@ -491,6 +568,7 @@ def _editor(c: Compute, books, rules, planned, actuals):
     return published
 
 
+@timed
 def _checks(c: Compute, books, effective, categorized):
     """The monthly checklist: downloads due, balances that disagree, paychecks with no deposit or no stub."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
@@ -536,6 +614,7 @@ def _checks(c: Compute, books, effective, categorized):
     return {"due": due, "to_get": to_get, "off": off, "forgot": forgot, "lost": lost}
 
 
+@timed
 def _mortgage(c: Compute, categorized):
     """Each loan's schedule to the end of its term, and its details, for the Home page (mortgage.py)."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
@@ -560,6 +639,7 @@ def _mortgage(c: Compute, categorized):
     return sched
 
 
+@timed
 def _recurring(c: Compute, books, categorized):
     """Recurring charges found and tracked, their months and their price changes (recurring.py)."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
@@ -594,6 +674,7 @@ def _recurring(c: Compute, books, categorized):
     return {"changed": changed, "subs": subs}
 
 
+@timed
 def _budget_checks(c: Compute, books, categorized, plan, subs):
     """What looks off in the budget, for the views to say Check where the number is (budget_checks.py)."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
@@ -610,6 +691,7 @@ def _budget_checks(c: Compute, books, categorized, plan, subs):
     return found
 
 
+@timed
 def _flows(c: Compute, books, categorized):
     """The Sankey's flows by month and year (flows.py)."""
     ledger, reports, run_id, log = c.ledger, c.reports, c.run_id, c.log
@@ -620,6 +702,7 @@ def _flows(c: Compute, books, categorized):
     say(log, f"flows: {money['period'].nunique()} months and years for the Sankey view")
 
 
+@timed
 def _duplicates(c: Compute, books, effective):
     """Possible duplicate lines, less the pairs a person said are not."""
     reports, run_id, log = c.reports, c.run_id, c.log
@@ -632,6 +715,7 @@ def _duplicates(c: Compute, books, effective):
     return dupes
 
 
+@timed
 def _filed_taxes(c: Compute, result):
     """Each filed return checked line by line, its history and its lines as filed. Returns return_facts."""
     ledger, reports, run_id, log = c.ledger, c.reports, c.run_id, c.log
@@ -658,6 +742,7 @@ def _filed_taxes(c: Compute, result):
     return facts
 
 
+@timed
 def _tax_sources(c: Compute, result):
     """Every cited tax law value and whether its source PDF is in the record store."""
     ledger, reports, run_id, log = c.ledger, c.reports, c.run_id, c.log
@@ -670,6 +755,7 @@ def _tax_sources(c: Compute, result):
     say(log, f"tax_sources: {len(sources)} cited values, {unfiled} whose source PDF is not in the record store")
 
 
+@timed
 def _pay(c: Compute, result):
     """Paychecks beside the history of pay changes, and the Jobs editor's rows. Returns the stubs and jobs."""
     ledger, reports, run_id, log = c.ledger, c.reports, c.run_id, c.log
@@ -692,6 +778,7 @@ def _pay(c: Compute, result):
     return stubs, jobs
 
 
+@timed
 def _withholding_backtests(c: Compute, result, stubs, decisions):
     """Every stub's federal, Wisconsin and Pennsylvania withholding recomputed and explained."""
     reports, run_id, log = c.reports, c.run_id, c.log
@@ -724,6 +811,7 @@ def _withholding_backtests(c: Compute, result, stubs, decisions):
     say(log, f"pa_withholding_backtest: {len(pa)} stubs, {pa_unexplained} unexplained")
 
 
+@timed
 def _projection(c: Compute, result, books, stubs, jobs, facts, form_8949):
     """This year's return projected from the stubs, vests and sales (with last year beside it), the withholding
     plan and the elections. Returns the year's plan and elections for the weekly email (None for another year)."""
@@ -883,6 +971,7 @@ def _elections(c: Compute, result, year, books, stubs, jobs):
     return tax_elections
 
 
+@timed
 def _settings_and_receipts(c: Compute, params):
     """Settings that can't be used, and the receipt exporter's searches (written to its file in Drive)."""
     reports, run_id, log, session = c.reports, c.run_id, c.log, c.session
@@ -903,6 +992,7 @@ def _settings_and_receipts(c: Compute, params):
         say(log, f"receipt_searches: could not write the exporter's searches file: {e}", "WARN")
 
 
+@timed
 def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan, tax_elections, changed, found):
     """FSA balances and the weekly email's to-dos."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
@@ -922,6 +1012,7 @@ def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan
     say(log, f"nudges: {len(todo)} for the weekly email, {len(showing)} of them due in it as of today")
 
 
+@timed
 def _legacy_check(c: Compute, result, legacy_id, legacy_year, legacy_actuals, legacy_blank):
     """One legacy year's monthly actuals against the old rollup, and its lines with no category."""
     reports, run_id, log, session = c.reports, c.run_id, c.log, c.session
@@ -959,7 +1050,10 @@ def compute_all(
     say(log, f"run {run_id}: reading the ledger")
     say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    started = time.perf_counter()
     raw, reports, _ = bootstrap(session, folder_id)
+    asked = sheets.calls(raw) + sheets.calls(reports)
+    sheets.prefetch(raw)  # every ledger tab in one read (those this run's ingest read are already held)
     reading, problems = LedgerReading.of(raw)
     for line in problems:
         say(log, line, "WARN")
@@ -967,14 +1061,25 @@ def compute_all(
         say(log, line)
     ledger = LedgerView(raw, reading)  # every read below sees accounts renamed, readings moved, activity corrected
     c = Compute(session, ledger, reports, run_id, computed_at, log)
+    c.seconds["read the ledger"] = round(time.perf_counter() - started, 2)
+    with sheets.batched(reports):  # every table goes to Reports together at the end; on an error none does
+        result = _compute(c, said, legacy_id, legacy_year)
+    result["sheets_calls"] = sheets.calls(raw) + sheets.calls(reports) - asked
+    return result
 
-    books = read_books(ledger)
+
+def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | None) -> StageResult:
+    """compute_all's parts in order, each writing its Reports tables and saying what it did."""
+    ledger, reports, run_id, computed_at, log = c.ledger, c.reports, c.run_id, c.computed_at, c.log
+    started = time.perf_counter()
+    books, categorized = read_and_categorize(ledger)  # this run's ingest may have worked them out already
+    c.seconds["books and categories"] = round(time.perf_counter() - started, 2)
     effective, decisions, params = books["effective"], books["decisions"], books["parameters"]
     moved = _transfers(c, books)
     legacy_checked, legacy_blank = compute.legacy_rows(books["txns"])
     legacy_actuals = compute.monthly_actuals(legacy_checked)  # as ingested, for the legacy check
-    cat = _categories(c, books)
-    categorized, counts, actuals = cat["categorized"], cat["counts"], cat["actuals"]
+    cat = _categories(c, books, categorized)
+    counts, actuals = cat["counts"], cat["actuals"]
     _investment_flows(c)
     plan = _budget(c, books, categorized, actuals)
     published = _editor(c, books, plan["rules"], plan["planned"], actuals)
@@ -1039,5 +1144,9 @@ def compute_all(
     if legacy_id and legacy_year:
         _legacy_check(c, result, legacy_id, legacy_year, legacy_actuals, legacy_blank)
 
+    slow = sorted(((v, k) for k, v in c.seconds.items() if v >= 1), reverse=True)
+    if slow:
+        say(log, "compute: where the time went: " + ", ".join(f"{k} {v:.0f}s" for v, k in slow))
+    result["seconds"] = dict(c.seconds)
     record_stage(reports, "compute", run_id, computed_at, result | {"versions": versions()}, said)
     return result

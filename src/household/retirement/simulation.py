@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import numpy as np
@@ -214,6 +214,29 @@ class Outcome:
     totals: np.ndarray | None  # (years, paths): everything invested each year, when recorded
     rows: list[dict[str, str | int | float]]  # the first path's years, when recorded
     starts: list[int] | None = None  # for history: the first year of each sequence
+    rows_at: dict[int, list[dict[str, str | int | float]]] | None = None  # the years of each path recorded
+
+    def part(self, lo: int, hi: int, recorded: bool = True) -> "Outcome":
+        """Paths lo to hi as an outcome of their own (run_all runs every model's paths side by side): its
+        rows are path lo's, when that path was recorded."""
+        return Outcome(
+            short=self.short[lo:hi],
+            first_short=self.first_short[lo:hi],
+            end=self.end[lo:hi],
+            after_tax=self.after_tax[lo:hi],
+            tax=self.tax[lo:hi],
+            irmaa=self.irmaa[lo:hi],
+            penalty=self.penalty[lo:hi],
+            converted=self.converted[lo:hi],
+            spent=self.spent[lo:hi],
+            base_spent=self.base_spent,
+            lowest=self.lowest[lo:hi],
+            at_retirement=self.at_retirement[lo:hi],
+            first_rate=self.first_rate[lo:hi],
+            first_need=self.first_need[lo:hi],
+            totals=self.totals[:, lo:hi] if recorded and self.totals is not None else None,
+            rows=(self.rows_at or {}).get(lo, []) if recorded else [],
+        )
 
 
 def _forced(
@@ -395,9 +418,11 @@ def simulate(
     inflation: ndarray,
     today_year: int,
     record: bool = False,
+    record_at: Sequence[int] = (0,),
 ) -> Outcome:
     """Run the plan over paths: returns and inflation are (years, paths) arrays for h.years. Returns the
-    per-path results (and per-year rows of the first path when record).
+    per-path results (and, when record, per-year rows of the first path, or of each path in record_at).
+    Every path is worked out by itself, so paths run side by side come to what each would alone.
 
     Each working year grows the accounts and adds the contributions (Accounts.work_year). Each retirement year:
     Roth conversions come free after five years; RMDs and a 72(t) plan's payments come out (_forced); health
@@ -421,7 +446,7 @@ def simulate(
     sepp_until: dict[str, int] = {}
     at_retirement: Paths | None = None
     totals = np.zeros((len(years), n)) if record else None
-    rows: list[dict[str, str | int | float]] = []
+    rows_at: dict[int, list[dict[str, str | int | float]]] = {j: [] for j in record_at}
     vpw_r = h.stock_share * VPW_RETURNS[0] + (1 - h.stock_share) * VPW_RETURNS[1]
 
     for i, year in enumerate(years):
@@ -432,21 +457,23 @@ def simulate(
             magi[year] = working_magi * one
             if totals is not None:
                 totals[i] = acc.total(names)
-                rows.append(
-                    _row(
-                        year,
-                        people,
-                        "working",
-                        acc.taxable,
-                        acc.hsa,
-                        acc.pre_plan,
-                        acc.pre_ira,
-                        acc.roth,
-                        contributions=h.taxable_savings
-                        + h.hsa_contribution
-                        + sum(sum(c.values()) for c in h.contributions.values()),
+                for j, rows in rows_at.items():
+                    rows.append(
+                        _row(
+                            year,
+                            people,
+                            "working",
+                            acc.taxable,
+                            acc.hsa,
+                            acc.pre_plan,
+                            acc.pre_ira,
+                            acc.roth,
+                            at=j,
+                            contributions=h.taxable_savings
+                            + h.hsa_contribution
+                            + sum(sum(c.values()) for c in h.contributions.values()),
+                        )
                     )
-                )
             continue
 
         end_age = {p.name: year - p.born.year for p in people}
@@ -536,34 +563,39 @@ def simulate(
         life.lowest = np.minimum(life.lowest, np.where(base > 0, spend / base, 1.0))
         if totals is not None:
             totals[i] = acc.total(names)
-            rows.append(
-                _row(
-                    year,
-                    people,
-                    "retired",
-                    acc.taxable,
-                    acc.hsa,
-                    acc.pre_plan,
-                    acc.pre_ira,
-                    acc.roth,
-                    spending=spend,
-                    health=health,
-                    social_security=income_ss,
-                    rmd=sum(rmd.values()),
-                    from_taxable=y.w_tax + dividends,
-                    from_pre_tax=sum(y.w_pre[k] + y.w_pre_late[k] for k in names) + sum(paid_sepp.values()),
-                    from_roth=sum(y.w_roth[k] + y.w_roth_late[k] for k in names),
-                    from_hsa=y.w_hsa + hsa_pay,
-                    converted=sum(y.conv.values()),
-                    ordinary_income=y.ordinary,
-                    capital_gains=y.gains + dividends,
-                    federal_tax=y.fed,
-                    state_tax=y.wi,
-                    irmaa=surcharge,
-                    penalty=penalty,
-                    short=y.lacking,
-                )
+            recorded = dict(
+                spending=spend,
+                health=health,
+                social_security=income_ss,
+                rmd=sum(rmd.values()),
+                from_taxable=y.w_tax + dividends,
+                from_pre_tax=sum(y.w_pre[k] + y.w_pre_late[k] for k in names) + sum(paid_sepp.values()),
+                from_roth=sum(y.w_roth[k] + y.w_roth_late[k] for k in names),
+                from_hsa=y.w_hsa + hsa_pay,
+                converted=sum(y.conv.values()),
+                ordinary_income=y.ordinary,
+                capital_gains=y.gains + dividends,
+                federal_tax=y.fed,
+                state_tax=y.wi,
+                irmaa=surcharge,
+                penalty=penalty,
+                short=y.lacking,
             )
+            for j, rows in rows_at.items():
+                rows.append(
+                    _row(
+                        year,
+                        people,
+                        "retired",
+                        acc.taxable,
+                        acc.hsa,
+                        acc.pre_plan,
+                        acc.pre_ira,
+                        acc.roth,
+                        at=j,
+                        **recorded,
+                    )
+                )
 
     pre_end = sum(acc.pre_plan[k] + acc.pre_ira[k] for k in names)
     after_tax = (
@@ -589,7 +621,8 @@ def simulate(
         first_rate=wr0,
         first_need=first_need,
         totals=totals,
-        rows=rows,
+        rows=rows_at[record_at[0]] if record_at else [],
+        rows_at=rows_at,
     )
 
 
@@ -602,12 +635,15 @@ def _row(
     pre_plan: dict[str, ndarray],
     pre_ira: dict[str, ndarray],
     roth: dict[str, ndarray],
+    at: int = 0,
     **values: Paths | float,
 ) -> dict[str, str | int | float]:
+    """One year of path `at`, as a row."""
     names = [p.name for p in people]
 
     def first(v: Paths | float) -> float:
-        return float(np.atleast_1d(v)[0])
+        one = np.atleast_1d(v)
+        return float(one[at] if len(one) > at else one[0])  # a value every path shares is given once
 
     amounts = {
         "taxable": first(tax_val),
@@ -683,17 +719,37 @@ def run_all(
     paths: dict[Any, Any] | None = None,
     record: bool = False,
 ) -> dict[str, Outcome]:
-    """{model: results} for the fixed returns, history and Monte Carlo."""
+    """{model: results} for the fixed returns, history and Monte Carlo.
+
+    Every model's paths run side by side in one simulate, which costs little more than the largest alone (a
+    year's arithmetic is the same work for one path or a thousand), and each model is then given its own."""
     paths = paths or {}
-    out: dict[str, Outcome] = {}
+    models: list[tuple[str, ndarray, ndarray]] = []
     for c in h.cagrs:
         r, i = fixed_paths(h, c)
-        out[f"fixed {c:.0%}"] = simulate(h, strategy, retire_year, r, i, today_year, record=record)
+        models.append((f"fixed {c:.0%}", r, i))
     r, i, starts = paths.get(("historical", retire_year)) or historical_paths(h, retire_year)
-    out["historical"] = simulate(h, strategy, retire_year, r, i, today_year)
-    out["historical"].starts = starts
+    models.append(("historical", r, i))
     r, i = paths.get("monte_carlo") or monte_carlo_paths(h)
-    out["monte carlo"] = simulate(h, strategy, retire_year, r, i, today_year, record=record)
+    models.append(("monte carlo", r, i))
+    begins = [0]
+    for _, r, _ in models:
+        begins.append(begins[-1] + r.shape[1])
+    together = simulate(
+        h,
+        strategy,
+        retire_year,
+        np.concatenate([r for _, r, _ in models], axis=1),
+        np.concatenate([i for _, _, i in models], axis=1),
+        today_year,
+        record=record,
+        record_at=[b for b, (name, _, _) in zip(begins, models) if name != "historical"],
+    )
+    out = {
+        name: together.part(lo, hi, recorded=name != "historical")  # history's years were never kept
+        for (name, _, _), lo, hi in zip(models, begins, begins[1:])
+    }
+    out["historical"].starts = starts
     return out
 
 

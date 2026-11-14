@@ -45,6 +45,7 @@ def ingest_legacy_investments(
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
+    sheets.prefetch(ledger, ["accounts", "securities", "holdings"])  # what it reads, in one call
     known = set(read_ledger(ledger, "accounts")["account_id"].astype(str).str.strip())
     where = {tab: (target.split(":", 1) + [""])[:2] for tab, target in tabs.items()}
     unknown = sorted({a for a, _ in where.values() if a not in known})
@@ -123,6 +124,7 @@ def ingest_legacy_equity(
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
+    sheets.prefetch(ledger, ["equity_vests", "equity_sales", "vest_schedule"])
     workbook = session.sheets.open_by_key(workbook_id)
     got = workbook.values_batch_get(
         [f"'{grants_tab}'", f"'{sales_tab}'"], params={"valueRenderOption": sheets.UNFORMATTED}
@@ -207,6 +209,7 @@ def ingest_legacy_net_worth(
     """
     run_id = run_id or new_run_id()
     ledger, _, _ = bootstrap(session, folder_id)
+    sheets.prefetch(ledger, ["properties", "property_values", "loan_balances"])
     homes = set(read_ledger(ledger, "properties")["property_id"].astype(str).str.strip())
     unknown = sorted({t for k, t in columns.values() if k == "value" and t not in homes})
     if unknown:  # a properties seed in the inbox adds them; until it has, there is nothing to attach these to

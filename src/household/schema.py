@@ -357,6 +357,9 @@ LEDGER = (
 REPORTS = (
     Table("run_log", ("run_id", "computed_at", "stage", "detail")),
     Table("run_notes", ("run_id", "stage", "at", "n", "message", "level")),
+    # what each slow part of a run rested on when it last ran (fingerprints.py): a run whose part finds the
+    # same fingerprint keeps what that run made and skips the work
+    Table("fingerprints", ("name", "fingerprint", "run_id", "at", "detail")),
     # change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS: written by ingest, from
     # source_documents, so a later run never hides one (the views check discards against it)
     # the weekly email's to-do list, each with the dates it belongs in the email (nudges.py, nudge/Code.js)

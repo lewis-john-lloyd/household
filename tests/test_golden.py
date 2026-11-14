@@ -26,6 +26,8 @@ from test_inbox import FakeDrive  # noqa: F401
 from test_retirement import household, params, person
 
 GOLDEN = Path(__file__).parent / "golden.json"
+# what a run printed (its wording is free to change) and what its slow parts rested on (it moves with the version)
+BOOKKEEPING = ("run_log", "run_notes", "run_lines", "fingerprints")
 VOLATILE = {
     "run_id",
     "computed_at",
@@ -130,8 +132,8 @@ def test_every_report_from_ingest_and_compute_is_unchanged(session):  # noqa: F8
     for book in ("ledger", "reports"):
         for name, tab in files[book].tabs.items():
             values = tab.rows
-            if name in ("run_log", "run_notes", "run_lines"):
-                continue  # what a run printed: its wording is free to change
+            if name in BOOKKEEPING:
+                continue
             if not values:
                 tables[f"{book}.{name}"] = pd.DataFrame()
                 continue
@@ -209,7 +211,7 @@ def test_a_fuller_household_through_ingest_and_compute_is_unchanged(session):  #
     tables = {}
     for book in ("ledger", "reports"):
         for name, tab in session.sheets.files[book].tabs.items():
-            if name in ("run_log", "run_notes", "run_lines"):
+            if name in BOOKKEEPING:
                 continue
             values = tab.rows
             tables[f"{book}.{name}"] = pd.DataFrame(values[1:], columns=values[0]) if values else pd.DataFrame()
@@ -234,7 +236,7 @@ def test_a_year_of_pay_stubs_through_the_projection_is_unchanged(session):  # no
     engine.compute_all(session, session.root, run_id="golden-2")
     tables = {}
     for name, tab in session.sheets.files["reports"].tabs.items():
-        if name in ("run_log", "run_notes", "run_lines"):
+        if name in BOOKKEEPING:
             continue
         values = tab.rows
         tables[f"reports.{name}"] = pd.DataFrame(values[1:], columns=values[0]) if values else pd.DataFrame()

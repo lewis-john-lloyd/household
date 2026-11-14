@@ -36,6 +36,7 @@ def record_stage(
 ) -> None:
     """Keep this run of this stage in Reports (run_log: its summary as JSON; run_notes: every line it
     printed), replacing that stage's last run and leaving the other stages' alone."""
+    sheets.prefetch(reports, ["run_log", "run_notes"])  # both in one read
     for name, rows in (
         (
             "run_log",

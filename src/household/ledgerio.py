@@ -1,5 +1,10 @@
 """The ledger and Reports as every stage opens them, and the ledger as compute reads it.
 
+bootstrap opens both as Books (sheets.Book): a tab is read once and kept, and Reports is written in a few
+calls. Inside one_run() every stage shares the same two Books, so a run opens the spreadsheets once and reads
+each ledger tab once (again only after ingest has written it). Outside it each stage opens its own, so a
+stage run by itself never sees what an earlier call read.
+
 read_ledger(ledger, name) reads a table as written. Compute reads it through a LedgerView instead: the same
 spreadsheet with a LedgerReading attached, which reads accounts under their new names (account_renamed), the
 old investments workbook's readings under the account they belong to (legacy_account), and investment
@@ -41,14 +46,43 @@ def new_run_id(now: datetime | None = None) -> str:
     return (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
 
+_RUN: list[dict[Any, Any]] = []  # what the run in progress shares (one_run); the engine runs one thing at a time
+
+
+class one_run:
+    """with one_run(): every stage called inside shares one opening of the ledger and Reports and what was
+    read from them (runner.run), and anything a stage leaves for a later one (shared)."""
+
+    def __enter__(self) -> dict[Any, Any]:
+        _RUN.append({})
+        return _RUN[-1]
+
+    def __exit__(self, kind: Any, error: Any, trace: Any) -> None:
+        _RUN.pop()
+
+
+def shared() -> dict[Any, Any] | None:
+    """What this run's stages share (one_run), or None when a stage is running by itself."""
+    return _RUN[-1] if _RUN else None
+
+
 def bootstrap(session: Session, folder_id: str) -> tuple[Spreadsheet, Spreadsheet, dict[str, Any]]:
-    """Open or create the ledger and Reports spreadsheets and their declared tables."""
+    """Open or create the ledger and Reports spreadsheets and their declared tables, each as a Book. Inside
+    one_run() the first call opens them and the rest are given the same two."""
+    run = shared()
+    key = ("books", id(session), folder_id)
+    if run is not None and key in run:
+        ledger, reports = run[key]
+        return ledger, reports, {"ledger": [], "reports": []}
     ledger, _ = sheets.open_or_create(session.sheets, sheets.LEDGER_TITLE, folder_id)
     reports, _ = sheets.open_or_create(session.sheets, sheets.REPORTS_TITLE, folder_id)
     created = {
         "ledger": sheets.ensure_tables(ledger, schema.LEDGER),
         "reports": sheets.ensure_tables(reports, schema.REPORTS),
     }
+    ledger, reports = sheets.Book(ledger), sheets.Book(reports)
+    if run is not None:
+        run[key] = (ledger, reports)
     return ledger, reports, created
 
 
@@ -200,6 +234,11 @@ class LedgerView:
 
     def worksheet(self, name: str) -> Any:
         return self.ledger.worksheet(name)
+
+    def rows(self, name: str) -> list[list[Any]]:
+        """A tab's rows as written (sheets.read_table reads through this): the Book's, or the spreadsheet's."""
+        held = getattr(self.ledger, "rows", None)
+        return held(name) if held else self.ledger.worksheet(name).get_values(value_render_option=sheets.UNFORMATTED)
 
 
 def read_ledger(ledger: "Spreadsheet | LedgerView", name: str) -> Frame:

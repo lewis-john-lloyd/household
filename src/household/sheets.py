@@ -3,12 +3,18 @@
 Ledger tables are only ever appended to. `replace_table` refuses to touch a
 spreadsheet unless it is the Reports spreadsheet, so a bug in compute cannot
 overwrite stored facts.
+
+A stage opens each spreadsheet as a Book (ledgerio.bootstrap): the same spreadsheet, with what was read from
+it kept for the rest of the run and Reports written in a few calls rather than several per table. Every
+function here takes a Book or the spreadsheet itself; given the spreadsheet, each read and write is its own
+call, as it always was.
 """
 
+import hashlib
 import json
 import re
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Iterator
 
 import pandas as pd
 
@@ -18,10 +24,235 @@ from .schema import Table
 REPORTS_TITLE = "reports"
 LEDGER_TITLE = "ledger"
 UNFORMATTED = "UNFORMATTED_VALUE"
+REVIEW = "review"
+PRICE_REQUESTS = "price_requests"
+# tabs read from Sheets every time they are asked for: a person types answers into review, and Sheets itself
+# fills in price_requests, so neither may be answered from what was read earlier in the run
+VOLATILE = frozenset({REVIEW, PRICE_REQUESTS})
+WRITE_BYTES = 2_000_000  # Google suggests keeping a request under 2 MB
 
 
 class SchemaMismatch(Exception):
     pass
+
+
+class Book:
+    """A spreadsheet as one run uses it: a tab is read once and remembered, a write through this module forgets
+    what it changed (the next read asks Sheets again, along with every other tab written since), and Reports
+    tables can be queued and written together (batched).
+
+    It stands in for the spreadsheet in this module: title, worksheet and worksheets answer from what it
+    knows, and the batch calls are the spreadsheet's own. calls counts the requests made through it, for the
+    run's log.
+    """
+
+    def __init__(self, spreadsheet: Spreadsheet):
+        self.spreadsheet = spreadsheet
+        self.calls = 0
+        self.deferred = False
+        self._rows: dict[str, list[list[Any]]] = {}
+        self._written: set[str] = set()  # tabs read, then written: read again with the next tab asked for
+        self._sheets: dict[str, Any] | None = None
+        self._queue: dict[str, tuple[Table, list[list[Any]]]] = {}
+
+    @property
+    def title(self) -> str:
+        return self.spreadsheet.title
+
+    def batch_update(self, body: dict[str, Any]) -> Any:
+        self.calls += 1
+        return self.spreadsheet.batch_update(body)
+
+    def values_batch_update(self, body: dict[str, Any]) -> Any:
+        self.calls += 1
+        return self.spreadsheet.values_batch_update(body)
+
+    def values_batch_get(self, ranges: list[str], params: dict[str, Any] | None = None) -> Any:
+        self.calls += 1
+        return self.spreadsheet.values_batch_get(ranges, params=params)
+
+    def worksheets(self) -> list[Any]:
+        if self._sheets is None:
+            self.calls += 1
+            self._sheets = {ws.title: ws for ws in self.spreadsheet.worksheets()}
+        return list(self._sheets.values())
+
+    def worksheet(self, name: str) -> Any:
+        """The tab, from one listing of the spreadsheet's tabs (gspread asks for the listing on every lookup)."""
+        if name not in {ws.title for ws in self.worksheets()}:
+            self._sheets = None  # a tab made since the listing
+            self.worksheets()
+        assert self._sheets is not None
+        if name not in self._sheets:
+            return self.spreadsheet.worksheet(name)  # raises gspread's own error for a tab that is not there
+        return self._sheets[name]
+
+    def _fetch(self, names: list[str]) -> dict[str, list[list[Any]]]:
+        got = self.values_batch_get([f"'{n}'" for n in names], params={"valueRenderOption": UNFORMATTED})
+        return {n: vr.get("values", []) for n, vr in zip(names, got.get("valueRanges", []))}
+
+    def rows(self, name: str) -> list[list[Any]]:
+        """A tab's rows as Sheets holds them (unformatted). Not to be changed: they are what the next read gets."""
+        queued = self._queue.get(name)
+        if queued is not None:  # replaced in this run and not yet written: what it will hold
+            return _as_read(queued[1])
+        if name in VOLATILE:
+            return self._fetch([name])[name]
+        if name not in self._rows:
+            wanted = [name] + sorted(self._written - {name})
+            self._rows.update(self._fetch(wanted))
+            self._written -= set(wanted)
+        return self._rows[name]
+
+    def prefetch(self, names: list[str] | None = None) -> None:
+        """Read every tab named (every tab there is, when none is) that is not already held, in one call."""
+        names = [n for n in (names or [ws.title for ws in self.worksheets()]) if n not in VOLATILE]
+        wanted = [n for n in names if n not in self._rows and n not in self._queue]
+        if wanted:
+            self._rows.update(self._fetch(wanted))
+            self._written -= set(wanted)
+
+    def snapshot(self) -> dict[str, list[list[Any]]]:
+        """Every tab as it is now, in one call, for the backup; what it read is kept for the rest of the run."""
+        got = self._fetch([ws.title for ws in self.worksheets()])
+        self._rows.update({n: rows for n, rows in got.items() if n not in VOLATILE})
+        self._written.clear()
+        return got
+
+    def digest(self, names: list[str]) -> str:
+        """A fingerprint of the tabs named, as held: the same rows give the same one."""
+        self.prefetch(names)
+        h = hashlib.sha256()
+        for n in names:
+            h.update(json.dumps([n, self.rows(n)], default=str, separators=(",", ":")).encode())
+        return h.hexdigest()[:16]
+
+    def touch(self, *names: str) -> None:
+        """These tabs were written: forget what was read of them."""
+        for n in names:
+            if self._rows.pop(n, None) is not None:
+                self._written.add(n)
+
+    def queue(self, t: Table, values: list[list[Any]]) -> None:
+        self._queue[t.name] = (t, values)
+
+    def write(self, tables: list[tuple[Table, list[list[Any]]]]) -> int:
+        """Replace each table's tab with its values: one call sizes every tab to its table, then the values go
+        in as few calls as keep each under WRITE_BYTES. A tab sized to its table and written in full holds
+        nothing else, so nothing has to be cleared first. Returns the calls made."""
+        if not tables:
+            return 0
+        before = self.calls
+        ids = {ws.title: ws.id for ws in self.worksheets()}
+        self.batch_update(
+            {
+                "requests": [
+                    {
+                        "updateSheetProperties": {
+                            "properties": {
+                                "sheetId": ids[t.name],
+                                "gridProperties": {"rowCount": max(len(values), 2), "columnCount": len(t.columns)},
+                            },
+                            "fields": "gridProperties.rowCount,gridProperties.columnCount",
+                        }
+                    }
+                    for t, values in tables
+                ]
+            }
+        )
+        done: list[str] = []
+        try:
+            for chunk in _chunks(tables):
+                self.values_batch_update({"valueInputOption": "RAW", "data": chunk})
+                done += [item["range"] for item in chunk]
+        except Exception as e:
+            raise RuntimeError(
+                f"{self.title}: written in part ({len(done)} of its ranges went in before "
+                f"{type(e).__name__}: {e}); run again to write the rest"
+            ) from e
+        finally:
+            self.touch(*[t.name for t, _ in tables])
+        return self.calls - before
+
+    def flush(self) -> int:
+        """Write every queued table (write). Returns the calls made."""
+        tables, self._queue = list(self._queue.values()), {}
+        return self.write(tables)
+
+    def discard(self) -> None:
+        self._queue = {}
+
+
+def _as_read(values: list[list[Any]]) -> list[list[Any]]:
+    """Values about to be written, as Sheets would give them back: a whole number comes back without its
+    decimal point."""
+    return [[int(v) if isinstance(v, float) and v.is_integer() else v for v in row] for row in values]
+
+
+def _chunks(tables: list[tuple[Table, list[list[Any]]]]) -> Iterator[list[dict[str, Any]]]:
+    """values.batchUpdate bodies' data, each under WRITE_BYTES: whole tables together, and a table bigger than
+    that in runs of rows."""
+    chunk: list[dict[str, Any]] = []
+    size = 0
+    for t, values in tables:
+        start = 0
+        while start < len(values):
+            end, took = start, 0
+            while end < len(values):
+                row = len(json.dumps(values[end], default=str)) + 1
+                if end > start and size + took + row > WRITE_BYTES:
+                    break
+                took += row
+                end += 1
+            if chunk and size + took > WRITE_BYTES:
+                yield chunk
+                chunk, size = [], 0
+                continue  # measure this table again against an empty request
+            chunk.append({"range": f"'{t.name}'!A{start + 1}", "values": values[start:end]})
+            size += took
+            start = end
+    if chunk:
+        yield chunk
+
+
+class batched:
+    """with batched(reports): inside, replace_table on a Book queues its table; leaving writes them all
+    together (Book.flush), and leaving on an error writes none, so Reports stays as the last full run left it.
+    Given the spreadsheet itself, every table is written as it is replaced."""
+
+    def __init__(self, spreadsheet: Spreadsheet):
+        self.book = spreadsheet if isinstance(spreadsheet, Book) else None
+
+    def __enter__(self) -> "batched":
+        if self.book is not None:
+            self.book.deferred = True
+        return self
+
+    def __exit__(self, kind: Any, error: Any, trace: Any) -> None:
+        if self.book is None:
+            return
+        self.book.deferred = False
+        if kind is None:
+            self.book.flush()
+        else:
+            self.book.discard()
+
+
+def _wrote(spreadsheet: Spreadsheet, *names: str) -> None:
+    if isinstance(spreadsheet, Book):
+        spreadsheet.touch(*names)
+
+
+def prefetch(spreadsheet: Spreadsheet, names: list[str] | None = None) -> None:
+    """Read the tabs named (all of them, when none is) in one call, if this is a Book; otherwise each is read
+    when it is asked for."""
+    if isinstance(spreadsheet, Book):
+        spreadsheet.prefetch(names)
+
+
+def calls(spreadsheet: Spreadsheet) -> int:
+    """How many requests went to Sheets through this Book so far (0 for a spreadsheet opened without one)."""
+    return spreadsheet.calls if isinstance(spreadsheet, Book) else 0
 
 
 def open_or_create(client, title, folder_id):
@@ -193,14 +424,15 @@ def read_table(spreadsheet: Spreadsheet, t: Table) -> Frame:
     The review tab is read by column name (a column it doesn't have yet reads as blank), so
     answers typed under an older layout still count; every other table must match the schema.
     """
-    rows = spreadsheet.worksheet(t.name).get_values(value_render_option=UNFORMATTED)
+    held = getattr(spreadsheet, "rows", None)  # a Book, or a view of one (ledgerio.LedgerView)
+    rows = held(t.name) if held else spreadsheet.worksheet(t.name).get_values(value_render_option=UNFORMATTED)
     if not rows:
         return pd.DataFrame(columns=list(t.columns))
     header, body = [str(h).strip() for h in rows[0]], rows[1:]
     if tuple(header) != t.columns and t.name != REVIEW:
         raise SchemaMismatch(f"{t.name}: header {header} != {list(t.columns)}")
     width = len(header)
-    df = pd.DataFrame([r + [""] * (width - len(r)) for r in body], columns=header)
+    df = pd.DataFrame([list(r) + [""] * (width - len(r)) for r in body], columns=header)
     if tuple(header) != t.columns:
         df = df.loc[:, ~df.columns.duplicated()].reindex(columns=list(t.columns), fill_value="")
     for column in [c for c in header if is_date_column(c)]:
@@ -214,6 +446,7 @@ def append_rows(spreadsheet, t, df):
         return 0
     values = df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
     spreadsheet.worksheet(t.name).append_rows(values, value_input_option="RAW")
+    _wrote(spreadsheet, t.name)
     return len(values)
 
 
@@ -257,11 +490,11 @@ def append_tables(
         body = {"requests": requests}
         if size is not None:
             size["bytes"] = len(json.dumps(body))  # Google suggests keeping a request under 2 MB
-        spreadsheet.batch_update(body)
+        try:
+            spreadsheet.batch_update(body)
+        finally:  # written or not, what was read of them is no longer known to be what they hold
+            _wrote(spreadsheet, *[t.name for t, df in tables if df is not None and not df.empty])
     return counts
-
-
-REVIEW = "review"
 
 
 def rewrite_review(spreadsheet, t, df, answers=()):
@@ -287,10 +520,10 @@ def rewrite_review(spreadsheet, t, df, answers=()):
         rule["setDataValidation"]["rule"]["strict"] = False
         requests.append(rule)
     spreadsheet.batch_update({"requests": requests})
+    _wrote(spreadsheet, t.name)
     return len(values) - 1
 
 
-PRICE_REQUESTS = "price_requests"
 QUOTE = re.compile(r"^[A-Z0-9]{1,10}(?:[:.][A-Z0-9]{1,10})?$")  # VEMAX, MUTF:VEMAX, BRK.B
 
 
@@ -317,6 +550,7 @@ def rewrite_price_requests(spreadsheet, t, df):
     ws.update(values=[r[:-1] for r in values], range_name="A1", value_input_option="RAW")
     last = chr(ord("A") + len(t.columns) - 1)
     ws.update(values=[[r[-1]] for r in values], range_name=f"{last}1", value_input_option="USER_ENTERED")
+    _wrote(spreadsheet, t.name)
     return len(rows)
 
 
@@ -331,12 +565,19 @@ def price_formula(quote, day):
 
 
 def replace_table(spreadsheet: Spreadsheet, t: Table, df: Frame) -> int:
-    """Overwrite a derived table. Allowed only on the Reports spreadsheet."""
+    """Overwrite a derived table. Allowed only on the Reports spreadsheet. On a Book inside batched() the
+    table waits to be written with the others."""
     if spreadsheet.title != REPORTS_TITLE:
         raise PermissionError(f"replace_table refused on '{spreadsheet.title}': only Reports is rebuilt")
+    values = [list(t.columns)] + df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
+    if isinstance(spreadsheet, Book):
+        if spreadsheet.deferred:
+            spreadsheet.queue(t, values)
+        else:
+            spreadsheet.write([(t, values)])
+        return len(values) - 1
     ws = spreadsheet.worksheet(t.name)
     ws.clear()
-    values = [list(t.columns)] + df[list(t.columns)].astype(object).where(df.notna(), "").values.tolist()
     ws.resize(rows=max(len(values), 2), cols=len(t.columns))  # values.update does not grow the grid
     ws.update(values=values, range_name="A1", value_input_option="RAW")
     return len(values) - 1

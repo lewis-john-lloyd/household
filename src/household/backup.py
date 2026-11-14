@@ -49,12 +49,17 @@ def snapshot_ledger(ledger, drive, root_folder_id, run_id):
     """
     backups = find_or_create_folder(drive, "backups", root_folder_id)
     manifest = {"run_id": run_id, "tables": {}}
-    titles = [ws.title for ws in ledger.worksheets()]
-    result = ledger.values_batch_get([f"'{t}'" for t in titles], params={"valueRenderOption": "UNFORMATTED_VALUE"})
+    snapshot = getattr(ledger, "snapshot", None)
+    if snapshot:  # a Book (sheets.py): the one read is also what the rest of the run reads from
+        tabs = snapshot()
+    else:
+        titles = [ws.title for ws in ledger.worksheets()]
+        result = ledger.values_batch_get([f"'{t}'" for t in titles], params={"valueRenderOption": "UNFORMATTED_VALUE"})
+        tabs = {t: vr.get("values", []) for t, vr in zip(titles, result.get("valueRanges", []))}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        for title, value_range in zip(titles, result.get("valueRanges", [])):
-            text = to_csv(value_range.get("values", []))
+        for title, rows in tabs.items():
+            text = to_csv(rows)
             bundle.writestr(f"{title}.csv", text)
             manifest["tables"][title] = {
                 "rows": max(text.count("\n") - 1, 0),

@@ -1,9 +1,14 @@
 """Sheet I/O against an in-memory fake of the gspread objects used."""
 
+import re
+from collections import Counter
+
 import pandas as pd
 import pytest
 
 from household import schema, sheets
+
+CALLS: Counter = Counter()  # every request the fakes were asked for, by what it was: a test clears it, then counts
 
 
 class FakeWorksheet:
@@ -17,6 +22,7 @@ class FakeWorksheet:
 
     def update(self, values, range_name="A1", value_input_option="RAW", **_):
         """Write values from a cell in row 1 (A1, D1), noting which cells Sheets would read as typed in."""
+        CALLS["update"] += 1
         assert range_name[1:] == "1" and range_name[0].isalpha(), range_name
         col = ord(range_name[0].upper()) - ord("A")
         for i, row in enumerate(values):
@@ -32,18 +38,21 @@ class FakeWorksheet:
         pass
 
     def get_values(self, **_):
+        CALLS["get_values"] += 1
         return [list(r) for r in self.rows]
 
     get_all_values = get_values
 
     def append_rows(self, values, **_):
+        CALLS["append_rows"] += 1
         self.rows += [list(r) for r in values]
 
     def clear(self):
+        CALLS["clear"] += 1
         self.rows = []
 
     def resize(self, rows=None, cols=None):
-        pass
+        CALLS["resize"] += 1
 
 
 def _value(cell):
@@ -59,9 +68,11 @@ class FakeSpreadsheet:
         self.batch_updates = []
 
     def worksheets(self):
+        CALLS["worksheets"] += 1
         return list(self.tabs.values())
 
     def worksheet(self, name):
+        CALLS["worksheet"] += 1  # gspread asks Sheets for the list of tabs on every lookup
         return self.tabs[name]
 
     def add_worksheet(self, title, rows, cols):
@@ -72,6 +83,7 @@ class FakeSpreadsheet:
         del self.tabs[ws.title]
 
     def batch_update(self, body):
+        CALLS["batch_update"] += 1
         # Sheets applies a batchUpdate atomically: a failure (fail_batch, or a sheet that isn't there) writes nothing
         if getattr(self, "fail_batch", None) and any("appendCells" in r for r in body["requests"]):
             error, self.fail_batch = self.fail_batch, None
@@ -83,6 +95,12 @@ class FakeSpreadsheet:
                 raise ValueError(f"no sheet {a['sheetId']}")
         for a in appends:
             by_id[a["sheetId"]].rows += [[_value(c) for c in row["values"]] for row in a["rows"]]
+        for request in body["requests"]:  # a tab made smaller loses the rows and columns past its new size
+            props = request.get("updateSheetProperties", {}).get("properties", {})
+            grid = props.get("gridProperties", {})
+            if props.get("sheetId") in by_id and "rowCount" in grid:
+                ws = by_id[props["sheetId"]]
+                ws.rows = [r[: grid.get("columnCount", len(r))] for r in ws.rows[: grid["rowCount"]]]
         self.batch_updates.append(body)
         replies = []
         for request in body["requests"]:
@@ -94,11 +112,23 @@ class FakeSpreadsheet:
         return {"replies": replies}
 
     def values_batch_update(self, body):
+        """Each range is a tab and the row its values start at ('name'!A1): the cells written are replaced and
+        the rest of the tab is left as it was, as Sheets does."""
+        CALLS["values_batch_update"] += 1
+        if getattr(self, "fail_values", None):
+            error, self.fail_values = self.fail_values, None
+            raise error
         for item in body["data"]:
             name = item["range"].split("'")[1]
-            self.tabs[name].rows = [list(r) for r in item["values"]] + self.tabs[name].rows[1:]
+            start = int(re.search(r"!A(\d+)$", item["range"]).group(1)) - 1
+            rows = self.tabs[name].rows
+            while len(rows) < start + len(item["values"]):
+                rows.append([])
+            for i, values in enumerate(item["values"]):
+                rows[start + i] = list(values) + rows[start + i][len(values) :]
 
     def values_batch_get(self, ranges, params=None):
+        CALLS["values_batch_get"] += 1
         out = []
         for r in ranges:
             name = r.split("'")[1]
@@ -326,3 +356,116 @@ def test_cells_are_typed_as_a_raw_append_would_write_them():
     assert sheets._cell(np.float64(2.5)) == {"userEnteredValue": {"numberValue": 2.5}}
     assert sheets._cell("500.00") == {"userEnteredValue": {"stringValue": "500.00"}}  # text stays text
     assert sheets._cell("=1+1") == {"userEnteredValue": {"stringValue": "=1+1"}}  # never a formula
+
+
+# --- a Book: tabs read once, Reports written together ---------------------------------------------------------
+
+
+def book(title="reports", tables=schema.REPORTS):
+    raw = FakeSpreadsheet(title)
+    sheets.ensure_tables(raw, tables)
+    return raw, sheets.Book(raw)
+
+
+RUN_LOG, RUN_NOTES = schema.table(schema.REPORTS, "run_log"), schema.table(schema.REPORTS, "run_notes")
+
+
+def test_a_book_reads_a_tab_once_and_again_only_after_it_is_written():
+    raw, ledger = book("ledger", schema.LEDGER)
+    CALLS.clear()
+    sheets.read_table(ledger, TXNS)
+    sheets.read_table(ledger, TXNS)
+    assert CALLS["values_batch_get"] == 1 and CALLS["worksheet"] == 0  # no listing of the tabs per read either
+    row = pd.DataFrame([{c: "x" for c in TXNS.columns}])
+    sheets.append_tables(ledger, [(TXNS, row)])
+    accounts = schema.table(schema.LEDGER, "accounts")
+    sheets.read_table(ledger, accounts)  # a tab not held: asked for along with the one written since it was read
+    assert CALLS["values_batch_get"] == 2
+    assert len(sheets.read_table(ledger, TXNS)) == 1 and CALLS["values_batch_get"] == 2
+
+
+def test_a_book_reads_every_tab_in_one_call_and_the_tabs_people_and_sheets_fill_in_every_time():
+    raw, ledger = book("ledger", schema.LEDGER)
+    CALLS.clear()
+    ledger.prefetch()
+    for t in schema.LEDGER:
+        if t.name not in sheets.VOLATILE:
+            sheets.read_table(ledger, t)
+    assert CALLS["values_batch_get"] == 1
+    review = schema.table(schema.LEDGER, "review")
+    assert sheets.read_table(ledger, review).empty
+    raw.tabs["review"].rows.append(["QUILL & INK"] + [""] * (len(review.columns) - 1))  # typed while a run is on
+    assert len(sheets.read_table(ledger, review)) == 1
+
+
+def test_reports_tables_replaced_inside_batched_are_written_together_in_three_calls():
+    raw, reports = book()
+    one = pd.DataFrame([{"run_id": "r1", "computed_at": "t", "stage": "ingest", "detail": "{}"}])
+    notes = pd.DataFrame(
+        [
+            {"run_id": "r1", "stage": "ingest", "at": "t", "n": n, "message": f"line {n}", "level": "INFO"}
+            for n in range(3)
+        ]
+    )
+    raw.tabs["run_notes"].rows += [["old"] * len(RUN_NOTES.columns) for _ in range(9)]  # a longer table before
+    CALLS.clear()
+    with sheets.batched(reports):
+        sheets.replace_table(reports, RUN_LOG, one)
+        sheets.replace_table(reports, RUN_NOTES, notes)
+        assert raw.tabs["run_log"].rows == [list(RUN_LOG.columns)]  # nothing written yet
+        assert sheets.read_table(reports, RUN_NOTES)["n"].tolist() == [0, 1, 2]  # but read as it will be
+    # the tabs listed once, every tab sized in one call, every value in one more
+    assert {k: v for k, v in CALLS.items() if v} == {"worksheets": 1, "batch_update": 1, "values_batch_update": 1}
+    assert raw.tabs["run_log"].rows[1][:3] == ["r1", "t", "ingest"]
+    assert len(raw.tabs["run_notes"].rows) == 4  # the nine old rows are gone: the tab was sized to the table
+    assert sheets.read_table(reports, RUN_NOTES)["message"].tolist() == ["line 0", "line 1", "line 2"]
+
+
+def test_an_error_inside_batched_writes_nothing():
+    raw, reports = book()
+    before = [list(r) for r in raw.tabs["run_log"].rows]
+    with pytest.raises(ValueError, match="went wrong"):
+        with sheets.batched(reports):
+            sheets.replace_table(reports, RUN_LOG, pd.DataFrame([{c: "x" for c in RUN_LOG.columns}]))
+            raise ValueError("went wrong")
+    assert raw.tabs["run_log"].rows == before and not reports.deferred
+    sheets.replace_table(reports, RUN_LOG, pd.DataFrame([{c: "y" for c in RUN_LOG.columns}]))  # at once again
+    assert raw.tabs["run_log"].rows[1] == ["y"] * len(RUN_LOG.columns)
+
+
+def test_a_table_bigger_than_a_request_is_written_in_runs_of_rows(monkeypatch):
+    raw, reports = book()
+    monkeypatch.setattr(sheets, "WRITE_BYTES", 400)
+    notes = pd.DataFrame(
+        [
+            {"run_id": "r1", "stage": "ingest", "at": "t", "n": n, "message": "m" * 40, "level": "INFO"}
+            for n in range(30)
+        ]
+    )
+    CALLS.clear()
+    with sheets.batched(reports):
+        sheets.replace_table(reports, RUN_NOTES, notes)
+        sheets.replace_table(reports, RUN_LOG, pd.DataFrame([{c: "x" for c in RUN_LOG.columns}]))
+    assert CALLS["values_batch_update"] > 3
+    got = sheets.read_table(reports, RUN_NOTES)
+    assert got["n"].tolist() == list(range(30)) and (got["message"] == "m" * 40).all()
+    assert raw.tabs["run_log"].rows[1] == ["x"] * len(RUN_LOG.columns)
+
+
+def test_a_write_that_fails_part_way_says_reports_is_written_in_part():
+    raw, reports = book()
+    raw.fail_values = TimeoutError("no answer")
+    with pytest.raises(RuntimeError, match="written in part .* run again"):
+        with sheets.batched(reports):
+            sheets.replace_table(reports, RUN_LOG, pd.DataFrame([{c: "x" for c in RUN_LOG.columns}]))
+
+
+def test_a_spreadsheet_given_as_it_is_reads_and_writes_as_before():
+    raw = FakeSpreadsheet("reports")
+    sheets.ensure_tables(raw, schema.REPORTS)
+    CALLS.clear()
+    with sheets.batched(raw):
+        sheets.replace_table(raw, RUN_LOG, pd.DataFrame([{c: "x" for c in RUN_LOG.columns}]))
+        assert raw.tabs["run_log"].rows[1] == ["x"] * len(RUN_LOG.columns)  # written at once
+    assert (CALLS["clear"], CALLS["resize"], CALLS["update"]) == (1, 1, 1)
+    assert sheets.calls(raw) == 0

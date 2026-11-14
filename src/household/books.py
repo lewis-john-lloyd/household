@@ -6,9 +6,55 @@ from typing import Any
 
 import pandas as pd
 
-from . import categorize, compute, explain, ingest, mortgage, transfers
-from .kinds import Spreadsheet
-from .ledgerio import read_ledger
+from . import __version__, categorize, compute, explain, fingerprints, ingest, mortgage, sheets, transfers
+from .kinds import Frame, Spreadsheet
+from .ledgerio import LedgerView, read_ledger, shared
+
+# every ledger table read_books and categorize_books read: what a categorization rests on (key)
+BOOK_TABLES = (
+    "transactions",
+    "txn_corrections",
+    "accounts",
+    "parameters",
+    "category_aliases",
+    "payee_rules",
+    "proposal_decisions",
+    "categories",
+    "payment_details",
+    "order_items",
+    "item_categories",
+    "loans",
+    "loan_events",
+)
+
+
+def key(ledger: "Spreadsheet | LedgerView") -> str | None:
+    """A fingerprint of everything the books and their categories rest on: the tables as the ledger holds
+    them, how they are read (a LedgerView's reading) and the package's version. None for a ledger opened
+    without a Book, which has nothing held to fingerprint."""
+    book = ledger.ledger if isinstance(ledger, LedgerView) else ledger
+    if not isinstance(book, sheets.Book):
+        return None
+    reading = ledger.reading if isinstance(ledger, LedgerView) else None
+    return fingerprints.of("books", __version__, book.digest(list(BOOK_TABLES)), reading)
+
+
+def _copies(books: dict[str, Any], categorized: Frame) -> tuple[dict[str, Any], Frame]:
+    return {k: v.copy() if isinstance(v, pd.DataFrame) else v for k, v in books.items()}, categorized.copy()
+
+
+def read_and_categorize(ledger: "Spreadsheet | LedgerView") -> tuple[dict[str, Any], Frame]:
+    """(read_books, categorize_books) for this ledger. Inside one run (ledgerio.one_run) the two are worked
+    out once for the same ledger read the same way: ingest's review and compute both ask, and the model is
+    trained for the first; the second is given copies, unless a table they rest on was written in between."""
+    run, rests_on = shared(), key(ledger)
+    if run is not None and rests_on and run.get("books", (None,))[0] == rests_on:
+        return _copies(*run["books"][1:])
+    books = read_books(ledger)
+    categorized = categorize_books(books)
+    if run is not None and rests_on:
+        run["books"] = (rests_on, *_copies(books, categorized))
+    return books, categorized
 
 
 def read_books(ledger: Spreadsheet) -> dict[str, Any]:

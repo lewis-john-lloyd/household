@@ -34,7 +34,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from . import __version__, engine, inbox, logs
+from . import __version__, engine, inbox, ledgerio, logs, sheets
 from .kinds import Log, Session, StageResult
 
 SETTINGS_NAME = "engine_settings.json"
@@ -194,8 +194,14 @@ class RunLog:
 
 
 def brief(name, result):
-    """One line saying what a stage did, from what it returned."""
+    """One line saying what a stage did, from what it returned, and how often it asked Sheets when it says."""
     r = result or {}
+    said = _brief(name, r)
+    asked = r.get("sheets_calls")
+    return said + (f"; Sheets asked {asked} times" if asked is not None and said else "")
+
+
+def _brief(name, r):
     if name == "legacy investments":
         added = r.get("securities", 0) + r.get("holdings", 0)
         return (
@@ -251,6 +257,11 @@ def run(session: Session, folder_id: str, log: Log = print, run_id: str | None =
     each stage says when it starts, what it did and how long it took, a failure with where it happened; the run
     ends with a table of the stages. The run's own lines are kept in Reports (run_log and run_notes, stage
     "run") for the views' Engine log. Returns each stage's result by name."""
+    with ledgerio.one_run():  # the stages share one opening of the ledger and Reports and what they read
+        return _run(session, folder_id, log, run_id)
+
+
+def _run(session: Session, folder_id: str, log: Log, run_id: str | None) -> StageResult:
     run_id = run_id or engine.new_run_id()
     say = RunLog(log)
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -347,7 +358,8 @@ def run(session: Session, folder_id: str, log: Log = print, run_id: str | None =
         }
         try:
             _, reports, _ = engine.bootstrap(session, folder_id)
-            engine.record_stage(reports, "run", run_id, started_at, summary, say.lines)
+            with sheets.batched(reports):
+                engine.record_stage(reports, "run", run_id, started_at, summary, say.lines)
         except Exception as e:  # the notebook has the log either way
             say(f"run: could not keep this run's log in Reports: {e}", "WARN")
     say("done: the Status page in the views says what needs you; its Engine log tab has this run")

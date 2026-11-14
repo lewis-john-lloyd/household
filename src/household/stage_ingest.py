@@ -8,10 +8,10 @@ from typing import Any
 
 import pandas as pd
 
-from . import backup, categorize, compute, inbox, prices, schema, sheets, valuation
-from .books import categorize_books, read_books
+from . import backup, categorize, compute, fingerprints, inbox, prices, schema, sheets, valuation
+from .books import BOOK_TABLES, key, read_and_categorize
 from .kinds import Log, Session, StageResult
-from .ledgerio import bootstrap, new_run_id, read_ledger, versions
+from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
 
 
@@ -43,6 +43,7 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     """
     today = today or date.today()
     table, requests_table = schema.table(schema.LEDGER, "prices"), schema.table(schema.LEDGER, "price_requests")
+    sheets.prefetch(ledger, ["securities", "holdings", "investment_activity", "parameters", "prices"])
     securities = read_ledger(ledger, "securities")
     usable, refused = prices.quotes(securities)
     for symbol in refused:
@@ -50,20 +51,30 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
     holdings, activity = read_ledger(ledger, "holdings"), read_ledger(ledger, "investment_activity")
     stand_ins = sorted(set(valuation.proxies(read_ledger(ledger, "parameters")).values()))
     added = 0
+    shown = 0  # the requests the tab holds now
 
     def collect():
-        nonlocal added
+        nonlocal added, shown
         held = read_ledger(ledger, "prices")
-        got, waiting = prices.harvest(read_ledger(ledger, "price_requests"))
+        asked = read_ledger(ledger, "price_requests")
+        shown = len(asked)
+        got, waiting = prices.harvest(asked)
         if len(held) and len(got):
             have = set(zip(held["symbol"].astype(str), held["date"].astype(str)))
             got = got[[k not in have for k in zip(got["symbol"], got["date"])]]
         added += sheets.append_tables(ledger, [(table, got)])["prices"]
         return held if got.empty else pd.concat([held, got], ignore_index=True), len(waiting)
 
+    def show(ask):
+        """Write the requests to the tab, unless there are none and the tab already holds none."""
+        nonlocal shown
+        if len(ask) or shown:
+            sheets.rewrite_price_requests(ledger, requests_table, ask)
+            shown = len(ask)
+
     held, _ = collect()
     ask, wanted = prices.requests(securities, holdings, activity, held, today, stand_ins=stand_ins)
-    sheets.rewrite_price_requests(ledger, requests_table, ask)
+    show(ask)
     if len(ask):
         say(
             log,
@@ -78,7 +89,7 @@ def _price_requests(ledger, log=print, today=None, wait=PRICE_POLL_SECONDS, slee
         if not waiting:
             break
     ask, wanted = prices.requests(securities, holdings, activity, held, today, stand_ins=stand_ins)
-    sheets.rewrite_price_requests(ledger, requests_table, ask)
+    show(ask)
     if usable or stand_ins or added:
         say(
             log,
@@ -123,48 +134,51 @@ def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, lo
     say(log, f"run {run_id}: opening the ledger")
     say(log, f"versions: {versions()}")
     ledger, reports, _ = bootstrap(session, folder_id)
+    asked = sheets.calls(ledger) + sheets.calls(reports)
     drive = session.drive()
-    say(log, "backing up every ledger tab")
-    started = time.perf_counter()
-    manifest = backup.snapshot_ledger(ledger, drive, folder_id, run_id)
-    timing = {"backup": round(time.perf_counter() - started, 2)}
-    say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip ({timing['backup']:.1f}s)")
-    files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
-    counts: dict[str, int] = {}
-    for f in files:
-        counts[f["status"]] = counts.get(f["status"], 0) + 1
-    say(log, "review: reading the answers in the review tab, then rebuilding its questions (often a minute)")
-    started = time.perf_counter()
-    answered = _review(ledger, log)
-    timing["review"] = round(time.perf_counter() - started, 2)
-    started = time.perf_counter()
-    priced = _price_requests(ledger, log)
-    timing["prices"] = round(time.perf_counter() - started, 2)
-    written = changes_written(read_ledger(ledger, "source_documents"))
-    sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
-    say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
-    for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are printed above)
-        if f.get("parser") != "changes":
-            said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
-    result = {
-        "run_id": run_id,
-        "files": files,
-        "counts": counts,
-        "review": answered,
-        "prices": priced,
-        "seconds": timing,
-        # where the inbox is, so the weekly email can list what waits in it with nothing to set up
-        "inbox": backup.find_or_create_folder(drive, "inbox", folder_id),
-    }
-    record_stage(
-        reports,
-        "ingest",
-        run_id,
-        started_at,
-        {k: v for k, v in result.items() if k != "files"}
-        | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended", "written")} for f in files]},
-        said,
-    )
+    with sheets.batched(reports):  # what ingest writes to Reports goes together at the end
+        say(log, "backing up every ledger tab")
+        started = time.perf_counter()
+        manifest = backup.snapshot_ledger(ledger, drive, folder_id, run_id)
+        timing = {"backup": round(time.perf_counter() - started, 2)}
+        say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip ({timing['backup']:.1f}s)")
+        files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
+        counts: dict[str, int] = {}
+        for f in files:
+            counts[f["status"]] = counts.get(f["status"], 0) + 1
+        say(log, "review: reading the answers in the review tab; its questions are rebuilt when anything changed")
+        started = time.perf_counter()
+        answered = _review(ledger, log, reports=reports, run_id=run_id)
+        timing["review"] = round(time.perf_counter() - started, 2)
+        started = time.perf_counter()
+        priced = _price_requests(ledger, log)
+        timing["prices"] = round(time.perf_counter() - started, 2)
+        written = changes_written(read_ledger(ledger, "source_documents"))
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
+        say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
+        for f in files:  # a parser's notes, kept with the run (the notebook prints them; a change set's are above)
+            if f.get("parser") != "changes":
+                said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
+        result = {
+            "run_id": run_id,
+            "files": files,
+            "counts": counts,
+            "review": answered,
+            "prices": priced,
+            "seconds": timing,
+            # where the inbox is, so the weekly email can list what waits in it with nothing to set up
+            "inbox": backup.find_or_create_folder(drive, "inbox", folder_id),
+        }
+        record_stage(
+            reports,
+            "ingest",
+            run_id,
+            started_at,
+            {k: v for k, v in result.items() if k != "files"}
+            | {"files": [{k: f.get(k) for k in ("file", "status", "reason", "appended", "written")} for f in files]},
+            said,
+        )
+    result["sheets_calls"] = sheets.calls(ledger) + sheets.calls(reports) - asked
     return result
 
 
@@ -181,8 +195,9 @@ def review(session: Session, folder_id: str, log: Log = print, now: datetime | N
     proposal_decisions row, a single line's answer as a txn_corrections row; an
     answer that is not a category stays on its row with the reason.
     """
-    ledger, _, _ = bootstrap(session, folder_id)
-    return _review(ledger, log, now)
+    ledger, reports, _ = bootstrap(session, folder_id)
+    with sheets.batched(reports):
+        return _review(ledger, log, now, reports=reports)
 
 
 def _not_yet(new, held, keys, fields):
@@ -198,8 +213,19 @@ def _not_yet(new, held, keys, fields):
     return new[[tuple(r) not in seen for r in text(new).values.tolist()]].reset_index(drop=True)
 
 
-def _review(ledger, log=print, now=None):
+WHERE_TO_ANSWER = "answer them in the views (Cashflow, Review) or in the ledger's review tab, then run again"
+
+
+def _review(ledger, log=print, now=None, reports=None, run_id=""):
+    """Read the review tab's answers into the ledger, then rebuild its questions.
+
+    Rebuilding trains the model on every line, so it is skipped when nothing the questions rest on has
+    changed since the last rebuild: the tables behind the books (books.key) and the tab itself, as read, make
+    a fingerprint kept in Reports (given reports), and the same one means the tab already holds its questions.
+    The books are read the way compute reads them (LedgerView), so compute, later in the same run, is given
+    this categorization rather than working it out again (books.read_and_categorize)."""
     review_table = schema.table(schema.LEDGER, "review")
+    sheets.prefetch(ledger, list(BOOK_TABLES))
     typed = read_ledger(ledger, "review")
     categories = compute.latest(read_ledger(ledger, "categories"), ["category"])["category"].astype(str).str.strip()
     decisions, corrections, left = categorize.harvest(typed, set(categories), now=now)
@@ -223,17 +249,39 @@ def _review(ledger, log=print, now=None):
     for row in left.to_dict("records"):
         say(log, f"review: {row['key']}: {row['note']}")
 
-    books = read_books(ledger)
-    categorized = categorize_books(books)
+    view = LedgerView(ledger, LedgerReading.of(ledger)[0])  # as compute reads it
+    rests_on = key(view) if reports is not None else None
+    last = fingerprints.read(reports).get("review") if rests_on else None
+    if last and last["fingerprint"] == fingerprints.of("review", rests_on, typed):
+        questions, open_lines = int(last["detail"].get("questions", 0)), int(last["detail"].get("open_lines", 0))
+        say(
+            log,
+            f"review: nothing its questions rest on has changed since run {last['run_id'] or 'the last one'}, so "
+            f"they stand: {questions} questions open ({open_lines} lines)"
+            + (f": {WHERE_TO_ANSWER}" if questions else ""),
+        )
+        return {
+            "answered": len(decisions) + len(corrections),
+            "unusable": len(left),
+            "questions": questions,
+            "open_lines": open_lines,
+            "kept": True,
+        }
+    _, categorized = read_and_categorize(view)
     rows = categorize.queue(categorized, carry=left)
     answers = ["y"] + sorted(c for c in categories if c and c != "transfer") + ["transfer"]
     sheets.rewrite_review(ledger, review_table, rows, answers=answers)
     open_lines = int(pd.to_numeric(rows["lines"]).sum()) if len(rows) else 0
-    say(
-        log,
-        f"review: {len(rows)} questions open ({open_lines} lines): answer them in the ledger's "
-        "review tab, then run ingest again",
-    )
+    say(log, f"review: {len(rows)} questions open ({open_lines} lines)" + (f": {WHERE_TO_ANSWER}" if len(rows) else ""))
+    if rests_on:  # the tab as it reads back is what the next run will find, if no one touches it
+        fingerprints.write(
+            reports,
+            "review",
+            fingerprints.of("review", rests_on, read_ledger(ledger, "review")),
+            run_id,
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            {"questions": len(rows), "open_lines": open_lines},
+        )
     return {
         "answered": len(decisions) + len(corrections),
         "unusable": len(left),

@@ -4,9 +4,11 @@ import csv
 from pathlib import Path
 
 import gspread
+import pandas as pd
 import pytest
+from freezegun import freeze_time
 
-from household import engine, explore, inbox, schema, sheets
+from household import engine, explore, inbox, logs, schema, sheets
 from test_inbox import FakeDrive, rows
 from test_sheets import FakeSpreadsheet, FakeWorksheet
 
@@ -369,3 +371,206 @@ def test_review_answers_the_ledger_already_holds_are_not_written_again():
     # the same as the latest is skipped; back to an earlier answer, or a new payee, is written
     assert out["proposal_key"].tolist() == ["payee:WILLOW ST", "payee:QUILL & INK"]
     assert _not_yet(again, held.iloc[0:0], ["proposal_key"], ["kind", "decision", "note"]).equals(again)
+
+
+# --- one run: the spreadsheets opened once, each tab read once, Reports written together ----------------------
+
+FILES = (
+    ("pay_statement.pdf", "application/pdf"),
+    ("schwab_equity.csv", "text/csv"),
+    ("accounts_seed.csv", "text/csv"),
+    ("return_facts.csv", "text/csv"),
+)
+
+
+def reports_of(session):
+    """Every Reports table but the run's own bookkeeping, as text that leaves out what differs run to run."""
+    from test_golden import BOOKKEEPING, digest
+
+    return {
+        name: digest(pd.DataFrame(tab.rows[1:], columns=tab.rows[0]) if tab.rows else pd.DataFrame())
+        for name, tab in session.sheets.files["reports"].tabs.items()
+        if name not in BOOKKEEPING
+    }
+
+
+@freeze_time("2026-11-09 12:00:00")
+def test_a_whole_run_asks_sheets_for_little_and_makes_what_the_stages_make_one_by_one(monkeypatch):
+    from household import runner
+    from test_sheets import CALLS
+
+    monkeypatch.setattr(inbox, "download", lambda d, fid: d.content[fid])
+
+    def fresh():
+        s = FakeSession()
+        s.root = s._drive.folder("household_finances")
+        s.box = s._drive.folder("inbox", s.root)
+        s._drive.folder("record_store", s.root)
+        for name, mime in FILES:
+            drop(s, name, mime)
+        return s
+
+    together, apart = fresh(), fresh()
+    CALLS.clear()
+    runner.run(together, together.root, log=None)
+    with_files = sum(CALLS.values())
+    CALLS.clear()
+    again = runner.run(together, together.root, log=None)
+    nothing_new = sum(CALLS.values())
+    # 0.65.0 made about 500 calls for the same run: several for every table read and written
+    assert with_files <= 45 and nothing_new <= 30, (with_files, nothing_new)
+    assert CALLS["worksheet"] == 0  # no listing of the tabs per lookup
+    assert again["ingest"]["sheets_calls"] + again["compute"]["sheets_calls"] <= nothing_new
+
+    for _ in range(2):
+        engine.ingest_inbox(apart, apart.root, log=None)
+        engine.fetch_prices(apart, apart.root, log=None)
+        engine.compute_all(apart, apart.root, log=None)
+    assert reports_of(together) == reports_of(apart)
+    ledgers = [
+        {n: [[str(c) for c in r] for r in t.rows] for n, t in s.sheets.files["ledger"].tabs.items()}
+        for s in (together, apart)
+    ]
+    for name in ledgers[0]:
+        if name not in ("source_documents", "paystubs", "equity_vests", "equity_sales", "return_facts", "accounts"):
+            assert ledgers[0][name] == ledgers[1][name], name  # the rest carry no ids of the files they came from
+        assert len(ledgers[0][name]) == len(ledgers[1][name]), name
+
+
+def test_a_run_trains_the_model_once_and_stages_run_alone_each_train_it(session, monkeypatch):
+    from household import books, runner
+
+    trained = []
+    real = books.categorize_books
+    monkeypatch.setattr(books, "categorize_books", lambda b: trained.append(1) or real(b))
+    for name, mime in FILES:
+        drop(session, name, mime)
+    runner.run(session, session.root, log=None)
+    assert len(trained) == 1  # ingest's review; compute was given its categories
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1b")  # the books change
+    engine.ingest_inbox(session, session.root, log=None)
+    engine.compute_all(session, session.root, log=None)
+    assert len(trained) == 3  # each stage by itself reads and works out its own
+
+
+def test_the_review_is_rebuilt_only_when_something_it_rests_on_changed(session):
+    from test_sheets import CALLS
+
+    engine.ingest_legacy_year(session, session.root, "legacy-key", 2001, run_id="run-1")
+    ledger = session.sheets.files["ledger"]
+    ledger.worksheet("categories").append_rows([["food", "food", "high"], ["household", "household", "medium"]])
+    ledger.worksheet("transactions").append_rows(
+        [["b1", "2025-08-01", "card", -12.5, "QUILL & INK", "", "FALSE", "", "ofx", "ledger", "", "t"]]
+    )
+    first = engine.review(session, session.root, log=None)
+    assert first["questions"] == 1 and "kept" not in first
+    said = []
+    CALLS.clear()
+    second = engine.review(session, session.root, log=said.append)
+    assert second == {"answered": 0, "unusable": 0, "questions": 1, "open_lines": 1, "kept": True}
+    assert CALLS["clear"] == CALLS["update"] == 0  # the tab was left as it is
+    assert "nothing its questions rest on has changed" in said[-1] and "1 questions open (1 lines)" in said[-1]
+
+    ledger.worksheet("transactions").append_rows(
+        [["b2", "2025-09-01", "card", -14.0, "PAGE TURNER BOOKS", "", "FALSE", "", "ofx", "ledger", "", "t"]]
+    )
+    assert engine.review(session, session.root, log=None)["questions"] == 2  # a new line: rebuilt
+    tab = ledger.worksheet("review").rows
+    del tab[2]  # someone removed a question by hand: the tab is not what was written
+    rebuilt = engine.review(session, session.root, log=None)
+    assert rebuilt["questions"] == 2 and "kept" not in rebuilt and len(ledger.worksheet("review").rows) == 3
+    tab = ledger.worksheet("review").rows
+    tab[1][tab[0].index("answer")] = "household"
+    answered = engine.review(session, session.root, log=None, now="2026-11-01T00:00:00")
+    assert (answered["answered"], answered["questions"]) == (1, 1) and "kept" not in answered
+    assert engine.review(session, session.root, log=None)["kept"]
+
+
+def test_a_compute_that_fails_leaves_reports_as_the_last_run_left_it(session, monkeypatch):
+    from household import stage_compute
+
+    for name, mime in FILES:
+        drop(session, name, mime)
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
+    engine.compute_all(session, session.root, run_id="run-2", log=None)
+    reports = session.sheets.files["reports"]
+    before = {n: [list(r) for r in t.rows] for n, t in reports.tabs.items()}
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no nudges today")
+
+    monkeypatch.setattr(stage_compute, "_nudges", broken)  # near the end, after most tables are worked out
+    with pytest.raises(RuntimeError, match="no nudges today"):
+        engine.compute_all(session, session.root, run_id="run-3", log=None)
+    assert {n: [list(r) for r in t.rows] for n, t in reports.tabs.items()} == before
+
+
+def test_compute_says_where_its_time_went(session):
+    for name, mime in FILES:
+        drop(session, name, mime)
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
+    result = engine.compute_all(session, session.root, run_id="run-2", log=None)
+    assert {"read the ledger", "books and categories", "categories", "budget", "retirement"} <= set(result["seconds"])
+    assert "equity" not in result["seconds"]  # a part of lots, counted there
+    assert result["sheets_calls"] <= 15
+
+
+def test_the_retirement_simulation_is_kept_while_nothing_it_rests_on_changes(session, monkeypatch):
+    from household import stage_compute
+    from household.ledgerio import LedgerReading, LedgerView
+    from test_retirement import household, params
+
+    ledger, reports, _ = engine.bootstrap(session, session.root)
+    h = {"now": household()}
+    ran = []
+
+    def build(*args, **kwargs):
+        return h["now"], [logs.warn("retirement: a note from the inputs")], pd.DataFrame()
+
+    def columns(name):
+        return [c for c in schema.table(schema.REPORTS, "retirement_" + name).columns if c != "run_id"]
+
+    def run(given, p, today):
+        ran.append(given.taxable)
+        years = pd.DataFrame([{c: "" for c in columns("years")} | {"retire_year": 2040, "chosen": "yes"}])
+        table = pd.DataFrame([{c: "" for c in columns("strategies")}] * 2)
+        plan = pd.DataFrame([{c: "" for c in columns("plan")}])
+        none = pd.DataFrame(columns=columns("social_security")), pd.DataFrame(columns=columns("earnings"))
+        return years, table, plan, *none, ["retirement: 2040 with a strategy: 93% never run short"]
+
+    monkeypatch.setattr(stage_compute.retirement, "build", build)
+    monkeypatch.setattr(stage_compute.retirement, "run", run)
+    monkeypatch.setattr(
+        stage_compute.retirement, "budget_table", lambda given, year: pd.DataFrame(columns=columns("budget"))
+    )
+    books = {"parameters": params(), "accounts": pd.DataFrame(), "categories": pd.DataFrame()}
+
+    def compute(run_id):
+        said = []
+        c = stage_compute.Compute(
+            session, LedgerView(ledger, LedgerReading()), reports, run_id, "2026-11-09T12:00:00+00:00", said.append
+        )
+        with sheets.batched(reports):
+            found = engine._retirement(c, books, pd.DataFrame(), pd.DataFrame())
+        return found, [str(line) for line in said]
+
+    raw = session.sheets.files["reports"]
+    found, said = compute("run-1")
+    assert found == {"retirement_year": 2040} and len(ran) == 1 and "modeled in" in said[-1]
+    assert raw.tabs["retirement_years"].rows[1][-1] == "run-1"
+
+    found, said = compute("run-2")  # the same household: the simulation is not run again
+    assert found == {"retirement_year": 2040} and len(ran) == 1
+    assert said[:2] == ["retirement: a note from the inputs", "retirement: 2040 with a strategy: 93% never run short"]
+    assert "nothing the plan rests on has changed since run run-1" in said[-1] and "1 strategies" in said[-1]
+    assert raw.tabs["retirement_years"].rows[1][-1] == "run-1"  # its tables stand as that run wrote them
+    assert raw.tabs["retirement_assumptions"].rows[0][-1] == "run_id"  # the cheap tables are written every run
+
+    h["now"] = household(budget={"base": {"food": 1.0}})  # only the budget's breakdown: the plan is the same
+    assert compute("run-3")[0] == {"retirement_year": 2040} and len(ran) == 1
+    h["now"] = household(taxable=500_000.0)  # more in the taxable accounts: modeled again
+    found, said = compute("run-4")
+    assert len(ran) == 2 and "modeled in" in said[-1] and raw.tabs["retirement_years"].rows[1][-1] == "run-4"
+    raw.tabs["retirement_plan"].rows = raw.tabs["retirement_plan"].rows[:1]  # a tab cleared since
+    compute("run-5")
+    assert len(ran) == 3 and len(raw.tabs["retirement_plan"].rows) == 2

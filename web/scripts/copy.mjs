@@ -42,6 +42,14 @@ function inline(page, mark, code) {
 }
 
 copyFileSync("appsscript.json", "dist/appsscript.json");
+// The release these views are built from, for the Status page to set beside the engine's: the version in
+// pyproject.toml, which a release commit sets, so the two can't drift.
+const release = /^version\s*=\s*"([^"]+)"/m.exec(readFileSync("../pyproject.toml", "utf8"));
+if (!release) throw new Error("../pyproject.toml has no version");
+writeFileSync(
+  "dist/Version.js",
+  `// Written by scripts/copy.mjs from pyproject.toml.\nvar VIEWS_VERSION = ${JSON.stringify(release[1])};\n`,
+);
 let page = readFileSync("src/Index.html", "utf8");
 page = inline(
   page,

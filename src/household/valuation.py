@@ -34,6 +34,7 @@ Every row carries the account's wrapper (401k, ira, hsa, 529, ibonds, taxable), 
 """
 
 from datetime import date, timedelta
+from typing import Any
 
 import pandas as pd
 
@@ -455,20 +456,35 @@ def values(
     if unknown:
         notes.append(logs.warn("valuation: holdings for accounts the ledger doesn't list: " + ", ".join(unknown)))
     out = pd.DataFrame(rows, columns=COLUMNS)
-    latest = out[out["date"] == out["date"].max()] if len(out) else out
-    blank = sorted(
-        set(
-            latest.loc[
-                (latest["asset_class"] == "") & (latest["symbol"] != "") & ~latest["wrapper"].isin(("529", "ibonds")),
-                "symbol",
-            ]
-        )
-    )
+    blank = [f["symbol"] for f in unclassified(out)]
     if blank:
         notes.append(
-            logs.warn(f"valuation: {len(blank)} held funds have no asset class in securities: " + ", ".join(blank))
+            logs.warn(
+                f"valuation: {logs.counted(len(blank), 'held fund')} {'has' if len(blank) == 1 else 'have'} "
+                "no asset class in securities: " + ", ".join(blank)
+            )
         )
     return out, notes
+
+
+def unclassified(values: pd.DataFrame) -> list[dict[str, Any]]:
+    """The funds held on the latest date valued that securities gives no asset class, so the allocation and the
+    rebalance leave them out: [{"symbol", "accounts", "value"}] by symbol. 529s and I-Bonds are outside the
+    allocation, so a fund there needs none."""
+    if values is None or values.empty:
+        return []
+    latest = values[values["date"] == values["date"].max()]
+    blank = latest[
+        (latest["asset_class"] == "") & (latest["symbol"] != "") & ~latest["wrapper"].isin(("529", "ibonds"))
+    ]
+    return [
+        {
+            "symbol": symbol,
+            "accounts": sorted(set(g["account_id"])),
+            "value": round(float(pd.to_numeric(g["value"], errors="coerce").sum()), 2),
+        }
+        for symbol, g in blank.groupby("symbol")
+    ]
 
 
 READ = "_read"  # each row's reading date, while values() works; not a column of investment_values

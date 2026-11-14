@@ -124,7 +124,7 @@ def test_a_closed_account_holds_nothing_and_a_bank_account_isnt_an_investment():
 
 def test_a_held_fund_with_no_asset_class_is_noted():
     _, notes = values()
-    assert notes == ["valuation: 1 held funds have no asset class in securities: PAGEX"]
+    assert notes == ["valuation: 1 held fund has no asset class in securities: PAGEX"]
 
 
 def test_joint_splits_evenly_between_the_adults_and_anyone_elses_is_the_kids():

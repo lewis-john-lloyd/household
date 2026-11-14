@@ -210,6 +210,61 @@ def test_each_stage_keeps_its_latest_run_in_reports_for_the_status_page(session)
     assert any(line.startswith("transfers:") for line in compute_lines)
 
 
+def test_compute_lists_what_its_checks_found_for_the_status_page(session, monkeypatch):
+    import json
+
+    import household
+    from household import checks, valuation
+
+    for name, mime in (("pay_statement.pdf", "application/pdf"), ("accounts_seed.csv", "text/csv")):
+        drop(session, name, mime)
+    engine.ingest_inbox(session, session.root, run_id="run-1", log=None)
+    unpaired = pd.DataFrame(
+        [
+            [
+                "2001-03-02",
+                "sam",
+                "Acme Widgets",
+                90.0,
+                "t9",
+                "checking",
+                "ACME WIDGETS PAYROLL",
+                "missing stub: did you forget it?",
+            ],
+            ["2001-02-16", "alex", "Acme Widgets", 80.0, "", "", "", "no deposit"],
+        ],
+        columns=checks.PAYCHECK_COLUMNS,
+    )
+    monkeypatch.setattr(checks, "paychecks", lambda stubs, categorized: unpaired)
+    funds = [{"symbol": "PAGEX", "accounts": ["brokerage", "ira"], "value": 2000.0}]
+    monkeypatch.setattr(valuation, "unclassified", lambda values: funds)
+    result = engine.compute_all(session, session.root, run_id="run-2", log=None)
+    assert (result["stubs_missing"], result["pay_not_deposited"], result["funds_unclassified"]) == (1, 1, 1)
+    runs = sheets.read_table(session.sheets.files[sheets.REPORTS_TITLE], schema.table(schema.REPORTS, "run_log"))
+    summary = json.loads(runs.loc[runs["stage"] == "compute", "detail"].item())
+    # each thing as the Status page shows it: what it is, what about it, and where it opens
+    assert summary["things"] == {
+        "stubs_missing": [
+            {"title": "sam, Acme Widgets", "detail": "Paid 2001-03-02: 90.00 into checking", "link": "txn:t9"}
+        ],
+        "pay_not_deposited": [
+            {
+                "title": "alex, Acme Widgets",
+                "detail": "Paid 2001-02-16: net pay 80.00 never arrived in an account",
+                "link": "",
+            }
+        ],
+        "funds_unclassified": [{"title": "PAGEX", "detail": "2,000 in brokerage, ira", "link": ""}],
+    }
+    # and the release that made these reports, from each stage
+    assert summary["version"] == household.__version__
+    assert json.loads(runs.loc[runs["stage"] == "ingest", "detail"].item())["version"] == household.__version__
+    # a check that found nothing lists nothing
+    monkeypatch.setattr(checks, "paychecks", lambda stubs, categorized: unpaired.iloc[:0])
+    monkeypatch.setattr(valuation, "unclassified", lambda values: [])
+    assert engine.compute_all(session, session.root, run_id="run-3", log=None)["things"] == {}
+
+
 def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(session):
     for name, mime in (
         ("pay_statement.pdf", "application/pdf"),

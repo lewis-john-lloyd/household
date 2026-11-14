@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, versionNote, compareReleases, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -35,6 +35,8 @@ const shape = new Function(
   planPreview: (row: PlanBasis, rate: number, extra: number) => { lands: number; penaltyFree: boolean | null };
   planExtra: (row: PlanBasis, rate: number, goal: number) => number;
   planRate: (row: PlanBasis, extra: number, goal: number, floor?: number, ceiling?: number) => number | null;
+  versionNote: (engine: string, views: string) => string;
+  compareReleases: (a: string, b: string) => number | null;
   spendingOverTime: (
     book: BudgetBook,
     by: "group" | "category",
@@ -661,6 +663,124 @@ test("the run as a whole comes first with each line's level, and a failed stage 
   // Reports from before levels: every line INFO
   const old = shape.parseStatus(log.slice(0, 1).concat([log[2]]), [notes[0].slice(0, 5), notes[3].slice(0, 5)]);
   assert.deepEqual(old.stages[0].levels, ["INFO"]);
+});
+
+test("a check's card lists what compute found, and a warning no card speaks for is still on the page", () => {
+  const log: unknown[][] = [
+    ["run_id", "computed_at", "stage", "detail"],
+    [
+      "r2",
+      "2001-03-02T07:05:00Z",
+      "compute",
+      JSON.stringify({
+        version: "0.2.0",
+        stubs_missing: 1,
+        pay_not_deposited: 1,
+        funds_unclassified: 2,
+        things: {
+          stubs_missing: [{ title: "sam, Acme Widgets", detail: "Paid 2001-02-28: 90.00 into checking", link: "txn:t9" }],
+          funds_unclassified: [
+            { title: "PAGEX", detail: "20 in brokerage", link: "" },
+            { title: "WILLX", detail: "50 in brokerage, ira", link: "" },
+          ],
+        },
+      }),
+    ],
+  ];
+  const notes: unknown[][] = [
+    ["run_id", "stage", "at", "n", "message", "level"],
+    ["r2", "compute", "", 0, "paychecks: 1 pay deposit with no stub, 1 stub with no deposit", "INFO"],
+    ["r2", "compute", "", 1, "  did you forget sam's stubs? 1 missing, the latest paid 2001-02-28", "WARN"],
+    ["r2", "compute", "", 2, "  2001-02-14 alex (Acme Widgets): net pay 80.00 never arrived in an account", "INFO"],
+    ["r2", "compute", "", 3, "investments: 4 positions in 2 accounts worth 100 today; 3 dates valued", "INFO"],
+    ["r2", "compute", "", 4, "valuation: 2 held funds have no asset class in securities: PAGEX, WILLX", "WARN"],
+    ["r2", "compute", "", 5, "valuation: holdings for accounts the ledger doesn't list: old_ira", "WARN"],
+    ["r2", "compute", "", 6, "lots: 2 sales whose basis before wash sales differs from the plan's", "WARN"],
+  ];
+  const status = shape.parseStatus(log, notes);
+  const [stubs, lost, funds] = ["stubs_missing", "pay_not_deposited", "funds_unclassified"].map((key) =>
+    status.attention.find((a) => a.key === key)!,
+  );
+  // each deposit with no stub, opening its own line; the log line is not repeated under them
+  assert.deepEqual(stubs.items, [{ title: "sam, Acme Widgets", detail: "Paid 2001-02-28: 90.00 into checking", link: "txn:t9" }]);
+  assert.deepEqual(stubs.detail, []);
+  // the lines under a check's line are its lines too: marked in the log, and said on a card with nothing listed
+  assert.equal(stubs.flags.length, 3);
+  assert.deepEqual(lost.detail, stubs.flags);
+  // the funds, by name, and the way to where a class is set; a thing with no link has none
+  assert.deepEqual([funds.label, funds.count, funds.action], ["held funds have no asset class", 2, "view:investments/accounts"]);
+  assert.deepEqual(funds.items, [
+    { title: "PAGEX", detail: "20 in brokerage" },
+    { title: "WILLX", detail: "50 in brokerage, ira" },
+  ]);
+  assert.deepEqual(funds.flags, ["valuation: 2 held funds have no asset class in securities: PAGEX, WILLX"]);
+  // the engine's wording before 0.66 is the same card
+  const before = notes.map((n) =>
+    n[3] === 4 ? [...n.slice(0, 4), "valuation: 1 held funds have no asset class in securities: PAGEX", "WARN"] : n,
+  );
+  assert.equal(shape.parseStatus(log, before).attention.find((a) => a.key === "funds_unclassified")!.flags.length, 1);
+  // what no card speaks for: the two other warnings, as the engine said them
+  assert.deepEqual(status.warnings, [
+    { stage: "compute", level: "WARN", line: "valuation: holdings for accounts the ledger doesn't list: old_ira" },
+    { stage: "compute", level: "WARN", line: "lots: 2 sales whose basis before wash sales differs from the plan's" },
+  ]);
+  // the release that made the reports: compute's own, else the whole run's
+  assert.deepEqual(status.versions, { engine: "0.2.0", views: "", note: "" });
+  const whole = [
+    log[0],
+    ["r9", "2001-03-02T07:00:00Z", "run", JSON.stringify({ version: "0.1.0", stages: [] })],
+    ["r2", "", "compute", "{}"],
+  ];
+  assert.equal(shape.parseStatus(whole, []).versions.engine, "0.1.0");
+  assert.equal(shape.parseStatus(RUN_LOG, RUN_NOTES).versions.engine, "");
+  assert.deepEqual(shape.parseStatus(RUN_LOG, RUN_NOTES).warnings, []);
+});
+
+test("a failed stage's card speaks for the lines the run leaves about it, and for no other warning", () => {
+  const log: unknown[][] = [
+    ["run_id", "computed_at", "stage", "detail"],
+    [
+      "r9",
+      "2001-03-02T07:10:00Z",
+      "run",
+      JSON.stringify({ stages: [{ stage: "legacy equity", status: "failed", seconds: 1, result: "ValueError: no grants tab" }] }),
+    ],
+  ];
+  const notes: unknown[][] = [
+    ["run_id", "stage", "at", "n", "message", "level"],
+    ["r9", "run", "", 0, "run: no engine_settings.json in the household folder", "WARN"],
+    ["r9", "run", "", 1, "legacy equity: failed after 0:01: ValueError: no grants tab", "ERROR"],
+    ["r9", "run", "", 2, "legacy equity: the run goes on without it", "WARN"],
+    ["r9", "run", "", 3, "  compute             not run", "WARN"],
+  ];
+  const status = shape.parseStatus(log, notes);
+  assert.equal(status.attention.find((a) => a.key === "stages_failed")!.flags.length, 3);
+  assert.deepEqual(status.warnings, [
+    { stage: "run", level: "WARN", line: "run: no engine_settings.json in the household folder" },
+  ]);
+});
+
+test("two releases are compared number by number, and the note says which side to bring up", () => {
+  assert.deepEqual(
+    [
+      shape.compareReleases("0.9.0", "0.10.0"),
+      shape.compareReleases("0.10.1", "0.10.0"),
+      shape.compareReleases("1.0", "1.0.0"),
+      shape.compareReleases("", "0.1.0"),
+      shape.compareReleases("0.1.0-rc1", "0.1.0"),
+    ],
+    [-1, 1, 0, null, null],
+  );
+  assert.equal(shape.versionNote("0.2.0", "0.2.0"), "");
+  assert.equal(shape.versionNote("", "0.2.0"), ""); // a run from before the engine said its release
+  assert.match(
+    shape.versionNote("0.1.0", "0.2.0"),
+    /^These views are 0\.2\.0 and the reports were made by engine 0\.1\.0.*Run all/,
+  );
+  assert.match(
+    shape.versionNote("0.3.0", "0.2.0"),
+    /^The reports were made by engine 0\.3\.0 and these views are 0\.2\.0.*Deploy the views/,
+  );
 });
 
 test("budget view: a category's budget lines each keep their part of its target, when it has two or more", () => {

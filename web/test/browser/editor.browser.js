@@ -16,7 +16,8 @@ const FAKE = `
 window.__calls = []; window.__held = []; window.__hold = {}; window.__fail = {};
 window.__answers = {
   getStatus: { stages: [{ stage: "compute", runId: "r1", at: "2001-03-02T07:00:00Z", summary: {}, lines: ["run r1"] }],
-               attention: [], stale: false, projection: [], projectionYear: "", wiProjection: null, categories: null },
+               attention: [], warnings: [], versions: { engine: "", views: "", note: "" }, stale: false, projection: [],
+               projectionYear: "", wiProjection: null, categories: null },
   getWaiting: [],
   getWaitingEdits: [],
   getAppliedAnyway: [],
@@ -2106,6 +2107,62 @@ test("a check compute published: its words on the row, its evidence a click away
   await page.waitForSelector("#pending-msg.saved");
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
   assert.deepEqual(sent, [{ kind: "looks_right", check: "target_high|hobby|t9", looks_right: "yes" }]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("the status page says what answers a card, lists the warnings no card speaks for, and names both releases", async () => {
+  const note =
+    "These views are 0.2.0 and the reports were made by engine 0.1.0, so what is new here may be empty. " +
+    "Run all in the engine notebook: it installs the newest tagged release.";
+  const page = await open(
+    `window.__answers.getInvestments = ${JSON.stringify(INVESTMENTS)};` +
+      "window.__answers.getTransaction = null;" +
+      "window.__answers.getStatus.attention = [" +
+      "  { key: 'stubs_missing', label: 'pay deposit has no stub', count: 1, note: '', detail: [], flags: [], action: ''," +
+      "    items: [{ title: 'sam, Acme Widgets', detail: 'Paid 2001-02-28: 90.00 into checking', link: 'txn:t9' }] }," +
+      "  { key: 'funds_unclassified', label: 'held fund has no asset class', count: 1, note: '', detail: [], flags: []," +
+      "    action: 'view:investments/accounts', items: [{ title: 'WILLX', detail: '30 in a_brokerage' }] }];" +
+      "window.__answers.getStatus.warnings = [{ stage: 'compute', level: 'WARN', line: 'lots: a vest is missing' }];" +
+      `window.__answers.getStatus.versions = { engine: '0.1.0', views: '0.2.0', note: ${JSON.stringify(note)} };`,
+  );
+  await page.waitForSelector("#status-attention .attention.warnings");
+  assert.equal(await page.textContent("#status-title"), "2 things need you");
+  // which release made the reports, which these views are, and what to do about the difference
+  const chips = await page.locator("#status-runs .chip").allTextContents();
+  assert.deepEqual(chips.slice(-2), ["Engine 0.1.0", "Views 0.2.0"]);
+  assert.equal(await page.textContent("#status-versions"), note);
+  // each card says what answers it
+  const cards = page.locator("#status-attention .attention");
+  assert.match(await cards.nth(0).textContent(), /Download each stub from payroll into the inbox, then run\./);
+  assert.match(await cards.nth(1).textContent(), /leave a fund out until it has a class\. Set it under Accounts/);
+  // a warning with no card is on the page as the engine said it, with the way to it in the log
+  assert.match(await page.textContent(".attention.warnings"), /^1other warning in the last run.*lots: a vest is missingCompute/);
+  await page.click(".attention.warnings button:has-text('Open the engine log')");
+  assert.equal(await page.isVisible("#status-log"), true);
+  await page.click("#status-tabs button[data-tab='overview']");
+  // a deposit with no stub opens its own line, where its category is changed
+  await page.click(".attention button.thing-link");
+  await page.waitForFunction(() => window.__calls.some((c) => c.name === "getTransaction" && c.args[0] === "t9"));
+  // and the fund card opens Investments at its accounts, where a class is set
+  await page.click("#view-status");
+  await page.click(".attention button:has-text('Open Investments')");
+  await page.waitForSelector("#investments-body .subtabs");
+  assert.equal(await page.getAttribute("#investments-body .subtabs button:has-text('Accounts')", "aria-pressed"), "true");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("with no card, a warning in the last run is what the status page leads with", async () => {
+  const page = await open(
+    "window.__answers.getStatus.warnings = [{ stage: 'run', level: 'ERROR', line: 'summary: 1 of 2 stages done' }," +
+      "  { stage: 'compute', level: 'WARN', line: 'lots: a vest is missing' }];",
+  );
+  await page.waitForSelector("#status-attention .attention.warnings");
+  assert.equal(await page.textContent("#status-title"), "2 warnings to read");
+  assert.equal(await page.locator("#status-attention .attention.clear").count(), 0); // not all clear
+  assert.match(await page.textContent(".attention.warnings"), /summary: 1 of 2 stages doneRun, an error/);
+  assert.equal(await page.isHidden("#status-versions"), true); // no release known: nothing said
   assert.deepEqual(page.errors, []);
   await page.close();
 });

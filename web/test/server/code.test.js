@@ -8,7 +8,13 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const DIST = path.join(__dirname, "..", "..", "dist");
-const CODE = ["shape.js", "edits.js", "taxes.js", "Code.js"].map((f) => fs.readFileSync(path.join(DIST, f), "utf8")).join("\n");
+const CODE = ["Version.js", "shape.js", "edits.js", "taxes.js", "Code.js"]
+  .map((f) => fs.readFileSync(path.join(DIST, f), "utf8"))
+  .join("\n");
+// the release the build stamped into dist/Version.js: pyproject.toml's
+const RELEASE = /^version\s*=\s*"([^"]+)"/m.exec(
+  fs.readFileSync(path.join(__dirname, "..", "..", "..", "pyproject.toml"), "utf8"),
+)[1];
 const VALUE_LIMIT = 9 * 1024,
   STORE_LIMIT = 500 * 1024;
 
@@ -318,6 +324,22 @@ test("a page reads its tabs in one request, and a tab not made yet reads as empt
   const status = s.context.getStatus();
   assert.deepEqual(s.reads, ["titles", "'run_log'"]); // run_notes, coverage and editor_review aren't in Reports yet
   assert.ok(status);
+});
+
+test("the status page says which release these views are, and what to do when the engine's is another", () => {
+  const made = (version) => [
+    ["run_id", "computed_at", "stage", "detail"],
+    ["r1", "2026-01-31T00:00:00Z", "compute", JSON.stringify({ version })],
+  ];
+  const versions = (s) => JSON.parse(JSON.stringify(s.context.getStatus().versions)); // out of the server's realm
+  assert.match(RELEASE, /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(versions(server({ runLog: made(RELEASE) })), { engine: RELEASE, views: RELEASE, note: "" });
+  const older = versions(server({ runLog: made("0.0.1") }));
+  assert.equal(older.note.indexOf(`These views are ${RELEASE} and the reports were made by engine 0.0.1`), 0);
+  const newer = versions(server({ runLog: made("99.0.0") }));
+  assert.equal(newer.note.indexOf(`The reports were made by engine 99.0.0 and these views are ${RELEASE}`), 0);
+  // a run from before the engine said its release: nothing to compare
+  assert.deepEqual(versions(server()), { engine: "", views: RELEASE, note: "" });
 });
 
 test("a request Sheets refuses for quota waits and is tried again; past the waits, the page says so", () => {

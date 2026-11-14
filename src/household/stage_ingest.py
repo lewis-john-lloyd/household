@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from . import backup, categorize, compute, fingerprints, inbox, prices, schema, sheets, valuation
+from . import __version__, backup, categorize, compute, fingerprints, inbox, prices, schema, sheets, valuation
 from .books import BOOK_TABLES, key, read_and_categorize
 from .kinds import Log, Session, StageResult
 from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
@@ -161,6 +161,7 @@ def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, lo
                 said += [f"note: {f['file']} - {note}" for note in f.get("notes") or []]
         result = {
             "run_id": run_id,
+            "version": __version__,  # the release that read the inbox, for the Status page
             "files": files,
             "counts": counts,
             "review": answered,

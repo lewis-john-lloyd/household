@@ -65,6 +65,9 @@ class Compute:
     computed_at: str
     log: Log
     seconds: dict[str, float] = field(default_factory=dict)  # how long each part took (timed)
+    # what a check found, thing by thing, for the Status page's card: {the check's count in the result: [{"title",
+    # "detail", "link"}]}; link is where the thing opens in the views ("txn:<id>" for a line), or ""
+    things: dict[str, list[dict[str, str]]] = field(default_factory=dict)
 
     @property
     def today(self) -> str:
@@ -118,6 +121,10 @@ def _investments_and_homes(c: Compute, books, sched):
     )
     for line in notes:
         say(log, line)
+    blank = valuation.unclassified(vals)
+    c.things["funds_unclassified"] = [
+        {"title": f["symbol"], "detail": f"{f['value']:,.0f} in {', '.join(f['accounts'])}", "link": ""} for f in blank
+    ]
     if len(now):
         by = now.assign(v=pd.to_numeric(now["value"], errors="coerce")).groupby("bucket")["v"].sum()
         say(log, "  by tax bucket: " + ", ".join(f"{valuation.BUCKET_NAMES.get(b, b)} {v:,.0f}" for b, v in by.items()))
@@ -198,6 +205,7 @@ def _investments_and_homes(c: Compute, books, sched):
     books["investment_activity"] = activity  # for the backdoor Roth IRA on the elections card
     return {
         "investments_value": round(float(pd.to_numeric(now["value"], errors="coerce").sum()), 2) if len(now) else 0.0,
+        "funds_unclassified": len(blank),
         "rebalance_trades": len(trades),
         "net_worth": totals.get(max(totals), 0.0) if totals else 0.0,
     }
@@ -605,6 +613,22 @@ def _checks(c: Compute, books, effective, categorized):
     )
     for who, g in forgot.groupby("person"):
         say(log, f"  did you forget {who}'s stubs? {len(g)} missing, the latest paid {g['date'].max()}", "WARN")
+    c.things["stubs_missing"] = [
+        {
+            "title": ", ".join(str(row[k]) for k in ("person", "employer") if str(row[k]).strip()) or "Pay deposit",
+            "detail": f"Paid {row['date']}: {float(row['amount']):,.2f} into {row['account_id']}",
+            "link": f"txn:{row['txn_id']}" if str(row["txn_id"]).strip() else "",
+        }
+        for row in forgot.sort_values("date").to_dict("records")
+    ]
+    c.things["pay_not_deposited"] = [
+        {
+            "title": ", ".join(str(row[k]) for k in ("person", "employer") if str(row[k]).strip()) or "Pay stub",
+            "detail": f"Paid {row['date']}: net pay {float(row['amount']):,.2f} never arrived in an account",
+            "link": "",
+        }
+        for row in lost.sort_values("date").to_dict("records")
+    ]
     for row in lost.to_dict("records"):
         say(
             log,
@@ -1113,6 +1137,7 @@ def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | N
     paired, lonely, waiting = moved["paired"], moved["lonely"], moved["waiting"]
     result = {
         "run_id": run_id,
+        "version": __version__,
         "months": actuals["month"].nunique(),
         "rows": len(actuals),
         "subscription_price_changes": len(changed),
@@ -1162,5 +1187,6 @@ def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | N
     if slow:
         say(log, "compute: where the time went: " + ", ".join(f"{k} {v:.0f}s" for v, k in slow))
     result["seconds"] = dict(c.seconds)
+    result["things"] = {key: found for key, found in c.things.items() if found}
     record_stage(reports, "compute", run_id, computed_at, result | {"versions": versions()}, said)
     return result

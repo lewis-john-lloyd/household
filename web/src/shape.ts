@@ -467,10 +467,21 @@ interface Breakdown {
   kind: string; // "decided", "waiting" or "open"
 }
 
+/** A warning or an error in the last runs that no card speaks for. */
+interface Warned {
+  stage: string;
+  level: string; // WARN or ERROR
+  line: string;
+}
+
 interface Status {
   stages: StageRun[];
   attention: Attention[];
+  warnings: Warned[]; // so that nothing the engine raised stays only in its log
   stale: boolean; // compute has not run since the last ingest
+  // the release that made these reports and the one these views were built from ("" when it isn't known), and
+  // what to do when they differ ("" when they agree)
+  versions: { engine: string; views: string; note: string };
   projection: [string, number][]; // scenario, owe (positive) or refund (negative)
   projectionYear: string;
   wiProjection: number | null; // Wisconsin, owed (positive) or refund (negative)
@@ -480,8 +491,9 @@ interface Status {
 const RUN_LOG_COLUMNS = ["run_id", "computed_at", "stage", "detail"];
 const RUN_NOTES_COLUMNS = ["run_id", "stage", "at", "n", "message"];
 // a compute summary count that needs the owner when it is not zero: key, what it counts (for one, then for more),
-// the line that says more, the Edit tab that answers it
-const CHECKS: [string, string, string, string, string][] = [
+// the lines that say more (what they start with, or a pattern), and what answers it: an Edit tab, or
+// "view:<view>" or "view:<view>/<part of it>"
+const CHECKS: [string, string, string, string | RegExp, string][] = [
   ["review_open_lines", "line needs a category", "lines need a category", "categories since", "review"],
   ["downloads_due", "download due", "downloads due", "coverage:", ""],
   ["balances_off", "balance disagrees with the ledger", "balances disagree with the ledger", "balance_check:", ""],
@@ -530,6 +542,13 @@ const CHECKS: [string, string, string, string, string][] = [
     "Pennsylvania withholding stubs are unexplained",
     "pa_withholding_backtest:",
     "",
+  ],
+  [
+    "funds_unclassified",
+    "held fund has no asset class",
+    "held funds have no asset class",
+    /^valuation: [\d,]+ held funds? ha(s|ve) no asset class/,
+    "view:investments/accounts",
   ],
   ["mismatches", "legacy month disagrees", "legacy months disagree", "legacy check", ""],
   ["legacy_uncategorized", "legacy line has no category", "legacy lines have no category", "legacy check", ""],
@@ -630,6 +649,62 @@ function reviewNote(review: unknown[][]): string {
   );
 }
 
+/** -1, 0 or 1 as release a is older than, the same as or newer than b; null when either isn't numbers and dots. */
+function compareReleases(a: string, b: string): number | null {
+  const parts = (v: string): number[] | null => (/^\d+(\.\d+)*$/.test(v.trim()) ? v.trim().split(".").map(Number) : null);
+  const x = parts(a);
+  const y = parts(b);
+  if (!x || !y) return null;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+/** What to do when the engine that made the reports and these views are different releases; "" when they agree
+ * or either isn't known. */
+function versionNote(engine: string, views: string): string {
+  const order = compareReleases(engine, views);
+  if (!order) return "";
+  return order < 0
+    ? `These views are ${views} and the reports were made by engine ${engine}, so what is new here may be empty. ` +
+        "Run all in the engine notebook: it installs the newest tagged release."
+    : `The reports were made by engine ${engine} and these views are ${views}, so what is new in the reports may not show. ` +
+        "Deploy the views from that release (tools/release.mjs).";
+}
+
+/** The things a check found, as compute listed them in its summary (things: {check: [{title, detail, link}]}). */
+function thingsOf(summary: Record<string, unknown>, key: string): AttentionItem[] {
+  const all = summary.things;
+  const found = all && typeof all === "object" ? (all as Record<string, unknown>)[key] : null;
+  if (!Array.isArray(found)) return [];
+  return found
+    .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+    .map((t) => {
+      const item: AttentionItem = { title: String(t.title ?? ""), detail: String(t.detail ?? "") };
+      if (t.link) item.link = String(t.link);
+      return item;
+    })
+    .filter((i) => i.title);
+}
+
+/** The lines a check's card speaks for: each line that says it, and the indented lines under it (they belong
+ * to the line above, as the engine log shows them). */
+function linesAbout(lines: string[], says: string | RegExp): string[] {
+  const out: string[] = [];
+  let under = false;
+  for (const l of lines) {
+    if (/^\s/.test(l)) {
+      if (under) out.push(l);
+      continue;
+    }
+    under = typeof says === "string" ? l.startsWith(says) : says.test(l);
+    if (under) out.push(l);
+  }
+  return out;
+}
+
 /**
  * The status page from run_log and run_notes, and, when given, Reports coverage (for the downloads due) and
  * editor_review (for how the review questions split).
@@ -690,7 +765,14 @@ function parseStatus(
       note: "The Engine log says where.",
       detail: [],
       action: "",
-      flags: whole ? whole.lines.filter((l, i) => whole.levels[i] === "ERROR") : [],
+      // its errors, and the two lines a failed stage leaves at WARN: the run going on without it, a stage not run
+      flags: whole
+        ? whole.lines.filter(
+            (l, i) =>
+              whole.levels[i] === "ERROR" ||
+              (whole.levels[i] === "WARN" && /: the run goes on without it$|\snot run\s*$/.test(l)),
+          )
+        : [],
       items: failed.map((s) => ({ title: String(s.stage), detail: String(s.result || "") })),
     });
   }
@@ -714,7 +796,12 @@ function parseStatus(
     for (const [key, one, many, prefix, action] of CHECKS) {
       const count = Number(compute.summary[key] ?? 0);
       if (!count) continue;
-      const items = key === "downloads_due" ? downloadsDue(coverage) : key === CHANGED_KEY ? priceChangeItems(compute.lines) : [];
+      const items =
+        key === "downloads_due"
+          ? downloadsDue(coverage)
+          : key === CHANGED_KEY
+            ? priceChangeItems(compute.lines)
+            : thingsOf(compute.summary, key);
       let note = "";
       if (key === "review_open_lines") {
         const waiting = sumOf((compute.summary.categories as { waiting?: unknown } | undefined)?.waiting);
@@ -723,7 +810,7 @@ function parseStatus(
           .join(" ");
       }
       const structured = items.length || key === "review_open_lines";
-      const lines = compute.lines.filter((l) => l.startsWith(prefix));
+      const lines = linesAbout(compute.lines, prefix);
       attention.push({
         key,
         label: count === 1 ? one : many,
@@ -738,6 +825,16 @@ function parseStatus(
   }
   const budgetCard = checksAttention(budgetChecks(checks));
   if (budgetCard) attention.push(budgetCard);
+  // every warning and error the last runs raised that no card above speaks for
+  const spoken = new Set(attention.flatMap((a) => a.flags));
+  const warnings: Warned[] = [];
+  for (const run of runs)
+    run.lines.forEach((line, i) => {
+      const level = run.levels[i];
+      if ((level === "WARN" || level === "ERROR") && !spoken.has(line))
+        warnings.push({ stage: run.stage, level, line: line.trim() });
+    });
+  const engine = String((compute && compute.summary.version) || (whole && whole.summary.version) || "");
   const projection =
     compute && compute.summary.projection && typeof compute.summary.projection === "object"
       ? Object.entries(compute.summary.projection as Record<string, number>).map(([k, v]) => [k, Number(v)] as [string, number])
@@ -745,7 +842,9 @@ function parseStatus(
   return {
     stages: runs,
     attention,
+    warnings,
     stale: !!(ingest && compute && ingest.at > compute.at),
+    versions: { engine, views: "", note: "" }, // the server says which release it is (getStatus)
     projection,
     projectionYear: compute && compute.summary.projection_year ? String(compute.summary.projection_year) : "",
     wiProjection: compute && typeof compute.summary.wi_projection === "number" ? Number(compute.summary.wi_projection) : null,

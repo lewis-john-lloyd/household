@@ -10,6 +10,10 @@
 // repo (web/assets/icon.png, drawn from icon.svg beside it).
 const ICON = "https://github.com/lewis-john-lloyd/household/raw/main/web/assets/icon.png";
 
+// The release these views were built from, in dist/Version.js: the build writes it from pyproject.toml
+// (scripts/copy.mjs), so it is not in src.
+declare const VIEWS_VERSION: string | undefined;
+
 // Who may use the views: the accounts the VIEWS_USERS script property lists (emails, separated by commas or spaces).
 // The web app opens to any signed-in Google account (appsscript.json), since a personal account can't name people
 // there. It runs as the person viewing, so their own sharing still limits what they can read; this list refuses
@@ -251,7 +255,10 @@ function readTabIfAny_(name: string): unknown[][] {
 function getStatus(): Status {
   allow_();
   const tabs = readTabsIfAny_(["run_log", "run_notes", "coverage", "editor_review", "budget_checks"]);
-  return parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review, tabs.budget_checks);
+  const status = parseStatus(tabs.run_log, tabs.run_notes, tabs.coverage, tabs.editor_review, tabs.budget_checks);
+  const views = typeof VIEWS_VERSION === "string" ? VIEWS_VERSION : ""; // stamped by the build (scripts/copy.mjs)
+  status.versions = { engine: status.versions.engine, views, note: versionNote(status.versions.engine, views) };
+  return status;
 }
 
 // --- editing ------------------------------------------------------------------------------------------

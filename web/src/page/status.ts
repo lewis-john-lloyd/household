@@ -242,6 +242,8 @@ var ICONS: Record<string, string> = {
 var CARD_ICON: Record<string, string> = {
   review_open_lines: "edit",
   downloads_due: "download",
+  stubs_missing: "download",
+  funds_unclassified: "trending",
   inbox_unread: "inbox",
   possible_duplicates: "copy",
   transfers_unmatched: "edit",
@@ -256,8 +258,22 @@ var ACTION_LABEL: Record<string, string> = {
   "view:jobs": "Open Jobs",
   "view:recurring": "Open Recurring",
   "view:budget": "Open Budget",
+  "view:investments/accounts": "Open Investments",
 };
-var CARD_NOTE: Record<string, string> = { downloads_due: "Download each one into the inbox, then run ingest." };
+// what answers a card, said on it
+var CARD_NOTE: Record<string, string> = {
+  downloads_due: "Download each one into the inbox, then run ingest.",
+  stubs_missing:
+    "Download each stub from payroll into the inbox, then run. A deposit that isn't pay: open it and change its category.",
+  funds_unclassified:
+    "The allocation and the rebalance leave a fund out until it has a class. Set it under Accounts, in the list of funds.",
+};
+// the part of a view a card's button opens ("view:investments/accounts")
+var VIEW_PART: Record<string, (part: string) => void> = {
+  investments: function (part) {
+    investView = part;
+  },
+};
 
 function icon(name: string) {
   var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -288,14 +304,19 @@ function attentionCard(a: Attention, waiting?: boolean) {
     var list = el("ul", null, "things");
     a.items.forEach(function (i) {
       var li = el("li");
-      if (i.link && /^(budget|charge):/.test(i.link)) {
+      if (i.link && /^(budget|charge|txn):/.test(i.link)) {
         // a line item's check opens its drawer on the Budget page, where what it rests on is one click away; a
-        // recurring charge opens its own drawer on the Recurring tab, its lines there to mark
+        // recurring charge opens its own drawer on the Recurring tab, its lines there to mark; a line of the
+        // ledger opens its own page, where its category is changed
         var link = i.link;
         var go = button(
           "",
           function () {
             var at = link.indexOf(":");
+            if (link.slice(0, at) === "txn") {
+              openTransaction(link.slice(at + 1));
+              return;
+            }
             if (link.slice(0, at) === "charge") {
               budget.tab = "recurring";
               budget.open = { charge: link.slice(at + 1) };
@@ -328,7 +349,9 @@ function attentionCard(a: Attention, waiting?: boolean) {
         ACTION_LABEL[a.action] || "Open",
         function () {
           if (a.action.indexOf("view:") === 0) {
-            setView(a.action.slice(5));
+            var where = a.action.slice(5).split("/");
+            if (where[1] && VIEW_PART[where[0]]) VIEW_PART[where[0]](where[1]);
+            setView(where[0]);
             return;
           }
           openEdit(a.action);
@@ -338,6 +361,54 @@ function attentionCard(a: Attention, waiting?: boolean) {
     );
     body.appendChild(actions);
   }
+  card.appendChild(body);
+  return card;
+}
+
+// What the last runs warned of that no card above speaks for, so that nothing stays only in the log: each line
+// as the engine said it, and the way to where it sits in the log.
+function warningsCard(warnings: Warned[]) {
+  var card = el("article", null, "card attention waiting warnings");
+  var badge = el("div", null, "badge-icon");
+  badge.appendChild(icon("warning"));
+  card.appendChild(badge);
+  var body = el("div");
+  var headline = el("div", null, "headline");
+  headline.appendChild(el("span", warnings.length.toLocaleString(), "num"));
+  headline.appendChild(
+    document.createTextNode(warnings.length === 1 ? "other warning in the last run" : "other warnings in the last run"),
+  );
+  body.appendChild(headline);
+  body.appendChild(
+    el(
+      "p",
+      "The engine raised " +
+        (warnings.length === 1 ? "it" : "them") +
+        " and nothing here answers " +
+        (warnings.length === 1 ? "it" : "them") +
+        " yet.",
+      "support",
+    ),
+  );
+  var list = el("ul", null, "things");
+  warnings.forEach(function (w) {
+    var li = el("li");
+    li.appendChild(el("strong", w.line));
+    li.appendChild(el("span", (STAGE_NAME[w.stage] || w.stage) + (w.level === "ERROR" ? ", an error" : "")));
+    list.appendChild(li);
+  });
+  body.appendChild(list);
+  var actions = el("div", null, "actions");
+  actions.appendChild(
+    button(
+      "Open the engine log",
+      function () {
+        setStatusTab("log");
+      },
+      "tonal",
+    ),
+  );
+  body.appendChild(actions);
   card.appendChild(body);
   return card;
 }
@@ -365,11 +436,26 @@ function drawStatus(status: Status) {
     cards.appendChild(el("p", "Run ingest and compute once with this release, and this page fills in.", "support"));
     return;
   }
-  var n = status.attention.length;
-  title.textContent = n ? (n === 1 ? "One thing needs you" : n + " things need you") : "Nothing needs you";
+  var n = status.attention.length,
+    warned = status.warnings.length;
+  title.textContent = n
+    ? n === 1
+      ? "One thing needs you"
+      : n + " things need you"
+    : warned
+      ? warned === 1
+        ? "One warning to read"
+        : warned + " warnings to read"
+      : "Nothing needs you";
   status.stages.forEach(function (s) {
     runs.appendChild(chip("sync", STAGE_NAME[s.stage] + " " + when(s.at)));
   });
+  // which release made the reports and which these views are, and what to do when they differ
+  var versions = byId("status-versions");
+  if (status.versions.engine) runs.appendChild(el("span", "Engine " + status.versions.engine, "chip"));
+  if (status.versions.views) runs.appendChild(el("span", "Views " + status.versions.views, "chip"));
+  versions.hidden = !status.versions.note;
+  versions.textContent = status.versions.note;
   stale.hidden = !status.stale;
   stale.textContent = "Compute hasn't run since the last ingest, so these numbers are from before it. Run compute.";
   var flagged: Record<string, boolean> = {};
@@ -379,7 +465,7 @@ function drawStatus(status: Status) {
     });
     cards.appendChild(attentionCard(a));
   });
-  if (!n) {
+  if (!n && !warned) {
     var clear = el("article", null, "card attention clear");
     var badge = el("div", null, "badge-icon");
     badge.appendChild(icon("check"));
@@ -387,6 +473,7 @@ function drawStatus(status: Status) {
     clear.appendChild(el("div", "Every line has a category, every download is current, and every check agrees.", "headline"));
     cards.appendChild(clear);
   }
+  if (warned) cards.appendChild(warningsCard(status.warnings));
   drawBreakdown(status.categories);
   drawProjection(status.projection, status.projectionYear, status.wiProjection);
   status.stages.forEach(function (s) {

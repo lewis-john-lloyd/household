@@ -456,6 +456,25 @@
       .equity-steps .equity-table td:first-child, .equity-steps .equity-table th:first-child { padding-left: 8px; }
       .equity-grants .setting-control { flex-wrap: wrap; }
       .equity-tax .plan-knob { margin: 4px 0; }
+      /* Where the money went, Over time: spending each month, stacked (spendchart.ts) */
+      .spend-bar { margin-bottom: 12px; }
+      .spend-bar select { font: inherit; min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
+      .spend-oneoff { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+      .spend-plot { position: relative; }
+      .spend-plot .tip .row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+      .spend-plot .tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+      .spend-plot .tip .key { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+      .spend-plot .tip .figures { display: inline-flex; gap: 8px; }
+      .spend-plot .tip .pct { min-width: 3em; text-align: right; color: var(--on-surface-variant); }
+      .spend-bars .hit { cursor: pointer; }
+      .spend-bars .spend-month.now rect.part, .spend-bars .spend-month.now rect.other { opacity: 0.6; }
+      .spend-bars .spend-month:hover rect.part, .spend-bars .spend-month:hover rect.other { filter: brightness(1.08); }
+      .spend-table { margin-top: 12px; }
+      .spend-table summary { cursor: pointer; color: var(--primary); min-height: 32px; display: flex; align-items: center; }
+      .spend-table .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; }
+      .spend-pick-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+      .over-picks .line-pick .pick-name { flex: 1; }
+      .over-picks .line-pick .pick-total { color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
       /* work on a home, added and corrected in place (home.ts, drawImprovements) */
       .improvement-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); gap: 8px 12px; margin: 8px 0 12px; }
       .improvement-field { display: grid; gap: 2px; }
@@ -979,6 +998,7 @@
       <div id="flows-tabs" class="subtabs" role="group" aria-label="Cashflow">
         <button data-tab="sankey" aria-pressed="true">Sankey</button>
         <button data-tab="table" aria-pressed="false">Table</button>
+        <button data-tab="overtime" aria-pressed="false">Over time</button>
         <button data-tab="edit:review" aria-pressed="false">Review</button>
         <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
         <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
@@ -996,6 +1016,7 @@
         <div id="flows-note" class="note"></div>
       </div>
       <div id="flow-summary" class="flow-summary" hidden></div>
+      <div id="flows-overtime" hidden></div>
     </section>
 
     <section id="budget" hidden>

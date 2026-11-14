@@ -114,11 +114,20 @@ def monthly_actuals(transactions):
 
 
 def daily_actuals(transactions, leave_out=()):
-    """Spend per category per day (positive for outflows), without the categories in leave_out."""
+    """Spend per category per day (positive for outflows), without the categories in leave_out, and the part
+    of it from lines marked one-off (one_off), which the spending chart can leave out."""
     df = transactions[~transactions["category"].astype(str).str.strip().isin(set(leave_out))].copy()
     df["amount"] = pd.to_numeric(df["amount"])
     df["date"] = df["date"].astype(str).str[:10]
-    out = df.groupby(["date", "category"], as_index=False).agg(spend=("amount", lambda s: round(-s.sum(), 2)))
+    marked = (
+        df["one_off"].astype(str).str.strip().str.upper() == "TRUE"
+        if "one_off" in df
+        else pd.Series(False, index=df.index)
+    )
+    df["once"] = df["amount"].where(marked, 0.0)
+    out = df.groupby(["date", "category"], as_index=False).agg(
+        spend=("amount", lambda s: round(-s.sum(), 2)), one_off=("once", lambda s: round(-s.sum(), 2))
+    )
     return out[out["spend"] != 0].sort_values(["date", "category"]).reset_index(drop=True)
 
 

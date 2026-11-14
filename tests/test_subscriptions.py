@@ -240,7 +240,21 @@ def test_daily_spending_leaves_out_what_is_not_spending():
         ]
     )
     out = compute.daily_actuals(lines, {"transfer"})
-    assert out.values.tolist() == [["2026-10-05", "media", 12.5], ["2026-10-07", "hobby", -4.0]]
+    assert out.values.tolist() == [["2026-10-05", "media", 12.5, 0.0], ["2026-10-07", "hobby", -4.0, 0.0]]
+
+
+def test_daily_spending_carries_the_part_marked_one_off():
+    from household import compute
+
+    lines = pd.DataFrame(
+        [
+            {"date": "2026-10-05", "category": "household", "amount": -60, "one_off": "TRUE"},
+            {"date": "2026-10-05", "category": "household", "amount": -20, "one_off": "FALSE"},
+            {"date": "2026-10-06", "category": "food", "amount": -30, "one_off": ""},
+        ]
+    )
+    out = compute.daily_actuals(lines)
+    assert out.values.tolist() == [["2026-10-05", "household", 80.0, 60.0], ["2026-10-06", "food", 30.0, 0.0]]
 
 
 def named(key, name, at="2026-10-02T00:00:00Z"):

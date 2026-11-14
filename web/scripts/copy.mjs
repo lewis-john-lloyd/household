@@ -8,6 +8,7 @@ export const PAGE = [
   "shell",
   "cashflow",
   "budget",
+  "spendchart",
   "budgetwords",
   "budgethead",
   "budgettable",

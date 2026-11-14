@@ -82,7 +82,7 @@ function drawFlowSummary(s: FlowSummary) {
 var flowsTab = "sankey",
   lastFlows: Answer<"getFlows"> | null = null;
 
-// Sankey or Table: the chart is drawn only while it shows, since Google sizes it to its box
+// Sankey, Table or Over time: a chart is drawn only while it shows, since it is sized to its box
 function setFlowsTab(tab: string) {
   flowsTab = tab;
   document.querySelectorAll<HTMLElement>("#flows-tabs button").forEach(function (b) {
@@ -90,7 +90,11 @@ function setFlowsTab(tab: string) {
   });
   byId("flows-sankey").hidden = tab !== "sankey";
   byId("flow-summary").hidden = tab !== "table";
-  if (tab === "sankey" && lastFlows) drawFlows(lastFlows);
+  byId("flows-overtime").hidden = tab !== "overtime";
+  byId("controls").hidden = tab === "overtime"; // one period's controls; Over time sets its own range
+  if (tab === "overtime") loadSpendOverTime();
+  else if (tab === "sankey" && lastFlows) drawFlows(lastFlows);
+  else if (!lastFlows && view === "flows") load();
 }
 
 function drawFlows(result: Answer<"getFlows">) {

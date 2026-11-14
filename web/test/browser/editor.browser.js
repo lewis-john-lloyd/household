@@ -2373,6 +2373,20 @@ test("performance: ten years of a household's spending draws and redraws quickly
     return (performance.now() - t0) / 10;
   });
   assert.ok(equity < 100, `the Equity page took ${Math.round(equity)} ms`);
+  // spending over time: ten years of months, all eight groups, and a group opened into its categories
+  await page.click("#view-flows");
+  await page.click("#flows-tabs button:has-text('Over time')");
+  await page.click("#flows-overtime button:has-text('All time')");
+  await page.waitForSelector("#flows-overtime .spend-bars");
+  const overTime = await page.evaluate(() => {
+    const t0 = performance.now();
+    for (let i = 0; i < 10; i++) drawSpendOverTime();
+    spend.by = "category";
+    for (let i = 0; i < 10; i++) drawSpendOverTime();
+    return { ms: (performance.now() - t0) / 20, bars: document.querySelectorAll("#flows-overtime .spend-month").length };
+  });
+  assert.ok(overTime.bars > 115, "ten years of months drew");
+  assert.ok(overTime.ms < 150, `spending over time took ${Math.round(overTime.ms)} ms`);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -3042,6 +3056,79 @@ test("home: work is added from the line that paid it, corrected and removed in p
       receipt: "t8",
     },
   ]);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("over time: each month's spending stacked by group, as dollars or shares, one-offs out, groups opened and picked", async () => {
+  // 14 months to today, made up: food and petrol every month, a hobby once with a one-off
+  const months = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.UTC(2026, 10 - i, 3));
+    months.push(d.toISOString().slice(0, 10));
+  }
+  const days = [];
+  months.forEach((d) => {
+    days.push([d, "food", 60], [d, "petrol", 20], [d, "media", 10]);
+  });
+  days.push([months[12], "hobby", 90]);
+  const book = {
+    groups: { food: "living", media: "living", petrol: "car", hobby: "fun" },
+    recurring: [],
+    targets: [],
+    days,
+    oneOffs: [[months[12], "hobby", 90]],
+  };
+  const page = await open(
+    `window.today = () => "2026-11-13"; window.__answers.getLines = []; window.__answers.getBudgetBook = ${JSON.stringify({ tracked: [], charges: [], book })};`,
+  );
+  await page.click("#view-flows");
+  await page.click("#flows-tabs button:has-text('Over time')");
+  await page.waitForSelector("#flows-overtime .spend-bars");
+  assert.equal(await page.isHidden("#controls"), true); // one period's controls give way to the range
+  const legend = () => page.$$eval("#flows-overtime .legend span", (s) => s.map((x) => x.textContent));
+  assert.deepEqual(await legend(), ["Living", "Car", "Fun"]); // most spent first
+  // the last two years: every month from the first spending to this one, a bar each
+  assert.equal(await page.locator("#flows-overtime .spend-month").count(), 14);
+  // a bar's lowest part: near the foot of its column
+  const foot = async (n) => {
+    const box = await page.locator(`#flows-overtime .spend-month:nth-of-type(${n}) .hit`).boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 3);
+  };
+  const tip = async (n) => {
+    await page.hover(`#flows-overtime .spend-month:nth-of-type(${n}) .hit`);
+    return page.textContent("#flows-overtime .tip");
+  };
+  assert.match(await tip(13), /October 2026: \$180Fun\$9050%Car\$2011%Living\$7039%/); // leak-guard: allow (made up)
+  assert.match(await tip(14), /November 2026, so far: \$90/); // leak-guard: allow (made up)
+  // one-offs out: October is its usual self
+  await page.check("#flows-overtime .spend-oneoff input");
+  assert.match(await tip(13), /October 2026: \$90Car/); // leak-guard: allow (made up)
+  assert.deepEqual(await legend(), ["Living", "Car"]); // the hobby's only spending was a one-off
+  // shares: every bar reaches 100%, and the axis says so
+  await page.click("#flows-overtime button:has-text('Percent')");
+  assert.match(await page.textContent("#flows-overtime svg"), /100%/);
+  // a group's bar opens its categories; picking draws them, the rest folding into Other
+  await foot(5);
+  assert.equal(await page.inputValue("#flows-overtime .spend-bar select"), "living");
+  assert.deepEqual(await legend(), ["Food", "Media"]);
+  await page.click("#flows-overtime .line-pick:has-text('Media')");
+  assert.deepEqual(await legend(), ["Food", "Other"]);
+  assert.equal(
+    await page.getAttribute("#flows-overtime .line-pick:has-text('Food') .swatch", "style"),
+    "background: var(--series-1);",
+  );
+  // the numbers as a table, newest first
+  await page.click("#flows-overtime .spend-table summary");
+  assert.deepEqual(
+    await page.$$eval("#flows-overtime .spend-table tbody tr:first-child td", (t) => t.map((x) => x.textContent)),
+    ["November 2026", "86%", "14%", "$70"], // leak-guard: allow (made up)
+  );
+  // a category's bar opens its lines for that month
+  await page.click("#flows-overtime button:has-text('Dollars')");
+  await foot(14);
+  await page.waitForSelector("aside.drawer");
+  assert.match(await page.textContent("aside.drawer"), /Food.*November 2026: \$60 spent, one-offs left out\./s); // leak-guard: allow (made up)
   assert.deepEqual(page.errors, []);
   await page.close();
 });

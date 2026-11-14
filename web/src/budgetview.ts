@@ -21,6 +21,7 @@ interface BudgetBook {
   // annual lines' balances at each month's end, with that month's amount set aside and spending (sinking_funds)
   funds?: { month: string; line: string; category: string; balance: number; set_aside?: number; spent?: number }[];
   days: [string, string, number][]; // [date, category, spend]
+  oneOffs?: [string, string, number][]; // [date, category, the part of that spend from lines marked one-off]
   groups: Record<string, string>; // category -> group
   loans?: Record<string, string>; // category -> the loan whose payment splits into it (editor_categories)
   recurring: { month: string; key: string; category: string; expected: number | null; actual: number }[];
@@ -494,4 +495,76 @@ function planPreview(row: PlanBasis, rate: number, extra: number): { lands: numb
 function planExtra(row: PlanBasis, rate: number, goal: number): number {
   var projected = row.projected + planShift(row, rate, row.current_extra);
   return Math.round(Math.max(row.current_extra + (goal - projected) / row.paychecks_left, 0) * 100) / 100;
+}
+
+// Spending month by month, by group or by category (the Over time part of Where the money went): what was spent,
+// from daily_actuals, never what was budgeted. Keys come in order of their spending over all the months the book
+// holds, whatever the range shown, so a key keeps its place (and its color) when the range or the filter changes.
+// A month's total is its spending in every key; percents are of that total. One-offs can be left out. Spending a
+// refund pushes below zero in a month counts as nothing in that month's stack, and is told in `below`.
+interface SpendOverTime {
+  months: string[]; // YYYY-MM, every month from the first to the last
+  keys: string[]; // every group (or category) with spending, most spent first over the whole book
+  values: Record<string, number[]>; // key -> spending per month (0 when below zero)
+  totals: number[]; // per month, of every key
+  below: Record<string, number[]>; // key -> what refunds took below zero, per month
+}
+
+function spendingOverTime(
+  book: BudgetBook,
+  by: "group" | "category",
+  opts: { from?: string | undefined; to?: string | undefined; withoutOneOffs?: boolean; group?: string | undefined },
+): SpendOverTime {
+  var keyOf = function (category: string): string | null {
+    var g = book.groups[category] || "Ungrouped";
+    if (opts.group && g !== opts.group) return null;
+    return by === "group" ? g : category;
+  };
+  var net: Record<string, Record<string, number>> = {}; // key -> month -> cents
+  var everCents: Record<string, number> = {};
+  var add = function (date: string, category: string, cents: number) {
+    var key = keyOf(category);
+    if (key === null) return;
+    var month = date.slice(0, 7);
+    (net[key] = net[key] || {})[month] = (net[key][month] || 0) + cents;
+    everCents[key] = (everCents[key] || 0) + cents;
+  };
+  book.days.forEach(function (d) {
+    add(d[0], d[1], Math.round(d[2] * 100));
+  });
+  if (opts.withoutOneOffs)
+    (book.oneOffs || []).forEach(function (d) {
+      add(d[0], d[1], -Math.round(d[2] * 100));
+    });
+  var keys = Object.keys(net)
+    .filter(function (k) {
+      return everCents[k] > 0;
+    })
+    .sort(function (a, b) {
+      return everCents[b] - everCents[a] || (a < b ? -1 : 1);
+    });
+  var all: string[] = [];
+  keys.forEach(function (k) {
+    Object.keys(net[k]).forEach(function (m) {
+      all.push(m);
+    });
+  });
+  all.sort();
+  var months: string[] = [];
+  var first = opts.from && all.length && opts.from > all[0] ? opts.from : all[0];
+  var last = opts.to && all.length && opts.to < all[all.length - 1] ? opts.to : all[all.length - 1];
+  for (var m = first; all.length && m <= last; m = shiftPeriod(m, 1)) months.push(m);
+  var out: SpendOverTime = { months: months, keys: keys, values: {}, totals: months.map(() => 0), below: {} };
+  keys.forEach(function (k) {
+    out.values[k] = months.map(function (month, i) {
+      var c = net[k][month] || 0;
+      if (c < 0) (out.below[k] = out.below[k] || months.map(() => 0))[i] = -c / 100;
+      out.totals[i] += Math.max(c, 0);
+      return Math.max(c, 0) / 100;
+    });
+  });
+  out.totals = out.totals.map(function (c) {
+    return c / 100;
+  });
+  return out;
 }

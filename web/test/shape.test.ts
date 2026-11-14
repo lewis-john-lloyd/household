@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, spendingOverTime, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -34,6 +34,11 @@ const shape = new Function(
   priceChanged: (latest: number, previous: number | null) => boolean;
   planPreview: (row: PlanBasis, rate: number, extra: number) => { lands: number; penaltyFree: boolean | null };
   planExtra: (row: PlanBasis, rate: number, goal: number) => number;
+  spendingOverTime: (
+    book: BudgetBook,
+    by: "group" | "category",
+    opts: { from?: string; to?: string; withoutOneOffs?: boolean; group?: string },
+  ) => SpendOverTime;
   chargeCadence: (dates: string[]) => string | null;
   sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
   grantKey: (grantId: string) => string;
@@ -1001,4 +1006,60 @@ test("the withholding plan previews a vest rate and an extra as the engine would
     assert.deepEqual(shape.planPreview(c.row, c.rate, c.extra), { lands: c.lands, penaltyFree: c.penalty_free }, c.why);
     assert.equal(shape.planExtra(c.row, c.rate, 0), c.goal_extra, c.why);
   }
+});
+
+test("spending over time: each month's spending by group or category, one-offs out on request", () => {
+  const book = shape.budgetBook(
+    [],
+    [
+      ["date", "category", "spend", "one_off"],
+      ["2026-01-05", "food", 40, 0],
+      ["2026-01-09", "petrol", 30, 0],
+      ["2026-03-02", "food", 50, 0],
+      ["2026-03-04", "hobby", 80, 50],
+      ["2026-03-20", "petrol", -40, 0], // a refund bigger than the month's fuel
+    ],
+    [],
+    [
+      ["category", "group"],
+      ["food", "home"],
+      ["petrol", "car"],
+      ["hobby", "fun"],
+    ],
+  );
+  const g = shape.spendingOverTime(book, "group", {});
+  assert.deepEqual(g.months, ["2026-01", "2026-02", "2026-03"]); // a month with nothing still has its place
+  assert.deepEqual(g.keys, ["home", "fun"]); // most spent first; car netted below zero over the book
+  assert.deepEqual(g.values.home, [40, 0, 50]);
+  assert.deepEqual(g.totals, [40, 0, 130]);
+  assert.deepEqual(shape.spendingOverTime(book, "group", { withoutOneOffs: true }).totals, [40, 0, 80]);
+  // a group opened into its categories, and a range: the keys keep their order from the whole book
+  const c = shape.spendingOverTime(book, "category", { group: "home", from: "2026-02" });
+  assert.deepEqual([c.months, c.keys, c.values.food], [["2026-02", "2026-03"], ["food"], [0, 50]]);
+  const p = shape.spendingOverTime(book, "category", {});
+  assert.deepEqual(p.keys, ["food", "hobby"]);
+  assert.deepEqual(p.below, {}); // petrol never spent more than it got back, so it is no key at all
+});
+
+test("spending over time keeps a refund month at zero and says how far below it went", () => {
+  const book = shape.budgetBook(
+    [],
+    [
+      ["date", "category", "spend"],
+      ["2026-01-05", "petrol", 30],
+      ["2026-02-05", "petrol", -10],
+    ],
+    [],
+    [],
+  );
+  const t = shape.spendingOverTime(book, "category", {});
+  assert.deepEqual(
+    [t.values.petrol, t.below.petrol, t.totals],
+    [
+      [30, 0],
+      [0, 10],
+      [30, 0],
+    ],
+  );
+  assert.equal(book.oneOffs, undefined); // a Reports tab from before the one_off column
 });

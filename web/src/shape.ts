@@ -303,6 +303,14 @@ function budgetBook(
         n = Number(v[spend]) || 0;
       if (/^\d{4}-\d{2}-\d{2}$/.test(d) && c && n) book.days.push([d, c, n]);
     }
+    const once = dailyValues[0].indexOf("one_off"); // a Reports tab from before 0.63 has no one_off column
+    if (once >= 0) {
+      book.oneOffs = [];
+      for (const v of dailyValues.slice(1)) {
+        const n = Number(v[once]) || 0;
+        if (n) book.oneOffs.push([String(v[date] ?? "").slice(0, 10), String(v[category] ?? "").trim(), n]);
+      }
+    }
   }
   if (recurringValues.length) {
     const [month, key, category, expected, actual] = columnsAt(

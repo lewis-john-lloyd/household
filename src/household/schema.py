@@ -526,7 +526,7 @@ REPORTS = (
     Table("budget_targets", ("month", "line", "category", "account", "priority", "rule", "target", "basis", "run_id")),
     Table("budget_vs_actual", ("month", "category", "group", "priority", "target", "actual", "remaining", "run_id")),
     # spending per category per day, every era, for the budget's comparisons of part of a period
-    Table("daily_actuals", ("date", "category", "spend", "run_id")),
+    Table("daily_actuals", ("date", "category", "spend", "one_off", "run_id")),
     # each investment account's money in and out each year, by kind (investments.flows)
     Table("investment_flows", ("year", "account_id", "kind", "amount", "rows", "run_id")),
     Table("sinking_funds", ("month", "line", "category", "set_aside", "spent", "balance", "run_id")),

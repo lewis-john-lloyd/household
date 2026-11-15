@@ -13,6 +13,9 @@ var searchState = {
   sort: "date",
   descending: true,
   shown: SEARCH_PAGE,
+  groupBy: "", // a field the lines found are grouped by, "" for none
+  opened: {} as Record<string, boolean>, // the groups opened to their lines, by grouping and key
+  bulk: false, // the changes to all the lines found shown (Bulk edit)
 };
 
 var SEARCH_FIELDS: [SearchTextField, string, string][] = [
@@ -49,6 +52,19 @@ var SEARCH_SORTS: [string, string][] = [
   ["id", "Line id"],
 ];
 var SEARCH_MAIN = 6; // the first fields stand out; the rest wait under More fields
+// what the lines found can be grouped by
+var SEARCH_GROUPINGS: [string, string][] = [
+  ["", "No groups"],
+  ["category", "Category"],
+  ["group", "Group"],
+  ["payee", "Payee"],
+  ["key", "Merchant key"],
+  ["account", "Account"],
+  ["recurring", "Recurring charge"],
+  ["month", "Month"],
+  ["year", "Year"],
+  ["decidedBy", "Decided by"],
+];
 
 function loadSearch() {
   var box = byId("flows-search");
@@ -250,6 +266,10 @@ function drawSearch() {
       else inn += l.amount;
     });
     var head = el("div", null, "search-head");
+    var total = el("p", null, "search-total");
+    total.appendChild(el("span", "Total ", "label"));
+    total.appendChild(el("strong", cents.format(inn - out), "num"));
+    head.appendChild(total);
     head.appendChild(
       el(
         "p",
@@ -268,7 +288,7 @@ function drawSearch() {
     if (!d.ascribed)
       results.appendChild(el("p", "Recurring charges and where each line was read from show after the next run.", "support"));
     if (found.length) {
-      var tools = searchBulk(found, d);
+      var tools = el("div", null, "search-tools");
       // any field sorts, the table's columns by their headings and the rest from here
       var sortNames: Record<string, string> = {};
       SEARCH_SORTS.forEach(function (f) {
@@ -288,7 +308,36 @@ function drawSearch() {
         drawResults();
       };
       tools.appendChild(sorter);
+      var groupNames: Record<string, string> = {};
+      SEARCH_GROUPINGS.forEach(function (g) {
+        groupNames[g[0]] = g[0] ? "Group by " + g[1].toLowerCase() : g[1];
+      });
+      var grouper = choice(
+        SEARCH_GROUPINGS.map(function (g) {
+          return g[0];
+        }),
+        searchState.groupBy,
+        groupNames,
+      );
+      grouper.setAttribute("aria-label", "Group by");
+      grouper.onchange = function () {
+        searchState.groupBy = grouper.value;
+        drawResults();
+      };
+      tools.appendChild(grouper);
+      // changing every line found at once is kept out of the way until asked for
+      var bulkToggle = button(
+        searchState.bulk ? "Close bulk edit" : "Bulk edit",
+        function () {
+          searchState.bulk = !searchState.bulk;
+          drawResults();
+        },
+        "text",
+      );
+      bulkToggle.setAttribute("aria-expanded", String(searchState.bulk));
+      tools.appendChild(bulkToggle);
       results.appendChild(tools);
+      if (searchState.bulk) results.appendChild(searchBulk(found, d));
     }
     if (!found.length) {
       results.appendChild(el("p", "No line matches. Loosen a pattern, or Clear.", "support"));
@@ -327,7 +376,9 @@ function drawSearch() {
     });
     table.appendChild(el("thead")).appendChild(tr);
     var body = el("tbody");
-    found.slice(0, searchState.shown).forEach(function (l) {
+    var drawn = 0; // line rows drawn, against searchState.shown
+    var lineRow = function (l: SearchLine) {
+      drawn++;
       var row = el("tr", null, "search-row");
       var cat = searchCategory(l),
         once = searchOneOff(l);
@@ -368,14 +419,75 @@ function drawSearch() {
       row.appendChild(rec);
       row.appendChild(el("td", l.note, "search-note"));
       body.appendChild(row);
-    });
+    };
+    // a row of totals: a group's head, or the whole search's foot; the amount sits under Amount
+    var sumRow = function (label: string, lines: number, net: number, cls: string) {
+      var row = el("tr", null, cls);
+      var name = el("td");
+      name.colSpan = 3;
+      name.appendChild(el("span", label));
+      name.appendChild(el("span", " " + lines.toLocaleString("en-US") + (lines === 1 ? " line" : " lines"), "support small"));
+      row.appendChild(name);
+      row.appendChild(el("td", cents.format(net), "num" + (net > 0 ? " in" : "")));
+      row.appendChild(el("td")).colSpan = 3;
+      return { row: row, name: name };
+    };
+    var left = 0; // lines not drawn, for Show more
+    if (searchState.groupBy) {
+      var by = searchState.groupBy;
+      var grouped = groupSearch(found, by, d.groups, by === searchState.sort && !searchState.descending);
+      grouped.forEach(function (g) {
+        var id = by + "|" + g.key;
+        var opened = !!searchState.opened[id];
+        var label = !g.key ? "(none)" : by === "category" || by === "group" ? pretty(g.key) : g.key;
+        var head = sumRow(label, g.lines.length, g.net, "search-group");
+        var toggle = function () {
+          searchState.opened[id] = !opened;
+          drawResults();
+          results.querySelectorAll<HTMLElement>("tr.search-group").forEach(function (n) {
+            if (n.dataset.fold === id) n.focus({ preventScroll: true }); // back on the row used
+          });
+        };
+        head.row.dataset.fold = id;
+        head.row.tabIndex = 0;
+        head.row.setAttribute("role", "button");
+        head.row.setAttribute("aria-expanded", String(opened));
+        head.row.setAttribute(
+          "aria-label",
+          label + ", " + g.lines.length + " lines, " + cents.format(g.net) + ": " + (opened ? "close" : "open"),
+        );
+        var chev = el("span", null, "chev" + (opened ? " open" : ""));
+        chev.appendChild(icon("chevron"));
+        head.name.insertBefore(chev, head.name.firstChild);
+        head.row.onclick = toggle;
+        head.row.onkeydown = function (ev) {
+          var k = (ev as KeyboardEvent).key;
+          if (k === "Enter" || k === " ") {
+            ev.preventDefault();
+            toggle();
+          }
+        };
+        body.appendChild(head.row);
+        if (!opened) return;
+        g.lines.forEach(function (l) {
+          if (drawn < searchState.shown) lineRow(l);
+          else left++;
+        });
+      });
+    } else
+      found.forEach(function (l) {
+        if (drawn < searchState.shown) lineRow(l);
+        else left++;
+      });
     table.appendChild(body);
+    if (found.length > 1 || searchState.groupBy)
+      table.appendChild(el("tfoot")).appendChild(sumRow("Total", found.length, inn - out, "search-sum").row);
     wrap.appendChild(table);
     results.appendChild(wrap);
-    if (found.length > searchState.shown)
+    if (left)
       results.appendChild(
         button(
-          "Show " + Math.min(SEARCH_PAGE, found.length - searchState.shown) + " more",
+          "Show " + Math.min(SEARCH_PAGE, left) + " more",
           function () {
             searchState.shown += SEARCH_PAGE;
             drawResults();

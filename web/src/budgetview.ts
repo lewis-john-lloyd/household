@@ -729,6 +729,52 @@ function compileSearch(
 }
 
 /** The lines sorted by a field, newest first among equals, so the order never changes between draws. */
+interface SearchGroup {
+  key: string; // what its lines share ("" for lines with none)
+  lines: SearchLine[]; // in the order they came
+  out: number; // money out, as a positive number
+  inn: number; // money in
+  net: number; // in less out
+}
+
+/** The lines found, grouped by one of their fields, each group with its totals. Lines keep the order they came
+ * in. Months and years come newest first (oldest first when ascending); any other grouping puts the biggest
+ * net first, by size, so what cost the most leads. */
+function groupSearch(lines: SearchLine[], by: string, groups: Record<string, string>, ascending?: boolean): SearchGroup[] {
+  var keyOf = function (l: SearchLine): string {
+    if (by === "month") return l.date.slice(0, 7);
+    if (by === "year") return l.date.slice(0, 4);
+    if (by === "group") return groups[l.category] || "";
+    if (by === "recurring") return l.recurringName || l.recurring || "";
+    var v = (l as unknown as Record<string, unknown>)[by];
+    return String(v ?? "");
+  };
+  var byKey: Record<string, SearchGroup> = {};
+  var order: SearchGroup[] = [];
+  lines.forEach(function (l) {
+    var k = keyOf(l);
+    var g = byKey[k];
+    if (!g) {
+      g = byKey[k] = { key: k, lines: [], out: 0, inn: 0, net: 0 };
+      order.push(g);
+    }
+    g.lines.push(l);
+    if (l.amount < 0) g.out -= l.amount;
+    else g.inn += l.amount;
+    g.net += l.amount;
+  });
+  order.forEach(function (g) {
+    g.out = Math.round(g.out * 100) / 100;
+    g.inn = Math.round(g.inn * 100) / 100;
+    g.net = Math.round(g.net * 100) / 100;
+  });
+  var dated = by === "month" || by === "year";
+  return order.sort(function (a, b) {
+    if (dated) return (a.key < b.key ? 1 : a.key > b.key ? -1 : 0) * (ascending ? -1 : 1);
+    return Math.abs(b.net) - Math.abs(a.net) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  });
+}
+
 function sortSearch(lines: SearchLine[], by: string, descending: boolean, groups: Record<string, string>): SearchLine[] {
   var value = function (l: SearchLine): string | number {
     if (by === "amount") return l.amount;

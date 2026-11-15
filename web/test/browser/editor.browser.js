@@ -3521,6 +3521,29 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   await page.selectOption("#flows-search select[aria-label='Sort by']", "status");
   assert.deepEqual((await ids()).slice(-1), ["WILLOW ST"]); // decided before open
   assert.match(await page.textContent("#flows-search .search-row"), /by rule/); // why it has its category
+  // the sum of what was found, at the head and the table's foot
+  assert.equal(await page.textContent("#flows-search .search-total"), "Total -$21.00"); // leak-guard: allow (made up)
+  assert.match(await page.textContent("#flows-search tfoot"), /Total 5 lines-\$21\.00/); // leak-guard: allow (made up)
+  // grouped: a row per group with its lines and sum, shut until opened; the biggest first
+  await page.selectOption("#flows-search select[aria-label='Group by']", "payee");
+  await page.waitForSelector("#flows-search tr.search-group");
+  const heads = await page.locator("#flows-search tr.search-group").allTextContents();
+  assert.equal(heads.length, 4);
+  assert.match(heads[0], /^WILLOW ST 1 line\$80\.00$/); // the biggest sum first, in or out // leak-guard: allow (made up)
+  assert.ok(heads.some((h) => /^ACME GROCER 2 lines-\$/.test(h)));
+  assert.equal(await page.locator("#flows-search .search-row").count(), 0);
+  await page.click("#flows-search tr.search-group:has-text('ACME GROCER')");
+  assert.equal(await page.locator("#flows-search .search-row").count(), 2);
+  assert.equal(await page.getAttribute("#flows-search tr.search-group:has-text('ACME GROCER')", "aria-expanded"), "true");
+  assert.equal(await page.evaluate(() => document.activeElement.classList.contains("search-group")), true); // focus kept
+  await page.keyboard.press("Enter"); // and shut again
+  assert.equal(await page.locator("#flows-search .search-row").count(), 0);
+  assert.match(await page.textContent("#flows-search tfoot"), /Total 5 lines/);
+  await page.selectOption("#flows-search select[aria-label='Group by']", "");
+  // changing every line found waits behind Bulk edit
+  assert.equal(await page.locator("#flows-search .search-bulk").count(), 0);
+  await page.click("#flows-search button:has-text('Bulk edit')");
+  assert.equal(await page.getAttribute("#flows-search button:has-text('Close bulk edit')", "aria-expanded"), "true");
   // the misc lines moved together; each its own change, shown at once
   await page.fill("#flows-search input[data-field='category']", "misc");
   await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);

@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, versionNote, compareReleases, spendingOverTime, compileSearch, sortSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, versionNote, compareReleases, spendingOverTime, compileSearch, sortSearch, groupSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -47,6 +47,7 @@ const shape = new Function(
     groups: Record<string, string>,
   ) => { test: (line: SearchLine) => boolean; errors: Record<string, string> };
   sortSearch: (lines: SearchLine[], by: string, descending: boolean, groups: Record<string, string>) => SearchLine[];
+  groupSearch: (lines: SearchLine[], by: string, groups: Record<string, string>, ascending?: boolean) => SearchGroup[];
   searchPage: (categorized: unknown[][], categories: unknown[][], subscriptions: unknown[][]) => SearchPage;
   chargeCadence: (dates: string[]) => string | null;
   sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
@@ -1304,6 +1305,42 @@ test("search reads every line with what can be corrected beside what came from t
   );
   assert.deepEqual([page.lines[1].recurringName, page.lines[1].recurringCounts], ["Book club", true]);
   assert.deepEqual(page.charges, [{ key: "PAGE TURNER BOOKS", name: "Book club" }]);
+});
+
+test("the lines found group by any field, each group with its totals, the biggest first or by date", () => {
+  const line = (id: string, date: string, category: string, amount: number) =>
+    ({ id, date, category, amount, recurring: "", recurringName: "", payee: "x" }) as SearchLine;
+  const lines = [
+    line("a", "2001-03-02", "food", -20),
+    line("b", "2001-02-10", "media", -90),
+    line("c", "2001-03-15", "food", -30.1),
+    line("d", "2001-03-20", "food", 5.05),
+    line("e", "2000-12-01", "", -1),
+  ];
+  const groups = { food: "living", media: "fun" };
+  const by = (field: string, ascending?: boolean) =>
+    shape
+      .groupSearch(lines, field, groups, ascending)
+      .map((g) => [g.key, g.lines.map((l) => l.id).join(""), g.out, g.inn, g.net]);
+  // the biggest net first, lines in the order they came, cents kept
+  assert.deepEqual(by("category"), [
+    ["media", "b", 90, 0, -90],
+    ["food", "acd", 50.1, 5.05, -45.05],
+    ["", "e", 1, 0, -1],
+  ]);
+  assert.deepEqual(
+    by("group").map((g) => g[0]),
+    ["fun", "living", ""],
+  );
+  // months and years by date, newest first unless ascending
+  assert.deepEqual(
+    by("month").map((g) => g[0]),
+    ["2001-03", "2001-02", "2000-12"],
+  );
+  assert.deepEqual(
+    by("year", true).map((g) => g[0]),
+    ["2000", "2001"],
+  );
 });
 
 test("each search field is a pattern found anywhere in it, ignoring case; dates by prefix, amounts either way of zero", () => {

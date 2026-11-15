@@ -657,7 +657,7 @@ function compileSearch(
     }
     var re: RegExp;
     try {
-      re = new RegExp("^(?:" + pattern + ")$", "i");
+      re = new RegExp(pattern, "i"); // found anywhere in the field; ^ and $ anchor it
     } catch (e) {
       errors[f] = String((e as Error).message || e).replace(/^Invalid regular expression: /, "");
       return;

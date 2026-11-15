@@ -1306,7 +1306,7 @@ test("search reads every line with what can be corrected beside what came from t
   assert.deepEqual(page.charges, [{ key: "PAGE TURNER BOOKS", name: "Book club" }]);
 });
 
-test("each search field is an anchored pattern, ignoring case; dates by prefix, amounts either way of zero", () => {
+test("each search field is a pattern found anywhere in it, ignoring case; dates by prefix, amounts either way of zero", () => {
   const page = shape.searchPage(
     SEARCH_TAB,
     [
@@ -1317,10 +1317,12 @@ test("each search field is an anchored pattern, ignoring case; dates by prefix, 
     [],
   );
   const ids = (q: SearchQuery) => page.lines.filter(shape.compileSearch(q, page.groups).test).map((l) => l.id);
-  assert.deepEqual(ids({ text: { payee: "page.*" } }), ["t1"]);
-  assert.deepEqual(ids({ text: { payee: "turner" } }), []); // anchored: the whole field must match
-  assert.deepEqual(ids({ text: { payee: ".*turner.*" } }), ["t1"]);
-  assert.deepEqual(ids({ text: { raw: ".*\\d{4}" } }), ["t1"]); // the bank's own text
+  assert.deepEqual(ids({ text: { payee: "turner" } }), ["t1"]); // anywhere in the field
+  assert.deepEqual(ids({ text: { payee: "^page" } }), ["t1"]); // ^ and $ anchor it
+  assert.deepEqual(ids({ text: { payee: "^turner" } }), []);
+  assert.deepEqual(ids({ text: { payee: "^page turner books$" } }), ["t1"]);
+  assert.deepEqual(ids({ text: { payee: ".*turner.*" } }), ["t1"]); // a pattern written for the old rule still works
+  assert.deepEqual(ids({ text: { raw: "\\d{4}" } }), ["t1"]); // the bank's own text
   assert.deepEqual(ids({ text: { category: "household" } }), ["t2"]); // a split's part counts
   assert.deepEqual(ids({ text: { group: "living" } }), ["t2"]);
   assert.deepEqual(ids({ text: { recurring: "book club|x" } }), ["t1"]);

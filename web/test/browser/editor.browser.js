@@ -3410,7 +3410,7 @@ test("over time: each month's spending stacked by group, as dollars or shares, o
   await page.close();
 });
 
-test("search: lines found by anchored patterns on any field, sorted by any column, moved together, opened to correct", async () => {
+test("search: lines found by patterns on any field, sorted by any column, moved together, opened to correct", async () => {
   const L = (id, date, account, amount, payee, category, more = {}) => ({
     id,
     date,
@@ -3482,10 +3482,10 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
   const ids = () => page.$$eval("#flows-search .search-row td:nth-child(3) div:first-child", (d) => d.map((x) => x.textContent));
   const count = () => page.textContent("#flows-search .search-count");
   assert.match(await count(), /^5 of 5 lines: \$101\.00 out, \$80\.00 in\./); // leak-guard: allow (made up)
-  // a pattern the whole field must match, ignoring case
-  await page.fill("#flows-search input[data-field='payee']", "acme.*");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  // a pattern found anywhere in the field, ignoring case; ^ and $ anchor it
   await page.fill("#flows-search input[data-field='payee']", "grocer");
+  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  await page.fill("#flows-search input[data-field='payee']", "^grocer");
   await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 0);
   // a broken pattern says why and filters nothing
   await page.fill("#flows-search input[data-field='payee']", "(acme");
@@ -3495,7 +3495,7 @@ test("search: lines found by anchored patterns on any field, sorted by any colum
   assert.match(await count(), /^5 of 5/);
   await page.fill("#flows-search input[data-field='payee']", "");
   // the bank's own text, a split's part, a group, a recurring charge, dates and amounts
-  await page.fill("#flows-search input[data-field='raw']", ".*\\d{4}");
+  await page.fill("#flows-search input[data-field='raw']", "\\d{4}");
   await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 1);
   assert.match(await page.textContent("#flows-search .search-row"), /Book club/);
   await page.fill("#flows-search input[data-field='raw']", "");

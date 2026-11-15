@@ -1,5 +1,6 @@
 // Where the money went, Search: every categorized line, found by any of its fields and sorted by any column.
-// Each text box is a regular expression the whole field must match, ignoring case (budgetview.ts compileSearch).
+// Each text box is a regular expression found anywhere in its field, ignoring case; ^ and $ anchor it
+// (budgetview.ts compileSearch).
 // What came from the bank (date, account, amount, its text, the line's id, the file) is shown as it is and never
 // changes; a line opens on its own page to correct its category, split, note, one-off flag or recurring charge,
 // and the lines found can be moved to a category or marked one-off together. Every change goes to the pending
@@ -105,11 +106,13 @@ function drawSearch() {
   filters.appendChild(el("h3", "Find lines"));
   var help = el("p", null, "support");
   [
-    ["Each box is a pattern the whole field must match, ignoring case: ", ""],
-    ["ACME.*", "code"],
+    ["Each box is a pattern found anywhere in the field, ignoring case: ", ""],
+    ["fuel", "code"],
+    [" holds fuel, ", ""],
+    ["^ACME", "code"],
     [" starts with ACME, ", ""],
-    [".*fuel.*", "code"],
-    [" holds it anywhere, ", ""],
+    ["^food$", "code"],
+    [" is exactly food, ", ""],
     ["food|petrol", "code"],
     [" is either. Dates take a year, a month or a day; amounts are dollars, in or out.", ""],
   ].forEach(function (p) {

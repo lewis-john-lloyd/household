@@ -11,6 +11,18 @@ from household import schema, sheets
 CALLS: Counter = Counter()  # every request the fakes were asked for, by what it was: a test clears it, then counts
 
 
+def as_sheets_reads(rows):
+    """Rows as the Sheets API gives them back: without the empty cells at a row's end, or the empty rows at
+    the tab's. (A tab keeps its grid; a read gives only what is in it.)"""
+    out = [list(r) for r in rows]
+    for r in out:
+        while r and r[-1] in ("", None):
+            r.pop()
+    while out and not out[-1]:
+        out.pop()
+    return out
+
+
 class FakeWorksheet:
     _next_id = 1
 
@@ -39,7 +51,7 @@ class FakeWorksheet:
 
     def get_values(self, **_):
         CALLS["get_values"] += 1
-        return [list(r) for r in self.rows]
+        return as_sheets_reads(self.rows)
 
     get_all_values = get_values
 
@@ -132,8 +144,8 @@ class FakeSpreadsheet:
         out = []
         for r in ranges:
             name = r.split("'")[1]
-            rows = self.tabs[name].rows if "!" not in r else self.tabs[name].rows[:2]
-            out.append({"values": [list(x) for x in rows]} if rows else {})
+            rows = as_sheets_reads(self.tabs[name].rows if "!" not in r else self.tabs[name].rows[:2])
+            out.append({"values": rows} if rows else {})
         return {"valueRanges": out}
 
 
@@ -469,3 +481,16 @@ def test_a_spreadsheet_given_as_it_is_reads_and_writes_as_before():
         assert raw.tabs["run_log"].rows[1] == ["x"] * len(RUN_LOG.columns)  # written at once
     assert (CALLS["clear"], CALLS["resize"], CALLS["update"]) == (1, 1, 1)
     assert sheets.calls(raw) == 0
+
+
+def test_a_table_that_empties_leaves_no_row_behind():
+    reports = FakeSpreadsheet("reports")
+    t = schema.table(schema.REPORTS, "possible_duplicates")
+    reports.add_worksheet(t.name, 2, len(t.columns))
+    book = sheets.Book(reports)
+    full = pd.DataFrame([{c: f"{c}-{i}" for c in t.columns} for i in range(3)], columns=t.columns)
+    sheets.replace_table(book, t, full)
+    assert len(sheets.read_table(book, t)) == 3
+    sheets.replace_table(book, t, full.iloc[:0])
+    assert sheets.read_table(book, t).empty
+    assert sheets.read_table(reports, t).empty  # as Sheets itself holds it

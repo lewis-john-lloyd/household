@@ -22,6 +22,7 @@ from freezegun import freeze_time
 from household import engine
 from household import retirement as R
 from test_engine import FakeSession, drop, session  # noqa: F401  (the fixture)
+from test_sheets import as_sheets_reads
 from test_inbox import FakeDrive  # noqa: F401
 from test_retirement import household, params, person
 
@@ -131,13 +132,15 @@ def test_every_report_from_ingest_and_compute_is_unchanged(session):  # noqa: F8
     tables = {}
     for book in ("ledger", "reports"):
         for name, tab in files[book].tabs.items():
-            values = tab.rows
+            values = as_sheets_reads(tab.rows)  # as a read of the tab gives them
             if name in BOOKKEEPING:
                 continue
             if not values:
                 tables[f"{book}.{name}"] = pd.DataFrame()
                 continue
-            tables[f"{book}.{name}"] = pd.DataFrame(values[1:], columns=values[0])
+            tables[f"{book}.{name}"] = pd.DataFrame(
+                [r + [""] * (len(values[0]) - len(r)) for r in values[1:]], columns=values[0]
+            )
     check("ingest_and_compute", tables)
 
 
@@ -213,8 +216,12 @@ def test_a_fuller_household_through_ingest_and_compute_is_unchanged(session):  #
         for name, tab in session.sheets.files[book].tabs.items():
             if name in BOOKKEEPING:
                 continue
-            values = tab.rows
-            tables[f"{book}.{name}"] = pd.DataFrame(values[1:], columns=values[0]) if values else pd.DataFrame()
+            values = as_sheets_reads(tab.rows)  # as a read of the tab gives them
+            tables[f"{book}.{name}"] = (
+                pd.DataFrame([r + [""] * (len(values[0]) - len(r)) for r in values[1:]], columns=values[0])
+                if values
+                else pd.DataFrame()
+            )
     filled = sum(1 for v in tables.values() if len(v))
     assert filled >= 30, f"only {filled} tables have rows: the scenario no longer reaches most of compute"
     check("fuller_household", tables)
@@ -238,8 +245,12 @@ def test_a_year_of_pay_stubs_through_the_projection_is_unchanged(session):  # no
     for name, tab in session.sheets.files["reports"].tabs.items():
         if name in BOOKKEEPING:
             continue
-        values = tab.rows
-        tables[f"reports.{name}"] = pd.DataFrame(values[1:], columns=values[0]) if values else pd.DataFrame()
+        values = as_sheets_reads(tab.rows)  # as a read of the tab gives them
+        tables[f"reports.{name}"] = (
+            pd.DataFrame([r + [""] * (len(values[0]) - len(r)) for r in values[1:]], columns=values[0])
+            if values
+            else pd.DataFrame()
+        )
     for name in ("projection", "tax_lines", "withholding_plan", "elections", "withholding_backtest"):
         assert len(tables[f"reports.{name}"]), f"{name} is empty: the stubs no longer reach it"
     check("stubs_and_projection", tables)

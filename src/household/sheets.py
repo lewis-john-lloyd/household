@@ -142,6 +142,8 @@ class Book:
         nothing else, so nothing has to be cleared first. Returns the calls made."""
         if not tables:
             return 0
+        # a tab keeps at least two rows, so a table with no rows writes a blank second one over what was there
+        tables = [(t, values if len(values) > 1 else values + [[""] * len(t.columns)]) for t, values in tables]
         before = self.calls
         ids = {ws.title: ws.id for ws in self.worksheets()}
         self.batch_update(

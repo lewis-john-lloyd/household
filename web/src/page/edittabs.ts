@@ -272,6 +272,7 @@ function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
   var scopes: [string, string][] = [
     ["merchant", "Every " + r.key + " line, now and later"],
     ["lines", (n === 1 ? "Only this line" : "Only these " + n + " lines") + "; the next one from it is asked about again"],
+    ["ask", (n === 1 ? "This line" : "These " + n + " lines") + ", and ask about each of its lines from now on"],
   ];
   var radios = scopes.map(function (s, i) {
     var label = el("label");
@@ -281,7 +282,7 @@ function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
     radio.value = s[0];
     radio.checked = i === 0;
     radio.onchange = function () {
-      key.disabled = s[0] === "lines"; // a merchant's spelling matters only to an answer for the merchant
+      key.disabled = s[0] !== "merchant"; // a merchant's spelling matters only to an answer for the merchant
     };
     label.appendChild(radio);
     label.appendChild(document.createTextNode(" " + s[1]));
@@ -292,12 +293,12 @@ function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
   var error = el("div", "", "error");
   form.onsubmit = function (e) {
     e.preventDefault();
-    if (radios[1].checked) {
+    if (!radios[0].checked) {
       if (!pick.value) {
         error.textContent = "Choose a category.";
         return;
       }
-      reviewOnlyLines(r, pick.value, error, done);
+      reviewOnlyLines(r, pick.value, error, done, radios[2].checked);
       return;
     }
     if (!pick.value || !key.value.trim()) {
@@ -486,9 +487,27 @@ function reviewLinesOf(r: Row, then: (lines: ReviewLine[]) => void, failed: (why
   );
 }
 
+// A payee rule's pattern for a merchant's key: its words in order, whatever stands between them in the bank's
+// text ("AV KL RF" finds "PAYPAL *AV-KL-RF-GL"), as whole words.
+function reviewKeyPattern(key: string) {
+  return (
+    "\\b" +
+    key
+      .trim()
+      .split(/\s+/)
+      .map(function (w) {
+        return w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      })
+      .join("\\W*") +
+    "\\b"
+  );
+}
+
 // A merchant's answer for its lines asked about now, and not for the merchant: each line gets the category as
-// a line's own correction, so the merchant's next line is asked about again.
-function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () => void) {
+// a line's own correction, so the merchant's next line is asked about again. With ask, a payee rule that asks
+// about each of the merchant's lines from today, the category its guess, so it is never answered for the
+// merchant as a whole.
+function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () => void, ask?: boolean) {
   error.textContent = "Getting its lines…";
   reviewLinesOf(
     r,
@@ -509,12 +528,30 @@ function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () 
       splits[r.key] = lines.map(function (l) {
         return l.id;
       });
-      reviewKept = {
-        targets: targets,
-        words:
-          (lines.length === 1 ? "the " + r.key + " line" : "the " + lines.length + " " + r.key + " lines") + " only: " + category,
-        key: r.key,
-      };
+      var which = lines.length === 1 ? "the " + r.key + " line" : "the " + lines.length + " " + r.key + " lines";
+      var words = which + " only: " + category;
+      if (ask) {
+        var pattern = reviewKeyPattern(r.key);
+        var held = editor!.payeeRules.filter(function (p) {
+          return p.pattern === pattern;
+        })[0];
+        targets.push(
+          stage(
+            {
+              kind: "payee_rule",
+              pattern: pattern,
+              category: category,
+              effective: today(),
+              precedence: held ? held.precedence : "",
+              ask: "TRUE",
+              was: held ? ruleWas(held) : null,
+            },
+            "payee rule " + pattern + ": asks about each line, guessing " + category,
+          ),
+        );
+        words = which + ": " + category + ", and each of its lines asked about from now on";
+      }
+      reviewKept = { targets: targets, words: words, key: r.key };
       selected[editTab] = next;
       reviewFocus = true;
       done();

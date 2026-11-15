@@ -688,6 +688,44 @@ test("review: a merchant's answer can be for its lines now only, leaving the mer
   await page.close();
 });
 
+test("review: a merchant can be asked about line by line from now on, its lines now answered", async () => {
+  const page = await open(
+    QUESTIONS +
+      "window.__answers.getReviewLines = [{ id: 't7', date: '2001-02-01', payee: 'ACME GROCER 12', account: 'checking', amount: -20 }];",
+  );
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  await page.click(".md-row:has-text('ACME GROCER')");
+  await page.check(".md-detail .review-scope input[value='ask']");
+  await page.click(".md-detail button:has-text('Keep answer')");
+  await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
+  const today = await page.evaluate(() => today());
+  assert.deepEqual(await staged(page), [
+    "ACME GROCER 12 2001-02-01: food",
+    "payee rule \\bACME\\W*GROCER\\b: asks about each line, guessing food",
+  ]);
+  const rule = await page.evaluate(() =>
+    JSON.parse(JSON.stringify(Object.values(staged).find((p) => p.edit.kind === "payee_rule").edit)),
+  );
+  assert.deepEqual(rule, {
+    kind: "payee_rule",
+    pattern: "\\bACME\\W*GROCER\\b",
+    category: "food",
+    effective: today,
+    precedence: "",
+    ask: "TRUE",
+    was: null,
+  });
+  // the pattern finds the merchant however the bank spells what stands between its words
+  assert.equal(await page.evaluate(() => new RegExp(reviewKeyPattern("AV KL RF"), "i").test("PAYPAL *AV-KL-RF-GL 402")), true);
+  assert.equal(await page.evaluate(() => new RegExp(reviewKeyPattern("ACME GROCER"), "i").test("ACMEGROCERIES")), false);
+  assert.match(
+    await page.textContent(".md-head .review-kept"),
+    /^Kept: the ACME GROCER line: food, and each of its lines asked about from now on\. Undo$/,
+  );
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("review: Enter keeps the answer and opens the next question, and the answer just kept can be undone there", async () => {
   const page = await open(QUESTIONS);
   await page.waitForSelector("#edit:not([hidden]) .md-list");

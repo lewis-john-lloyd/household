@@ -652,6 +652,42 @@ const QUESTIONS =
   "example: 'PAY APP PAYMENT ***333', guess: 'food', guessed_by: 'pay app, not in its emails or downloads', confidence: '0.3', note: '' }];";
 const heading = (page) => page.textContent(".md-detail .md-heading");
 
+test("review: a merchant's answer can be for its lines now only, leaving the merchant to be asked again", async () => {
+  const page = await open(
+    QUESTIONS +
+      "window.__answers.getReviewLines = [{ id: 't7', date: '2001-02-01', payee: 'ACME GROCER 12', account: 'checking', amount: -20 }," +
+      " { id: 't8', date: '2001-02-10', payee: 'ACME GROCER 13', account: 'checking', amount: -10 }," +
+      " { id: 't9', date: '2001-02-15', payee: 'ACME GROCER 14', account: 'checking', amount: -30 }," +
+      " { id: 't1', date: '2001-02-05', payee: 'PAY APP PAYMENT ***111', account: 'checking', amount: -20 }];", // t1 is its own question
+  );
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  await page.click(".md-row:has-text('ACME GROCER')");
+  assert.match(
+    await page.textContent(".md-detail .review-scope"),
+    /This answer is for Every ACME GROCER line, now and later Only these 3 lines; the next one from it is asked about again/,
+  );
+  await page.check(".md-detail .review-scope input[value='lines']");
+  assert.equal(await page.isDisabled(".md-detail input.wide"), true); // its spelling matters only to the merchant
+  await page.selectOption(".md-detail select", "household");
+  await page.click(".md-detail button:has-text('Keep answer')");
+  await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
+  // each line its own correction, and no answer for the merchant
+  assert.deepEqual((await staged(page)).sort(), [
+    "ACME GROCER 12 2001-02-01: household",
+    "ACME GROCER 13 2001-02-10: household",
+    "ACME GROCER 14 2001-02-15: household",
+  ]);
+  assert.equal(await page.locator(".md-row:has-text('ACME GROCER')").count(), 0); // answered, so out of the list
+  assert.match(await page.textContent(".md-head .review-kept"), /^Kept: the 3 ACME GROCER lines only: household\. Undo$/);
+  // Answer later leaves a question in the list
+  assert.equal(await page.locator(".md-detail button:has-text('Answer later')").count(), 1);
+  await page.click(".md-head .review-kept button:has-text('Undo')");
+  assert.deepEqual(await staged(page), []);
+  assert.equal(await page.locator(".md-row:has-text('ACME GROCER')").count(), 1);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("review: Enter keeps the answer and opens the next question, and the answer just kept can be undone there", async () => {
   const page = await open(QUESTIONS);
   await page.waitForSelector("#edit:not([hidden]) .md-list");
@@ -742,7 +778,7 @@ test("review: after the last answer it says so, and on a phone the next question
   for (const _ of [1, 2, 3]) await page.click(".md-detail button[type=submit]"); // the three lines, each its guess
   assert.equal(await heading(page), "Every question has an answer");
   assert.equal((await staged(page)).length, 5);
-  assert.equal(await page.locator(".md-detail button:has-text('Skip')").count(), 0);
+  assert.equal(await page.locator(".md-detail button:has-text('Answer later')").count(), 0);
   await page.click(".md-detail button:has-text('Back to the list')");
   assert.equal(await page.textContent(".md-count"), "5 questions, 5 answered");
   assert.deepEqual(page.errors, []);

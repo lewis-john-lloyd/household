@@ -111,9 +111,9 @@ function reviewActions(form: HTMLFormElement, r: Row, done: () => void, more: HT
   if (reviewNext(r.key))
     actions.appendChild(
       button(
-        "Skip",
+        "Answer later",
         function () {
-          reviewMoveOn(r.key, done);
+          reviewMoveOn(r.key, done); // nothing kept: the question stays in the list
         },
         "text",
       ),
@@ -133,11 +133,16 @@ function reviewActions(form: HTMLFormElement, r: Row, done: () => void, more: HT
     actions.appendChild(b);
   });
   form.appendChild(actions);
-  form.appendChild(el("p", "Enter keeps the answer and opens the next question; Shift+Enter skips this one.", "support keys"));
+  form.appendChild(
+    el(
+      "p",
+      "Enter keeps the answer and opens the next question; Shift+Enter leaves this one in the list for later.",
+      "support keys",
+    ),
+  );
   return keep;
 }
 
-/** The answer just kept, above the question it moved on to, with its undo. */
 // The answer just kept, with its undo, in the list's head beside the count, so it reads as the queue's last
 // answer and not as part of the question now open. On a phone the list is hidden under the open question, so a
 // copy says the same at the question's top, named as the previous one (CSS shows one or the other).
@@ -257,12 +262,44 @@ function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
   var now = edited(target) ? edited(target)!.edit : null;
   var form = el("form", null, "edit");
   var key = field(form, "Merchant (shorten it to cover more spellings)", textInput(now ? (now.key as string) : r.key, "wide"));
-  var pick = reviewPick(form, "Category for all its lines", now ? (now.category as string) : r.guess, function () {
+  var pick = reviewPick(form, "Category", now ? (now.category as string) : r.guess, function () {
     reviewMoveOn(r.key, done);
   });
+  // whom the answer is for: the merchant, now and later, or only the lines asked about now
+  var scope = el("fieldset", null, "review-scope");
+  scope.appendChild(el("legend", "This answer is for"));
+  var n = Number(r.lines) || 0;
+  var scopes: [string, string][] = [
+    ["merchant", "Every " + r.key + " line, now and later"],
+    ["lines", (n === 1 ? "Only this line" : "Only these " + n + " lines") + "; the next one from it is asked about again"],
+  ];
+  var radios = scopes.map(function (s, i) {
+    var label = el("label");
+    var radio = el("input") as HTMLInputElement;
+    radio.type = "radio";
+    radio.name = "review-scope";
+    radio.value = s[0];
+    radio.checked = i === 0;
+    radio.onchange = function () {
+      key.disabled = s[0] === "lines"; // a merchant's spelling matters only to an answer for the merchant
+    };
+    label.appendChild(radio);
+    label.appendChild(document.createTextNode(" " + s[1]));
+    scope.appendChild(label);
+    return radio;
+  });
+  form.appendChild(scope);
   var error = el("div", "", "error");
   form.onsubmit = function (e) {
     e.preventDefault();
+    if (radios[1].checked) {
+      if (!pick.value) {
+        error.textContent = "Choose a category.";
+        return;
+      }
+      reviewOnlyLines(r, pick.value, error, done);
+      return;
+    }
     if (!pick.value || !key.value.trim()) {
       error.textContent = "Give the merchant and a category.";
       return;
@@ -424,6 +461,70 @@ function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
 // A merchant question's lines, each with its own category: the answers are line edits, so the merchant
 // stays unanswered and its later lines are asked again. With every line answered the question leaves
 // the list (splits); with some left on (choose) it stays, for the rest.
+// A merchant's open lines, less those asked about one by one (they are questions of their own).
+function reviewLinesOf(r: Row, then: (lines: ReviewLine[]) => void, failed: (why: string) => void) {
+  var alone = editor!.review
+    .filter(function (q) {
+      return q.kind === "line";
+    })
+    .map(function (q) {
+      return q.key;
+    });
+  ask(
+    "getReviewLines",
+    [r.key],
+    function (lines) {
+      then(
+        lines.filter(function (l) {
+          return alone.indexOf(l.id) < 0;
+        }),
+      );
+    },
+    function (e) {
+      failed(String((e && e.message) || e));
+    },
+  );
+}
+
+// A merchant's answer for its lines asked about now, and not for the merchant: each line gets the category as
+// a line's own correction, so the merchant's next line is asked about again.
+function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () => void) {
+  error.textContent = "Getting its lines…";
+  reviewLinesOf(
+    r,
+    function (lines) {
+      if (!lines.length) {
+        error.textContent = "No open lines for " + r.key + " in the latest compute.";
+        return;
+      }
+      error.textContent = "";
+      var next = reviewNext(r.key); // before its lines are answered and the question leaves the list
+      unstage(reviewTarget(r));
+      var targets = lines.map(function (l) {
+        return stage(
+          { kind: "line", txn_id: l.id, field: "category", value: category },
+          l.payee + " " + l.date + ": " + category,
+        );
+      });
+      splits[r.key] = lines.map(function (l) {
+        return l.id;
+      });
+      reviewKept = {
+        targets: targets,
+        words:
+          (lines.length === 1 ? "the " + r.key + " line" : "the " + lines.length + " " + r.key + " lines") + " only: " + category,
+        key: r.key,
+      };
+      selected[editTab] = next;
+      reviewFocus = true;
+      done();
+    },
+    function (why) {
+      error.textContent = "Could not get its lines: " + why;
+    },
+  );
+}
+
 function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
   var box = el("div", "Loading its lines…", "support");
   box.id = "split-lines";

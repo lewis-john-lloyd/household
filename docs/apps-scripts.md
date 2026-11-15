@@ -1,6 +1,6 @@
 # Receipts, the weekly email and the county check
 
-The small Apps Scripts that run beside the engine.
+The small Apps Scripts that run beside the engine. After a release, `node tools/release.mjs` pushes each one whose script holds something other than the checkout (a dry run first; see [Development](development.md#releases)).
 
 ## Receipts from email
 

@@ -76,6 +76,9 @@ jobs:
       - run: node --test nudge/test/nudge.test.js
       - run: node --check assessor/Code.js
       - run: node --test assessor/test/assessor.test.js
+      # the release tool, against a made-up checkout with clasp and gh faked
+      - run: node --check tools/release.mjs
+      - run: node --test tools/test/release.test.mjs
 
   browser:
     runs-on: ubuntu-24.04  # Playwright 1.56 has no Chromium for ubuntu-latest (26.04)

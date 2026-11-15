@@ -41,6 +41,10 @@ The notebook holds only the household folder's id. It calls `runner.run(session,
 
 Ordinary commits leave the version number alone. When work is ready to run, one release commit sets the version in `pyproject.toml` and `household/__init__.py`, and the owner tags that commit.
 
+`node tools/release.mjs` deploys a release from a checkout of it, step by step, each command echoed before it runs. With no option it is a dry run: it checks that the checkout is the release (the two versions agree, nothing uncommitted, the commit is origin's main or the release's tag), asks CI for its verdict on the commit (through `gh`, when installed), builds the views and runs the Node suites on what it built, then reads each Apps Script project's script through clasp and says file by file how the checkout differs from it, and whether the web app serves this build. `--apply` pushes each project that differs, reads it back, and points the web app's deployment at a new version of the script, so its address stays the same. A project whose manifest changed (its permissions or services) is pushed only with `--permissions`, after showing the change. It never tags: it prints the tag command for the owner. `tools/test/release.test.mjs` runs it in CI against a made-up checkout with clasp and gh faked.
+
+The views carry the release they were built from: the build writes `dist/Version.js` from `pyproject.toml` (`web/scripts/copy.mjs`), and the Status page sets it beside the release that made the reports (each stage records its own in `run_log`), saying what to do when they differ.
+
 Versions are semantic, before 1.0 (the ledger's layout may still change between minor releases):
 
 - **Minor (0.X.0):** a release that adds something to use: a reader, a page or view, a ledger or Reports table or column, an edit kind or a setting, or a change in what the engine computes.

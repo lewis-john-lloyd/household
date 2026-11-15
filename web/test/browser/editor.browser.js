@@ -668,6 +668,17 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   });
   assert.equal(await page.textContent(".md-count"), "5 questions, 1 answered");
   assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: food\. Undo$/);
+  // beside the count, not in the question now open; on a phone, where the list is hidden, at the question's top
+  assert.equal(await page.isVisible(".md-head .review-kept"), true);
+  assert.equal(await page.isVisible(".md-detail .review-kept"), false);
+  await page.setViewportSize({ width: 400, height: 800 });
+  assert.equal(await page.isVisible(".md-head .review-kept"), false);
+  assert.match(
+    await page.textContent(".md-detail .review-kept"),
+    /^Previous question kept: every ACME GROCER line: food\. Undo$/,
+  );
+  assert.equal(await page.isVisible(".md-detail .review-kept"), true);
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await page.keyboard.press("Enter"); // no guess here, and none chosen
   assert.match(await page.textContent(".md-detail .error"), /Give the merchant and a category/);

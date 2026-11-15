@@ -882,6 +882,9 @@
       form.edit .keys { flex-basis: 100%; margin: -4px 0 0; font-size: 13px; }
       .review-kept { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 0 0 12px; padding: 4px 4px 4px 12px;
         border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); }
+      .md-head .review-kept { margin: 8px 0; font-size: 14px; }
+      .review-kept.phone { display: none; }
+      @media (max-width: 800px) { .review-kept.phone { display: flex; } .md-head .review-kept { display: none; } }
       fieldset.review-alike { flex-basis: 100%; min-width: 0; margin: 0; padding: 8px 16px 12px; border: 1px solid var(--outline-variant);
         border-radius: 12px; }
       fieldset.review-alike legend { padding: 0 6px; font-size: 14px; font-weight: 500; }

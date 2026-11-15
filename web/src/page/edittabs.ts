@@ -138,7 +138,10 @@ function reviewActions(form: HTMLFormElement, r: Row, done: () => void, more: HT
 }
 
 /** The answer just kept, above the question it moved on to, with its undo. */
-function reviewLast(panel: HTMLElement, done: () => void) {
+// The answer just kept, with its undo, in the list's head beside the count, so it reads as the queue's last
+// answer and not as part of the question now open. On a phone the list is hidden under the open question, so a
+// copy says the same at the question's top, named as the previous one (CSS shows one or the other).
+function reviewLast(panel: HTMLElement, done: () => void, where: "list" | "phone" = "list") {
   var kept = reviewKept;
   if (
     !kept ||
@@ -147,7 +150,7 @@ function reviewLast(panel: HTMLElement, done: () => void) {
     })
   )
     return;
-  var p = el("p", "Kept: " + kept.words + ". ", "review-kept");
+  var p = el("p", (where === "phone" ? "Previous question kept: " : "Kept: ") + kept.words + ". ", "review-kept " + where);
   p.setAttribute("role", "status");
   p.appendChild(
     button(
@@ -162,7 +165,8 @@ function reviewLast(panel: HTMLElement, done: () => void) {
       "text",
     ),
   );
-  panel.appendChild(p);
+  if (where === "list") panel.insertBefore(p, panel.querySelector(".md-filter"));
+  else panel.appendChild(p);
 }
 
 function reviewKeep(r: Row, edits: { edit: Edit; text: string }[], words: string, done: () => void) {
@@ -206,11 +210,13 @@ function drawReview(body: HTMLElement) {
       "Each answer opens the next question, so Enter after Enter goes through the list.",
     none: "No questions: every line has a category.",
     detail: function (r, panel, done) {
-      reviewLast(panel, done);
+      reviewLast(panel, done, "phone");
       if (r.kind === "line") reviewLine(r, panel, done);
       else reviewMerchant(r, panel, done);
     },
   });
+  var head = body.querySelector<HTMLElement>(".md-head");
+  if (head) reviewLast(head, redrawEditor);
   if (advanced && !selected[editTab] && open.length) {
     // the last question was answered: say so where the next one would have been
     var panel = body.querySelector<HTMLElement>(".md-detail");
@@ -227,7 +233,7 @@ function drawReview(body: HTMLElement) {
         ),
       );
       panel.appendChild(el("h2", "Every question has an answer", "md-heading"));
-      reviewLast(panel, redrawEditor);
+      reviewLast(panel, redrawEditor, "phone");
       panel.appendChild(
         el("p", "Save the changes below; the next run of the engine applies them and asks about whatever is new.", "support"),
       );

@@ -651,7 +651,6 @@ const QUESTIONS =
   "{ key: 't3', kind: 'line', lines: '1', total: '-50', first: '2001-02-09', last: '2001-02-09', accounts: 'checking', " +
   "example: 'PAY APP PAYMENT ***333', guess: 'food', guessed_by: 'pay app, not in its emails or downloads', confidence: '0.3', note: '' }];";
 const heading = (page) => page.textContent(".md-detail .md-heading");
-const focused = (page) => page.evaluate(() => document.activeElement && document.activeElement.tagName);
 
 test("review: Enter keeps the answer and opens the next question, and the answer just kept can be undone there", async () => {
   const page = await open(QUESTIONS);
@@ -663,7 +662,10 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   await page.keyboard.press("Enter"); // the guess is already chosen
   assert.deepEqual(await staged(page), ["every ACME GROCER line: food"]);
   assert.equal(await heading(page), "BLUE PUMP FUEL"); // moved on
-  assert.equal(await focused(page), "SELECT"); // with the cursor on its answer
+  // with the cursor on its answer (put there once the question is drawn)
+  await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === "SELECT", null, {
+    timeout: 2000,
+  });
   assert.equal(await page.textContent(".md-count"), "5 questions, 1 answered");
   assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: food\. Undo$/);
 

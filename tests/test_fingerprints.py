@@ -31,8 +31,13 @@ def test_a_fingerprint_does_not_depend_on_the_order_things_were_built_in():
 
 def test_a_sum_added_in_another_order_is_the_same_sum_and_a_cent_is_not():
     parts = [10.1, 20.2, 30.3, 0.07]
-    assert sum(parts) != sum(reversed(parts))  # the last bit differs
-    assert fingerprints.of(sum(parts)) == fingerprints.of(sum(reversed(parts)))
+    forward = backward = 0.0
+    for p in parts:  # added one at a time (sum() compensates from Python 3.12, so it can't show this)
+        forward += p
+    for p in reversed(parts):
+        backward += p
+    assert forward != backward  # the last bit differs
+    assert fingerprints.of(forward) == fingerprints.of(backward)
     assert fingerprints.of(60.67) != fingerprints.of(60.68)
     assert fingerprints.of(np.float64(5.0), np.int64(3)) == fingerprints.of(5.0, 3)
     assert fingerprints.of(float("nan")) == fingerprints.of(float("nan")) != fingerprints.of(0.0)

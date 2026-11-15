@@ -10,6 +10,7 @@ import pandas as pd
 
 from . import __version__, backup, categorize, compute, fingerprints, inbox, prices, schema, sheets, valuation
 from .books import BOOK_TABLES, key, read_and_categorize
+from .clock import Clock
 from .kinds import Log, Session, StageResult
 from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
@@ -153,6 +154,9 @@ def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, lo
         started = time.perf_counter()
         priced = _price_requests(ledger, log)
         timing["prices"] = round(time.perf_counter() - started, 2)
+        slow = sorted(((v, k) for k, v in timing.items() if v >= 1), reverse=True)
+        if slow:
+            say(log, "ingest: where the time went: " + ", ".join(f"{k} {v:.0f}s" for v, k in slow))
         written = changes_written(read_ledger(ledger, "source_documents"))
         sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
         say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
@@ -226,6 +230,7 @@ def _review(ledger, log=print, now=None, reports=None, run_id=""):
     The books are read the way compute reads them (LedgerView), so compute, later in the same run, is given
     this categorization rather than working it out again (books.read_and_categorize)."""
     review_table = schema.table(schema.LEDGER, "review")
+    clock = Clock()
     sheets.prefetch(ledger, list(BOOK_TABLES))
     typed = read_ledger(ledger, "review")
     categories = compute.latest(read_ledger(ledger, "categories"), ["category"])["category"].astype(str).str.strip()
@@ -250,6 +255,7 @@ def _review(ledger, log=print, now=None, reports=None, run_id=""):
     for row in left.to_dict("records"):
         say(log, f"review: {row['key']}: {row['note']}")
 
+    clock.lap("answers")
     view = LedgerView(ledger, LedgerReading.of(ledger)[0])  # as compute reads it
     rests_on = key(view) if reports is not None else None
     last = fingerprints.read(reports).get("review") if rests_on else None
@@ -268,12 +274,17 @@ def _review(ledger, log=print, now=None, reports=None, run_id=""):
             "open_lines": open_lines,
             "kept": True,
         }
+    clock.lap("reading the books")
     _, categorized = read_and_categorize(view)
+    clock.lap("categorizing (the model trained)")
     rows = categorize.queue(categorized, carry=left)
+    clock.lap("the questions")
     answers = ["y"] + sorted(c for c in categories if c and c != "transfer") + ["transfer"]
     sheets.rewrite_review(ledger, review_table, rows, answers=answers)
+    clock.lap("writing the tab")
     open_lines = int(pd.to_numeric(rows["lines"]).sum()) if len(rows) else 0
     say(log, f"review: {len(rows)} questions open ({open_lines} lines)" + (f": {WHERE_TO_ANSWER}" if len(rows) else ""))
+    say(log, "review: rebuilt; where the time went: " + clock.said())
     if rests_on:  # the tab as it reads back is what the next run will find, if no one touches it
         fingerprints.write(
             reports,

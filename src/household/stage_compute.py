@@ -74,6 +74,13 @@ class Compute:
         return self.computed_at[:10]
 
 
+def _joined(*frames: pd.DataFrame) -> pd.DataFrame:
+    """The frames one under another, an empty one left out (pandas will stop ignoring it when it sets the
+    columns' types); all empty, the first."""
+    kept = [f for f in frames if len(f)]
+    return pd.concat(kept, ignore_index=True) if kept else frames[0].reset_index(drop=True)
+
+
 def timed(part: Callable[..., Any]) -> Callable[..., Any]:
     """A part of compute, with how long it took kept under its name (c.seconds), for the run's log."""
 
@@ -232,10 +239,7 @@ def _lots(c: Compute, books):
     named = [x.strip() for x in str(settings.value(books["parameters"], "wash_sale_symbols")).split(",") if x.strip()]
     watched = named or sorted(plan)
     form, still, more = lots.build(
-        pd.concat([eq_acq, act_acq], ignore_index=True),
-        pd.concat([eq_sold, act_sold], ignore_index=True),
-        read_ledger(ledger, "stock_splits"),
-        wash_symbols=watched,
+        _joined(eq_acq, act_acq), _joined(eq_sold, act_sold), read_ledger(ledger, "stock_splits"), wash_symbols=watched
     )
     say(
         log,
@@ -647,6 +651,7 @@ def _mortgage(c: Compute, categorized):
     if not loans.empty:
         # to the end of each loan's term: the months ahead are the schedule as it stands, for the Home page
         sched, notes = mortgage.schedule(loans, read_ledger(ledger, "loan_events"), categorized, "9999-12")
+        sched["paid_from_ledger"] = sched["paid_from_ledger"].astype(object)  # a blank is not a number
         sched.loc[sched["month"] > today[:7], "paid_from_ledger"] = ""
         sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
         for line in notes + mortgage.summary(sched[sched["month"] <= today[:7]]):
@@ -902,7 +907,7 @@ def _tax_lines(c: Compute, year, stubs, sales, facts, jobs, vests):
         details.append(last_detail.assign(year=last))
         workings.append(last_parts.assign(year=last))
         say(log, f"tax_lines: {last} from its pay stubs until its return's figures are in return_facts")
-    every = pd.concat(details, ignore_index=True)
+    every = _joined(*details)
     sheets.replace_table(reports, schema.table(schema.REPORTS, "tax_lines"), every.assign(run_id=run_id))
     # what each projected line is made of, for the Taxes page to show beneath it
     made_of = pd.concat(workings, ignore_index=True)

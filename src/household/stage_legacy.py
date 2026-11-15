@@ -3,6 +3,7 @@ safe to run every time.
 """
 
 from . import backup, ingest, legacy, legacy_equity, legacy_investments, logs, schema, sheets
+from .clock import Clock
 from .kinds import Log, Session, StageResult
 from .ledgerio import bootstrap, new_run_id, read_ledger
 from .runlog import say
@@ -44,8 +45,11 @@ def ingest_legacy_investments(
     already holds (same date, account and fund), is not added again, so running it twice adds nothing.
     """
     run_id = run_id or new_run_id()
-    ledger, _, _ = bootstrap(session, folder_id)
+    clock = Clock()
+    ledger, _, _ = bootstrap(session, folder_id)  # the first stage of a run opens both spreadsheets for all
+    clock.lap("opening the ledger and Reports")
     sheets.prefetch(ledger, ["accounts", "securities", "holdings"])  # what it reads, in one call
+    clock.lap("reading the ledger")
     known = set(read_ledger(ledger, "accounts")["account_id"].astype(str).str.strip())
     where = {tab: (target.split(":", 1) + [""])[:2] for tab, target in tabs.items()}
     unknown = sorted({a for a, _ in where.values() if a not in known})
@@ -55,6 +59,7 @@ def ingest_legacy_investments(
     names = [funds_tab] + list(tabs)
     got = workbook.values_batch_get([f"'{n}'" for n in names], params={"valueRenderOption": sheets.UNFORMATTED})
     read = {n: vr.get("values", []) for n, vr in zip(names, got.get("valueRanges", []))}
+    clock.lap("reading the old workbook")
     funds, notes = legacy_investments.securities(read[funds_tab])
     frames = []
     for tab, (account, source) in where.items():
@@ -71,10 +76,12 @@ def ingest_legacy_investments(
 
     keys = set(key(have))
     new = held[[k not in keys for k in key(held)]]
+    clock.lap("comparing")
     for note in notes:
         say(log, note)
     if funds.empty and new.empty:  # the usual case once it has run: nothing to back up or write
         say(log, f"legacy investments: nothing new ({len(held)} readings already held)")
+        say(log, "legacy investments: where the time went: " + clock.said())
         return {
             "run_id": run_id,
             "securities": 0,

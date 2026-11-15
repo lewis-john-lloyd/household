@@ -42,7 +42,9 @@ flowchart TB
 | `stage_legacy` | The old workbooks into the ledger, once each; safe to run every time |
 | `stage_ingest` | Every file in the inbox into the ledger, then review answers and prices |
 | `stage_compute` | Reports rebuilt from the ledger |
-| `ledgerio` | Opens the ledger and Reports, and reads the ledger the way compute sees it |
+| `ledgerio` | Opens the ledger and Reports, once for a whole run, and reads the ledger the way compute sees it |
+| `sheets` | A spreadsheet held for a run (`Book`): each tab read once, and a stage's Reports tables written together |
+| `fingerprints` | What a slow part rested on last time, so a run keeps what it made when nothing under it changed |
 | `books` | The transactions as both stages reason about them |
 | `runlog` | What each stage prints, kept for the views' Status page |
 | `parsers/` | One module per kind of file: `sniff` says whether it is one, `parse` reads it |

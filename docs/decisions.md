@@ -193,3 +193,27 @@ someone saves.
 
 **Cost.** A new kind is written in both places. The test needs Node and the built web app, so it runs in
 CI's end-to-end job, not the Python job.
+
+## 15. A run reads once, writes together, and keeps what hasn't changed
+
+**Decided.** For one run, each spreadsheet is a `sheets.Book`: a tab is read once and held (a write through
+`sheets` drops what was held; `review` and `price_requests`, which a person or a formula changes while a run
+is going, are always read fresh), and a stage's Reports tables are queued and written together at its end
+(`sheets.batched`: one request sizing every tab, then the values in a few). `runner.run` gives every stage
+the same two Books (`ledgerio.one_run`). A part that is slow and rests on inputs it can name keeps a
+fingerprint of them in Reports (`fingerprints`): the review rebuild and the retirement simulation are
+skipped when theirs is unchanged and the tables they wrote are still as that run left them, and the log
+says which run's work stands. The fingerprint includes the release, so no release keeps what an older one
+made.
+
+**Why.** A correction is only as quick as the run that applies it. Read and written a table at a time, a
+run on the test fixtures made about 500 Sheets calls, enough on a real ledger to wait on the per-minute
+quota; nearly all of a run with nothing new was reading tabs again and rebuilding what had not changed.
+The same run now makes about 35.
+
+**Cost.** Reports for a stage land together or not at all: an error in compute leaves Reports as the last
+full run left it, which is safer, but a part that finished before the error is not there to look at (the
+log has what it said). A skipped part's tables carry the id of the run that made them, not the latest one.
+A fingerprint is only as good as the list of what it covers: an input left out of it would keep stale
+work, so each is built from the values the part is handed, and a test changes one and checks the part
+runs again.

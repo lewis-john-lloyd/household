@@ -447,6 +447,7 @@ interface StageRun {
 interface AttentionItem {
   title: string;
   detail: string;
+  date?: string; // YYYY-MM-DD, worded by the page, when the thing has a day
   link?: string; // where it opens: "budget:<category>" for a line item's drawer, "charge:<key>" for a charge's
 }
 
@@ -684,6 +685,7 @@ function thingsOf(summary: Record<string, unknown>, key: string): AttentionItem[
     .map((t) => {
       const item: AttentionItem = { title: String(t.title ?? ""), detail: String(t.detail ?? "") };
       if (t.link) item.link = String(t.link);
+      if (t.date) item.date = String(t.date);
       return item;
     })
     .filter((i) => i.title);

@@ -245,12 +245,13 @@ def test_compute_lists_what_its_checks_found_for_the_status_page(session, monkey
     # each thing as the Status page shows it: what it is, what about it, and where it opens
     assert summary["things"] == {
         "stubs_missing": [
-            {"title": "sam, Acme Widgets", "detail": "Paid 2001-03-02: 90.00 into checking", "link": "txn:t9"}
+            {"title": "sam, Acme Widgets", "date": "2001-03-02", "detail": "paid 90.00 into checking", "link": "txn:t9"}
         ],
         "pay_not_deposited": [
             {
                 "title": "alex, Acme Widgets",
-                "detail": "Paid 2001-02-16: net pay 80.00 never arrived in an account",
+                "date": "2001-02-16",
+                "detail": "net pay of 80.00 never arrived in an account",
                 "link": "",
             }
         ],

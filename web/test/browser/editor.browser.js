@@ -2208,7 +2208,7 @@ test("the status page says what answers a card, lists the warnings no card speak
       "window.__answers.getTransaction = null;" +
       "window.__answers.getStatus.attention = [" +
       "  { key: 'stubs_missing', label: 'pay deposit has no stub', count: 1, note: '', detail: [], flags: [], action: ''," +
-      "    items: [{ title: 'sam, Acme Widgets', detail: 'Paid 2001-02-28: 90.00 into checking', link: 'txn:t9' }] }," +
+      "    items: [{ title: 'sam, Acme Widgets', date: '2001-02-28', detail: 'paid 90.00 into checking', link: 'txn:t9' }] }," +
       "  { key: 'funds_unclassified', label: 'held fund has no asset class', count: 1, note: '', detail: [], flags: []," +
       "    action: 'view:investments/accounts', items: [{ title: 'WILLX', detail: '30 in a_brokerage' }] }];" +
       "window.__answers.getStatus.warnings = [{ stage: 'compute', level: 'WARN', line: 'lots: a vest is missing' }];" +
@@ -2223,6 +2223,7 @@ test("the status page says what answers a card, lists the warnings no card speak
   // each card says what answers it
   const cards = page.locator("#status-attention .attention");
   assert.match(await cards.nth(0).textContent(), /Download each stub from payroll into the inbox, then run\./);
+  assert.match(await cards.nth(0).textContent(), /sam, Acme WidgetsFeb 28, 2001: paid 90\.00 into checking/); // the day in words
   assert.match(await cards.nth(1).textContent(), /leave a fund out until it has a class\. Set it under Accounts/);
   // a warning with no card is on the page as the engine said it, with the way to it in the log
   assert.match(await page.textContent(".attention.warnings"), /^1other warning in the last run.*lots: a vest is missingCompute/);

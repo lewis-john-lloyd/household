@@ -66,7 +66,8 @@ class Compute:
     log: Log
     seconds: dict[str, float] = field(default_factory=dict)  # how long each part took (timed)
     # what a check found, thing by thing, for the Status page's card: {the check's count in the result: [{"title",
-    # "detail", "link"}]}; link is where the thing opens in the views ("txn:<id>" for a line), or ""
+    # "detail", "link"}, and "date" when it has a day]}; link is where the thing opens in the views ("txn:<id>" for
+    # a line), or ""
     things: dict[str, list[dict[str, str]]] = field(default_factory=dict)
 
     @property
@@ -620,7 +621,8 @@ def _checks(c: Compute, books, effective, categorized):
     c.things["stubs_missing"] = [
         {
             "title": ", ".join(str(row[k]) for k in ("person", "employer") if str(row[k]).strip()) or "Pay deposit",
-            "detail": f"Paid {row['date']}: {float(row['amount']):,.2f} into {row['account_id']}",
+            "date": str(row["date"]),  # worded by the page
+            "detail": f"paid {float(row['amount']):,.2f} into {row['account_id']}",
             "link": f"txn:{row['txn_id']}" if str(row["txn_id"]).strip() else "",
         }
         for row in forgot.sort_values("date").to_dict("records")
@@ -628,7 +630,8 @@ def _checks(c: Compute, books, effective, categorized):
     c.things["pay_not_deposited"] = [
         {
             "title": ", ".join(str(row[k]) for k in ("person", "employer") if str(row[k]).strip()) or "Pay stub",
-            "detail": f"Paid {row['date']}: net pay {float(row['amount']):,.2f} never arrived in an account",
+            "date": str(row["date"]),
+            "detail": f"net pay of {float(row['amount']):,.2f} never arrived in an account",
             "link": "",
         }
         for row in lost.sort_values("date").to_dict("records")

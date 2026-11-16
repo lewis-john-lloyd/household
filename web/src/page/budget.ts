@@ -110,7 +110,7 @@ function drawBudgetPage() {
 }
 
 function shortDay(d: string) {
-  return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10));
+  return dayWords(d, false); // budgetview.ts
 }
 
 // A day in a sentence: "Nov 1, 2026" (an ISO date belongs in a table, not in prose).

@@ -820,14 +820,17 @@ function stepRange(r: SearchRange, dir: number, today: string): SearchRange | nu
   return { unit: r.unit, days: r.days, end: to === today ? "today" : to };
 }
 
+/** A day in words, "Nov 15, 2026", or "Nov 15" without its year: how every page says a day in a sentence. */
+function dayWords(iso: string, withYear?: boolean): string {
+  var d = MONTH_NAMES[+iso.slice(5, 7) - 1].slice(0, 3) + " " + +iso.slice(8, 10);
+  return withYear === false ? d : d + ", " + iso.slice(0, 4);
+}
+
 /** "Aug 18 to Nov 15, 2026", or with both years when they differ. */
 function rangeSpan(from: string, to: string): string {
-  var day = function (iso: string) {
-    return MONTH_NAMES[+iso.slice(5, 7) - 1].slice(0, 3) + " " + +iso.slice(8, 10);
-  };
   return from.slice(0, 4) === to.slice(0, 4)
-    ? day(from) + " to " + day(to) + ", " + to.slice(0, 4)
-    : day(from) + ", " + from.slice(0, 4) + " to " + day(to) + ", " + to.slice(0, 4);
+    ? dayWords(from, false) + " to " + dayWords(to)
+    : dayWords(from) + " to " + dayWords(to);
 }
 
 /** What the date chip says: the range in words ("90 days ending today", "October 2026", "Q4 2026 so far") and
@@ -840,7 +843,7 @@ function rangeLabel(r: SearchRange, today: string): { label: string; span: strin
       Math.round(r.days) +
       (Math.round(r.days) === 1 ? " day" : " days") +
       " ending " +
-      (s.to === today ? "today" : rangeSpan(s.to, s.to).replace(/ to .*?,/, ","));
+      (s.to === today ? "today" : dayWords(s.to));
   else {
     var y = s.to.slice(0, 4);
     var name =

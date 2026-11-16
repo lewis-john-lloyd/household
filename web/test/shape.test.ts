@@ -684,7 +684,7 @@ test("a check's card lists what compute found, and a warning no card speaks for 
         pay_not_deposited: 1,
         funds_unclassified: 2,
         things: {
-          stubs_missing: [{ title: "sam, Acme Widgets", detail: "Paid 2001-02-28: 90.00 into checking", link: "txn:t9" }],
+          stubs_missing: [{ title: "sam, Acme Widgets", date: "2001-02-28", detail: "paid 90.00 into checking", link: "txn:t9" }],
           funds_unclassified: [
             { title: "PAGEX", detail: "20 in brokerage", link: "" },
             { title: "WILLX", detail: "50 in brokerage, ira", link: "" },
@@ -708,7 +708,9 @@ test("a check's card lists what compute found, and a warning no card speaks for 
     status.attention.find((a) => a.key === key)!,
   );
   // each deposit with no stub, opening its own line; the log line is not repeated under them
-  assert.deepEqual(stubs.items, [{ title: "sam, Acme Widgets", detail: "Paid 2001-02-28: 90.00 into checking", link: "txn:t9" }]);
+  assert.deepEqual(stubs.items, [
+    { title: "sam, Acme Widgets", date: "2001-02-28", detail: "paid 90.00 into checking", link: "txn:t9" },
+  ]);
   assert.deepEqual(stubs.detail, []);
   // the lines under a check's line are its lines too: marked in the log, and said on a card with nothing listed
   assert.equal(stubs.flags.length, 3);

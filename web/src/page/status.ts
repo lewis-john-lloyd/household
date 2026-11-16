@@ -337,11 +337,11 @@ function attentionCard(a: Attention, waiting?: boolean) {
           "thing-link",
         );
         go.appendChild(el("strong", i.title));
-        go.appendChild(el("span", i.detail));
+        go.appendChild(el("span", thingDetail(i)));
         li.appendChild(go);
       } else {
         li.appendChild(el("strong", i.title));
-        li.appendChild(el("span", i.detail));
+        li.appendChild(el("span", thingDetail(i)));
       }
       list.appendChild(li);
     });
@@ -583,7 +583,7 @@ function drawBreakdown(c: Status["categories"]) {
   }
   var d = new Date(c.since + "T00:00:00");
   since.textContent =
-    c.total.toLocaleString() + " lines since " + (isNaN(d.getTime()) ? c.since : d.toLocaleDateString([], { dateStyle: "long" }));
+    c.total.toLocaleString() + " lines since " + (/^\d{4}-\d\d-\d\d/.test(c.since) ? longDate(c.since) : c.since);
   var stack = el("div", null, "stack");
   stack.setAttribute("role", "img");
   stack.setAttribute(
@@ -648,4 +648,9 @@ function drawProjection(rows: [string, number][], year: string, wi: number | nul
     ),
   );
   box.appendChild(actions);
+}
+
+/** A thing's line under its title: its day in words, when it has one, then what about it. */
+function thingDetail(i: AttentionItem) {
+  return i.date ? longDate(i.date) + (i.detail ? ": " + i.detail : "") : i.detail;
 }

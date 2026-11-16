@@ -76,7 +76,7 @@ function change(n: number) {
   return (n > 0.5 ? "+" : n < -0.5 ? "−" : "") + money.format(Math.abs(n));
 }
 function longDate(d: string) {
-  return MONTH_SHORT[Number(d.slice(5, 7)) - 1] + " " + Number(d.slice(8, 10)) + ", " + d.slice(0, 4);
+  return dayWords(d); // budgetview.ts
 }
 function ownerName(o: string) {
   return o === "kids" ? "Kids" : o.charAt(0).toUpperCase() + o.slice(1);

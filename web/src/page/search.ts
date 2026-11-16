@@ -301,10 +301,7 @@ function drawSearch() {
         );
       });
       var endWords = function (end: string) {
-        return rangeSpan(
-          rangeEnd({ unit: "days", days: 1, end: end }, now),
-          rangeEnd({ unit: "days", days: 1, end: end }, now),
-        ).replace(/ to .*?,/, ",");
+        return dayWords(rangeEnd({ unit: "days", days: 1, end: end }, now));
       };
       (
         [

@@ -1096,7 +1096,7 @@ function searchBulk(found: SearchLine[], d: SearchPage) {
           rememberStaged(editTarget({ kind: "line", txn_id: l.id, field: "category" }));
           stage(
             { kind: "line", txn_id: l.id, field: "category", value: to.value },
-            l.date + " " + l.payee + " " + cents.format(l.amount) + ": " + to.value,
+            l.date + " " + l.payee + " " + cents.format(l.amount) + ": " + pretty(to.value),
           );
           moved++;
         });

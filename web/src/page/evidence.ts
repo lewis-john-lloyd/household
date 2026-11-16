@@ -133,7 +133,7 @@ function lineList(lines: Txn[], redraw: () => void): HTMLElement {
                     if (pick.value && pick.value !== t.category)
                       stage(
                         { kind: "line", txn_id: t.id, field: "category", value: pick.value },
-                        said + " moves to " + pick.value,
+                        said + " moves to " + pretty(pick.value),
                       );
                     redraw();
                   },

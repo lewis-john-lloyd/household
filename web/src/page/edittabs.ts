@@ -306,7 +306,7 @@ function reviewMerchant(r: Row, panel: HTMLElement, done: () => void) {
       return;
     }
     unstage(target);
-    var words = "every " + key.value.trim() + " line: " + pick.value;
+    var words = "every " + key.value.trim() + " line: " + pretty(pick.value);
     reviewKeep(r, [{ edit: { kind: "payee", key: key.value.trim(), category: pick.value }, text: words }], words, done);
   };
   reviewActions(form, r, done, [
@@ -436,13 +436,13 @@ function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
     var edits = rows.map(function (q) {
       return {
         edit: { kind: "line", txn_id: q.key, field: "category", value: pick.value } as Edit,
-        text: reviewText(q) + " " + q.first + ": " + pick.value,
+        text: reviewText(q) + " " + q.first + ": " + pretty(pick.value),
       };
     });
     var words =
       rows.length > 1
-        ? rows.length + " lines reading " + reviewText(r) + ": " + pick.value
-        : reviewText(r) + " " + r.first + ": " + pick.value;
+        ? rows.length + " lines reading " + reviewText(r) + ": " + pretty(pick.value)
+        : reviewText(r) + " " + r.first + ": " + pretty(pick.value);
     reviewKeep(r, edits, words, done);
   };
   keep = reviewActions(form, r, done, [
@@ -522,14 +522,14 @@ function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () 
       var targets = lines.map(function (l) {
         return stage(
           { kind: "line", txn_id: l.id, field: "category", value: category },
-          l.payee + " " + l.date + ": " + category,
+          l.payee + " " + l.date + ": " + pretty(category),
         );
       });
       splits[r.key] = lines.map(function (l) {
         return l.id;
       });
       var which = lines.length === 1 ? "the " + r.key + " line" : "the " + lines.length + " " + r.key + " lines";
-      var words = which + " only: " + category;
+      var words = which + " only: " + pretty(category);
       if (ask) {
         var pattern = reviewKeyPattern(r.key);
         var held = editor!.payeeRules.filter(function (p) {
@@ -546,10 +546,10 @@ function reviewOnlyLines(r: Row, category: string, error: HTMLElement, done: () 
               ask: "TRUE",
               was: held ? ruleWas(held) : null,
             },
-            "payee rule " + pattern + ": asks about each line, guessing " + category,
+            "payee rule " + pattern + ": asks about each line, guessing " + pretty(category),
           ),
         );
-        words = which + ": " + category + ", and each of its lines asked about from now on";
+        words = which + ": " + pretty(category) + ", and each of its lines asked about from now on";
       }
       reviewKept = { targets: targets, words: words, key: r.key };
       selected[editTab] = next;
@@ -624,7 +624,7 @@ function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
               var l = p[0];
               stage(
                 { kind: "line", txn_id: l.id, field: "category", value: p[1].value },
-                l.payee + " " + l.date + ": " + p[1].value,
+                l.payee + " " + l.date + ": " + pretty(p[1].value),
               );
             });
             splits[r.key] = lines.map(function (l) {

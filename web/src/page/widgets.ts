@@ -49,7 +49,11 @@ function categoryChoice(value?: string | null, blank?: string) {
   var names = (editor ? editor.categories : []).map(function (c) {
     return c.category;
   });
+  // each shown by its name in words; its value stays the key the ledger keeps
   var labels: Record<string, string> = { "": blank || "(choose)" };
+  names.forEach(function (n) {
+    labels[n] = pretty(n);
+  });
   if (value && names.indexOf(value) < 0) {
     // shown as it is, so a name that isn't a category is seen, not dropped
     names.push(value);

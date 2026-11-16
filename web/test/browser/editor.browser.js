@@ -623,7 +623,7 @@ test("a merchant split into its lines leaves review once every line has a catego
   assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 1);
   await split(["food", "kids"]);
   assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 0);
-  assert.deepEqual(await staged(page), ["ACME GROCER 12 2001-02-01: food", "ACME GROCER 12 2001-02-15: kids"]);
+  assert.deepEqual(await staged(page), ["ACME GROCER 12 2001-02-01: Food", "ACME GROCER 12 2001-02-15: Kids"]);
   await page.evaluate(() =>
     Array.from(document.querySelectorAll("#pending-list li")) // undo one: the question is back
       .filter((li) => li.textContent.includes("2001-02-15"))[0]
@@ -674,12 +674,12 @@ test("review: a merchant's answer can be for its lines now only, leaving the mer
   await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
   // each line its own correction, and no answer for the merchant
   assert.deepEqual((await staged(page)).sort(), [
-    "ACME GROCER 12 2001-02-01: household",
-    "ACME GROCER 13 2001-02-10: household",
-    "ACME GROCER 14 2001-02-15: household",
+    "ACME GROCER 12 2001-02-01: Household",
+    "ACME GROCER 13 2001-02-10: Household",
+    "ACME GROCER 14 2001-02-15: Household",
   ]);
   assert.equal(await page.locator(".md-row:has-text('ACME GROCER')").count(), 0); // answered, so out of the list
-  assert.match(await page.textContent(".md-head .review-kept"), /^Kept: the 3 ACME GROCER lines only: household\. Undo$/);
+  assert.match(await page.textContent(".md-head .review-kept"), /^Kept: the 3 ACME GROCER lines only: Household\. Undo$/);
   // Answer later leaves a question in the list
   assert.equal(await page.locator(".md-detail button:has-text('Answer later')").count(), 1);
   await page.click(".md-head .review-kept button:has-text('Undo')");
@@ -701,8 +701,8 @@ test("review: a merchant can be asked about line by line from now on, its lines 
   await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
   const today = await page.evaluate(() => today());
   assert.deepEqual(await staged(page), [
-    "ACME GROCER 12 2001-02-01: food",
-    "payee rule \\bACME\\W*GROCER\\b: asks about each line, guessing food",
+    "ACME GROCER 12 2001-02-01: Food",
+    "payee rule \\bACME\\W*GROCER\\b: asks about each line, guessing Food",
   ]);
   const rule = await page.evaluate(() =>
     JSON.parse(JSON.stringify(Object.values(staged).find((p) => p.edit.kind === "payee_rule").edit)),
@@ -721,7 +721,7 @@ test("review: a merchant can be asked about line by line from now on, its lines 
   assert.equal(await page.evaluate(() => new RegExp(reviewKeyPattern("ACME GROCER"), "i").test("ACMEGROCERIES")), false);
   assert.match(
     await page.textContent(".md-head .review-kept"),
-    /^Kept: the ACME GROCER line: food, and each of its lines asked about from now on\. Undo$/,
+    /^Kept: the ACME GROCER line: Food, and each of its lines asked about from now on\. Undo$/,
   );
   assert.deepEqual(page.errors, []);
   await page.close();
@@ -735,14 +735,14 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   await page.click(".md-row:has-text('ACME GROCER')");
   await page.focus(".md-detail select");
   await page.keyboard.press("Enter"); // the guess is already chosen
-  assert.deepEqual(await staged(page), ["every ACME GROCER line: food"]);
+  assert.deepEqual(await staged(page), ["every ACME GROCER line: Food"]);
   assert.equal(await heading(page), "BLUE PUMP FUEL"); // moved on
   // with the cursor on its answer (put there once the question is drawn)
   await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === "SELECT", null, {
     timeout: 2000,
   });
   assert.equal(await page.textContent(".md-count"), "5 questions, 1 answered");
-  assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: food\. Undo$/);
+  assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: Food\. Undo$/);
   // beside the count, not in the question now open; on a phone, where the list is hidden, at the question's top
   assert.equal(await page.isVisible(".md-head .review-kept"), true);
   assert.equal(await page.isVisible(".md-detail .review-kept"), false);
@@ -750,7 +750,7 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   assert.equal(await page.isVisible(".md-head .review-kept"), false);
   assert.match(
     await page.textContent(".md-detail .review-kept"),
-    /^Previous question kept: every ACME GROCER line: food\. Undo$/,
+    /^Previous question kept: every ACME GROCER line: Food\. Undo$/,
   );
   assert.equal(await page.isVisible(".md-detail .review-kept"), true);
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -760,7 +760,7 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   assert.equal(await heading(page), "BLUE PUMP FUEL");
   await page.keyboard.press("Shift+Enter"); // skip it
   assert.equal(await heading(page), "PAY APP PAYMENT ***111");
-  assert.deepEqual(await staged(page), ["every ACME GROCER line: food"]);
+  assert.deepEqual(await staged(page), ["every ACME GROCER line: Food"]);
 
   await page.click(".review-kept button:has-text('Undo')"); // the answer before the skip, taken back
   assert.deepEqual(await staged(page), []);
@@ -789,10 +789,10 @@ test("review: a single line is answered without the server, and lines that read 
   assert.deepEqual(await ticked(), [true, false]);
   assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep for 2 lines");
   await page.click(".md-detail button[type=submit]");
-  assert.deepEqual(await staged(page), ["PAY APP PAYMENT ***111 2001-02-05: kids", "PAY APP PAYMENT ***222 2001-02-08: kids"]);
+  assert.deepEqual(await staged(page), ["PAY APP PAYMENT ***111 2001-02-05: Kids", "PAY APP PAYMENT ***222 2001-02-08: Kids"]);
   assert.equal(await heading(page), "PAY APP PAYMENT ***333"); // the one left of the three
   assert.equal(await page.locator("fieldset.review-alike").count(), 0); // nothing left that reads the same
-  assert.match(await page.textContent(".review-kept"), /Kept: 2 lines reading PAY APP PAYMENT \*\*\*111: kids/);
+  assert.match(await page.textContent(".review-kept"), /Kept: 2 lines reading PAY APP PAYMENT \*\*\*111: Kids/);
   await page.click(".review-kept button:has-text('Undo')"); // both at once
   assert.deepEqual(await staged(page), []);
 
@@ -1375,7 +1375,7 @@ test("giving: a recipient opens to its gifts, each with the fixes a line takes",
   await page.selectOption("table.bv tr.move-row select", "food");
   await page.click("table.bv tr.move-row button:has-text('Move it')");
   const day = await page.evaluate(() => window.__day);
-  assert.deepEqual(await staged(page), [`Gifts: the $25.00 line of ${day} moves to food`]); // leak-guard: allow (made up)
+  assert.deepEqual(await staged(page), [`Gifts: the $25.00 line of ${day} moves to Food`]); // leak-guard: allow (made up)
   await page.waitForSelector("table.bv tr.gift-lines tr[data-txn='g1']:has-text('Moves to Food after the next run')");
   await page.click("table.bv tr.gift-lines tr[data-txn='g1'] button:has-text('Undo move')");
   assert.deepEqual(await staged(page), []);
@@ -2416,7 +2416,7 @@ test("where money went opens its lines, from the table or the chart, each with i
   await page.waitForSelector(".drawer tr.move-row select"); // the picker's own row, under the line
   await page.selectOption(".drawer tr.move-row select", "household");
   await page.click(".drawer tr.move-row button:has-text('Move it')");
-  assert.deepEqual(await staged(page), ["Food: the $30.00 line of 2001-10-09 moves to household"]); // leak-guard: allow (made up)
+  assert.deepEqual(await staged(page), ["Food: the $30.00 line of 2001-10-09 moves to Household"]); // leak-guard: allow (made up)
   assert.match(await page.textContent(".drawer tr[data-txn='t2']"), /Moves to Household after the next run/);
   await page.click(".drawer tr[data-txn='t2'] button:has-text('Undo move')");
   assert.deepEqual(await staged(page), []);
@@ -3716,8 +3716,8 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   await page.selectOption("#flows-search .search-bulk select", "petrol");
   await page.click("#flows-search .search-bulk button:has-text('Move 2 lines')");
   assert.deepEqual((await staged(page)).sort(), [
-    "2025-12-20 ACME GROCER -$9.00: petrol", // leak-guard: allow (made up)
-    "2026-02-10 BLUE PUMP FUEL -$30.00: petrol", // leak-guard: allow (made up)
+    "2025-12-20 ACME GROCER -$9.00: Petrol", // leak-guard: allow (made up)
+    "2026-02-10 BLUE PUMP FUEL -$30.00: Petrol", // leak-guard: allow (made up)
   ]);
   // a line opens on its page: the bank's fields as they came, and its recurring charge to set
   await page.click("#flows-search .search-row:has-text('BLUE PUMP FUEL')");

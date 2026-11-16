@@ -80,7 +80,7 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
           }
           itemCats[n] = pick.value;
           if (pick.value === i.category) unstage("item|" + i.id);
-          else stage({ kind: "item", item_id: i.id, category: pick.value }, i.name + ": " + pick.value);
+          else stage({ kind: "item", item_id: i.id, category: pick.value }, i.name + ": " + pretty(pick.value));
           li.classList.toggle("changed", pick.value !== i.category);
           if (splitter) splitter.fromItems();
         };
@@ -116,8 +116,9 @@ function transactionEditor(panel: HTMLElement, t: Line, done: () => void) {
           return;
         }
         if (merchant.checked && t.key)
-          stage({ kind: "payee", key: t.key, category: category.value }, "every " + t.key + " line: " + category.value);
-        else stage({ kind: "line", txn_id: t.id, field: "category", value: category.value }, said + ": " + category.value);
+          stage({ kind: "payee", key: t.key, category: category.value }, "every " + t.key + " line: " + pretty(category.value));
+        else
+          stage({ kind: "line", txn_id: t.id, field: "category", value: category.value }, said + ": " + pretty(category.value));
         done();
       },
       "filled",

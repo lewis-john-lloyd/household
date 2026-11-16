@@ -92,6 +92,22 @@ function subtabs(parent: HTMLElement, label: string, parts: string[][], current:
   return box;
 }
 
+// A heading that sorts its column. dir is how it sorts now ("asc", "desc", or "" for not by this one),
+// shown by the one arrow every table uses; a click calls pick, which sorts and redraws.
+function sortHead(th: HTMLElement, label: string, dir: string, pick: () => void) {
+  var b = button(label, pick, "sort");
+  b.setAttribute("aria-label", "Sort by " + label);
+  th.appendChild(b);
+  showSort(th, dir);
+  return b;
+}
+
+function showSort(th: HTMLElement, dir: string) {
+  var b = th.querySelector("button.sort");
+  if (b) b.setAttribute("data-dir", dir);
+  th.setAttribute("aria-sort", dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none");
+}
+
 // Which part is open, without drawing the bar again.
 function pressTab(box: HTMLElement, current: string) {
   box.querySelectorAll<HTMLElement>(":scope > button").forEach(function (b) {

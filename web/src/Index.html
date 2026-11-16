@@ -301,11 +301,10 @@
         font-variant-numeric: tabular-nums; }
       th:first-child, td:first-child { text-align: left; padding-left: 4px; }
       td.text { text-align: left; }
-      .w-table th button.sort { all: unset; cursor: pointer; font: inherit; color: inherit; }
-      .w-table th button.sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-      th button.sort { all: unset; cursor: pointer; font-weight: 500; }
-      th button.sort[data-dir="asc"]::after { content: " ▲"; }
-      th button.sort[data-dir="desc"]::after { content: " ▼"; }
+      th button.sort { all: unset; cursor: pointer; }
+      th button.sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+      th button.sort[data-dir="asc"]::after { content: " \2191"; }
+      th button.sort[data-dir="desc"]::after { content: " \2193"; }
       tr.line { cursor: pointer; }
       tr.line:hover td { background: var(--surface-container); }
       tr.subscription td { font-size: 13px; color: var(--muted); padding-top: 2px; padding-bottom: 2px; }
@@ -539,7 +538,6 @@
       tr.search-sum td { font-weight: 500; border-top: 2px solid var(--outline-variant); }
       .search-flash { margin: 0; color: var(--on-surface-variant); }
       .search-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
-      .search-table th button.sort { color: inherit; font: inherit; font-weight: 500; padding: 0; min-height: 0; }
       .search-table tr.search-row { cursor: pointer; }
       .search-table tr.search-row:hover td, .search-table tr.search-row:focus-visible td { background: var(--surface-container-high); }
       .search-table td.in { color: var(--good, inherit); }
@@ -615,8 +613,6 @@
         background: var(--surface-low); border: 1px solid var(--outline-variant); border-radius: 12px; }
       .bv-summary b { display: block; font-size: 22px; line-height: 28px; font-weight: 400; font-variant-numeric: tabular-nums; }
       .bv-summary span { color: var(--on-surface-variant); font-size: 13px; }
-      table.bv th button.sort { all: unset; cursor: pointer; font: inherit; color: inherit; }
-      table.bv th button.sort:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
       table.bv { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface-low);
         border: 1px solid var(--outline-variant); border-radius: 12px; overflow: hidden; }
       table.bv th, table.bv td { padding-left: 12px; }

@@ -914,20 +914,14 @@ function drawSearch() {
     cols.forEach(function (c) {
       var th = el("th", null, c[2]);
       var on = searchState.sort === c[0];
-      th.setAttribute("aria-sort", on ? (searchState.descending ? "descending" : "ascending") : "none");
-      var b = button(
-        c[1] + (on ? (searchState.descending ? " ↓" : " ↑") : ""),
-        function () {
-          if (searchState.sort === c[0]) searchState.descending = !searchState.descending;
-          else {
-            searchState.sort = c[0];
-            searchState.descending = c[0] === "date" || c[0] === "amount" ? c[0] === "date" : false;
-          }
-          drawResults();
-        },
-        "text sort",
-      );
-      th.appendChild(b);
+      sortHead(th, c[1], on ? (searchState.descending ? "desc" : "asc") : "", function () {
+        if (searchState.sort === c[0]) searchState.descending = !searchState.descending;
+        else {
+          searchState.sort = c[0];
+          searchState.descending = c[0] === "date";
+        }
+        drawResults();
+      });
       tr.appendChild(th);
     });
     table.appendChild(el("thead")).appendChild(tr);

@@ -129,16 +129,10 @@ function budgetTable(v: BudgetView) {
       head.appendChild(th);
       return;
     }
-    var b = button(
-      h + (sort.col === i ? (sort.dir > 0 ? " \u2191" : " \u2193") : ""),
-      function () {
-        budget.sort = sort.col === i ? { col: i, dir: -sort.dir } : { col: i, dir: i === 0 || i === 2 ? 1 : -1 };
-        drawBudgetPage();
-      },
-      "sort",
-    );
-    th.setAttribute("aria-sort", sort.col === i ? (sort.dir > 0 ? "ascending" : "descending") : "none");
-    th.appendChild(b);
+    sortHead(th, h, sort.col === i ? (sort.dir > 0 ? "asc" : "desc") : "", function () {
+      budget.sort = sort.col === i ? { col: i, dir: -sort.dir } : { col: i, dir: i === 0 || i === 2 ? 1 : -1 };
+      drawBudgetPage();
+    });
     head.appendChild(th);
   });
   table.appendChild(el("thead")).appendChild(head);

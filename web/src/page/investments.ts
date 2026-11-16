@@ -121,16 +121,9 @@ function wTable(parent: HTMLElement, headers: string[], numeric: number[]) {
   headers.forEach(function (h, i) {
     var th = el("th", null, numeric.indexOf(i) >= 0 ? "num" : "");
     if (h) {
-      var b = button(
-        h,
-        function () {
-          sortBy(i);
-        },
-        "sort",
-      );
-      b.setAttribute("aria-label", "Sort by " + h);
-      th.appendChild(b);
-      th.setAttribute("aria-sort", "none");
+      sortHead(th, h, "", function () {
+        sortBy(i);
+      });
     }
     heads.push(th);
     tr.appendChild(th);
@@ -153,10 +146,7 @@ function wTable(parent: HTMLElement, headers: string[], numeric: number[]) {
     var dir = state.col === i ? (state.dir === "asc" ? "desc" : "asc") : numeric.indexOf(i) >= 0 ? "desc" : "asc";
     state = { col: i, dir: dir };
     heads.forEach(function (th, k) {
-      var b = th.querySelector("button.sort");
-      if (b) b.setAttribute("data-dir", k === i ? dir : "");
-      if (th.hasAttribute("aria-sort"))
-        th.setAttribute("aria-sort", k === i ? (dir === "asc" ? "ascending" : "descending") : "none");
+      if (th.hasAttribute("aria-sort")) showSort(th, k === i ? dir : "");
     });
     var rows: KeyedRow[] = Array.prototype.slice.call(t.querySelectorAll("tr")).slice(1);
     var segments: KeyedRow[][] = [[]];

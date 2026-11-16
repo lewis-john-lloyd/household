@@ -14,6 +14,8 @@ var EDIT_HOME: Record<string, string> = {
   settings: "status",
   waiting: "status",
 };
+var PAGE_NAMES: Record<string, string> = { flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" };
+
 var PAGE_PARTS: Record<string, string[][]> = {
   flows: [
     ["sankey", "Sankey"],
@@ -88,20 +90,8 @@ function openPart(page: string, part: string) {
 // The editor's submenu: the parts of the page the open editor part belongs to.
 function drawEditTabs() {
   var home = EDIT_HOME[editTab] || "flows";
-  var bar = byId("edit-tabs");
-  bar.textContent = "";
-  bar.className = "subtabs";
-  bar.setAttribute(
-    "aria-label",
-    ({ flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" } as Record<string, string>)[home],
-  );
-  PAGE_PARTS[home].forEach(function (p) {
-    var b = button(p[1], function () {
-      openPart(home, p[0]);
-    });
-    b.setAttribute("aria-pressed", String(p[0] === "edit:" + editTab));
-    b.dataset.tab = p[0];
-    bar.appendChild(b);
+  tabBar(byId("edit-tabs"), PAGE_NAMES[home], PAGE_PARTS[home], "edit:" + editTab, function (p) {
+    openPart(home, p);
   });
 }
 

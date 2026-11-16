@@ -563,9 +563,7 @@ var statusTab = "overview";
 
 function setStatusTab(tab: string) {
   statusTab = tab;
-  document.querySelectorAll<HTMLElement>("#status-tabs button").forEach(function (b) {
-    b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
-  });
+  pressTab(byId("status-tabs"), tab);
   byId("status-overview").hidden = tab !== "overview";
   byId("status-log").hidden = tab !== "log";
 }

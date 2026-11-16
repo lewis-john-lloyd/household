@@ -82,22 +82,6 @@ function ownerName(o: string) {
   return o === "kids" ? "Kids" : o.charAt(0).toUpperCase() + o.slice(1);
 }
 
-// A page's submenu: one button per part, the part shown pressed; choosing one redraws the page on that part.
-function subtabs(parent: HTMLElement, label: string, parts: string[][], current: string, pick: (part: string) => void) {
-  var box = el("div", null, "subtabs");
-  box.setAttribute("role", "group");
-  box.setAttribute("aria-label", label);
-  parts.forEach(function (t) {
-    var b = button(t[1], function () {
-      pick(t[0]);
-    });
-    b.setAttribute("aria-pressed", String(current === t[0]));
-    box.appendChild(b);
-  });
-  parent.appendChild(box);
-  return box;
-}
-
 function panel(parent: HTMLElement, title: string, lead?: string | null) {
   var p = el("section", null, "panel");
   p.appendChild(el("h3", title));

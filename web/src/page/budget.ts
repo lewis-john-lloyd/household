@@ -88,9 +88,7 @@ function loadBudget() {
 function drawBudgetPage() {
   if (view !== "budget" || !budget.data || !editor) return;
   budgetDrawGen++;
-  document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
-    b.setAttribute("aria-pressed", String(b.dataset.tab === budget.tab));
-  });
+  pressTab(byId("budget-tabs"), budget.tab);
   // redrawn where it is: emptying the page would otherwise drop the window back to the top
   var x = window.scrollX,
     y = window.scrollY;

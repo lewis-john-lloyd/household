@@ -60,7 +60,7 @@
       header.top h1 { font-size: 22px; line-height: 28px; font-weight: 400; margin: 0; }
       nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--outline-variant); overflow-x: auto; }
       nav.tabs button { all: unset; cursor: pointer; padding: 14px 16px 12px; font-weight: 500; color: var(--on-surface-variant);
-        border-bottom: 3px solid transparent; border-radius: 3px 3px 0 0; white-space: nowrap; }
+        border-bottom: 3px solid transparent; border-radius: 4px 4px 0 0; white-space: nowrap; }
       nav.tabs button:hover { background: var(--surface-container); color: var(--on-surface); }
       nav.tabs button[aria-pressed="true"] { color: var(--primary); border-bottom-color: var(--primary); }
       nav.tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
@@ -116,8 +116,9 @@
       .status-head { display: grid; gap: 8px; }
       .status-head h2 { font-size: 28px; line-height: 36px; font-weight: 400; }
       .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-      .chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px;
-        border: 1px solid var(--outline-variant); color: var(--on-surface-variant); font-weight: 500; }
+      .chip, .fchip, .tag, .kind { display: inline-flex; align-items: center; box-sizing: border-box; height: 28px; border-radius: 8px;
+        white-space: nowrap; vertical-align: middle; }
+      .chip { gap: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); color: var(--on-surface-variant); font-weight: 500; }
       .banner { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: 12px;
         background: var(--waiting-container); color: var(--on-surface); }
       .attention { display: grid; grid-template-columns: 40px 1fr; gap: 0 16px; align-content: start; }
@@ -132,7 +133,7 @@
       .attention ul.things li { display: grid; padding-left: 12px; border-left: 2px solid var(--outline-variant); }
       .attention ul.things strong { font-weight: 500; overflow-wrap: anywhere; }
       .attention ul.things span { color: var(--on-surface-variant); font-size: 13px; }
-      .attention ul.things button.thing-link { all: unset; display: grid; cursor: pointer; border-radius: 6px; padding: 2px 6px;
+      .attention ul.things button.thing-link { all: unset; display: grid; cursor: pointer; border-radius: 8px; padding: 2px 6px;
         margin: -2px -6px; }
       .attention ul.things button.thing-link strong { color: var(--primary); }
       .attention ul.things button.thing-link:hover { background: var(--surface-container-high); }
@@ -190,7 +191,7 @@
       .stack span { display: block; min-width: 3px; }
       .legend { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
       .legend li { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 12px; align-items: center; }
-      .legend .swatch { width: 12px; height: 12px; border-radius: 3px; }
+      .legend .swatch { width: 12px; height: 12px; border-radius: 2px; }
       .legend .n { font-variant-numeric: tabular-nums; text-align: right; }
       .legend .pct { font-variant-numeric: tabular-nums; color: var(--on-surface-variant); width: 3.5em; text-align: right; }
       .scenarios { display: grid; gap: 10px; }
@@ -487,8 +488,8 @@
       .search-bar:focus-within { outline: 2px solid var(--primary); outline-offset: -1px; }
       .search-bar > svg.icon { width: 22px; height: 22px; fill: var(--on-surface-variant); flex: none; }
       .search-chips { display: contents; }
-      .fchip { display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; border-radius: 8px; background: var(--surface-container-high); border: 1px solid var(--outline-variant); font-size: 14px; max-width: 100%; }
-      .fchip button.fchip-body { display: inline-flex; align-items: center; gap: 6px; height: 30px; min-height: 0; padding: 0 4px 0 12px; background: transparent; color: var(--on-surface); font-weight: 400; border-radius: 8px 0 0 8px; overflow: hidden; }
+      .fchip { background: var(--surface-container-high); border: 1px solid var(--outline-variant); font-size: 14px; max-width: 100%; }
+      .fchip button.fchip-body { display: inline-flex; align-items: center; gap: 6px; height: 26px; min-height: 0; padding: 0 4px 0 12px; background: transparent; color: var(--on-surface); font-weight: 400; border-radius: 8px 0 0 8px; overflow: hidden; }
       .fchip .k { color: var(--on-surface-variant); white-space: nowrap; }
       .fchip .v { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
       .fchip.group { background: var(--success-container); border-color: transparent; }
@@ -738,13 +739,13 @@
       @media (prefers-reduced-motion: reduce) { table.bv .chev svg { transition: none; } }
       table.bv tr.deductible td { color: var(--on-surface); font-weight: 500; border-top: 1px solid var(--outline-variant); }
       table.bv tr.deductible td.rule { font-weight: 400; }
-      select.deductible-pick { font: inherit; font-size: 13px; padding: 0 4px; min-height: 0; height: 26px; width: auto; border-radius: 6px;
+      select.deductible-pick { font: inherit; font-size: 13px; padding: 0 4px; min-height: 0; height: 26px; width: auto; border-radius: 4px;
         border: 1px solid var(--outline-variant); background: var(--surface); color: var(--on-surface); }
       table.bv tr.unsaid select.deductible-pick { border-color: var(--primary); color: var(--primary); }
-      .tag { display: inline-block; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 9px; margin-left: 8px;
-        background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; vertical-align: 1px; }
+      .tag { height: 24px; font-size: 12px; padding: 0 8px; margin-left: 8px; border: 1px solid transparent;
+        background: var(--primary-container); color: var(--on-primary-container); font-weight: 400; }
       .tag.plain { background: var(--surface-high); color: var(--on-surface-variant); }
-      .tag.group-tag { background: transparent; border: 1px solid var(--outline-variant); color: var(--on-surface-variant); line-height: 16px; }
+      .tag.group-tag { background: transparent; border-color: var(--outline-variant); color: var(--on-surface-variant); }
       dl.loan-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 12px 24px; margin: 12px 0 0; }
       dl.loan-facts dt { font-size: 12px; color: var(--on-surface-variant); }
       dl.loan-facts dd { margin: 2px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; }
@@ -772,8 +773,8 @@
       .drawer p.year-pace strong { color: var(--on-surface); font-weight: 500; }
       table.bv td.status { color: var(--on-surface-variant); font-size: 13px; }
       table.bv td.status.link { color: var(--primary); }
-      .kind { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 20px; padding: 0 8px 0 6px;
-        border-radius: 6px; border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
+      .kind { height: 24px; gap: 6px; font-size: 12px; padding: 0 8px 0 6px;
+        border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
       .kind-unplanned { border-style: dashed; }
       table.bv tr.unplanned { cursor: pointer; }
       table.bv tr.unplanned td, table.bv tr.unplanned-item td { color: var(--on-surface-variant); }
@@ -1028,8 +1029,8 @@
       .w-table td .support { margin: 2px 0 0; font-size: 12px; white-space: normal; }
       .w-table td .tag { font-size: 12px; color: var(--on-surface-variant); margin-left: 6px; }
       .w-scroll { overflow-x: auto; }
-      .w-meter { position: relative; height: 10px; width: 120px; background: var(--track); border-radius: 0 3px 3px 0; display: inline-block; vertical-align: middle; }
-      .w-meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 3px 3px 0; }
+      .w-meter { position: relative; height: 10px; width: 120px; background: var(--track); border-radius: 0 4px 4px 0; display: inline-block; vertical-align: middle; }
+      .w-meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; }
       .w-meter b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--on-surface); }
       .w-chart { display: block; width: 100%; height: auto; overflow: visible; }
       .w-chart .axis { font-size: 12px; fill: var(--muted); }
@@ -1071,12 +1072,7 @@
     </header>
     <main>
     <section id="status">
-      <div id="status-tabs" class="subtabs" role="group" aria-label="Status">
-        <button data-tab="overview" aria-pressed="true">Overview</button>
-        <button data-tab="log" aria-pressed="false">Engine log</button>
-        <button data-tab="edit:settings" aria-pressed="false">Settings</button>
-        <button data-tab="edit:waiting" aria-pressed="false">Saved changes</button>
-      </div>
+      <div id="status-tabs" class="subtabs" role="group" aria-label="Status"></div>
       <div id="status-overview">
       <div class="status-head">
         <h2 id="status-title">Loading…</h2>
@@ -1106,15 +1102,7 @@
     </section>
 
     <section id="flows" hidden>
-      <div id="flows-tabs" class="subtabs" role="group" aria-label="Cashflow">
-        <button data-tab="sankey" aria-pressed="true">Sankey</button>
-        <button data-tab="table" aria-pressed="false">Table</button>
-        <button data-tab="overtime" aria-pressed="false">Over time</button>
-        <button data-tab="search" aria-pressed="false">Search</button>
-        <button data-tab="edit:review" aria-pressed="false">Review</button>
-        <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
-        <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
-      </div>
+      <div id="flows-tabs" class="subtabs" role="group" aria-label="Cashflow"></div>
       <!-- the tabs first, then the chosen tab's controls, as on Budget -->
       <div id="controls" hidden>
         <select id="period" aria-label="Period"></select>
@@ -1133,11 +1121,7 @@
     </section>
 
     <section id="budget" hidden>
-      <div id="budget-tabs" class="subtabs" role="group" aria-label="Budget">
-        <button data-tab="lines" aria-pressed="true">Lines</button>
-        <button data-tab="recurring" aria-pressed="false">Recurring</button>
-        <button data-tab="edit:categories" aria-pressed="false">Categories</button>
-      </div>
+      <div id="budget-tabs" class="subtabs" role="group" aria-label="Budget"></div>
       <div id="budget-body">Loading…</div>
     </section>
 
@@ -1166,11 +1150,7 @@
     </section>
 
     <section id="edit" hidden>
-      <div id="edit-tabs" role="group" aria-label="Cashflow">
-        <button data-tab="edit:review" aria-pressed="true">Review</button>
-        <button data-tab="edit:rules" aria-pressed="false">Payee rules</button>
-        <button data-tab="edit:duplicates" aria-pressed="false">Duplicates</button>
-      </div>
+      <div id="edit-tabs" role="group" aria-label="Cashflow"></div>
       <div id="edit-body">Loading…</div>
       <div class="note">Changes stay in this page until you Save. Save writes them as one file for ingest, which applies
         them to the ledger; until ingest and compute run, these tables show the ledger as it was.</div>

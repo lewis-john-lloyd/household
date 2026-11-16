@@ -163,19 +163,14 @@ google.charts.setOnLoadCallback(function () {
   byId("view-jobs").addEventListener("click", function () {
     setView("jobs");
   });
-  document.querySelectorAll<HTMLElement>("#budget-tabs button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      openPart("budget", b.dataset.tab as string);
-    });
-  });
-  document.querySelectorAll<HTMLElement>("#status-tabs button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      openPart("status", b.dataset.tab as string);
-    });
-  });
-  document.querySelectorAll<HTMLElement>("#flows-tabs button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      openPart("flows", b.dataset.tab as string);
+  // the parts of Budget, Status and Cashflow, from the one list the editor's submenu uses too
+  [
+    ["budget", "lines"],
+    ["status", "overview"],
+    ["flows", "sankey"],
+  ].forEach(function (p) {
+    tabBar(byId(p[0] + "-tabs"), PAGE_NAMES[p[0]], PAGE_PARTS[p[0]], p[1], function (part) {
+      openPart(p[0], part);
     });
   });
   byId("pending-show").addEventListener("click", function () {

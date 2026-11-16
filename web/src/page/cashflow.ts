@@ -85,9 +85,7 @@ var flowsTab = "sankey",
 // Sankey, Table or Over time: a chart is drawn only while it shows, since it is sized to its box
 function setFlowsTab(tab: string) {
   flowsTab = tab;
-  document.querySelectorAll<HTMLElement>("#flows-tabs button").forEach(function (b) {
-    b.setAttribute("aria-pressed", String(b.dataset.tab === tab));
-  });
+  pressTab(byId("flows-tabs"), tab);
   byId("flows-sankey").hidden = tab !== "sankey";
   byId("flow-summary").hidden = tab !== "table";
   byId("flows-overtime").hidden = tab !== "overtime";

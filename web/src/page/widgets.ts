@@ -69,6 +69,36 @@ function button(text: string, onclick: ((this: HTMLButtonElement, e: MouseEvent)
   return b;
 }
 
+// A page's parts as a row of buttons, the open one pressed: fills a bar the page has, or adds one.
+function tabBar(box: HTMLElement, label: string, parts: string[][], current: string, pick: (part: string) => void) {
+  box.textContent = "";
+  box.className = "subtabs";
+  box.setAttribute("role", "group");
+  box.setAttribute("aria-label", label);
+  parts.forEach(function (t) {
+    var b = button(t[1], function () {
+      pick(t[0]);
+    });
+    b.dataset.tab = t[0];
+    b.setAttribute("aria-pressed", String(current === t[0]));
+    box.appendChild(b);
+  });
+  return box;
+}
+
+function subtabs(parent: HTMLElement, label: string, parts: string[][], current: string, pick: (part: string) => void) {
+  var box = tabBar(el("div"), label, parts, current, pick);
+  parent.appendChild(box);
+  return box;
+}
+
+// Which part is open, without drawing the bar again.
+function pressTab(box: HTMLElement, current: string) {
+  box.querySelectorAll<HTMLElement>(":scope > button").forEach(function (b) {
+    b.setAttribute("aria-pressed", String(b.dataset.tab === current));
+  });
+}
+
 function today() {
   var d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");

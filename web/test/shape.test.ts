@@ -7,7 +7,7 @@ import { join } from "node:path";
 // compiled file the way Apps Script would and pick them out.
 const compiled = ["shape.js", "budgetview.js"].map((f) => readFileSync(join(__dirname, "..", "src", f), "utf8")).join("\n");
 const shape = new Function(
-  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, versionNote, compareReleases, spendingOverTime, compileSearch, sortSearch, groupSearch, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
+  `${compiled}\nreturn { parseRows, periods, toSankeyRows, nodeTotals, parseBudget, parseTransactions, transactionsFor, parseStatus, findLine, flowSummary, reviewLines, subscriptionsPage, chargeLines, budgetChecks, targetInputs, floatingValue, priceChanged, chargeCadence, planPreview, planExtra, planRate, versionNote, compareReleases, spendingOverTime, compileSearch, sortSearch, groupSearch, searchRange, stepRange, rangeLabel, parseAmount, searchSuggest, searchPage, sharePrice, grantKey, equitySteps, giftLines, linesBetween, categoriesOf, budgetBook, budgetView, periodOf, periodDays, shiftPeriod, periodName, quickPicks, lensPeriods };`,
 )() as {
   parseRows: (values: unknown[][]) => FlowRow[];
   periods: (rows: FlowRow[]) => string[];
@@ -48,6 +48,11 @@ const shape = new Function(
   ) => { test: (line: SearchLine) => boolean; errors: Record<string, string> };
   sortSearch: (lines: SearchLine[], by: string, descending: boolean, groups: Record<string, string>) => SearchLine[];
   groupSearch: (lines: SearchLine[], by: string, groups: Record<string, string>, ascending?: boolean) => SearchGroup[];
+  searchRange: (r: SearchRange, today: string) => { from: string; to: string };
+  stepRange: (r: SearchRange, dir: number, today: string) => SearchRange | null;
+  rangeLabel: (r: SearchRange, today: string) => { label: string; span: string };
+  parseAmount: (text: string) => { min: number | null; max: number | null } | null;
+  searchSuggest: (text: string, draft: string, lines: SearchLine[], groups: Record<string, string>) => SearchOption[];
   searchPage: (categorized: unknown[][], categories: unknown[][], subscriptions: unknown[][]) => SearchPage;
   chargeCadence: (dates: string[]) => string | null;
   sharePrice: (awardType: string, price: number, grantPrice: number | null) => number;
@@ -1305,6 +1310,101 @@ test("search reads every line with what can be corrected beside what came from t
   );
   assert.deepEqual([page.lines[1].recurringName, page.lines[1].recurringCounts], ["Book club", true]);
   assert.deepEqual(page.charges, [{ key: "PAGE TURNER BOOKS", name: "Book club" }]);
+});
+
+test("a search's dates are a length and the day it ends, stepped back and on by the length", () => {
+  const today = "2026-11-15";
+  const r = (unit: SearchRange["unit"], end: string, days = 90): SearchRange => ({ unit, days, end });
+  // days count back from the end, that day included
+  assert.deepEqual(shape.searchRange(r("days", "today"), today), { from: "2026-08-18", to: "2026-11-15" });
+  assert.deepEqual(shape.rangeLabel(r("days", "today"), today), {
+    label: "90 days ending today",
+    span: "Aug 18 to Nov 15, 2026",
+  });
+  assert.deepEqual(shape.searchRange(r("days", "2026-01-10", 30), today), { from: "2025-12-12", to: "2026-01-10" });
+  assert.equal(shape.rangeLabel(r("days", "2026-01-10", 30), today).span, "Dec 12, 2025 to Jan 10, 2026");
+  assert.equal(shape.rangeLabel(r("days", "2026-01-10", 1), today).label, "1 day ending Jan 10, 2026");
+  // a calendar length is the one the end falls in, up to the end
+  assert.deepEqual(shape.searchRange(r("month", "month"), today), { from: "2026-10-01", to: "2026-10-31" });
+  assert.equal(shape.rangeLabel(r("month", "month"), today).label, "October 2026");
+  assert.equal(shape.rangeLabel(r("month", "today"), today).label, "November 2026 so far");
+  assert.deepEqual(shape.searchRange(r("quarter", "quarter"), today), { from: "2026-07-01", to: "2026-09-30" });
+  assert.equal(shape.rangeLabel(r("quarter", "2026-11-10"), today).label, "Q4 2026 to Nov 10");
+  assert.deepEqual(shape.searchRange(r("year", "year"), today), { from: "2025-01-01", to: "2025-12-31" });
+  assert.equal(shape.rangeLabel(r("year", "year"), today).label, "2025");
+  // back by the length; on stops at today, and can't go past it
+  assert.deepEqual(shape.stepRange(r("days", "today"), -1, today), r("days", "2026-08-17"));
+  assert.deepEqual(shape.stepRange(r("days", "2026-08-17"), 1, today), r("days", "today"));
+  assert.equal(shape.stepRange(r("days", "today"), 1, today), null);
+  assert.deepEqual(shape.stepRange(r("month", "month"), -1, today), r("month", "2026-09-30"));
+  assert.deepEqual(shape.stepRange(r("month", "2026-09-30"), 1, today), r("month", "2026-10-31"));
+  assert.deepEqual(shape.stepRange(r("month", "2026-10-31"), 1, today), r("month", "today")); // November so far
+  assert.deepEqual(shape.stepRange(r("month", "2024-02-29"), -1, today), r("month", "2024-01-31"));
+  assert.deepEqual(shape.stepRange(r("quarter", "quarter"), 1, today), r("quarter", "today"));
+});
+
+test("an amount typed in the search bar: exactly, at least, at most or between", () => {
+  assert.deepEqual(
+    ["50", ">50", "50+", "<20", "<=20", "20..100", "100-20", "$1,200", "abc", ""].map((t) => shape.parseAmount(t)), // leak-guard: allow (made up)
+    [
+      { min: 50, max: 50 },
+      { min: 50, max: null },
+      { min: 50, max: null },
+      { min: null, max: 20 },
+      { min: null, max: 20 },
+      { min: 20, max: 100 },
+      { min: 20, max: 100 },
+      { min: 1200, max: 1200 },
+      null,
+      null,
+    ],
+  );
+});
+
+test("the search bar offers any text, the fields named, and values the lines hold; a field chosen offers its values", () => {
+  const line = (id: string, payee: string, category: string, amount: number) =>
+    ({
+      id,
+      date: "2026-03-01",
+      payee,
+      category,
+      amount,
+      key: payee.toUpperCase(),
+      account: "card",
+      recurring: "",
+      recurringName: "",
+    }) as SearchLine;
+  const lines = [line("a", "Cat Care", "pets", -40), line("b", "Cat Care", "pets", -20), line("c", "ACME GROCER", "food", -9)];
+  const groups = { pets: "home", food: "living" };
+  const opts = (text: string, draft = "") =>
+    shape.searchSuggest(text, draft, lines, groups).map((o) => [o.kind, o.field, o.value, o.label]);
+  // nothing typed: every field
+  assert.equal(shape.searchSuggest("", "", lines, groups).filter((o) => o.kind === "field").length, 20);
+  // "cat": any text, the fields whose names hold it, then values, the commonest first
+  assert.deepEqual(opts("cat"), [
+    ["any", "", "cat", "Any text holds cat"],
+    ["field", "category", "", "Category"],
+    ["value", "payee", "^Cat Care$", "Payee is Cat Care"],
+    ["value", "key", "^CAT CARE$", "Merchant key is CAT CARE"],
+  ]);
+  assert.equal(shape.searchSuggest("cat", "", lines, groups)[2].detail, "2 lines, -$60.00"); // leak-guard: allow (made up)
+  // a field chosen: a pattern, its values holding what is typed, and grouping by it
+  assert.deepEqual(opts("o", "category"), [
+    ["pattern", "category", "o", "Category holds o"],
+    ["value", "category", "^food$", "food"],
+    ["group", "category", "", "Group by category"],
+  ]);
+  // "field: text" chooses the field
+  assert.deepEqual(opts("payee: acme")[0], ["pattern", "payee", "acme", "Payee holds acme"]);
+  // an amount, a choice, and a field to group by only
+  assert.deepEqual(opts("20..100", "amount"), [["amount", "amount", "20..100", "Amount 20 to 100"]]);
+  assert.deepEqual(opts("", "direction"), [
+    ["choice", "direction", "out", "Money: Out"],
+    ["choice", "direction", "in", "Money: In"],
+  ]);
+  assert.deepEqual(opts("", "month"), [["group", "month", "", "Group by month"]]);
+  // a value with regex characters is found as written
+  assert.equal(shape.searchSuggest("", "payee", [line("d", "A+B (NY)", "food", -1)], groups)[0].value, "^A\\+B \\(NY\\)$");
 });
 
 test("the lines found group by any field, each group with its totals, the biggest first or by date", () => {

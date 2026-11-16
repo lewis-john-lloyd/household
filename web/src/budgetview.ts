@@ -590,10 +590,10 @@ function spendingOverTime(
   return out;
 }
 
-// Search (Where the money went): each text field is a regular expression the whole field must match, ignoring
-// case ("AMAZON.*" begins with AMAZON, ".*coffee.*" holds coffee anywhere), so a pattern means the same on every
-// field. Dates take a prefix ("2026", "2026-03"), amounts are dollars either way of zero with a direction, and the
-// rest are yes, no or either.
+// Search (Where the money went): each text field is a regular expression found anywhere in the field, ignoring
+// case ("coffee" holds coffee, "^AMAZON" begins with it), so a pattern means the same on every field; "any" is a
+// pattern found in any of the line's words. Dates take a prefix ("2026", "2026-03"), amounts are dollars either
+// way of zero with a direction, and the rest are yes, no or either.
 var SEARCH_TEXT_FIELDS = [
   "payee",
   "raw",
@@ -612,6 +612,7 @@ type SearchTextField = (typeof SEARCH_TEXT_FIELDS)[number];
 
 interface SearchQuery {
   text: Partial<Record<SearchTextField, string>>;
+  any?: string; // a pattern found in the payee, the bank's text, the note, the items bought or the category
   from?: string; // a date or its prefix, inclusive
   to?: string;
   min?: number | null; // dollars, either way of zero
@@ -627,8 +628,8 @@ interface SearchQuery {
 function compileSearch(
   query: SearchQuery,
   groups: Record<string, string>,
-): { test: (line: SearchLine) => boolean; errors: Partial<Record<SearchTextField, string>> } {
-  var errors: Partial<Record<SearchTextField, string>> = {};
+): { test: (line: SearchLine) => boolean; errors: Partial<Record<SearchTextField | "any", string>> } {
+  var errors: Partial<Record<SearchTextField | "any", string>> = {};
   var tests: ((line: SearchLine) => boolean)[] = [];
   var fieldText = function (line: SearchLine, f: SearchTextField): string[] {
     switch (f) {
@@ -648,23 +649,38 @@ function compileSearch(
         return [String(line[f] ?? "")];
     }
   };
+  var compile = function (pattern: string, f: SearchTextField | "any"): RegExp | null {
+    if (pattern.length > 200) {
+      errors[f] = "at most 200 characters";
+      return null;
+    }
+    try {
+      return new RegExp(pattern, "i"); // found anywhere in the field; ^ and $ anchor it
+    } catch (e) {
+      errors[f] = String((e as Error).message || e).replace(/^Invalid regular expression: /, "");
+      return null;
+    }
+  };
+  var anyPattern = (query.any || "").trim();
+  var anyRe = anyPattern ? compile(anyPattern, "any") : null;
+  if (anyRe) {
+    var anyIn: SearchTextField[] = ["payee", "raw", "note", "items", "category", "key", "recurring"];
+    tests.push(function (line) {
+      return anyIn.some(function (f) {
+        return fieldText(line, f).some(function (t) {
+          return anyRe!.test(t);
+        });
+      });
+    });
+  }
   SEARCH_TEXT_FIELDS.forEach(function (f) {
     var pattern = (query.text[f] || "").trim();
     if (!pattern) return;
-    if (pattern.length > 200) {
-      errors[f] = "at most 200 characters";
-      return;
-    }
-    var re: RegExp;
-    try {
-      re = new RegExp(pattern, "i"); // found anywhere in the field; ^ and $ anchor it
-    } catch (e) {
-      errors[f] = String((e as Error).message || e).replace(/^Invalid regular expression: /, "");
-      return;
-    }
+    var re = compile(pattern, f);
+    if (!re) return;
     tests.push(function (line) {
       return fieldText(line, f).some(function (t) {
-        return re.test(t);
+        return re!.test(t);
       });
     });
   });
@@ -729,6 +745,384 @@ function compileSearch(
 }
 
 /** The lines sorted by a field, newest first among equals, so the order never changes between draws. */
+// The dates a search covers: a length and the day it ends. Days count back from the end, that day included; a
+// month, quarter or year is the calendar one the end falls in, up to the end. The end is today, the end of the
+// last month, quarter or year, or a date.
+interface SearchRange {
+  unit: "days" | "month" | "quarter" | "year";
+  days: number; // with unit days
+  end: string; // "today", "month", "quarter", "year" (the end of the last one) or YYYY-MM-DD
+}
+
+var MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** A day as YYYY-MM-DD n days from another. */
+function addDays(iso: string, n: number): string {
+  var d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) + n * DAY_MS);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The first day of the month, quarter or year a day falls in. */
+function periodStart(iso: string, unit: "month" | "quarter" | "year"): string {
+  if (unit === "year") return iso.slice(0, 4) + "-01-01";
+  var m = +iso.slice(5, 7);
+  if (unit === "quarter") m = m - ((m - 1) % 3);
+  return iso.slice(0, 5) + String(m).padStart(2, "0") + "-01";
+}
+
+/** The last day of the month, quarter or year a day falls in. */
+function periodEnd(iso: string, unit: "month" | "quarter" | "year"): string {
+  var start = periodStart(iso, unit);
+  var months = unit === "year" ? 12 : unit === "quarter" ? 3 : 1;
+  var m = +start.slice(5, 7) - 1 + months;
+  var next = Date.UTC(+start.slice(0, 4) + Math.floor(m / 12), m % 12, 1);
+  return new Date(next - DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The day a range ends on, given today. */
+function rangeEnd(r: SearchRange, today: string): string {
+  if (r.end === "today") return today;
+  if (r.end === "month" || r.end === "quarter" || r.end === "year") return addDays(periodStart(today, r.end), -1);
+  return r.end;
+}
+
+/** The first and last day a range covers. */
+function searchRange(r: SearchRange, today: string): { from: string; to: string } {
+  var to = rangeEnd(r, today);
+  var from = r.unit === "days" ? addDays(to, -(Math.max(1, Math.round(r.days)) - 1)) : periodStart(to, r.unit);
+  return { from: from, to: to };
+}
+
+/** The range one length back (dir -1) or on (dir 1), its end a date; on stops at today. null when on would
+ * pass today. */
+function stepRange(r: SearchRange, dir: number, today: string): SearchRange | null {
+  var span = searchRange(r, today);
+  var to: string;
+  if (dir < 0) to = addDays(span.from, -1);
+  else {
+    if (span.to >= today) return null;
+    to = r.unit === "days" ? addDays(span.to, Math.max(1, Math.round(r.days))) : periodEnd(addDays(span.to, 1), r.unit);
+    if (to > today) to = today;
+  }
+  return { unit: r.unit, days: r.days, end: to === today ? "today" : to };
+}
+
+/** "Aug 18 to Nov 15, 2026", or with both years when they differ. */
+function rangeSpan(from: string, to: string): string {
+  var day = function (iso: string) {
+    return MONTH_NAMES[+iso.slice(5, 7) - 1].slice(0, 3) + " " + +iso.slice(8, 10);
+  };
+  return from.slice(0, 4) === to.slice(0, 4)
+    ? day(from) + " to " + day(to) + ", " + to.slice(0, 4)
+    : day(from) + ", " + from.slice(0, 4) + " to " + day(to) + ", " + to.slice(0, 4);
+}
+
+/** What the date chip says: the range in words ("90 days ending today", "October 2026", "Q4 2026 so far") and
+ * the days it covers. */
+function rangeLabel(r: SearchRange, today: string): { label: string; span: string } {
+  var s = searchRange(r, today);
+  var label: string;
+  if (r.unit === "days")
+    label =
+      Math.round(r.days) +
+      (Math.round(r.days) === 1 ? " day" : " days") +
+      " ending " +
+      (s.to === today ? "today" : rangeSpan(s.to, s.to).replace(/ to .*?,/, ","));
+  else {
+    var y = s.to.slice(0, 4);
+    var name =
+      r.unit === "year"
+        ? y
+        : r.unit === "quarter"
+          ? "Q" + Math.ceil(+s.to.slice(5, 7) / 3) + " " + y
+          : MONTH_NAMES[+s.to.slice(5, 7) - 1] + " " + y;
+    label =
+      s.to === periodEnd(s.to, r.unit)
+        ? name
+        : s.to === today
+          ? name + " so far"
+          : name + " to " + MONTH_NAMES[+s.to.slice(5, 7) - 1].slice(0, 3) + " " + +s.to.slice(8, 10);
+  }
+  return { label: label, span: rangeSpan(s.from, s.to) };
+}
+
+/** An amount filter typed in words: "50" (exactly), ">50" or "50+" (at least), "<20" (at most), "20..100" or
+ * "20-100" (between); dollars either way of zero. null when it isn't one. */
+function parseAmount(text: string): { min: number | null; max: number | null } | null {
+  var t = text.replace(/[$,\s]/g, "");
+  var n = function (v: string) {
+    return v !== "" && !isNaN(Number(v)) ? Number(v) : null;
+  };
+  var m: RegExpMatchArray | null;
+  if ((m = /^(>=?|<=?)(\d+(?:\.\d+)?)$/.exec(t)))
+    return m[1][0] === ">" ? { min: n(m[2]), max: null } : { min: null, max: n(m[2]) };
+  if ((m = /^(\d+(?:\.\d+)?)\+$/.exec(t))) return { min: n(m[1]), max: null };
+  if ((m = /^(\d+(?:\.\d+)?)(?:\.\.|-)(\d+(?:\.\d+)?)$/.exec(t))) {
+    var a = n(m[1])!,
+      b = n(m[2])!;
+    return { min: Math.min(a, b), max: Math.max(a, b) };
+  }
+  if ((m = /^(\d+(?:\.\d+)?)$/.exec(t))) return { min: n(m[1]), max: n(m[1]) };
+  return null;
+}
+
+// The fields the search bar knows: what each is called, what it holds, how it filters, and whether the lines
+// found can be grouped by it.
+interface SearchBarField {
+  key: string; // a SearchTextField, "amount", a yes-or-no or choice field, or "month" and "year" (group only)
+  label: string;
+  hint: string;
+  kind: "text" | "amount" | "choice" | "group";
+  group?: boolean;
+  choices?: [string, string][]; // value, words
+}
+
+var SEARCH_BAR_FIELDS: SearchBarField[] = [
+  { key: "payee", label: "Payee", hint: "what the line is called", kind: "text", group: true },
+  { key: "category", label: "Category", hint: "a split's parts count", kind: "text", group: true },
+  { key: "group", label: "Group", hint: "the category's group", kind: "text", group: true },
+  { key: "account", label: "Account", hint: "", kind: "text", group: true },
+  { key: "amount", label: "Amount", hint: "50, >50, <20 or 20..100 dollars, in or out", kind: "amount" },
+  { key: "recurring", label: "Recurring charge", hint: "its name or key", kind: "text", group: true },
+  { key: "key", label: "Merchant key", hint: "what review asks by", kind: "text", group: true },
+  { key: "raw", label: "Bank's text", hint: "as downloaded", kind: "text" },
+  { key: "note", label: "Note", hint: "", kind: "text" },
+  { key: "items", label: "Items bought", hint: "from an order history", kind: "text" },
+  { key: "decidedBy", label: "Decided by", hint: "rule, you, a service, the model", kind: "text", group: true },
+  { key: "source", label: "Read from", hint: "csv, ofx, pdf, hand", kind: "text" },
+  { key: "id", label: "Line id", hint: "txn_id", kind: "text" },
+  {
+    key: "direction",
+    label: "Money",
+    hint: "out or in",
+    kind: "choice",
+    choices: [
+      ["out", "Out"],
+      ["in", "In"],
+    ],
+  },
+  {
+    key: "inRecurring",
+    label: "In a recurring charge",
+    hint: "yes or no",
+    kind: "choice",
+    choices: [
+      ["yes", "Yes"],
+      ["no", "No"],
+    ],
+  },
+  {
+    key: "oneOff",
+    label: "One-off",
+    hint: "yes or no",
+    kind: "choice",
+    choices: [
+      ["yes", "Yes"],
+      ["no", "No"],
+    ],
+  },
+  {
+    key: "split",
+    label: "Split",
+    hint: "yes or no",
+    kind: "choice",
+    choices: [
+      ["yes", "Yes"],
+      ["no", "No"],
+    ],
+  },
+  {
+    key: "status",
+    label: "Status",
+    hint: "decided, open in review or waiting",
+    kind: "choice",
+    choices: [
+      ["decided", "Decided"],
+      ["open", "Open in review"],
+      ["waiting", "Waiting"],
+    ],
+  },
+  { key: "month", label: "Month", hint: "group by only", kind: "group", group: true },
+  { key: "year", label: "Year", hint: "group by only", kind: "group", group: true },
+];
+
+/** A search bar field by its key or its name, any case; null when none is. */
+function searchBarField(name: string): SearchBarField | null {
+  var n = name.trim().toLowerCase();
+  return (
+    SEARCH_BAR_FIELDS.filter(function (f) {
+      return f.key.toLowerCase() === n || f.label.toLowerCase() === n;
+    })[0] || null
+  );
+}
+
+// What the search bar offers for what is typed: a pattern on any text, a field (to filter or group by), a value
+// lines hold, a choice, an amount, or grouping.
+interface SearchOption {
+  kind: "any" | "field" | "value" | "pattern" | "choice" | "amount" | "group";
+  field: string; // "" for any
+  value: string; // the pattern, the value, or the choice
+  label: string;
+  detail: string;
+  min?: number | null;
+  max?: number | null;
+}
+
+/** The values a field holds in the lines, those holding text first by how many lines have them: [value, count,
+ * net]. */
+function searchValues(lines: SearchLine[], field: string, groups: Record<string, string>, text: string, most: number) {
+  var counts: Record<string, [number, number]> = {};
+  var t = text.trim().toLowerCase();
+  lines.forEach(function (l) {
+    var v =
+      field === "group"
+        ? groups[l.category] || ""
+        : field === "recurring"
+          ? l.recurringName || l.recurring
+          : String((l as unknown as Record<string, unknown>)[field] ?? "");
+    if (!v || (t && v.toLowerCase().indexOf(t) < 0)) return;
+    var c = counts[v] || (counts[v] = [0, 0]);
+    c[0]++;
+    c[1] += l.amount;
+  });
+  return Object.keys(counts)
+    .map(function (v) {
+      return [v, counts[v][0], Math.round(counts[v][1] * 100) / 100] as [string, number, number];
+    })
+    .sort(function (a, b) {
+      return b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
+    })
+    .slice(0, most);
+}
+
+function searchEscape(v: string) {
+  return v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function searchLines(n: number, net: number) {
+  return (
+    n.toLocaleString("en-US") +
+    (n === 1 ? " line, " : " lines, ") +
+    (net < 0 ? "-$" : "$") +
+    Math.abs(net).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  );
+}
+
+/** The options for what is typed in the search bar, with the field already chosen (draft) or none; "field: text"
+ * typed chooses the field too. */
+function searchSuggest(text: string, draft: string, lines: SearchLine[], groups: Record<string, string>): SearchOption[] {
+  var out: SearchOption[] = [];
+  var typed = text.trim();
+  if (!draft) {
+    var m = /^([A-Za-z][A-Za-z' ]*?)\s*:\s*(.*)$/.exec(typed);
+    if (m && searchBarField(m[1])) return searchSuggest(m[2], searchBarField(m[1])!.key, lines, groups);
+  }
+  var f = draft ? searchBarField(draft) : null;
+  if (f) {
+    if (f.kind === "text") {
+      if (typed)
+        out.push({
+          kind: "pattern",
+          field: f.key,
+          value: typed,
+          label: f.label + " holds " + typed,
+          detail: "A pattern: any " + f.label.toLowerCase() + " with it in it",
+        });
+      searchValues(lines, f.key, groups, typed, 8).forEach(function (v) {
+        out.push({
+          kind: "value",
+          field: f!.key,
+          value: "^" + searchEscape(v[0]) + "$",
+          label: v[0],
+          detail: searchLines(v[1], v[2]),
+        });
+      });
+    } else if (f.kind === "amount") {
+      var a = parseAmount(typed);
+      if (a)
+        out.push({
+          kind: "amount",
+          field: "amount",
+          value: typed,
+          label:
+            "Amount " +
+            (a.min !== null && a.max !== null
+              ? a.min === a.max
+                ? "of " + a.min
+                : a.min + " to " + a.max
+              : a.min !== null
+                ? "at least " + a.min
+                : "at most " + a.max),
+          detail: "Dollars, in or out",
+          min: a.min,
+          max: a.max,
+        });
+    } else if (f.kind === "choice")
+      (f.choices || []).forEach(function (c) {
+        if (!typed || c[1].toLowerCase().indexOf(typed.toLowerCase()) === 0)
+          out.push({ kind: "choice", field: f!.key, value: c[0], label: f!.label + ": " + c[1], detail: "" });
+      });
+    if (f.group)
+      out.push({
+        kind: "group",
+        field: f.key,
+        value: "",
+        label: "Group by " + f.label.toLowerCase(),
+        detail: "A row for each, with its count and sum",
+      });
+    return out;
+  }
+  if (typed)
+    out.push({
+      kind: "any",
+      field: "",
+      value: typed,
+      label: "Any text holds " + typed,
+      detail: "Payee, bank's text, note, items bought, category",
+    });
+  var t = typed.toLowerCase();
+  SEARCH_BAR_FIELDS.forEach(function (bf) {
+    if (!t || bf.label.toLowerCase().indexOf(t) >= 0 || bf.key.toLowerCase().indexOf(t) >= 0)
+      out.push({ kind: "field", field: bf.key, value: "", label: bf.label, detail: bf.hint });
+  });
+  if (typed.length >= 2) {
+    var found: [string, string, number, number][] = [];
+    ["payee", "category", "key", "account", "recurring"].forEach(function (field) {
+      searchValues(lines, field, groups, typed, 5).forEach(function (v) {
+        found.push([field, v[0], v[1], v[2]]);
+      });
+    });
+    found
+      .sort(function (a, b) {
+        return b[2] - a[2];
+      })
+      .slice(0, 5)
+      .forEach(function (v) {
+        out.push({
+          kind: "value",
+          field: v[0],
+          value: "^" + searchEscape(v[1]) + "$",
+          label: searchBarField(v[0])!.label + " is " + v[1],
+          detail: searchLines(v[2], v[3]),
+        });
+      });
+  }
+  return out;
+}
+
 interface SearchGroup {
   key: string; // what its lines share ("" for lines with none)
   lines: SearchLine[]; // in the order they came

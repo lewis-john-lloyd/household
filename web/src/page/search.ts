@@ -1,6 +1,9 @@
 // Where the money went, Search: every categorized line, found by any of its fields and sorted by any column.
-// Each text box is a regular expression found anywhere in its field, ignoring case; ^ and $ anchor it
-// (budgetview.ts compileSearch).
+// One search bar: the filters in force are chips in it, and typing offers fields (to filter or to group by),
+// values the lines hold and any text (budgetview.ts searchSuggest); a pattern is a regular expression found
+// anywhere in its field, ignoring case, ^ and $ anchoring it (compileSearch). The dates stand apart: a length and
+// the day it ends (searchRange), 90 days ending today to start. A card beside the lines holds each filter, to
+// read and change in place, and the grouping.
 // What came from the bank (date, account, amount, its text, the line's id, the file) is shown as it is and never
 // changes; a line opens on its own page to correct its category, split, note, one-off flag or recurring charge,
 // and the lines found can be moved to a category or marked one-off together. Every change goes to the pending
@@ -16,22 +19,12 @@ var searchState = {
   groupBy: "", // a field the lines found are grouped by, "" for none
   opened: {} as Record<string, boolean>, // the groups opened to their lines, by grouping and key
   bulk: false, // the changes to all the lines found shown (Bulk edit)
+  range: { unit: "days", days: 90, end: "today" } as SearchRange, // the dates searched: 90 days ending today
+  draft: "", // a field chosen in the search bar, waiting for its value
+  typed: "", // what is typed in the search bar
+  cardOpen: null as boolean | null, // the Filters card open (shut on a phone until asked for)
 };
 
-var SEARCH_FIELDS: [SearchTextField, string, string][] = [
-  ["payee", "Payee", "what the line is called"],
-  ["raw", "Bank's text", "as downloaded"],
-  ["category", "Category", "a split's parts count"],
-  ["group", "Group", ""],
-  ["account", "Account", ""],
-  ["recurring", "Recurring charge", "its name or key"],
-  ["key", "Merchant key", "what review asks by"],
-  ["note", "Note", ""],
-  ["items", "Items bought", "from an order history"],
-  ["source", "Read from", "csv, ofx, pdf, hand"],
-  ["decidedBy", "Decided by", "rule, you, a service"],
-  ["id", "Line id", "txn_id"],
-];
 // every field the lines found can be sorted by
 var SEARCH_SORTS: [string, string][] = [
   ["date", "Date"],
@@ -51,21 +44,6 @@ var SEARCH_SORTS: [string, string][] = [
   ["doc", "File"],
   ["id", "Line id"],
 ];
-var SEARCH_MAIN = 6; // the first fields stand out; the rest wait under More fields
-// what the lines found can be grouped by
-var SEARCH_GROUPINGS: [string, string][] = [
-  ["", "No groups"],
-  ["category", "Category"],
-  ["group", "Group"],
-  ["payee", "Payee"],
-  ["key", "Merchant key"],
-  ["account", "Account"],
-  ["recurring", "Recurring charge"],
-  ["month", "Month"],
-  ["year", "Year"],
-  ["decidedBy", "Decided by"],
-];
-
 function loadSearch() {
   var box = byId("flows-search");
   if (searchData) {
@@ -99,15 +77,69 @@ function searchOneOff(l: SearchLine): { oneOff: boolean; changed: boolean } {
   return { oneOff: yes, changed: yes !== l.oneOff };
 }
 
+// The words a filter is shown in, on its chip and in the card: [what, value].
+function searchFilters(q: SearchQuery): { field: string; label: string; value: string }[] {
+  var out: { field: string; label: string; value: string }[] = [];
+  if (q.any) out.push({ field: "any", label: "Any text", value: q.any });
+  SEARCH_BAR_FIELDS.forEach(function (f) {
+    if (f.kind === "text") {
+      var v = q.text[f.key as SearchTextField];
+      if (v) out.push({ field: f.key, label: f.label, value: v });
+    } else if (f.kind === "amount") {
+      var lo = q.min,
+        hi = q.max;
+      var has = function (n: number | null | undefined) {
+        return n !== null && n !== undefined && !isNaN(n);
+      };
+      if (has(lo) || has(hi))
+        out.push({
+          field: "amount",
+          label: "Amount",
+          value: has(lo) && has(hi) ? (lo === hi ? String(lo) : lo + " to " + hi) : has(lo) ? "at least " + lo : "at most " + hi,
+        });
+    } else if (f.kind === "choice") {
+      var c = searchChoice(q, f.key);
+      if (c && c !== "any")
+        out.push({
+          field: f.key,
+          label: f.label,
+          value:
+            (f.choices || []).filter(function (x) {
+              return x[0] === c;
+            })[0]?.[1] || c,
+        });
+    }
+  });
+  return out;
+}
+
+// the query's key for a yes-or-no or choice field of the search bar
+var SEARCH_CHOICE_KEY: Record<string, "direction" | "recurring" | "oneOff" | "split" | "status"> = {
+  direction: "direction",
+  inRecurring: "recurring",
+  oneOff: "oneOff",
+  split: "split",
+  status: "status",
+};
+
+function searchChoice(q: SearchQuery, field: string): string {
+  var k = SEARCH_CHOICE_KEY[field];
+  return k ? String(q[k] || "any") : "";
+}
+
+/** Take a filter off the query. */
+function searchDrop(q: SearchQuery, field: string) {
+  if (field === "any") delete q.any;
+  else if (field === "amount") q.min = q.max = null;
+  else if (SEARCH_CHOICE_KEY[field]) (q as unknown as Record<string, string>)[SEARCH_CHOICE_KEY[field]] = "any";
+  else delete q.text[field as SearchTextField];
+}
+
 function drawSearch() {
   if (view !== "flows" || flowsTab !== "search" || !searchData) return;
   var box = byId("flows-search");
   var d = searchData;
   box.textContent = "";
-  var filters = el("section", null, "panel search-filters");
-  box.appendChild(filters);
-  var results = el("section", null, "panel search-results");
-  box.appendChild(results);
   var q = searchState.query;
   var timer: number | undefined;
   var later = function () {
@@ -117,136 +149,676 @@ function drawSearch() {
       drawResults();
     }, 150);
   };
-  var errors: Record<string, HTMLElement> = {};
+  var now = today();
+  var applyRange = function () {
+    var r = searchRange(searchState.range, now);
+    q.from = r.from;
+    q.to = r.to;
+  };
+  applyRange();
 
-  filters.appendChild(el("h3", "Find lines"));
-  var help = el("p", null, "support");
-  [
-    ["Each box is a pattern found anywhere in the field, ignoring case: ", ""],
-    ["fuel", "code"],
-    [" holds fuel, ", ""],
-    ["^ACME", "code"],
-    [" starts with ACME, ", ""],
-    ["^food$", "code"],
-    [" is exactly food, ", ""],
-    ["food|petrol", "code"],
-    [" is either. Dates take a year, a month or a day; amounts are dollars, in or out.", ""],
-  ].forEach(function (p) {
-    help.appendChild(p[1] ? el("code", p[0]) : document.createTextNode(p[0]));
-  });
-  filters.appendChild(help);
-  var textBox = function (f: [SearchTextField, string, string], into: HTMLElement) {
-    var label = el("label", null, "search-field");
-    label.appendChild(el("span", f[1]));
-    var input = textInput(q.text[f[0]] || "", "", f[2]);
-    input.spellcheck = false;
-    input.autocomplete = "off";
-    input.setAttribute("data-field", f[0]);
-    input.oninput = function () {
-      q.text[f[0]] = input.value;
-      later();
-    };
-    label.appendChild(input);
-    var why = el("span", "", "search-error");
-    errors[f[0]] = why;
-    label.appendChild(why);
-    into.appendChild(label);
-  };
-  var grid = el("div", null, "search-grid");
-  filters.appendChild(grid);
-  SEARCH_FIELDS.slice(0, SEARCH_MAIN).forEach(function (f) {
-    textBox(f, grid);
-  });
-  var pair = function (label: string, a: HTMLInputElement, b: HTMLInputElement) {
-    var l = el("div", null, "search-field search-pair");
-    l.appendChild(el("span", label));
-    var both = el("div", null, "search-both");
-    both.appendChild(a);
-    both.appendChild(el("span", "to", "support"));
-    both.appendChild(b);
-    l.appendChild(both);
-    grid.appendChild(l);
-  };
-  var from = textInput(q.from || "", "", "YYYY-MM-DD"),
-    to = textInput(q.to || "", "", "YYYY-MM-DD");
-  from.setAttribute("aria-label", "From date");
-  to.setAttribute("aria-label", "To date");
-  from.oninput = function () {
-    q.from = from.value.trim();
-    later();
-  };
-  to.oninput = function () {
-    q.to = to.value.trim();
-    later();
-  };
-  pair("Date", from, to);
-  var number = function (v: string) {
-    var n = parseFloat(v.replace(/[$,]/g, ""));
-    return isNaN(n) ? null : n;
-  };
-  var lo = textInput(q.min === null || q.min === undefined ? "" : String(q.min), "", "0"),
-    hi = textInput(q.max === null || q.max === undefined ? "" : String(q.max), "", "any");
-  lo.inputMode = hi.inputMode = "decimal";
-  lo.setAttribute("aria-label", "Smallest amount, dollars");
-  hi.setAttribute("aria-label", "Largest amount, dollars");
-  lo.oninput = function () {
-    q.min = number(lo.value);
-    later();
-  };
-  hi.oninput = function () {
-    q.max = number(hi.value);
-    later();
-  };
-  pair("Amount, $", lo, hi);
-  var pick = function (
-    label: string,
-    key: "direction" | "recurring" | "oneOff" | "split" | "status",
-    names: Record<string, string>,
-    into: HTMLElement,
-  ) {
-    var l = el("label", null, "search-field");
-    l.appendChild(el("span", label));
-    var s = choice(Object.keys(names), (q[key] as string) || "any", names);
-    s.onchange = function () {
-      (q as unknown as Record<string, unknown>)[key] = s.value;
+  // the dates, apart from the filters: a length and the day it ends, stepped back and on by the length
+  var top = el("div", null, "search-top");
+  box.appendChild(top);
+  var dates = el("div", null, "search-dates");
+  top.appendChild(dates);
+  var drawDates = function () {
+    dates.textContent = "";
+    var said = rangeLabel(searchState.range, now);
+    var back = button(
+      "",
+      function () {
+        searchState.range = stepRange(searchState.range, -1, now)!;
+        changed();
+      },
+      "step",
+    );
+    back.appendChild(icon("chevron_left"));
+    back.setAttribute("aria-label", "Back by the same length");
+    var onward = stepRange(searchState.range, 1, now);
+    var on = button(
+      "",
+      function () {
+        searchState.range = onward!;
+        changed();
+      },
+      "step",
+    );
+    on.appendChild(icon("chevron"));
+    on.setAttribute("aria-label", "On by the same length");
+    on.disabled = !onward;
+    var chip = button(
+      "",
+      function () {
+        dateMenu(!dates.querySelector(".search-dmenu"));
+      },
+      "search-datechip",
+    );
+    chip.setAttribute("aria-haspopup", "dialog");
+    chip.setAttribute("aria-expanded", "false");
+    chip.appendChild(icon("calendar"));
+    var words = el("span", null, "dl");
+    words.appendChild(el("span", said.label));
+    words.appendChild(el("span", said.span, "sub"));
+    chip.appendChild(words);
+    chip.appendChild(icon("expand"));
+    dates.appendChild(back);
+    dates.appendChild(chip);
+    dates.appendChild(on);
+    var changed = function () {
+      applyRange();
+      drawDates();
       searchState.shown = SEARCH_PAGE;
       drawResults();
     };
-    l.appendChild(s);
-    into.appendChild(l);
+    var dateMenu = function (show: boolean) {
+      var open = dates.querySelector(".search-dmenu");
+      if (open) open.remove();
+      chip.setAttribute("aria-expanded", String(show));
+      if (!show) return;
+      var pick = { unit: searchState.range.unit, days: searchState.range.days, end: searchState.range.end };
+      var menu = el("div", null, "search-dmenu");
+      menu.setAttribute("role", "dialog");
+      menu.setAttribute("aria-label", "Dates");
+      var cols = el("div", null, "cols");
+      var long = el("div", null, "col"),
+        ends = el("div", null, "col");
+      long.appendChild(el("span", "How long", "colh"));
+      ends.appendChild(el("span", "Ending", "colh"));
+      cols.appendChild(long);
+      cols.appendChild(ends);
+      menu.appendChild(cols);
+      var preview = el("span");
+      var row = function (into: HTMLElement, label: string, sub: string, on: () => boolean, set: () => void) {
+        var b = button(
+          "",
+          function () {
+            set();
+            redraw();
+          },
+          "row",
+        );
+        b.appendChild(el("span", label));
+        if (sub) b.appendChild(el("span", sub, "sub"));
+        into.appendChild(b);
+        return function () {
+          b.classList.toggle("on", on());
+          b.setAttribute("aria-pressed", String(on()));
+        };
+      };
+      var marks: (() => void)[] = [];
+      [30, 90, 365].forEach(function (n) {
+        marks.push(
+          row(
+            long,
+            n + " days",
+            "",
+            function () {
+              return pick.unit === "days" && pick.days === n;
+            },
+            function () {
+              pick.unit = "days";
+              pick.days = n;
+            },
+          ),
+        );
+      });
+      var nDays = textInput("", "mono", "N");
+      nDays.inputMode = "numeric";
+      nDays.setAttribute("aria-label", "Days");
+      var own = el("label", null, "row custom");
+      own.appendChild(nDays);
+      own.appendChild(el("span", "days"));
+      long.appendChild(own);
+      nDays.oninput = function () {
+        var n = Math.round(Number(nDays.value));
+        if (n >= 1 && n <= 36600) {
+          pick.unit = "days";
+          pick.days = n;
+          redraw(true);
+        }
+      };
+      long.appendChild(el("div", null, "sep"));
+      (
+        [
+          ["month", "A month", "the calendar month the end falls in"],
+          ["quarter", "A quarter", ""],
+          ["year", "A year", ""],
+        ] as ["month" | "quarter" | "year", string, string][]
+      ).forEach(function (u) {
+        marks.push(
+          row(
+            long,
+            u[1],
+            u[2],
+            function () {
+              return pick.unit === u[0];
+            },
+            function () {
+              pick.unit = u[0];
+            },
+          ),
+        );
+      });
+      var endWords = function (end: string) {
+        return rangeSpan(
+          rangeEnd({ unit: "days", days: 1, end: end }, now),
+          rangeEnd({ unit: "days", days: 1, end: end }, now),
+        ).replace(/ to .*?,/, ",");
+      };
+      (
+        [
+          ["today", "Today"],
+          ["month", "End of last month"],
+          ["quarter", "End of last quarter"],
+          ["year", "End of last year"],
+        ] as [string, string][]
+      ).forEach(function (e) {
+        marks.push(
+          row(
+            ends,
+            e[1],
+            endWords(e[0]),
+            function () {
+              return pick.end === e[0];
+            },
+            function () {
+              pick.end = e[0];
+            },
+          ),
+        );
+      });
+      var onDate = textInput(/^\d{4}-\d\d-\d\d$/.test(pick.end) ? pick.end : "", "mono", "YYYY-MM-DD");
+      onDate.setAttribute("aria-label", "End date");
+      var dated = el("label", null, "row custom");
+      dated.appendChild(onDate);
+      ends.appendChild(dated);
+      onDate.oninput = function () {
+        var v = onDate.value.trim();
+        if (/^\d{4}-\d\d-\d\d$/.test(v) && !isNaN(Date.parse(v))) {
+          pick.end = v > now ? "today" : v;
+          redraw(true);
+        }
+      };
+      var foot = el("div", null, "dfoot");
+      foot.appendChild(preview);
+      foot.appendChild(
+        button(
+          "Apply",
+          function () {
+            searchState.range = { unit: pick.unit, days: pick.days, end: pick.end };
+            dateMenu(false);
+            changed();
+            (dates.querySelector(".search-datechip") as HTMLElement).focus();
+          },
+          "filled",
+        ),
+      );
+      menu.appendChild(foot);
+      var redraw = function (typing?: boolean) {
+        marks.forEach(function (m) {
+          m();
+        });
+        own.classList.toggle("on", pick.unit === "days" && [30, 90, 365].indexOf(pick.days) < 0);
+        dated.classList.toggle("on", /^\d{4}/.test(pick.end));
+        if (!typing) {
+          nDays.value = pick.unit === "days" && [30, 90, 365].indexOf(pick.days) < 0 ? String(pick.days) : "";
+          if (!/^\d{4}/.test(pick.end)) onDate.value = "";
+        }
+        var r = rangeLabel(pick as SearchRange, now);
+        preview.textContent = r.label + ": " + r.span;
+      };
+      redraw();
+      menu.onkeydown = function (ev) {
+        if (ev.key === "Escape") {
+          dateMenu(false);
+          chip.focus();
+        }
+      };
+      dates.appendChild(menu);
+      (menu.querySelector("button.row.on") as HTMLElement | null)?.focus();
+    };
   };
-  pick("Money", "direction", { any: "In or out", out: "Out", in: "In" }, grid);
-  pick("In a recurring charge", "recurring", { any: "Either", yes: "Yes", no: "No" }, grid);
-  var more = el("details", null, "search-more");
-  var opened =
-    SEARCH_FIELDS.slice(SEARCH_MAIN).some(function (f) {
-      return !!q.text[f[0]];
-    }) ||
-    [q.oneOff, q.split, q.status].some(function (v) {
-      return v && v !== "any";
-    });
-  more.open = opened;
-  more.appendChild(el("summary", "More fields"));
-  var moreGrid = el("div", null, "search-grid");
-  more.appendChild(moreGrid);
-  SEARCH_FIELDS.slice(SEARCH_MAIN).forEach(function (f) {
-    textBox(f, moreGrid);
+  drawDates();
+
+  // the query bar: the filters in force as chips, and a box that offers fields, values and grouping as you type
+  var bar = el("div", null, "search-bar");
+  top.appendChild(bar);
+  bar.appendChild(icon("search"));
+  var chips = el("div", null, "search-chips");
+  bar.appendChild(chips);
+  var draftChip = el("span", null, "fchip draft");
+  var input = textInput(searchState.typed, "search-input", "Search: a word, or a field such as category");
+  input.type = "search";
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.setAttribute("aria-label", "Search lines");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-controls", "search-menu");
+  input.setAttribute("aria-expanded", "false");
+  bar.appendChild(draftChip);
+  bar.appendChild(input);
+  var menu = el("div", null, "search-menu");
+  menu.id = "search-menu";
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  bar.appendChild(menu);
+  var options: SearchOption[] = [];
+  var hi = 0;
+  // the menu shows while something is typed or a field waits for its value, or when asked for (a click, Down)
+  var wanted = false;
+  var GROUPABLE = SEARCH_BAR_FIELDS.filter(function (f) {
+    return f.group;
   });
-  pick("One-off", "oneOff", { any: "Either", yes: "Yes", no: "No" }, moreGrid);
-  pick("Split", "split", { any: "Either", yes: "Yes", no: "No" }, moreGrid);
-  pick("Status", "status", { any: "Any", decided: "Decided", open: "Open in review", waiting: "Waiting" }, moreGrid);
-  filters.appendChild(more);
-  filters.appendChild(
-    button(
-      "Clear",
-      function () {
-        searchState.query = { text: {}, direction: "any", recurring: "any", oneOff: "any", split: "any", status: "any" };
-        searchState.shown = SEARCH_PAGE;
-        drawSearch();
-      },
-      "text",
-    ),
-  );
+  var label = function (field: string) {
+    return field === "any" ? "Any text" : (searchBarField(field) || { label: field }).label;
+  };
+
+  var drawChips = function () {
+    chips.textContent = "";
+    var chip = function (text: string, value: string, cls: string, remove: () => void, focus: () => void) {
+      var c = el("span", null, "fchip " + cls);
+      var body = button("", focus, "fchip-body");
+      body.appendChild(el("span", text, "k"));
+      if (value) body.appendChild(el("span", value, "v"));
+      c.appendChild(body);
+      var x = button("", remove, "x");
+      x.appendChild(icon("close"));
+      x.setAttribute("aria-label", "Remove " + text + (value ? " " + value : ""));
+      c.appendChild(x);
+      chips.appendChild(c);
+    };
+    searchFilters(q).forEach(function (f) {
+      chip(
+        f.label,
+        f.value,
+        "",
+        function () {
+          searchDrop(q, f.field);
+          refilter();
+          input.focus();
+        },
+        function () {
+          var at = card.querySelector<HTMLElement>(
+            "[data-filter='" + f.field + "'] input, [data-filter='" + f.field + "'] select",
+          );
+          if (at) {
+            cardBox.open = true;
+            at.focus();
+            at.scrollIntoView({ block: "nearest" });
+          }
+        },
+      );
+    });
+    if (searchState.groupBy)
+      chip(
+        "Grouped by " + label(searchState.groupBy).toLowerCase(),
+        "",
+        "group",
+        function () {
+          searchState.groupBy = "";
+          refilter();
+          input.focus();
+        },
+        function () {
+          cardBox.open = true;
+          (card.querySelector("select[aria-label='Group by']") as HTMLElement).focus();
+        },
+      );
+    draftChip.hidden = !searchState.draft;
+    draftChip.textContent = searchState.draft ? label(searchState.draft) : "";
+    input.placeholder = searchState.draft
+      ? (searchBarField(searchState.draft) || { hint: "" }).hint || "a pattern"
+      : searchFilters(q).length || searchState.groupBy
+        ? "Add a filter or a grouping"
+        : "Search: a word, or a field such as category";
+  };
+
+  var drawMenu = function () {
+    var inRange = d.lines.filter(function (l) {
+      return l.date >= (q.from || "") && l.date <= (q.to || "9999");
+    });
+    options = searchSuggest(input.value, searchState.draft, inRange, d.groups);
+    menu.textContent = "";
+    var show = document.activeElement === input && options.length > 0 && (wanted || !!input.value || !!searchState.draft);
+    menu.hidden = !show;
+    input.setAttribute("aria-expanded", String(show));
+    if (!show) return;
+    if (hi >= options.length) hi = 0;
+    var section = "";
+    options.forEach(function (o, i) {
+      var sec = o.kind === "field" ? "Fields" : o.kind === "value" && !searchState.draft ? "Values" : "";
+      if (sec && sec !== section) menu.appendChild(el("div", sec, "sec"));
+      section = sec || section;
+      var row = el("div", null, "opt" + (i === hi ? " hi" : ""));
+      row.id = "search-opt-" + i;
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(i === hi));
+      var what = el("div", null, "what");
+      // a category or group offered by itself shows as the pages name it
+      var named = o.kind === "value" && (o.field === "category" || o.field === "group") && o.label.indexOf(" is ") < 0;
+      what.appendChild(el("span", named ? pretty(o.label) : o.label));
+      if (o.detail) what.appendChild(el("span", o.detail));
+      row.appendChild(what);
+      row.onmousedown = function (ev) {
+        ev.preventDefault(); // keep the box focused
+      };
+      row.onclick = function () {
+        choose(o, false);
+      };
+      var f = o.kind === "field" ? searchBarField(o.field) : null;
+      if (f && i === hi) {
+        if (f.kind !== "group") {
+          var filt = button(
+            "Filter",
+            function (ev) {
+              ev.stopPropagation();
+              choose(o, false);
+            },
+            "act pri",
+          );
+          filt.onmousedown = row.onmousedown;
+          row.appendChild(filt);
+        }
+        if (f.group) {
+          var grp = button(
+            "Group by",
+            function (ev) {
+              ev.stopPropagation();
+              choose(o, true);
+            },
+            "act",
+          );
+          grp.onmousedown = row.onmousedown;
+          row.appendChild(grp);
+        }
+      }
+      menu.appendChild(row);
+    });
+    input.setAttribute("aria-activedescendant", "search-opt-" + hi);
+    var keys = el("div", null, "keys");
+    keys.textContent = searchState.draft
+      ? "Enter keeps the highlighted one; what is typed is a pattern found anywhere, ^ and $ anchor it; Backspace in an empty box drops " +
+        label(searchState.draft)
+      : "Up and down to move, Enter to choose, Shift+Enter groups by the field, Backspace in an empty box removes the last chip, Esc closes";
+    menu.appendChild(keys);
+  };
+
+  // what choosing an option does; group is Shift+Enter, or the Group by button, on a field
+  var choose = function (o: SearchOption, group: boolean) {
+    var f = searchBarField(o.field);
+    if (o.kind === "field" && (group || (f && f.kind === "group"))) {
+      searchState.groupBy = o.field;
+      searchState.draft = "";
+    } else if (o.kind === "field") searchState.draft = o.field;
+    else if (o.kind === "group") {
+      searchState.groupBy = o.field;
+      searchState.draft = "";
+    } else if (o.kind === "any") {
+      q.any = o.value;
+      searchState.draft = "";
+    } else if (o.kind === "pattern" || o.kind === "value") {
+      q.text[o.field as SearchTextField] = o.value;
+      searchState.draft = "";
+    } else if (o.kind === "amount") {
+      q.min = o.min === undefined ? null : o.min;
+      q.max = o.max === undefined ? null : o.max;
+      searchState.draft = "";
+    } else if (o.kind === "choice") {
+      (q as unknown as Record<string, string>)[SEARCH_CHOICE_KEY[o.field]] = o.value;
+      searchState.draft = "";
+    }
+    input.value = "";
+    searchState.typed = "";
+    hi = 0;
+    wanted = !!searchState.draft;
+    refilter();
+    input.focus();
+  };
+
+  input.oninput = function () {
+    searchState.typed = input.value;
+    hi = 0;
+    drawMenu();
+  };
+  input.onclick = function () {
+    wanted = true;
+    drawMenu();
+  };
+  input.onblur = function () {
+    window.setTimeout(function () {
+      if (document.activeElement !== input) {
+        wanted = false;
+        menu.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+      }
+    }, 0);
+  };
+  input.onkeydown = function (ev) {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (menu.hidden) {
+        wanted = true; // Down opens the menu first
+        drawMenu();
+        return;
+      }
+      if (!options.length) return;
+      hi = (hi + (ev.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+      drawMenu();
+      var at = document.getElementById("search-opt-" + hi);
+      if (at) at.scrollIntoView({ block: "nearest" });
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (options[hi]) choose(options[hi], ev.shiftKey);
+    } else if (ev.key === "Escape") {
+      if (!menu.hidden) {
+        wanted = false;
+        menu.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+      } else if (searchState.draft) {
+        searchState.draft = "";
+        drawChips();
+      }
+    } else if (ev.key === "Backspace" && !input.value) {
+      if (searchState.draft) searchState.draft = "";
+      else {
+        var all = searchFilters(q);
+        if (searchState.groupBy) searchState.groupBy = "";
+        else if (all.length) searchDrop(q, all[all.length - 1].field);
+        else return;
+        refilter();
+        return;
+      }
+      drawChips();
+      drawMenu();
+    }
+  };
+
+  // the filters in force, each to read and change in place, and the grouping
+  var layout = el("div", null, "search-layout");
+  box.appendChild(layout);
+  var results = el("section", null, "panel search-results");
+  layout.appendChild(results);
+  var cardBox = el("details", null, "panel search-card");
+  if (searchState.cardOpen === null) searchState.cardOpen = window.innerWidth > 800;
+  cardBox.open = searchState.cardOpen;
+  cardBox.ontoggle = function () {
+    searchState.cardOpen = cardBox.open;
+  };
+  layout.appendChild(cardBox);
+  var cardHead = el("summary");
+  cardBox.appendChild(cardHead);
+  var card = el("div", null, "search-card-body");
+  cardBox.appendChild(card);
+  var errors: Record<string, HTMLElement> = {};
+  var drawCard = function () {
+    var n = searchFilters(q).length + (searchState.groupBy ? 1 : 0);
+    cardHead.textContent = n ? "Filters and grouping (" + n + ")" : "Filters and grouping";
+    card.textContent = "";
+    errors = {};
+    var filters = searchFilters(q);
+    if (!filters.length)
+      card.appendChild(el("p", "No filters: every line in these dates is shown. Type in the search box to add one.", "support"));
+    var row = function (f: { field: string; label: string }, control: HTMLElement, sub?: string) {
+      var r = el("div", null, "frow");
+      r.setAttribute("data-filter", f.field);
+      var head = el("div", null, "head");
+      head.appendChild(el("span", f.label, "flabel"));
+      var x = button(
+        "",
+        function () {
+          searchDrop(q, f.field);
+          refilter();
+        },
+        "x",
+      );
+      x.appendChild(icon("close"));
+      x.setAttribute("aria-label", "Remove the " + f.label + " filter");
+      head.appendChild(x);
+      r.appendChild(head);
+      r.appendChild(control);
+      if (sub) r.appendChild(el("span", sub, "support small"));
+      card.appendChild(r);
+      return r;
+    };
+    filters.forEach(function (f) {
+      var bf = searchBarField(f.field);
+      if (f.field === "any" || (bf && bf.kind === "text")) {
+        var pat = textInput(f.field === "any" ? q.any : q.text[f.field as SearchTextField], "mono");
+        pat.spellcheck = false;
+        pat.autocomplete = "off";
+        pat.setAttribute("data-field", f.field);
+        pat.setAttribute("aria-label", f.label + " pattern");
+        pat.oninput = function () {
+          if (f.field === "any") q.any = pat.value;
+          else q.text[f.field as SearchTextField] = pat.value;
+          drawChips();
+          later();
+        };
+        var r = row(f, pat, f.field === "any" ? "Found in the payee, bank's text, note, items bought or category" : bf!.hint);
+        var why = el("span", "", "search-error");
+        errors[f.field] = why;
+        r.appendChild(why);
+      } else if (bf && bf.kind === "amount") {
+        var pair = el("div", null, "pair");
+        var num = function (v: number | null | undefined, name: string, set: (n: number | null) => void) {
+          var i = textInput(v === null || v === undefined ? "" : String(v), "mono", name === "Smallest" ? "0" : "any");
+          i.inputMode = "decimal";
+          i.setAttribute("aria-label", name + " amount, dollars");
+          i.oninput = function () {
+            var n = parseFloat(i.value.replace(/[$,]/g, ""));
+            set(isNaN(n) ? null : n);
+            drawChips();
+            later();
+          };
+          return i;
+        };
+        pair.appendChild(
+          num(q.min, "Smallest", function (n) {
+            q.min = n;
+          }),
+        );
+        pair.appendChild(el("span", "to", "support"));
+        pair.appendChild(
+          num(q.max, "Largest", function (n) {
+            q.max = n;
+          }),
+        );
+        row(f, pair, "Dollars, in or out");
+      } else if (bf && bf.kind === "choice") {
+        var names: Record<string, string> = {};
+        (bf.choices || []).forEach(function (c) {
+          names[c[0]] = c[1];
+        });
+        var sel = choice(Object.keys(names), searchChoice(q, bf.key), names);
+        sel.setAttribute("aria-label", f.label);
+        sel.onchange = function () {
+          (q as unknown as Record<string, string>)[SEARCH_CHOICE_KEY[bf!.key]] = sel.value;
+          drawChips();
+          searchState.shown = SEARCH_PAGE;
+          drawResults();
+        };
+        row(f, sel);
+      }
+    });
+    var groupNames: Record<string, string> = { "": "No groups" };
+    GROUPABLE.forEach(function (g) {
+      groupNames[g.key] = g.label;
+    });
+    var grouper = choice(Object.keys(groupNames), searchState.groupBy, groupNames);
+    grouper.setAttribute("aria-label", "Group by");
+    grouper.onchange = function () {
+      searchState.groupBy = grouper.value;
+      drawChips();
+      searchState.shown = SEARCH_PAGE;
+      drawResults();
+    };
+    var g = el("label", null, "frow");
+    g.appendChild(el("span", "Group by", "flabel"));
+    g.appendChild(grouper);
+    card.appendChild(g);
+    var add = el("div", null, "search-add");
+    add.appendChild(el("span", "Add", "flabel"));
+    ["amount", "account", "category"].forEach(function (k) {
+      if (
+        searchFilters(q).some(function (f) {
+          return f.field === k;
+        })
+      )
+        return;
+      add.appendChild(
+        button(
+          label(k),
+          function () {
+            searchState.draft = k;
+            drawChips();
+            input.focus();
+          },
+          "text",
+        ),
+      );
+    });
+    add.appendChild(
+      button(
+        "More fields",
+        function () {
+          searchState.draft = "";
+          input.value = "";
+          drawChips();
+          input.focus();
+        },
+        "text",
+      ),
+    );
+    card.appendChild(add);
+    if (filters.length || searchState.groupBy)
+      card.appendChild(
+        button(
+          "Clear all",
+          function () {
+            searchState.query = { text: {}, direction: "any", recurring: "any", oneOff: "any", split: "any", status: "any" };
+            searchState.groupBy = "";
+            searchState.draft = "";
+            searchState.shown = SEARCH_PAGE;
+            drawSearch();
+          },
+          "text",
+        ),
+      );
+    var help = el("p", null, "support small");
+    help.textContent = "A pattern is found anywhere in its field, any case: ^ starts it, $ ends it, a|b is either.";
+    card.appendChild(help);
+  };
+
+  // a filter added, changed or taken off: the chips, the card and the lines found
+  var refilter = function () {
+    drawChips();
+    drawCard();
+    searchState.shown = SEARCH_PAGE;
+    drawResults();
+    drawMenu();
+  };
 
   var drawResults = function () {
     results.textContent = "";
@@ -254,10 +826,15 @@ function drawSearch() {
     Object.keys(errors).forEach(function (f) {
       var why = (compiled.errors as Record<string, string>)[f] || "";
       errors[f].textContent = why ? "Not a pattern: " + why : "";
-      var input = errors[f].previousSibling as HTMLInputElement;
-      input.classList.toggle("bad", !!why);
-      input.setAttribute("aria-invalid", String(!!why));
+      var box = card.querySelector<HTMLInputElement>("input[data-field='" + f + "']");
+      if (box) {
+        box.classList.toggle("bad", !!why);
+        box.setAttribute("aria-invalid", String(!!why));
+      }
     });
+    var dated = d.lines.filter(function (l) {
+      return l.date >= (q.from || "") && l.date <= (q.to || "9999");
+    }).length;
     var found = sortSearch(d.lines.filter(compiled.test), searchState.sort, searchState.descending, d.groups);
     var out = 0,
       inn = 0;
@@ -275,8 +852,8 @@ function drawSearch() {
         "p",
         found.length.toLocaleString("en-US") +
           " of " +
-          d.lines.length.toLocaleString("en-US") +
-          " lines: " +
+          dated.toLocaleString("en-US") +
+          " lines in these dates: " +
           cents.format(out) +
           " out, " +
           cents.format(inn) +
@@ -308,23 +885,6 @@ function drawSearch() {
         drawResults();
       };
       tools.appendChild(sorter);
-      var groupNames: Record<string, string> = {};
-      SEARCH_GROUPINGS.forEach(function (g) {
-        groupNames[g[0]] = g[0] ? "Group by " + g[1].toLowerCase() : g[1];
-      });
-      var grouper = choice(
-        SEARCH_GROUPINGS.map(function (g) {
-          return g[0];
-        }),
-        searchState.groupBy,
-        groupNames,
-      );
-      grouper.setAttribute("aria-label", "Group by");
-      grouper.onchange = function () {
-        searchState.groupBy = grouper.value;
-        drawResults();
-      };
-      tools.appendChild(grouper);
       // changing every line found at once is kept out of the way until asked for
       var bulkToggle = button(
         searchState.bulk ? "Close bulk edit" : "Bulk edit",
@@ -496,6 +1056,8 @@ function drawSearch() {
         ),
       );
   };
+  drawChips();
+  drawCard();
   drawResults();
 }
 

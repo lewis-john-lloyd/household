@@ -458,17 +458,68 @@
       .equity-tax .plan-knob { margin: 4px 0; }
       /* Where the money went, Over time: spending each month, stacked (spendchart.ts) */
       /* Where the money went, Search: every line by any field (search.ts) */
-      .search-filters { margin-bottom: 12px; }
-      .search-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13em, 1fr)); gap: 8px 12px; margin: 8px 0; }
-      .search-field { display: grid; gap: 2px; align-content: start; }
-      .search-field > span:first-child { font-size: 13px; color: var(--on-surface-variant); }
-      .search-field input, .search-field select { width: 100%; box-sizing: border-box; font: inherit; min-height: 36px; padding: 0 8px; border: 1px solid var(--outline); border-radius: 4px; background: var(--surface); color: var(--on-surface); }
-      .search-field input[data-field] { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-      .search-field input.bad { outline: 2px solid var(--error); }
-      .search-error { color: var(--error); font-size: 12px; min-height: 0; }
-      .search-both { display: flex; align-items: center; gap: 6px; }
-      .search-both input { min-width: 0; }
-      .search-more summary { cursor: pointer; color: var(--primary); min-height: 32px; display: flex; align-items: center; }
+      /* Search: the dates apart, one bar of chips and suggestions, the filters in a card beside the lines */
+      .search-top { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; margin-bottom: 16px; }
+      .search-dates { position: relative; display: inline-flex; gap: 4px; align-items: stretch; }
+      .search-dates button.step { min-width: 40px; padding: 0; border-radius: 12px; border: 1px solid var(--outline-variant); background: transparent; color: var(--on-surface); display: grid; place-items: center; }
+      .search-dates button.step:disabled { opacity: 0.4; }
+      .search-dates svg.icon { width: 20px; height: 20px; fill: currentColor; flex: none; }
+      button.search-datechip { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 4px 12px 4px 14px; border-radius: 16px; border: 1px solid var(--outline); background: var(--surface-container); color: var(--on-surface); text-align: left; font-weight: 400; }
+      button.search-datechip[aria-expanded="true"] { outline: 2px solid var(--primary); outline-offset: -1px; }
+      .search-datechip .dl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .search-datechip .dl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .search-datechip .sub, .search-dmenu .sub { font-size: 12px; color: var(--on-surface-variant); }
+      .search-dmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: min(520px, calc(100vw - 32px)); box-sizing: border-box; background: var(--surface-high); border-radius: 16px; box-shadow: 0 8px 24px var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+      .search-dmenu .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      .search-dmenu .col { display: flex; flex-direction: column; gap: 2px; }
+      .search-dmenu .colh { font-size: 12px; color: var(--on-surface-variant); padding: 0 10px 6px; }
+      .search-dmenu button.row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-height: 40px; justify-content: center; padding: 4px 10px; border-radius: 8px; background: transparent; color: var(--on-surface); text-align: left; font-weight: 400; }
+      .search-dmenu .row.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+      .search-dmenu label.row.custom { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 8px; }
+      .search-dmenu .row.custom input { font: inherit; box-sizing: border-box; width: 100%; max-width: 140px; min-height: 36px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
+      .search-dmenu .sep { height: 1px; background: var(--outline-variant); margin: 6px 10px; }
+      .search-dmenu .dfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .search-bar { position: relative; flex: 1 1 420px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 52px; box-sizing: border-box; padding: 6px 12px 6px 16px; background: var(--surface-container); border: 1px solid var(--outline); border-radius: 26px; }
+      .search-bar:focus-within { outline: 2px solid var(--primary); outline-offset: -1px; }
+      .search-bar > svg.icon { width: 22px; height: 22px; fill: var(--on-surface-variant); flex: none; }
+      .search-chips { display: contents; }
+      .fchip { display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; border-radius: 8px; background: var(--surface-container-high); border: 1px solid var(--outline-variant); font-size: 14px; max-width: 100%; }
+      .fchip button.fchip-body { display: inline-flex; align-items: center; gap: 6px; height: 30px; min-height: 0; padding: 0 4px 0 12px; background: transparent; color: var(--on-surface); font-weight: 400; border-radius: 8px 0 0 8px; overflow: hidden; }
+      .fchip .k { color: var(--on-surface-variant); white-space: nowrap; }
+      .fchip .v { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16em; }
+      .fchip.group { background: var(--success-container); border-color: transparent; }
+      .fchip.group .k { color: var(--on-success-container); }
+      .fchip.draft { padding: 0 12px; border: 1px dashed var(--primary); background: transparent; color: var(--on-surface-variant); }
+      .search-top button.x, .search-card button.x { display: inline-grid; place-items: center; width: 28px; height: 28px; min-height: 0; padding: 0; border-radius: 14px; background: transparent; color: inherit; }
+      .search-top button.x:hover, .search-card button.x:hover { background: var(--surface-high); }
+      .search-top button.x svg.icon, .search-card button.x svg.icon { width: 16px; height: 16px; fill: currentColor; }
+      input.search-input { flex: 1 1 160px; min-width: 120px; font: inherit; font-size: 16px; color: var(--on-surface); background: transparent; border: 0; outline: 0; height: 36px; }
+      .search-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5; max-height: 60vh; overflow-y: auto; background: var(--surface-high); border-radius: 16px; box-shadow: 0 8px 24px var(--shadow); padding: 8px 0; }
+      .search-menu .sec { font-size: 12px; color: var(--on-surface-variant); padding: 10px 20px 4px; }
+      .search-menu .opt { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 12px 6px 20px; box-sizing: border-box; cursor: pointer; }
+      .search-menu .opt.hi { background: var(--surface-container-high); }
+      .search-menu .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      .search-menu .what span:last-child:not(:first-child) { font-size: 12px; color: var(--on-surface-variant); }
+      .search-menu button.act { height: 32px; min-height: 0; padding: 0 14px; border-radius: 16px; border: 1px solid var(--outline); background: transparent; color: var(--on-surface); }
+      .search-menu button.act.pri { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+      .search-menu .keys { font-size: 12px; color: var(--on-surface-variant); padding: 8px 20px 4px; border-top: 1px solid var(--outline-variant); margin-top: 6px; }
+      .search-layout { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+      .search-layout > .search-results { flex: 999 1 640px; min-width: 0; }
+      details.search-card { flex: 1 1 280px; max-width: 360px; box-sizing: border-box; margin: 0; }
+      .search-card-body > button.text { align-self: flex-start; }
+      details.search-card > summary { cursor: pointer; font-weight: 500; min-height: 36px; display: flex; align-items: center; }
+      .search-card-body { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+      .search-card .frow { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--outline-variant); }
+      .search-card .frow .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .search-card .flabel { font-size: 13px; color: var(--on-surface-variant); }
+      .search-card input, .search-card select { font: inherit; box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
+      .search-card input.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+      .search-card input.bad { outline: 2px solid var(--error); }
+      .search-card .pair { display: flex; align-items: center; gap: 8px; }
+      .search-card .pair input { min-width: 0; }
+      .search-add { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+      .search-error { color: var(--error); font-size: 12px; }
+      .search-error:empty { display: none; }
       .search-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
       .search-count { margin: 0; color: var(--on-surface-variant); }
       .search-total { margin: 0; font-size: 22px; }
@@ -492,10 +543,10 @@
       .search-table td.nowrap { white-space: nowrap; }
       .search-table .search-note { max-width: 16em; overflow-wrap: anywhere; }
       .search-table .small { font-size: 12px; }
-      .search-filters code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: var(--surface-container-high); padding: 0 3px; border-radius: 3px; }
       @media (max-width: 600px) {
-        .search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .search-pair { grid-column: 1 / -1; }
+        details.search-card { max-width: none; order: -1; }
+        .search-dates { width: 100%; }
+        button.search-datechip { flex: 1; min-width: 0; }
         .search-table th:nth-child(2), .search-table td:nth-child(2), .search-table th:nth-child(7), .search-table td:nth-child(7) { display: none; }
       }
       .election-detail summary { cursor: pointer; color: var(--primary); font-size: 13px; }

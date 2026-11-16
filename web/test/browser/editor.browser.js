@@ -65,8 +65,9 @@ after(async () => {
   await browser.close();
 });
 
-async function open(setup) {
+async function open(setup, { now } = {}) {
   const page = await browser.newPage();
+  if (now) await page.clock.setFixedTime(new Date(now)); // the page's today, for what counts back from it
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.route("https://www.gstatic.com/charts/loader.js", (r) =>
@@ -2649,6 +2650,7 @@ test("performance: ten years of a household's spending draws and redraws quickly
   await page.click("#flows-tabs button:has-text('Search')");
   await page.waitForSelector("#flows-search .search-table");
   const search = await page.evaluate(() => {
+    searchState.range = { unit: "days", days: 4000, end: "today" }; // all ten years
     const t0 = performance.now();
     for (let i = 0; i < 10; i++) {
       searchState.query.text = i % 2 ? { payee: ".*fuel.*", raw: ".*#1\\d{3}", group: "group[0-3]" } : { payee: "acme.*" };
@@ -2659,6 +2661,13 @@ test("performance: ten years of a household's spending draws and redraws quickly
   });
   assert.equal(search.rows, 200);
   assert.ok(search.ms < 200, `a search took ${Math.round(search.ms)} ms`);
+  // what the search bar offers as each letter is typed, over every line
+  const typing = await page.evaluate(() => {
+    const t0 = performance.now();
+    ["a", "ac", "acm", "acme", "category: gro"].forEach((t) => searchSuggest(t, "", searchData.lines, searchData.groups));
+    return (performance.now() - t0) / 5;
+  });
+  assert.ok(typing < 50, `offering what was typed took ${Math.round(typing)} ms`);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -3548,6 +3557,7 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   };
   const page = await open(
     `window.__answers.getSearch = ${JSON.stringify(search)}; window.__answers.getTransaction = ${JSON.stringify(t3)};`,
+    { now: "2026-03-15T12:00:00" },
   );
   await page.click("#view-flows");
   await page.click("#flows-tabs button:has-text('Search')");
@@ -3555,36 +3565,102 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   assert.equal(await page.isHidden("#controls"), true);
   const ids = () => page.$$eval("#flows-search .search-row td:nth-child(3) div:first-child", (d) => d.map((x) => x.textContent));
   const count = () => page.textContent("#flows-search .search-count");
-  assert.match(await count(), /^5 of 5 lines: \$101\.00 out, \$80\.00 in\./); // leak-guard: allow (made up)
-  // a pattern found anywhere in the field, ignoring case; ^ and $ anchor it
-  await page.fill("#flows-search input[data-field='payee']", "grocer");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
-  await page.fill("#flows-search input[data-field='payee']", "^grocer");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 0);
-  // a broken pattern says why and filters nothing
-  await page.fill("#flows-search input[data-field='payee']", "(acme");
+  const rows = (n) => page.waitForFunction((n) => document.querySelectorAll("#flows-search .search-row").length === n, n);
+  const chips = () => page.$$eval("#flows-search .search-chips .fchip", (c) => c.map((x) => x.textContent));
+  const bar = "#flows-search input.search-input";
+  const options = () => page.$$eval("#search-menu .opt .what span:first-child", (o) => o.map((x) => x.textContent));
+  // 90 days ending today to start: every line here
+  assert.match(await page.textContent("#flows-search .search-datechip"), /^90 days ending todayDec 16, 2025 to Mar 15, 2026$/);
+  assert.match(await count(), /^5 of 5 lines in these dates: \$101\.00 out, \$80\.00 in\./); // leak-guard: allow (made up)
+  // a word typed is found in any text; it becomes a chip
+  await page.click(bar);
+  await page.keyboard.type("grocer");
+  assert.equal((await options())[0], "Any text holds grocer");
+  await page.keyboard.press("Enter");
+  await rows(2);
+  assert.deepEqual(await chips(), ["Any textgrocer"]);
+  assert.equal(await page.inputValue(bar), "");
+  // Backspace in the empty box takes the last chip off
+  await page.keyboard.press("Backspace");
+  await rows(5);
+  assert.deepEqual(await chips(), []);
+  // a field named is offered, with Filter and Group by on the one highlighted
+  await page.keyboard.type("pay");
+  assert.deepEqual((await options()).slice(0, 2), ["Any text holds pay", "Payee"]);
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.locator("#search-menu .opt.hi button").count(), 2);
+  await page.keyboard.press("Enter"); // the field waits for its value
+  assert.equal(await page.textContent("#flows-search .fchip.draft"), "Payee");
+  await page.keyboard.type("^grocer");
+  await page.keyboard.press("Enter"); // a pattern: ^ anchors it
+  await rows(0);
+  assert.deepEqual(await chips(), ["Payee^grocer"]);
+  // its details in the card, changed in place; a broken pattern says why and filters nothing
+  await page.fill("#flows-search .search-card input[data-field='payee']", "(acme");
   await page.waitForSelector("#flows-search .search-error:not(:empty)");
-  assert.match(await page.textContent("#flows-search label:has(input[data-field='payee']) .search-error"), /Not a pattern/);
+  assert.match(await page.textContent("#flows-search [data-filter='payee'] .search-error"), /Not a pattern/);
   assert.equal(await page.getAttribute("#flows-search input[data-field='payee']", "aria-invalid"), "true");
   assert.match(await count(), /^5 of 5/);
-  await page.fill("#flows-search input[data-field='payee']", "");
-  // the bank's own text, a split's part, a group, a recurring charge, dates and amounts
-  await page.fill("#flows-search input[data-field='raw']", "\\d{4}");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 1);
+  assert.deepEqual(await chips(), ["Payee(acme"]);
+  await page.click("#flows-search [data-filter='payee'] button.x");
+  assert.deepEqual(await chips(), []);
+  // "field: text" names the field as it is typed: the bank's text, a split's part
+  await page.click(bar);
+  await page.keyboard.type("bank's text: \\d{4}");
+  await page.keyboard.press("Enter");
+  await rows(1);
   assert.match(await page.textContent("#flows-search .search-row"), /Book club/);
-  await page.fill("#flows-search input[data-field='raw']", "");
-  await page.fill("#flows-search input[data-field='category']", "household");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 1);
-  await page.fill("#flows-search input[data-field='category']", "");
-  await page.fill("#flows-search input[aria-label='From date']", "2026");
-  await page.fill("#flows-search input[aria-label='Largest amount, dollars']", "40");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  await page.keyboard.press("Backspace");
+  await page.keyboard.type("category: house");
+  assert.equal((await options())[0], "Category holds house");
+  await page.keyboard.press("Enter");
+  await rows(1);
+  await page.keyboard.press("Backspace");
+  // a value the lines hold, chosen from the list, is found exactly
+  await page.keyboard.type("category:");
+  assert.deepEqual((await options()).slice(0, 2), ["Misc", "Family"]); // the commonest first
+  await page.keyboard.press("Enter");
+  await rows(2);
+  assert.deepEqual(await chips(), ["Category^misc$"]);
+  await page.keyboard.press("Backspace");
+  // an amount, and the dates: a year ending today is this year so far, stepped back a year at a time
+  await page.keyboard.type("amount: <40");
+  await page.keyboard.press("Enter");
+  await rows(3);
+  await page.click("#flows-search .search-datechip");
+  await page.click(".search-dmenu button.row:has-text('A year')");
+  assert.match(await page.textContent(".search-dmenu .dfoot"), /^2026 so far: Jan 1 to Mar 15, 2026/);
+  await page.click(".search-dmenu button:has-text('Apply')");
+  await rows(2);
   assert.deepEqual(await ids(), ["Page Turner Books", "BLUE PUMP FUEL"]);
-  await page.fill("#flows-search input[aria-label='From date']", "");
-  await page.fill("#flows-search input[aria-label='Largest amount, dollars']", "");
-  await page.selectOption("#flows-search label:has-text('In a recurring charge') select", "yes");
+  assert.match(await count(), /^2 of 4 lines in these dates/);
+  assert.equal(await page.isDisabled("#flows-search .search-dates button.step[aria-label^='On']"), true);
+  await page.click("#flows-search .search-dates button.step[aria-label^='Back']");
+  await rows(1);
+  assert.match(await page.textContent("#flows-search .search-datechip"), /^2025Jan 1 to Dec 31, 2025/);
+  // a custom length: an end and days back
+  await page.click("#flows-search .search-datechip");
+  await page.fill(".search-dmenu input[aria-label='Days']", "45");
+  await page.click(".search-dmenu button.row:has-text('Today')");
+  assert.match(await page.textContent(".search-dmenu .dfoot"), /^45 days ending today: Jan 30 to Mar 15, 2026/);
+  await page.click(".search-dmenu button:has-text('Apply')");
+  await rows(2); // Feb 10 and Mar 4, both under 40
+  await page.click("#flows-search .search-datechip");
+  await page.click(".search-dmenu button.row:has-text('90 days')");
+  await page.click(".search-dmenu button:has-text('Apply')");
+  await page.click("#flows-search .search-chips .fchip:has-text('Amount') button.x");
+  await rows(5);
+  // a yes-or-no field offers its choices
+  await page.click(bar);
+  await page.keyboard.type("in a rec");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  assert.deepEqual(await options(), ["In a recurring charge: Yes", "In a recurring charge: No"]);
+  await page.keyboard.press("Enter");
+  await rows(1);
   assert.deepEqual(await ids(), ["Page Turner Books"]);
-  await page.selectOption("#flows-search label:has-text('In a recurring charge') select", "any");
+  await page.keyboard.press("Backspace");
+  await rows(5);
   // sorted by any column: amount, smallest first, then back
   await page.click("#flows-search th button:has-text('Amount')");
   assert.deepEqual(await ids(), ["ACME GROCER", "BLUE PUMP FUEL", "Page Turner Books", "ACME GROCER", "WILLOW ST"]);
@@ -3599,8 +3675,12 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   assert.equal(await page.textContent("#flows-search .search-total"), "Total -$21.00"); // leak-guard: allow (made up)
   assert.match(await page.textContent("#flows-search tfoot"), /Total 5 lines-\$21\.00/); // leak-guard: allow (made up)
   // grouped: a row per group with its lines and sum, shut until opened; the biggest first
-  await page.selectOption("#flows-search select[aria-label='Group by']", "payee");
+  await page.click(bar);
+  await page.keyboard.type("payee");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Shift+Enter"); // groups by the field
   await page.waitForSelector("#flows-search tr.search-group");
+  assert.deepEqual(await chips(), ["Grouped by payee"]);
   const heads = await page.locator("#flows-search tr.search-group").allTextContents();
   assert.equal(heads.length, 4);
   assert.match(heads[0], /^WILLOW ST 1 line\$80\.00$/); // the biggest sum first, in or out // leak-guard: allow (made up)
@@ -3613,14 +3693,17 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   await page.keyboard.press("Enter"); // and shut again
   assert.equal(await page.locator("#flows-search .search-row").count(), 0);
   assert.match(await page.textContent("#flows-search tfoot"), /Total 5 lines/);
-  await page.selectOption("#flows-search select[aria-label='Group by']", "");
+  await page.selectOption("#flows-search .search-card select[aria-label='Group by']", "");
+  assert.deepEqual(await chips(), []);
   // changing every line found waits behind Bulk edit
   assert.equal(await page.locator("#flows-search .search-bulk").count(), 0);
   await page.click("#flows-search button:has-text('Bulk edit')");
   assert.equal(await page.getAttribute("#flows-search button:has-text('Close bulk edit')", "aria-expanded"), "true");
   // the misc lines moved together; each its own change, shown at once
-  await page.fill("#flows-search input[data-field='category']", "misc");
-  await page.waitForFunction(() => document.querySelectorAll("#flows-search .search-row").length === 2);
+  await page.click(bar);
+  await page.keyboard.type("category: misc");
+  await page.keyboard.press("Enter");
+  await rows(2);
   await page.selectOption("#flows-search .search-bulk select", "petrol");
   await page.click("#flows-search .search-bulk button:has-text('Move 2 lines')");
   assert.match(await page.textContent("#flows-search .search-flash"), /2 moved to Petrol\. Not saved yet\./);
@@ -3644,7 +3727,8 @@ test("search: lines found by patterns on any field, sorted by any column, moved 
   assert.equal(await page.locator("#edit-tabs button:has-text('Search')").count(), 1);
   await page.click("button:has-text('Back to Search')");
   await page.waitForSelector("#flows-search .search-table");
-  assert.equal(await page.inputValue("#flows-search input[data-field='category']"), "misc");
+  assert.deepEqual(await chips(), ["Categorymisc"]); // the search as it was left
+  assert.match(await page.textContent("#flows-search .search-datechip"), /^90 days ending today/);
   await page.click("#flows-search .search-row:has-text('BLUE PUMP FUEL')");
   await page.click("button:has-text('Count it with another charge')");
   await page.selectOption("[aria-label='The recurring charge BLUE PUMP FUEL is part of']", "PAGE TURNER BOOKS");

@@ -139,6 +139,20 @@ function checkoutHolds(project) {
     const path = join(project.folder, f);
     held[relative(root, path).split("\\").join("/")] = readFileSync(path, "utf8");
   }
+  // Apps Script names a file without its extension and keeps "Code" and "code" apart, so a stale file whose name
+  // differs only in capitals (or extension) is pushed beside the new one and declares everything twice
+  const named = {};
+  for (const f of Object.keys(held)) {
+    const name = f.replace(/\.[^./]+$/, "").toLowerCase();
+    (named[name] = named[name] || []).push(f);
+  }
+  const twice = Object.values(named).filter((fs) => fs.length > 1);
+  if (twice.length) {
+    for (const fs of twice)
+      problem(`${fs.sort().join(" and ")} would be pushed as one script's two files: remove the stale one` +
+        (project.rootDir !== "." ? ` (or the whole ${join(project.folder, project.rootDir)} folder, then build again)` : ""));
+    return null;
+  }
   return held;
 }
 

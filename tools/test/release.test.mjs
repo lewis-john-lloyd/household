@@ -445,6 +445,16 @@ test("a folder with no .clasp.json, and a push that fails, are problems of their
   s.done();
 });
 
+test("a stale file named like a new one but for its capitals stops that project's push", () => {
+  const s = sandbox();
+  s.file("web/dist/Code.js", "function doGet() { return 1; }\n"); // last release's, left in dist
+  const r = s.release(["--apply", "--skip-tests"]);
+  assert.equal(r.status, 1);
+  assert.match(r.out, /PROBLEM: Code\.js and code\.js would be pushed as one script's two files: remove the stale one \(or the whole web\/dist folder, then build again\)/);
+  assert.equal(s.served()[1].versionNumber, 1); // the views were left as they were
+  s.done();
+});
+
 test("a push clasp skips is caught: the script is read back after every push", () => {
   // a manifest clasp would not overwrite without a terminal to ask in: the tool pushes it with --force only under
   // --permissions, so here the fake is made to skip as clasp does, by taking the flag away from what it sees

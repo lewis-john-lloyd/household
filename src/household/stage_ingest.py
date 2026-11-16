@@ -139,24 +139,20 @@ def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, lo
     drive = session.drive()
     with sheets.batched(reports):  # what ingest writes to Reports goes together at the end
         say(log, "backing up every ledger tab")
-        started = time.perf_counter()
+        clock = Clock()
         manifest = backup.snapshot_ledger(ledger, drive, folder_id, run_id)
-        timing = {"backup": round(time.perf_counter() - started, 2)}
-        say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip ({timing['backup']:.1f}s)")
-        files = inbox.process(ledger, drive, folder_id, timing=timing, log=log)
+        took = clock.lap("backup")
+        say(log, f"backup: {len(manifest['tables'])} tabs to backups/ledger_{run_id}.zip ({took:.1f}s)")
+        files = inbox.process(ledger, drive, folder_id, clock=clock, log=log)
         counts: dict[str, int] = {}
         for f in files:
             counts[f["status"]] = counts.get(f["status"], 0) + 1
         say(log, "review: reading the answers in the review tab; its questions are rebuilt when anything changed")
-        started = time.perf_counter()
-        answered = _review(ledger, log, reports=reports, run_id=run_id)
-        timing["review"] = round(time.perf_counter() - started, 2)
-        started = time.perf_counter()
-        priced = _price_requests(ledger, log)
-        timing["prices"] = round(time.perf_counter() - started, 2)
-        slow = sorted(((v, k) for k, v in timing.items() if v >= 1), reverse=True)
-        if slow:
-            say(log, "ingest: where the time went: " + ", ".join(f"{k} {v:.0f}s" for v, k in slow))
+        with clock.part("review"):
+            answered = _review(ledger, log, reports=reports, run_id=run_id)
+        with clock.part("prices"):
+            priced = _price_requests(ledger, log)
+        say(log, "ingest: where the time went: " + clock.said())
         written = changes_written(read_ledger(ledger, "source_documents"))
         sheets.replace_table(reports, schema.table(schema.REPORTS, "changes_written"), written)
         say(log, f"change sets written in the last {CHANGES_WRITTEN_DAYS} days: {len(written)}")
@@ -170,7 +166,7 @@ def ingest_inbox(session: Session, folder_id: str, run_id: str | None = None, lo
             "counts": counts,
             "review": answered,
             "prices": priced,
-            "seconds": timing,
+            "seconds": clock.seconds,
             # where the inbox is, so the weekly email can list what waits in it with nothing to set up
             "inbox": backup.find_or_create_folder(drive, "inbox", folder_id),
         }

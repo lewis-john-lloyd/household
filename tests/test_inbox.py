@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from household import inbox, schema, sheets
+from household.clock import Clock
 from test_sheets import FakeSpreadsheet
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -247,15 +248,15 @@ def test_one_append_per_table_however_many_files(setup, monkeypatch):
     for name in ("pay_statement.txt", "earnings_statement.txt", "schwab_equity.csv", "accounts_seed.csv"):
         drop(drive, box, name)
     before = len(ledger.batch_updates)
-    timing = {}
-    inbox.process(ledger, drive, "root", timing=timing)
+    clock = Clock()
+    inbox.process(ledger, drive, "root", clock=clock)
     writes = [b for b in ledger.batch_updates[before:] if any("appendCells" in r for r in b["requests"])]
     assert len(writes) == 1  # every table in one atomic write
     by_id = {ws.id: ws.title for ws in ledger.worksheets()}
     tables = [by_id[r["appendCells"]["sheetId"]] for r in writes[0]["requests"]]
     assert sorted(tables) == ["accounts", "equity_sales", "equity_vests", "paystubs", "source_documents"]
     assert tables[-1] == "source_documents"
-    assert {"download", "parse", "write ledger", "file in Drive"} <= set(timing)
+    assert {"download", "parse", "write ledger", "file in Drive"} <= set(clock.seconds)
 
 
 def test_overlapping_files_in_one_run_add_rows_once(setup):

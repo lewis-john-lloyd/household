@@ -37,6 +37,7 @@ import pandas as pd
 
 from . import backup, ingest, logs, pdftext, schema, sheets, xlsx
 from .backup import RETRIES
+from .clock import Clock
 from .parsers import ParseError, identify
 from .parsers import amazon, changes, google_takeout
 
@@ -348,14 +349,6 @@ class _Tables:
         return counts
 
 
-class _Clock:
-    def __init__(self):
-        self.seconds = {}
-
-    def add(self, stage, started):
-        self.seconds[stage] = round(self.seconds.get(stage, 0.0) + time.perf_counter() - started, 2)
-
-
 def _quiet(_):
     pass
 
@@ -368,16 +361,16 @@ def _describe(summary):
     return summary.get("reason", "")
 
 
-def process(ledger, drive, folder_id, now=None, timing=None, log=None):
+def process(ledger, drive, folder_id, now=None, clock=None, log=None):
     """Ingest every file in the inbox. Returns one summary dict per file.
 
     A file that hits an unexpected error (a network timeout, say) is reported
     with status "error" and left in the inbox; the run carries on, and the next
-    run picks it up. Pass a dict as timing to receive seconds spent per stage,
+    run picks it up. Pass a Clock as clock to have the seconds spent per stage kept on it,
     and a callable as log (print, say) to see progress line by line.
     """
     log = log or _quiet
-    clock = _Clock()
+    clock = clock or Clock()
     received_at = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
     inbox = backup.find_or_create_folder(drive, "inbox", folder_id)
     record = backup.find_or_create_folder(drive, "record_store", folder_id)
@@ -459,8 +452,6 @@ def process(ledger, drive, folder_id, now=None, timing=None, log=None):
     clock.add("file in Drive", started)
     if moves:
         log(f"filed ({time.perf_counter() - started:.1f}s)")
-    if timing is not None:
-        timing.update(clock.seconds)
     return summaries
 
 

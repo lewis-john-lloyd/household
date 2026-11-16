@@ -8,6 +8,15 @@ from .kinds import Log, Session, StageResult
 from .ledgerio import bootstrap, new_run_id, read_ledger
 from .runlog import say
 
+WORKBOOK_CALLS = 2  # an old workbook is opened, then its tabs read in one call
+
+
+def _done(log: Log, stage: str, clock: Clock, books: tuple, asked: int, workbook: int, result: dict) -> StageResult:
+    """The stage's result with the Sheets calls it made (the ledger's and Reports' since asked, and the old
+    workbook's), after saying where its time went."""
+    say(log, f"{stage}: where the time went: " + clock.said())
+    return result | {"sheets_calls": sum(sheets.calls(b) for b in books) - asked + workbook}
+
 
 def ingest_legacy_year(
     session: Session, folder_id: str, legacy_id: str, year: int, run_id: str | None = None
@@ -46,8 +55,9 @@ def ingest_legacy_investments(
     """
     run_id = run_id or new_run_id()
     clock = Clock()
-    ledger, _, _ = bootstrap(session, folder_id)  # the first stage of a run opens both spreadsheets for all
+    ledger, reports, _ = bootstrap(session, folder_id)  # the first stage of a run opens both spreadsheets for all
     clock.lap("opening the ledger and Reports")
+    books, asked = (ledger, reports), 0  # opening them is this stage's too
     sheets.prefetch(ledger, ["accounts", "securities", "holdings"])  # what it reads, in one call
     clock.lap("reading the ledger")
     known = set(read_ledger(ledger, "accounts")["account_id"].astype(str).str.strip())
@@ -81,15 +91,22 @@ def ingest_legacy_investments(
         say(log, note)
     if funds.empty and new.empty:  # the usual case once it has run: nothing to back up or write
         say(log, f"legacy investments: nothing new ({len(held)} readings already held)")
-        say(log, "legacy investments: where the time went: " + clock.said())
-        return {
-            "run_id": run_id,
-            "securities": 0,
-            "holdings": 0,
-            "already_held": len(held),
-            "dates": int(held["as_of"].nunique()),
-            "notes": notes,
-        }
+        return _done(
+            log,
+            "legacy investments",
+            clock,
+            books,
+            asked,
+            WORKBOOK_CALLS,
+            {
+                "run_id": run_id,
+                "securities": 0,
+                "holdings": 0,
+                "already_held": len(held),
+                "dates": int(held["as_of"].nunique()),
+                "notes": notes,
+            },
+        )
     backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
     counts = sheets.append_tables(
         ledger, [(schema.table(schema.LEDGER, "securities"), funds), (schema.table(schema.LEDGER, "holdings"), new)]
@@ -99,14 +116,23 @@ def ingest_legacy_investments(
         f"legacy investments: {counts['securities']} funds and {counts['holdings']} readings added "
         f"({len(held) - len(new)} already held), {held['as_of'].nunique()} dates",
     )
-    return {
-        "run_id": run_id,
-        "securities": counts["securities"],
-        "holdings": counts["holdings"],
-        "already_held": len(held) - len(new),
-        "dates": int(held["as_of"].nunique()),
-        "notes": notes,
-    }
+    clock.lap("writing")
+    return _done(
+        log,
+        "legacy investments",
+        clock,
+        books,
+        asked,
+        WORKBOOK_CALLS,
+        {
+            "run_id": run_id,
+            "securities": counts["securities"],
+            "holdings": counts["holdings"],
+            "already_held": len(held) - len(new),
+            "dates": int(held["as_of"].nunique()),
+            "notes": notes,
+        },
+    )
 
 
 def ingest_legacy_equity(
@@ -130,13 +156,18 @@ def ingest_legacy_equity(
     symbol, the stock plan's symbol; without symbol it is named, since lots can't tell what its shares were.
     """
     run_id = run_id or new_run_id()
-    ledger, _, _ = bootstrap(session, folder_id)
+    clock = Clock()
+    ledger, reports, _ = bootstrap(session, folder_id)
+    books = (ledger, reports)
+    asked = sum(sheets.calls(b) for b in books)
     sheets.prefetch(ledger, ["equity_vests", "equity_sales", "vest_schedule"])
+    clock.lap("reading the ledger")
     workbook = session.sheets.open_by_key(workbook_id)
     got = workbook.values_batch_get(
         [f"'{grants_tab}'", f"'{sales_tab}'"], params={"valueRenderOption": sheets.UNFORMATTED}
     )
     grants_rows, sales_rows = (vr.get("values", []) for vr in got.get("valueRanges", []))
+    clock.lap("reading the old workbook")
     vested, notes = legacy_equity.vests(grants_rows, grant_columns)
     sold, more = legacy_equity.sales(sales_rows, vested)
     notes += more
@@ -164,11 +195,20 @@ def ingest_legacy_equity(
                 f"were: set legacy_equity.symbol in engine_settings.json to the stock plan's symbol"
             )
         )
+    clock.lap("comparing")
     for note in notes:
         say(log, note)
     if new_vests.empty and new_sales.empty and new_schedule.empty:
         say(log, f"legacy equity: nothing new ({len(vested)} vests and {len(sold)} sales read)")
-        return {"run_id": run_id, "equity_vests": 0, "equity_sales": 0, "vest_schedule": 0, "notes": notes}
+        return _done(
+            log,
+            "legacy equity",
+            clock,
+            books,
+            asked,
+            WORKBOOK_CALLS,
+            {"run_id": run_id, "equity_vests": 0, "equity_sales": 0, "vest_schedule": 0, "notes": notes},
+        )
     backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
     counts = sheets.append_tables(
         ledger,
@@ -189,13 +229,22 @@ def ingest_legacy_equity(
             log,
             f"legacy equity: {grants}: {counts['vest_schedule']} vests added to vest_schedule as {symbol} share awards",
         )
-    return {
-        "run_id": run_id,
-        "equity_vests": counts["equity_vests"],
-        "equity_sales": counts["equity_sales"],
-        "vest_schedule": counts["vest_schedule"],
-        "notes": notes,
-    }
+    clock.lap("writing")
+    return _done(
+        log,
+        "legacy equity",
+        clock,
+        books,
+        asked,
+        WORKBOOK_CALLS,
+        {
+            "run_id": run_id,
+            "equity_vests": counts["equity_vests"],
+            "equity_sales": counts["equity_sales"],
+            "vest_schedule": counts["vest_schedule"],
+            "notes": notes,
+        },
+    )
 
 
 def ingest_legacy_net_worth(
@@ -215,16 +264,22 @@ def ingest_legacy_net_worth(
     `properties` first, so their loans and dates are known; until they are, it says so and adds nothing.
     """
     run_id = run_id or new_run_id()
-    ledger, _, _ = bootstrap(session, folder_id)
+    clock = Clock()
+    ledger, reports, _ = bootstrap(session, folder_id)
+    books = (ledger, reports)
+    asked = sum(sheets.calls(b) for b in books)
     sheets.prefetch(ledger, ["properties", "property_values", "loan_balances"])
+    clock.lap("reading the ledger")
     homes = set(read_ledger(ledger, "properties")["property_id"].astype(str).str.strip())
     unknown = sorted({t for k, t in columns.values() if k == "value" and t not in homes})
     if unknown:  # a properties seed in the inbox adds them; until it has, there is nothing to attach these to
         say(log, f"legacy net worth: skipped, no such homes in properties yet: {', '.join(unknown)}", "WARN")
-        return {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": [], "skipped": unknown}
+        result = {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": [], "skipped": unknown}
+        return _done(log, "legacy net worth", clock, books, asked, 0, result)
     workbook = session.sheets.open_by_key(workbook_id)
     got = workbook.values_batch_get([f"'{tab}'"], params={"valueRenderOption": sheets.UNFORMATTED})
     rows = (got.get("valueRanges") or [{}])[0].get("values", [])
+    clock.lap("reading the old workbook")
     values, loans, notes = legacy_investments.net_worth(rows, columns)
     for note in notes:
         say(log, note)
@@ -235,9 +290,11 @@ def ingest_legacy_net_worth(
     seen_l = set(zip(have_l["as_of"].astype(str).str[:10], have_l["loan_id"].astype(str)))
     new_v = values[[k not in seen_v for k in zip(values["as_of"], values["property_id"], values["source"])]]
     new_l = loans[[k not in seen_l for k in zip(loans["as_of"], loans["loan_id"])]]
+    clock.lap("comparing")
     if new_v.empty and new_l.empty:
         say(log, f"legacy net worth: nothing new ({len(values)} home values and {len(loans)} loan balances held)")
-        return {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": notes}
+        result = {"run_id": run_id, "property_values": 0, "loan_balances": 0, "notes": notes}
+        return _done(log, "legacy net worth", clock, books, asked, WORKBOOK_CALLS, result)
     backup.snapshot_ledger(ledger, session.drive(), folder_id, run_id)
     counts = sheets.append_tables(
         ledger,
@@ -250,9 +307,11 @@ def ingest_legacy_net_worth(
         log,
         f"legacy net worth: {counts['property_values']} home values and {counts['loan_balances']} loan balances added",
     )
-    return {
+    clock.lap("writing")
+    result = {
         "run_id": run_id,
         "property_values": counts["property_values"],
         "loan_balances": counts["loan_balances"],
         "notes": notes,
     }
+    return _done(log, "legacy net worth", clock, books, asked, WORKBOOK_CALLS, result)

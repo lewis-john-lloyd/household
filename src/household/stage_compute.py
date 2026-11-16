@@ -46,6 +46,7 @@ from . import (
     withholding,
 )
 from .books import read_and_categorize
+from .clock import Clock
 from .kinds import Log, Session, Spreadsheet, StageResult
 from .ledgerio import LedgerReading, LedgerView, bootstrap, new_run_id, read_ledger, versions
 from .runlog import record_stage, recording, say
@@ -64,7 +65,7 @@ class Compute:
     run_id: str
     computed_at: str
     log: Log
-    seconds: dict[str, float] = field(default_factory=dict)  # how long each part took (timed)
+    clock: Clock = field(default_factory=Clock)  # how long each part took (timed)
     # what a check found, thing by thing, for the Status page's card: {the check's count in the result: [{"title",
     # "detail", "link"}, and "date" when it has a day]}; link is where the thing opens in the views ("txn:<id>" for
     # a line), or ""
@@ -83,15 +84,11 @@ def _joined(*frames: pd.DataFrame) -> pd.DataFrame:
 
 
 def timed(part: Callable[..., Any]) -> Callable[..., Any]:
-    """A part of compute, with how long it took kept under its name (c.seconds), for the run's log."""
+    """A part of compute, with how long it took kept under its name on c.clock, for the run's log."""
 
     def run(c: Compute, *args: Any, **kwargs: Any) -> Any:
-        started = time.perf_counter()
-        try:
+        with c.clock.part(part.__name__.strip("_").replace("_", " ")):
             return part(c, *args, **kwargs)
-        finally:
-            name = part.__name__.strip("_").replace("_", " ")
-            c.seconds[name] = round(c.seconds.get(name, 0.0) + time.perf_counter() - started, 2)
 
     run.__name__, run.__doc__ = part.__name__, part.__doc__
     return run
@@ -1096,7 +1093,7 @@ def compute_all(
     say(log, f"run {run_id}: reading the ledger")
     say(log, f"versions: {versions()}")
     computed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    started = time.perf_counter()
+    clock = Clock()
     raw, reports, _ = bootstrap(session, folder_id)
     asked = sheets.calls(raw) + sheets.calls(reports)
     sheets.prefetch(raw)  # every ledger tab in one read (those this run's ingest read are already held)
@@ -1106,8 +1103,8 @@ def compute_all(
     for line in reading.notes():
         say(log, line)
     ledger = LedgerView(raw, reading)  # every read below sees accounts renamed, readings moved, activity corrected
-    c = Compute(session, ledger, reports, run_id, computed_at, log)
-    c.seconds["read the ledger"] = round(time.perf_counter() - started, 2)
+    c = Compute(session, ledger, reports, run_id, computed_at, log, clock)
+    clock.lap("read the ledger")
     with sheets.batched(reports):  # every table goes to Reports together at the end; on an error none does
         result = _compute(c, said, legacy_id, legacy_year)
     result["sheets_calls"] = sheets.calls(raw) + sheets.calls(reports) - asked
@@ -1117,9 +1114,8 @@ def compute_all(
 def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | None) -> StageResult:
     """compute_all's parts in order, each writing its Reports tables and saying what it did."""
     ledger, reports, run_id, computed_at, log = c.ledger, c.reports, c.run_id, c.computed_at, c.log
-    started = time.perf_counter()
-    books, categorized = read_and_categorize(ledger)  # this run's ingest may have worked them out already
-    c.seconds["books and categories"] = round(time.perf_counter() - started, 2)
+    with c.clock.part("books and categories"):
+        books, categorized = read_and_categorize(ledger)  # this run's ingest may have worked them out already
     effective, decisions, params = books["effective"], books["decisions"], books["parameters"]
     moved = _transfers(c, books)
     legacy_checked, legacy_blank = compute.legacy_rows(books["txns"])
@@ -1191,10 +1187,8 @@ def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | N
     if legacy_id and legacy_year:
         _legacy_check(c, result, legacy_id, legacy_year, legacy_actuals, legacy_blank)
 
-    slow = sorted(((v, k) for k, v in c.seconds.items() if v >= 1), reverse=True)
-    if slow:
-        say(log, "compute: where the time went: " + ", ".join(f"{k} {v:.0f}s" for v, k in slow))
-    result["seconds"] = dict(c.seconds)
+    say(log, "compute: where the time went: " + c.clock.said())
+    result["seconds"] = dict(c.clock.seconds)
     result["things"] = {key: found for key, found in c.things.items() if found}
     record_stage(reports, "compute", run_id, computed_at, result | {"versions": versions()}, said)
     return result

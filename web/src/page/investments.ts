@@ -445,7 +445,7 @@ function drawInvestments() {
     body = byId("investments-body");
   body.innerHTML = "";
   if (!d.asOf) {
-    body.appendChild(el("p", "No investment values yet: run compute after the holdings are in.", "support"));
+    empty(body, "No investment values yet: run compute after the holdings are in.");
     return;
   }
   subtabs(body, "Investments", INVEST_PARTS, investView, function (v) {
@@ -774,7 +774,7 @@ function fillOverTime(body: HTMLElement, d: WealthPage) {
       );
     });
   } else if (chosen.length) {
-    chart.appendChild(el("p", "Nothing in this range.", "support"));
+    empty(chart, "Nothing in this range.", "Choose a longer one.");
   }
 
   var pick = panel(cols, "Lines", "Up to " + OVER_MAX + " at once.");
@@ -863,7 +863,7 @@ function drawAllocation(body: HTMLElement, d: WealthPage) {
       "the target mix, where their accounts allow, so neither carries a class alone.",
   );
   rb.classList.add("w-wide");
-  if (!d.trades.length) rb.appendChild(el("p", "Nothing to trade.", "support"));
+  if (!d.trades.length) empty(rb, "Nothing to trade.");
   else {
     var tt = wTable(rb, ["Fund", "Class", "Now", "Proposed", "Trade"], [2, 3, 4]);
     var last = "";
@@ -957,9 +957,7 @@ var TERM_NAMES: Record<string, string> = { short_term: "Short term", long_term: 
 // Tax lots: what each lot in a taxable account holds, and every lot part sold, as Form 8949 has it
 function drawLots(body: HTMLElement, d: WealthPage) {
   if (!d.openLots.length && !d.lotSales.length) {
-    body.appendChild(
-      el("p", "No lots yet: compute works them out from vests, the plan's sales and each account's activity.", "support"),
-    );
+    empty(body, "No lots yet: compute works them out from vests, the plan's sales and each account's activity.");
     return;
   }
   var sum = function (rows: OpenLot[], k: "value" | "gain" | "washAdded") {
@@ -1024,7 +1022,7 @@ function drawLots(body: HTMLElement, d: WealthPage) {
     ),
   );
   body.appendChild(sold);
-  if (!d.lotYears.length) sold.appendChild(el("p", "No sales yet.", "support"));
+  if (!d.lotYears.length) empty(sold, "No sales yet.");
   else {
     var yt = wTable(sold, ["Year", "Lot parts sold", "Short-term gain", "Long-term gain", "Wash sales disallowed"], [1, 2, 3, 4]);
     d.lotYears.forEach(function (y) {

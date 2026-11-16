@@ -177,7 +177,7 @@ function monthLines(box: HTMLElement, bl: Row, month: string, rows: TargetInput[
   if (!lines) {
     var id = "working-" + bl.line.replace(/[^a-z0-9]+/gi, "-") + "-" + x.input;
     td.id = id;
-    td.appendChild(el("span", "Loading\u2026", "support"));
+    td.appendChild(el("span", "Loading…", "support"));
     var months = rows.map(function (r) {
       return r.input;
     });
@@ -363,7 +363,7 @@ function fundMonthLines(
   if (!lines) {
     var id = "fund-" + bl.line.replace(/[^a-z0-9]+/gi, "-") + "-" + m;
     td.id = id;
-    td.appendChild(el("span", "Loading\u2026", "support"));
+    td.appendChild(el("span", "Loading…", "support"));
     cachedCall(
       "getLines",
       [rows[0].month + "-01", periodDays(rows[rows.length - 1].month)[1], [bl.category], []],

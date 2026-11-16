@@ -42,10 +42,7 @@ function drawEquity() {
     });
     var box = el("section", null, "equity-symbol");
     box.appendChild(equityHead(s, grants));
-    if (s.price === null)
-      box.appendChild(
-        el("p", "No price for " + s.symbol + " yet: compute values the shares once prices has a close.", "support"),
-      );
+    if (s.price === null) empty(box, "No price for " + s.symbol + " yet: compute values the shares once prices has a close.");
     else box.appendChild(equitySteps_(s, grants, d));
     var tax = vestTaxPanel(s, grants, d);
     if (tax) box.appendChild(tax);
@@ -402,7 +399,7 @@ function vestingChart(s: EquitySymbol, grants: EquityGrant[], months: EquityMont
   var panel = el("section", null, "panel equity-chart tax-history");
   panel.appendChild(el("h2", "Vesting, month by month"));
   if (!months.length) {
-    panel.appendChild(el("p", "No vests to show yet.", "support"));
+    empty(panel, "No vests to show yet.", "The vesting schedule fills this in from the plan's awards page.");
     return panel;
   }
   var ids = grants.map(function (g) {

@@ -69,7 +69,7 @@ var lineListSeq = 0;
 // are changed on its page), One-off or Count it, and Open. A change is staged like any other, shown on the
 // line until the run applies it, and undone from the same button; `redraw` draws the list's owner again.
 function lineList(lines: Txn[], redraw: () => void): HTMLElement {
-  if (!lines.length) return el("p", "No lines.", "support");
+  if (!lines.length) return empty(null, "No lines in this period.");
   var table = el("table", null, "txns line-list");
   lines.forEach(function (t) {
     var o = oneOffNow(t);
@@ -116,7 +116,7 @@ function lineList(lines: Txn[], redraw: () => void): HTMLElement {
             var td = el("td");
             td.colSpan = 4;
             td.id = id;
-            td.appendChild(el("span", "Loading\u2026", "support"));
+            td.appendChild(el("span", "Loading…", "support"));
             pickRow.appendChild(td);
             row.parentNode!.insertBefore(pickRow, row.nextSibling);
             withEditor(function () {

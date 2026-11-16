@@ -59,7 +59,7 @@ function drawSpendOverTime() {
   });
   box.appendChild(spendToolbar(book));
   if (!data.months.length) {
-    box.appendChild(el("p", "No spending in this range.", "support"));
+    empty(box, "No spending in this range.", "Choose a longer one.");
     return;
   }
   // the chosen keys keep their color slot; a first look picks the most spent

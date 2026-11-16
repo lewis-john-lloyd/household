@@ -33,7 +33,7 @@ function drawJobsPage() {
   var body = byId("jobs-body");
   body.textContent = "";
   if (!editor.baseRun) {
-    body.appendChild(el("p", "No compute run with editor tables yet: run ingest and compute once with this release.", "support"));
+    empty(body, "No compute run with editor tables yet: run ingest and compute once with this release.");
     return;
   }
   editor.payCheck
@@ -44,7 +44,7 @@ function drawJobsPage() {
       body.appendChild(payAlert(r));
     });
   if (!editor.jobs.length) {
-    body.appendChild(el("p", "No jobs yet. Add each job and pay change, from the date it took effect.", "support"));
+    empty(body, "No jobs yet. Add each job and pay change, from the date it took effect.");
     var add = el("div", null, "actions");
     add.appendChild(
       button(

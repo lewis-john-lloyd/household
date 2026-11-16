@@ -116,3 +116,10 @@ function popMenu(cls: string, summary: HTMLElement, panel: HTMLElement, open: bo
   });
   return menu;
 }
+
+/** An empty state: what is empty, and, when something would fill it, what does. */
+function empty(parent: HTMLElement | null, what: string, next?: string) {
+  var p = el("p", what + (next ? " " + next : ""), "support empty");
+  if (parent) parent.appendChild(p);
+  return p;
+}

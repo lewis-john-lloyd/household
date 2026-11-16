@@ -53,7 +53,7 @@ function drawHome() {
       }),
     );
   });
-  if (!owned.length) body.appendChild(el("p", "No home owned today.", "support"));
+  if (!owned.length) empty(body, "No home owned today.");
   if (gone.length && homeView === "overview")
     body.appendChild(
       el(
@@ -151,7 +151,7 @@ function drawHomeTaxes(body: HTMLElement, d: HomePage, h: Home) {
   var taxes = d.taxes.filter(function (t) {
     return t.property === h.id;
   });
-  if (!taxes.length) body.appendChild(el("p", "No tax bills yet: the county check adds each one from AccessDane.", "support"));
+  if (!taxes.length) empty(body, "No tax bills yet: the county check adds each one from AccessDane.");
   if (taxes.length) {
     var tx = el("section", null, "panel w-wide");
     tx.appendChild(el("h3", "Property tax"));
@@ -337,7 +337,7 @@ function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
     am.appendChild(years);
     body.appendChild(am);
   }
-  if (!sched.length) body.appendChild(el("p", "No loan on this home.", "support"));
+  if (!sched.length) empty(body, "No loan on this home.");
 }
 
 // Work on a home, added, corrected or removed here (an `improvement` edit; the latest row for a home, date and

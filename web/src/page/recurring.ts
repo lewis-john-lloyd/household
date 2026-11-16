@@ -85,8 +85,7 @@ function drawRecurring(body: HTMLElement) {
       });
       cards.appendChild(card);
     });
-  if (!tracked.length)
-    body.appendChild(el("p", "Nothing tracked yet. Charges that come back regularly are listed above to track.", "support"));
+  if (!tracked.length) empty(body, "Nothing tracked yet. Charges that come back regularly are listed above to track.");
   body.appendChild(cards);
   var stopped = tracked
     .filter(function (t) {

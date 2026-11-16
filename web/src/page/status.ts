@@ -625,7 +625,7 @@ function drawProjection(rows: [string, number][], year: string, wi: number | nul
     return r[0] === "as is";
   })[0];
   if (!asIs) {
-    box.appendChild(el("p", "No projection in the last compute.", "support"));
+    empty(box, "No projection in the last compute.", "Run compute.");
     return;
   }
   var facts = el("dl", null, "facts tax-glance");

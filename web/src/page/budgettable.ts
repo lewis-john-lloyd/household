@@ -466,7 +466,7 @@ function recipientGifts(r: Recipient, category: string, through: string, nest: s
   });
   var id = "gifts-" + (category + "-" + r.key).replace(/[^a-z0-9]+/gi, "-");
   td.id = id;
-  td.appendChild(el("span", "Loading\u2026", "support"));
+  td.appendChild(el("span", "Loading…", "support"));
   cachedCall(
     "getLines",
     [year + "-01-01", through, [category], []],

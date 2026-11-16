@@ -139,7 +139,7 @@ function drawTaxHistory(body: HTMLElement) {
   section.appendChild(controls);
   body.appendChild(section);
   if (!rows.length) {
-    section.appendChild(el("p", "Nothing to show for this return yet.", "support"));
+    empty(section, "Nothing to show for this return yet.");
     return;
   }
 
@@ -461,7 +461,7 @@ function drawTaxes() {
     return;
   }
   if (!taxes!.years.length) {
-    body.appendChild(el("p", "No projection yet: the next compute with this year's pay stubs fills this page in.", "support"));
+    empty(body, "No projection yet: the next compute with this year's pay stubs fills this page in.");
     return;
   }
   var year = taxes!.years[0];
@@ -563,9 +563,7 @@ function drawForm8949(body: HTMLElement) {
     return;
   }
   if (!f8949.years.length) {
-    body.appendChild(
-      el("p", "No sales yet: compute works out Form 8949 from the plan's sales and each account's activity.", "support"),
-    );
+    empty(body, "No sales yet: compute works out Form 8949 from the plan's sales and each account's activity.");
     return;
   }
   if (
@@ -691,7 +689,7 @@ function drawForm8949(body: HTMLElement) {
 
 function drawTaxHistoryView(body: HTMLElement) {
   if (taxes!.history && taxes!.history.length) drawTaxHistory(body);
-  else body.appendChild(el("p", "No filed returns yet: return_facts fills this in.", "support"));
+  else empty(body, "No filed returns yet: return_facts fills this in.");
   if (!historyYear || !yearReturns(historyYear)) return;
   var r = yearReturns(historyYear)!;
   var projected = taxes!.history.some(function (h) {

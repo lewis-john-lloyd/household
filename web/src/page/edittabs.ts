@@ -583,7 +583,7 @@ function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
         return alone.indexOf(l.id) < 0;
       });
       if (!lines.length) {
-        box.appendChild(el("p", "No open lines for " + r.key + " in the latest compute.", "support"));
+        empty(box, "No open lines for " + r.key + " in the latest compute.");
         return;
       }
       section(

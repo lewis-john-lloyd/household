@@ -542,7 +542,7 @@ function drawRetireStart(body: HTMLElement, d: RetirementPage) {
         "retire-answer",
       ),
     );
-  } else body.appendChild(el("p", "No plan yet: run compute once each adult's birth date is known.", "support"));
+  } else empty(body, "No plan yet: run compute once each adult's birth date is known.");
   var parts = el("section", null, "panel w-wide");
   parts.appendChild(el("h3", "Where to look"));
   var ul = el("ul", null, "retire-parts");

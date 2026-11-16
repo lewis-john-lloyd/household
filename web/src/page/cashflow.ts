@@ -212,7 +212,7 @@ function openFlowLines(name: string, amount: number) {
       (byGroup ? ", every category in the group." : ".") +
       (average ? " These are the year's lines; the average is a twelfth of them." : ""),
   );
-  var box = el("div", "Loading\u2026", "drawer-section support");
+  var box = el("div", "Loading…", "drawer-section support");
   box.id = "flow-lines";
   d.appendChild(box);
   if (!byGroup) {

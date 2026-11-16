@@ -158,7 +158,7 @@ function drawLinesTab(body: HTMLElement) {
   var v = budgetView(book, budget.period, budget.compare, budget.sameWeeks, today());
   body.appendChild(budgetControls(v));
   if (!book.targets.length && !book.days.length) {
-    body.appendChild(el("p", "No budget yet: add a budget line, then run ingest and compute.", "support"));
+    empty(body, "No budget yet: add a budget line, then run ingest and compute.");
   } else {
     body.appendChild(layoutSwitch());
     body.appendChild(budgetSummary(v));

@@ -658,8 +658,7 @@ function drawSearch() {
     card.textContent = "";
     errors = {};
     var filters = searchFilters(q);
-    if (!filters.length)
-      card.appendChild(el("p", "No filters: every line in these dates is shown. Type in the search box to add one.", "support"));
+    if (!filters.length) empty(card, "No filters: every line in these dates is shown. Type in the search box to add one.");
     var row = function (f: { field: string; label: string }, control: HTMLElement, sub?: string) {
       var r = el("div", null, "frow");
       r.setAttribute("data-filter", f.field);
@@ -900,7 +899,7 @@ function drawSearch() {
       if (searchState.bulk) results.appendChild(searchBulk(found, d));
     }
     if (!found.length) {
-      results.appendChild(el("p", "No line matches. Loosen a pattern, or Clear.", "support"));
+      empty(results, "No line matches. Loosen a pattern, or Clear.");
       return;
     }
     var wrap = el("div", null, "scroll");

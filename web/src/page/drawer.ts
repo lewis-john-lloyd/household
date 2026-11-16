@@ -261,7 +261,7 @@ function lineHistory(d: HTMLElement, category: string, v: BudgetView, yearly?: b
     hi = Math.max(hi, spent[m] || 0, target[m] || 0);
   });
   if (!hi) {
-    d.appendChild(el("p", "Nothing spent or budgeted in the twelve months to " + periodName(lastMonth) + ".", "support"));
+    empty(d, "Nothing spent or budgeted in the twelve months to " + periodName(lastMonth) + ".");
     return;
   }
   var step = Math.pow(10, Math.floor(Math.log10(hi)));

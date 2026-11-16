@@ -1,4 +1,4 @@
-// The views' server code (dist/Code.js and the files it shares a scope with) under Node, with Apps Script's
+// The views' server code (dist/code.js and the files it shares a scope with) under Node, with Apps Script's
 // services faked: the user property store enforces Apps Script's limits (9 KB a value, 500 KB in all), so a
 // save's bookkeeping meets the same walls it would in Apps Script. Run after `npm run build`.
 const { test } = require("node:test");
@@ -8,10 +8,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const DIST = path.join(__dirname, "..", "..", "dist");
-const CODE = ["Version.js", "shape.js", "edits.js", "taxes.js", "Code.js"]
+const CODE = ["version.js", "shape.js", "edits.js", "taxes.js", "code.js"]
   .map((f) => fs.readFileSync(path.join(DIST, f), "utf8"))
   .join("\n");
-// the release the build stamped into dist/Version.js: pyproject.toml's
+// the release the build stamped into dist/version.js: pyproject.toml's
 const RELEASE = /^version\s*=\s*"([^"]+)"/m.exec(
   fs.readFileSync(path.join(__dirname, "..", "..", "..", "pyproject.toml"), "utf8"),
 )[1];
@@ -358,7 +358,7 @@ test("a request Sheets refuses for quota waits and is tried again; past the wait
 
 test("the page has its own tab icon, served from the image kept in the repo", () => {
   const page = server().context.doGet();
-  assert.equal(page.file, "Index");
+  assert.equal(page.file, "index");
   assert.equal(page.set.title, "The Steward");
   const at = /^https:\/\/github\.com\/[\w.-]+\/household\/raw\/main\/(web\/assets\/icon\.png)$/.exec(page.set.favicon);
   assert.ok(at, page.set.favicon);
@@ -391,7 +391,7 @@ test("the edits of change sets still waiting come back with their words, oldest 
 
 test("only the accounts VIEWS_USERS lists get the page or any answer; unset, the views are closed", () => {
   const listed = server();
-  assert.equal(listed.context.doGet().file, "Index");
+  assert.equal(listed.context.doGet().file, "index");
   const stranger = server({ user: "someone@example.test" });
   const page = stranger.context.doGet();
   assert.equal(page.file, undefined);
@@ -409,7 +409,7 @@ test("only the accounts VIEWS_USERS lists get the page or any answer; unset, the
 
 test("every call the page can make is refused to an account not on the list", () => {
   // the page reaches the server through its public functions (no trailing underscore): each must start with allow_()
-  const code = fs.readFileSync(path.join(DIST, "Code.js"), "utf8");
+  const code = fs.readFileSync(path.join(DIST, "code.js"), "utf8");
   const publicFns = [...code.matchAll(/^function ([A-Za-z]\w*[^_\W])\(/gm)].map((m) => m[1]).filter((n) => n !== "doGet");
   assert.ok(publicFns.length >= 20);
   for (const name of publicFns) {

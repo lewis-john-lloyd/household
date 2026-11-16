@@ -1,4 +1,4 @@
-// The county check (assessor/Code.js) under Node, on a made-up parcel page. Code.js is an Apps Script file:
+// The county check (assessor/code.js) under Node, on a made-up parcel page. code.js is an Apps Script file:
 // its functions are globals, so it runs in a fresh context per test.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const CODE = fs.readFileSync(path.join(__dirname, "..", "Code.js"), "utf8");
+const CODE = fs.readFileSync(path.join(__dirname, "..", "code.js"), "utf8");
 
 function load(extra = {}) {
   const context = vm.createContext({ console, ...extra });

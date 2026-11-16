@@ -70,11 +70,11 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5
         with:
           node-version: "22"
-      - run: node --check exporter/Code.js
+      - run: node --check exporter/code.js
       - run: node --test exporter/test/exporter.test.js
-      - run: node --check nudge/Code.js
+      - run: node --check nudge/code.js
       - run: node --test nudge/test/nudge.test.js
-      - run: node --check assessor/Code.js
+      - run: node --check assessor/code.js
       - run: node --test assessor/test/assessor.test.js
       # the release tool, against a made-up checkout with clasp and gh faked
       - run: node --check tools/release.mjs

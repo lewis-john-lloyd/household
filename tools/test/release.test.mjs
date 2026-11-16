@@ -38,7 +38,7 @@ const write = (dir, files) => {
 };
 // what clasp pushes: under the scripts' ignore file the script and its manifest, else every script, page and the manifest
 const local = () => {
-  const only = fs.existsSync(".claspignore") ? ["Code.js", "appsscript.json"] : null;
+  const only = fs.existsSync(".claspignore") ? ["code.js", "appsscript.json"] : null;
   const mine = fs.readdirSync(root).filter((f) => (only ? only.includes(f) : /\\.(js|html)$/.test(f) || f === "appsscript.json"));
   return Object.fromEntries(mine.map((f) => [f, fs.readFileSync(path.join(root, f), "utf8")]));
 };
@@ -107,17 +107,17 @@ function sandbox() {
     "web/build.mjs",
     'import { cpSync, writeFileSync } from "node:fs";\n' +
       'cpSync("src", "dist", { recursive: true });\n' +
-      'writeFileSync("dist/Version.js", \'var VIEWS_VERSION = "0.2.0";\\n\');\n',
+      'writeFileSync("dist/version.js", \'var VIEWS_VERSION = "0.2.0";\\n\');\n',
   );
-  file("web/src/Code.js", "function doGet() { return 2; }\n");
-  file("web/src/Index.html", "<p>views</p>\n");
+  file("web/src/code.js", "function doGet() { return 2; }\n");
+  file("web/src/index.html", "<p>views</p>\n");
   file("web/src/appsscript.json", MANIFEST(["drive.file"]));
   mkdirSync(join(repo, "web", "node_modules"));
   writeFileSync(join(repo, "web", ".clasp.json"), JSON.stringify({ scriptId: "views", rootDir: "dist" }));
   for (const s of SCRIPTS) {
-    file(`${s}/Code.js`, `function ${s}() {}\n`);
+    file(`${s}/code.js`, `function ${s}() {}\n`);
     file(`${s}/appsscript.json`, MANIFEST(["drive.file"]));
-    file(`${s}/.claspignore`, "**/**\n!Code.js\n!appsscript.json\n");
+    file(`${s}/.claspignore`, "**/**\n!code.js\n!appsscript.json\n");
     file(`${s}/test/${s}.test.js`, 'require("node:test").test("passes", () => {});\n');
     writeFileSync(join(repo, s, ".clasp.json"), JSON.stringify({ scriptId: s, rootDir: "." }));
   }
@@ -155,15 +155,15 @@ function sandbox() {
     for (const [f, text] of Object.entries(files)) writeFileSync(join(dir, f), text);
   };
   const before = {
-    "Code.js": "function doGet() { return 1; }\n",
-    "Index.html": "<p>views</p>\n",
+    "code.js": "function doGet() { return 1; }\n",
+    "index.html": "<p>views</p>\n",
     "appsscript.json": MANIFEST(["drive.file"]),
   };
   held("views", "head", before);
   held("views", join("versions", "1"), before);
   const deployments = (list) => writeFileSync(join(state, "scripts", "views", "deployments.json"), JSON.stringify(list));
   deployments([{ deploymentId: "head-deployment" }, { deploymentId: "web-app", versionNumber: 1, description: "v0.1.0" }]);
-  for (const s of SCRIPTS) held(s, "head", { "Code.js": `function ${s}() {}\n`, "appsscript.json": MANIFEST(["drive.file"]) });
+  for (const s of SCRIPTS) held(s, "head", { "code.js": `function ${s}() {}\n`, "appsscript.json": MANIFEST(["drive.file"]) });
   writeFileSync(join(state, "ci.json"), JSON.stringify([{ name: "ci", status: "completed", conclusion: "success" }]));
 
   return {
@@ -198,9 +198,9 @@ function sandbox() {
 }
 
 const BUILD = {
-  "Code.js": "function doGet() { return 2; }\n",
-  "Index.html": "<p>views</p>\n",
-  "Version.js": 'var VIEWS_VERSION = "0.2.0";\n',
+  "code.js": "function doGet() { return 2; }\n",
+  "index.html": "<p>views</p>\n",
+  "version.js": 'var VIEWS_VERSION = "0.2.0";\n',
   "appsscript.json": MANIFEST(["drive.file"]),
 };
 
@@ -217,7 +217,7 @@ test("a dry run says what a release would do and does none of it", () => {
   // the views differ from their script, file by file; the three small scripts don't
   assert.match(
     r.out,
-    /-- web: the views\n(.*\n)*?  differs from the script \(2 files\):\n    changed: Code\.js\n    new: Version\.js\n  would push it/,
+    /-- web: the views\n(.*\n)*?  differs from the script \(2 files\):\n    changed: code\.js\n    new: version\.js\n  would push it/,
   );
   for (const name of SCRIPTS)
     assert.match(r.out, new RegExp(`-- ${name}: .*\\n(.*\\n){2}  up to date: the script holds this checkout`));
@@ -297,8 +297,8 @@ test("a checkout that isn't the release stops a release before anything is pushe
     s.done();
   };
   let s = sandbox();
-  s.file("exporter/Code.js", "function exporter() { return 1; }\n");
-  stopped(s, s.release(["--apply"]), /PROBLEM: the checkout has changes that aren't committed.*\n {4} M exporter\/Code\.js/);
+  s.file("exporter/code.js", "function exporter() { return 1; }\n");
+  stopped(s, s.release(["--apply"]), /PROBLEM: the checkout has changes that aren't committed.*\n {4} M exporter\/code\.js/);
 
   s = sandbox();
   s.file("src/household/__init__.py", '__version__ = "0.1.9"\n');
@@ -311,7 +311,7 @@ test("a checkout that isn't the release stops a release before anything is pushe
   );
 
   s = sandbox();
-  s.file("exporter/Code.js", "function exporter() { return 1; }\n");
+  s.file("exporter/code.js", "function exporter() { return 1; }\n");
   s.git("commit", "-q", "-am", "Not pushed");
   stopped(s, s.release(["--apply"]), /PROBLEM: this commit is not what origin's main has: pull or push first/);
 
@@ -349,11 +349,11 @@ test("a checkout that isn't the release stops a release before anything is pushe
 
 test("a dry run goes on past a problem, to show everything a release would meet", () => {
   const s = sandbox();
-  s.file("exporter/Code.js", "function exporter() { return 1; }\n");
+  s.file("exporter/code.js", "function exporter() { return 1; }\n");
   const r = s.release(["--skip-tests"]);
   assert.equal(r.status, 1);
   assert.match(r.out, /PROBLEM: the checkout has changes that aren't committed/);
-  assert.match(r.out, /-- exporter: .*\n(.*\n){2}  differs from the script \(1 file\):\n    changed: Code\.js\n  would push it/);
+  assert.match(r.out, /-- exporter: .*\n(.*\n){2}  differs from the script \(1 file\):\n    changed: code\.js\n  would push it/);
   assert.match(r.out, /== Step 5: the tag \(yours to make\)\n  not yet: the tag goes on the release commit/);
   assert.doesNotMatch(r.out, /git tag v0\.2\.0/);
   assert.match(r.out, /== 1 problem\(s\) above: a run with --apply would stop at them\.\n$/);
@@ -381,7 +381,7 @@ test("the tag is checked against origin: there already, on another commit, or ch
   assert.doesNotMatch(r.out, /git tag v0\.2\.0/);
   // main has moved on since the tag, with no new release commit: not a release
   const released = s.head();
-  s.file("exporter/Code.js", "function exporter() { return 1; }\n");
+  s.file("exporter/code.js", "function exporter() { return 1; }\n");
   s.git("commit", "-q", "-am", "After the release");
   s.git("push", "-q", "origin", "main");
   r = s.release(["--apply", "--skip-tests"]);

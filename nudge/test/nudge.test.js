@@ -1,12 +1,12 @@
-// The weekly email (nudge/Code.js) under Node, with Sheets, Drive, mail and the script properties faked.
-// Code.js is an Apps Script file: its functions are globals, so it runs in a fresh context per test.
+// The weekly email (nudge/code.js) under Node, with Sheets, Drive, mail and the script properties faked.
+// code.js is an Apps Script file: its functions are globals, so it runs in a fresh context per test.
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const CODE = fs.readFileSync(path.join(__dirname, "..", "Code.js"), "utf8");
+const CODE = fs.readFileSync(path.join(__dirname, "..", "code.js"), "utf8");
 const TODAY = "2026-11-07";
 
 const HEAD = ["key", "section", "name", "group", "item", "detail", "show_from", "show_until", "link", "to", "routing",

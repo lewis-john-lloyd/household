@@ -8,7 +8,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const HTML = fs.readFileSync(path.join(__dirname, "..", "..", "dist", "Index.html"), "utf8");
+const HTML = fs.readFileSync(path.join(__dirname, "..", "..", "dist", "index.html"), "utf8");
 
 // Every call is recorded in window.__calls and answered from window.__answers, at once unless window.__hold
 // names it: then it waits in window.__held until the test calls window.__release(name).

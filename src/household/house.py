@@ -339,7 +339,7 @@ def taxes(properties, values, bills, today):
 
 def parcels(properties, values, today):
     """[{property_id, parcel, since}] for the homes owned today that have a parcel number: what the county
-    check (assessor/Code.js) looks up, from the year each was bought."""
+    check (assessor/code.js) looks up, from the year each was bought."""
     out = []
     if properties is None or properties.empty:
         return out

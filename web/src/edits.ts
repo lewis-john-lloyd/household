@@ -3,7 +3,7 @@
  * Script calls, so the tests run them under Node (see shape.ts).
  *
  * The views never write the ledger. Edits are held in the browser; Save sends them here, and saveChanges
- * (Code.ts) writes them as one change set file into the views' own folder inside the inbox, where ingest
+ * (code.ts) writes them as one change set file into the views' own folder inside the inbox, where ingest
  * reads it (parsers/changes.py). These checks mirror the engine's shape checks so a mistake is caught
  * at Save; the engine checks everything again, against the ledger, and refuses the whole file if
  * anything does not fit.

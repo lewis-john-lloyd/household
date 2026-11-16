@@ -15,7 +15,7 @@ ROOT = Path(__file__).parent.parent
 SCOPE = "https://www.googleapis.com/auth/"
 PROJECTS = {  # project -> (manifest, the server code it pushes)
     "web": (ROOT / "web" / "appsscript.json", sorted((ROOT / "web" / "src").glob("*.ts"))),
-    "exporter": (ROOT / "exporter" / "appsscript.json", [ROOT / "exporter" / "Code.js"]),
+    "exporter": (ROOT / "exporter" / "appsscript.json", [ROOT / "exporter" / "code.js"]),
 }
 # advanced service symbol -> (service id, version, the scopes that allow what this project does with it)
 SERVICES = {
@@ -94,7 +94,7 @@ def test_the_county_check_reaches_only_accessdane_and_its_own_files():
     scopes = {s[len(SCOPE) :] for s in manifest["oauthScopes"]}
     assert scopes == {"drive.file", "script.external_request", "script.scriptapp"}
     assert manifest["urlFetchWhitelist"] == ["https://accessdane.danecounty.gov/"]
-    text = code([ROOT / "assessor" / "Code.js"])
+    text = code([ROOT / "assessor" / "code.js"])
     assert {n for n in SERVICES if re.search(rf"\b{n}\.\w+", text)} == {"Drive"}
     assert set(re.findall(r"\b(DriveApp|SpreadsheetApp|GmailApp|MailApp|UrlFetchApp|DocumentApp)\.", text)) == {
         "UrlFetchApp"
@@ -110,10 +110,10 @@ def test_clasp_pushes_only_the_script_and_its_manifest(project):
         for line in (ROOT / project / ".claspignore").read_text().splitlines()
         if line.strip() and not line.startswith("#")
     ]
-    assert ignore == ["**/**", "!Code.js", "!appsscript.json"]
+    assert ignore == ["**/**", "!code.js", "!appsscript.json"]
     assert sorted(p.name for p in (ROOT / project).iterdir() if p.is_file() and not p.name.startswith(".")) == [
-        "Code.js",
         "appsscript.json",
+        "code.js",
     ]
 
 

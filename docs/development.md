@@ -19,6 +19,8 @@ The engine notebook calls `runner.run`, which calls the stages through `engine`:
 
 The views' page modules (`web/src/page`) share one script, so a top-level name two of them declare is one name and the later silently replaces the earlier (TypeScript allows a `var` declared twice). `web/scripts/copy.mjs` refuses to build when that happens. A new edit kind needs its place in `changes.KINDS`, `_target` and the views' `edits.ts`; `tests/test_edit_contract.py` holds the two sides together and computes every sample's target, so a kind without one fails there rather than at ingest.
 
+Every code file is named in lower case, the Apps Scripts' included (`code.js`, `web/src/code.ts`, `index.html`); only the top-level docs keep their conventional `README.md` and `CLAUDE.md`. Apps Script runs a project's files in its own order, so no file's top level calls into another's.
+
 Optional local hooks: `pip install pre-commit && pre-commit install`, and `git config core.hooksPath .githooks` for the push guard.
 
 ## Tax law
@@ -43,7 +45,7 @@ Ordinary commits leave the version number alone. When work is ready to run, one 
 
 `node tools/release.mjs` deploys a release from a checkout of it, step by step, each command echoed before it runs. With no option it is a dry run: it checks that the checkout is the release (the two versions agree, nothing uncommitted, the commit is origin's main or the release's tag), asks CI for its verdict on the commit (through `gh`, when installed), builds the views and runs the Node suites on what it built, then reads each Apps Script project's script through clasp and says file by file how the checkout differs from it, and whether the web app serves this build. `--apply` pushes each project that differs, reads it back, and points the web app's deployment at a new version of the script, so its address stays the same. A project whose manifest changed (its permissions or services) is pushed only with `--permissions`, after showing the change. It never tags: it prints the tag command for the owner. `tools/test/release.test.mjs` runs it in CI against a made-up checkout with clasp and gh faked.
 
-The views carry the release they were built from: the build writes `dist/Version.js` from `pyproject.toml` (`web/scripts/copy.mjs`), and the Status page sets it beside the release that made the reports (each stage records its own in `run_log`), saying what to do when they differ.
+The views carry the release they were built from: the build writes `dist/version.js` from `pyproject.toml` (`web/scripts/copy.mjs`), and the Status page sets it beside the release that made the reports (each stage records its own in `run_log`), saying what to do when they differ.
 
 Versions are semantic, before 1.0 (the ledger's layout may still change between minor releases):
 

@@ -1,5 +1,5 @@
 /**
- * The views web app: serves Index.html and answers its calls. It runs as the
+ * The views web app: serves index.html and answers its calls. It runs as the
  * person viewing it, so it reads only what that person can open; the Reports
  * spreadsheet's id comes from the script property REPORTS_ID, never from code.
  * It reads Reports and writes only change sets, into a folder of its own (see
@@ -10,7 +10,7 @@
 // repo (web/assets/icon.png, drawn from icon.svg beside it).
 const ICON = "https://github.com/lewis-john-lloyd/household/raw/main/web/assets/icon.png";
 
-// The release these views were built from, in dist/Version.js: the build writes it from pyproject.toml
+// The release these views were built from, in dist/version.js: the build writes it from pyproject.toml
 // (scripts/copy.mjs), so it is not in src.
 declare const VIEWS_VERSION: string | undefined;
 
@@ -48,7 +48,7 @@ function doGet(): GoogleAppsScript.HTML.HtmlOutput {
       "The Steward",
     );
   }
-  return HtmlService.createHtmlOutputFromFile("Index").setTitle("The Steward").setFaviconUrl(ICON);
+  return HtmlService.createHtmlOutputFromFile("index").setTitle("The Steward").setFaviconUrl(ICON);
 }
 
 function reportsId_(): string {

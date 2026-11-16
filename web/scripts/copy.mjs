@@ -1,5 +1,5 @@
 // Copies what tsc does not compile into dist/, the folder clasp pushes, and inlines the browser's code into the
-// page where Index.html marks it: the compiled budgetview.js and edits.js, and the page's own modules (src/page, compiled
+// page where index.html marks it: the compiled budgetview.js and edits.js, and the page's own modules (src/page, compiled
 // to build/page by tsconfig.page.json) in the order below, so the page and the tests run the same code.
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -38,7 +38,7 @@ export const PAGE = [
 ];
 
 function inline(page, mark, code) {
-  if (!page.includes(mark)) throw new Error(`src/Index.html has no ${mark}`);
+  if (!page.includes(mark)) throw new Error(`src/index.html has no ${mark}`);
   return page.replace(mark, () => code);
 }
 
@@ -48,10 +48,10 @@ copyFileSync("appsscript.json", "dist/appsscript.json");
 const release = /^version\s*=\s*"([^"]+)"/m.exec(readFileSync("../pyproject.toml", "utf8"));
 if (!release) throw new Error("../pyproject.toml has no version");
 writeFileSync(
-  "dist/Version.js",
+  "dist/version.js",
   `// Written by scripts/copy.mjs from pyproject.toml.\nvar VIEWS_VERSION = ${JSON.stringify(release[1])};\n`,
 );
-let page = readFileSync("src/Index.html", "utf8");
+let page = readFileSync("src/index.html", "utf8");
 page = inline(
   page,
   "/* budgetview.js, edits.js */",
@@ -69,4 +69,4 @@ for (const m of PAGE) {
   }
 }
 page = inline(page, "/* page.js */", PAGE.map((m) => readFileSync(`build/page/page/${m}.js`, "utf8")).join("\n"));
-writeFileSync("dist/Index.html", page);
+writeFileSync("dist/index.html", page);

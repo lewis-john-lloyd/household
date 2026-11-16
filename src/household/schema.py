@@ -362,7 +362,7 @@ REPORTS = (
     Table("fingerprints", ("name", "fingerprint", "run_id", "at", "detail")),
     # change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS: written by ingest, from
     # source_documents, so a later run never hides one (the views check discards against it)
-    # the weekly email's to-do list, each with the dates it belongs in the email (nudges.py, nudge/Code.js)
+    # the weekly email's to-do list, each with the dates it belongs in the email (nudges.py, nudge/code.js)
     # every alert, with its key, section and line item, who is emailed it (to, routing: sent, off, unassigned),
     # and a row saying so for a line item with nothing due
     Table(

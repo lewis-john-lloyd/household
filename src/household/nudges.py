@@ -1,7 +1,7 @@
 """The weekly emails' alerts, and the FSA balances they nag about.
 
 Compute publishes nudges to Reports: each a thing to do, under the action it calls for, with the window of
-dates in which it is worth an email (show_from to show_until). The weekly script (nudge/Code.js) only
+dates in which it is worth an email (show_from to show_until). The weekly script (nudge/code.js) only
 compares those dates with the day it runs, so a Reports table a few weeks old still gives the right email.
 The script adds what only it can see live: files waiting in the inbox, and Reports behind the ledger.
 

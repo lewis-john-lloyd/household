@@ -1,5 +1,5 @@
 // What the page uses of Google's browser libraries: Apps Script's google.script, which calls the server's
-// functions (typed by the functions themselves, in Code.ts), and Google Charts.
+// functions (typed by the functions themselves, in code.ts), and Google Charts.
 
 /** The server functions the page calls, by name. */
 interface ServerCalls {

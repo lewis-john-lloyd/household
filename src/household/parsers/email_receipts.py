@@ -1,4 +1,4 @@
-"""Store receipts from email, as the receipt exporter (exporter/Code.js) writes them into the inbox.
+"""Store receipts from email, as the receipt exporter (exporter/code.js) writes them into the inbox.
 
 A file holds one or more messages, each starting with a line "===== RECEIPT <message id> =====",
 then From, Subject and Date lines, a blank line and the body. Each receipt layout has a reader

@@ -1,5 +1,5 @@
 """The receipt exporter's searches: plain senders and subject phrases in the settings, the search built from them,
-and the file compute writes them into for the exporter (exporter/Code.js builds the same search)."""
+and the file compute writes them into for the exporter (exporter/code.js builds the same search)."""
 
 import json
 import re

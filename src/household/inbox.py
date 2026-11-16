@@ -48,7 +48,7 @@ MAX_FILE_BYTES = 200 * 1024 * 1024  # a file bigger than this is left in the inb
 ZIP_LIMITS = {"members": 2000, "member_bytes": 200 * 1024 * 1024, "total_bytes": 1024 * 1024 * 1024}
 
 
-# the receipt exporter's searches file (exporter/Code.js makes it, compute fills its description): not an export
+# the receipt exporter's searches file (exporter/code.js makes it, compute fills its description): not an export
 SEARCHES_PROPERTY = ("household", "receipt_searches")
 SEARCHES_MAX = 4000  # characters of description; far more than a household's stores need
 
@@ -108,7 +108,7 @@ def write_receipt_searches(drive, searches):
     return len(found)
 
 
-PARCELS_PROPERTY = ("household", "parcels")  # the county check's parcels file (assessor/Code.js makes it)
+PARCELS_PROPERTY = ("household", "parcels")  # the county check's parcels file (assessor/code.js makes it)
 
 
 def write_parcels(drive, homes):

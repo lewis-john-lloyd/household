@@ -1,9 +1,16 @@
-"""The weekly email's to-do list, and the FSA balances it nags about.
+"""The weekly emails' alerts, and the FSA balances they nag about.
 
 Compute publishes nudges to Reports: each a thing to do, under the action it calls for, with the window of
 dates in which it is worth an email (show_from to show_until). The weekly script (nudge/Code.js) only
 compares those dates with the day it runs, so a Reports table a few weeks old still gives the right email.
 The script adds what only it can see live: files waiting in the inbox, and Reports behind the ledger.
+
+Every alert that could ever be emailed is a line item with a key (download_<source>, tax_federal, review,
+...), in one of four sections, listed even when nothing is wrong (its row then has no show_from), so the
+views' Alerts part can say who gets it before it fires. Who gets it is the household setting alert_to:<key>:
+names from alert_recipient:<name> settings, or none for an alert nobody is emailed about. route() puts each
+row's addresses in `to`, and `routing` says sent, off, or unassigned (the weekly script sends an unassigned
+alert to its owner and marks it so; Status says how many there are).
 
 The rules, as the household set them: an email is for things that need doing. A thing that has gone stale
 is worth one once it has been stale STALE_DAYS; a thing with a deadline, once the deadline is LEAD_DAYS away.
@@ -27,7 +34,8 @@ from . import projection, recurring, settings
 STALE_DAYS = 30
 LEAD_DAYS = 30
 NOTE_YEAR = re.compile(r"\bfsa\s*(20\d\d)\b", re.IGNORECASE)
-COLUMNS = ["group", "item", "detail", "show_from", "show_until", "link"]
+COLUMNS = ["key", "section", "name", "group", "item", "detail", "show_from", "show_until", "link"]
+ROUTED = COLUMNS + ["to", "routing"]
 FSA_COLUMNS = ["year", "account", "elected", "reimbursed", "left", "claim_deadline"]
 ACCOUNTS = {  # account: (its name, the pay stub line matcher, its categories setting, its deadline setting, its
     # plan in the elections report)
@@ -55,6 +63,22 @@ GROUPS = {  # the email's sections, in order
     "subscriptions": "Recurring charges that changed price",
     "budget": "Budgets to check",
 }
+SECTIONS = {  # each group's section of the email, the sections in order
+    "tax": "Taxes and benefits",
+    "fsa": "Taxes and benefits",
+    "download": "Books upkeep",
+    "review": "Books upkeep",
+    "subscriptions": "Spending",
+    "budget": "Spending",
+    "settings": "System",
+}
+SECTION_ORDER = ["Taxes and benefits", "Books upkeep", "Spending", "System"]
+# alerts the weekly script finds live: key, section, name, and what it checks
+LIVE = [
+    ("inbox", "Books upkeep", "Files waiting in the inbox", "files a month in the inbox, or refused by ingest"),
+    ("compute", "Books upkeep", "Reports behind the ledger", "an ingest a month old that compute never followed"),
+    ("email", "System", "The weekly email's own trouble", "Reports or the inbox it can't read"),
+]
 MIN_401K_GAP = 100  # dollars a 401(k) projection may miss its limit by before it is worth an email
 
 
@@ -80,6 +104,11 @@ def _lines(n):
 
 def _money(x):
     return f"{abs(float(x)):,.0f}"
+
+
+def alert_key(*parts):
+    """A line item's key, as alert_to:<key> names it: lower case letters, digits and _."""
+    return "_".join(settings.symbol_key(p) for p in parts if str(p).strip())
 
 
 def _view(params, view, tab=""):
@@ -192,13 +221,19 @@ def build(
     fsa=None,
     changed=None,
     checks=None,
+    everything=False,
 ):
-    """The nudges: one row per thing to do, with the dates between which it belongs in the weekly email."""
+    """The nudges: one row per thing to do, with the dates between which it belongs in the weekly email. With
+    everything, each line item that has nothing to do also gets a row saying so, with no dates."""
     rows = []
+    quiet = {}  # key: (group, name, detail, link) of each line item, said when nothing is due for it
 
-    def add(group, item, detail, show_from, show_until=None, link=""):
+    def add(group, item, detail, show_from, show_until=None, link="", key=None, name=None):
         rows.append(
             {
+                "key": key or group,
+                "section": SECTIONS[group],
+                "name": name or item,
                 "group": GROUPS[group],
                 "item": item,
                 "detail": detail,
@@ -208,6 +243,11 @@ def build(
             }
         )
 
+    def line(group, key, name, fine, link=""):
+        quiet.setdefault(key, (group, name, fine, link))
+
+    line("settings", "settings", "Settings that can't be used", "every setting can be used")
+
     for key, v, problem in settings.check(params):
         add(
             "settings",
@@ -215,9 +255,12 @@ def build(
             f"{v!r} {problem}; the weekly email leaves it out until it is fixed",
             today,
             link=_view(params, "edit", "settings"),
+            name="Settings that can't be used",
         )
 
     if fsa is not None and len(fsa):
+        for account in sorted(set(fsa["account"])):
+            line("fsa", f"fsa_{account}", ACCOUNTS[account][0], "nothing of last year's left to claim")
         for r in fsa[(fsa["year"] < today.year) & (fsa["left"] > 0.005)].to_dict("records"):
             name, _, _, deadline_key, _ = ACCOUNTS[r["account"]]
             deadline, known = _deadline(params, deadline_key, int(r["year"]))
@@ -235,6 +278,8 @@ def build(
                 date(int(r["year"]) + 1, 1, 1),
                 deadline,
                 settings.link(params, "fsa_claims_url"),
+                key=f"fsa_{r['account']}",
+                name=name,
             )
         unset = [
             k for k in ("fsa_payee_pattern", "lpfsa_categories", "dcfsa_categories") if not settings.value(params, k)
@@ -246,6 +291,7 @@ def build(
                 "not set, so no FSA reimbursement is counted and every balance looks unclaimed",
                 date(today.year, 1, 1),
                 link=_view(params, "edit", "settings"),
+                name="Settings that can't be used",
             )
 
     tolerance = settings.number(params, "withholding_tolerance", 500)
@@ -253,12 +299,22 @@ def build(
     if plan is not None and len(plan) and stubs is not None:
         aimed = plan[(pd.to_numeric(plan["target"], errors="coerce") - target).abs() < 0.5]
         for r in aimed.to_dict("records"):
+            federal = r["return"] == "federal"
+            tax_key = "tax_federal" if federal else alert_key("tax", r["return"])
+            tax_name = "Federal withholding" if federal else f"{str(r['return']).title()} withholding"
+            line(
+                "tax",
+                tax_key,
+                tax_name,
+                f"projected {'a refund of ' if float(r['projected']) >= 0 else 'owing '}{_money(r['projected'])}, "
+                f"within {_money(tolerance)} of the target refund or nothing left to change",
+                settings.link(params, "payroll_url"),
+            )
             if pd.isna(r.get("suggested_extra")) or abs(float(r["projected"]) - target) <= tolerance:
                 continue
             last = _last_paycheck(stubs, r["person"], r["employer"], today.year)
             if not last:
                 continue
-            federal = r["return"] == "federal"
             now, extra, lands = float(r["current_extra"]), float(r["suggested_extra"]), float(r["lands_at"])
             vest = float(r["vest_rate"]) if pd.notna(r.get("vest_rate")) else None
             # the supplemental rate is the other lever, and only for federal withholding on vests and bonuses
@@ -312,10 +368,20 @@ def build(
                 show_from,
                 show_until,
                 settings.link(params, "payroll_url"),
+                key=tax_key,
+                name=tax_name,
             )
     if elections is not None and len(elections) and stubs is not None:
         mine = elections[elections["plan"].isin(["401(k) elective deferral", projection.MEGA_BACKDOOR])]
         for r in mine.to_dict("records"):
+            plan_key, plan_name = alert_key("plan", r["person"], r["plan"]), f"{r['person']} {r['plan']}"
+            line(
+                "tax",
+                plan_key,
+                plan_name,
+                "on pace for its limit",
+                settings.link(params, "benefits_url") or settings.link(params, "payroll_url"),
+            )
             if r["status"] == "at limit" or pd.isna(r.get("gap")) or abs(float(r["gap"])) < MIN_401K_GAP:
                 continue
             last = _last_paycheck(stubs, r["person"], r["employer"], today.year)
@@ -330,20 +396,31 @@ def build(
                 last - timedelta(days=LEAD_DAYS),
                 last,
                 settings.link(params, "benefits_url") or settings.link(params, "payroll_url"),
+                key=plan_key,
+                name=plan_name,
             )
 
     if coverage is not None and len(coverage):
-        for r in coverage[coverage["status"].isin(["due", "never downloaded"])].to_dict("records"):
+        for r in coverage.to_dict("records"):
+            source_key = alert_key("download", r["source"])
+            line("download", source_key, r["source"], "nothing waits for it", _view(params, "status"))
             newest = _day(r.get("newest", ""))
             waiting = int(float(r.get("waiting_lines") or 0))
+            if r["status"] not in ("due", "never downloaded") and not (everything and newest):
+                continue
             if newest:
+                # a current download is said from when it falls due (its own interval), if that is later
+                after = (
+                    int(float(r.get("due_after_days") or 0)) if r["status"] not in ("due", "never downloaded") else 0
+                )
                 add(
                     "download",
                     r["source"],
                     f"has everything through {newest:%B} {newest.day}, {newest.year}"
                     + (f"; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it" if waiting else ""),
-                    newest + timedelta(days=STALE_DAYS),
+                    newest + timedelta(days=max(STALE_DAYS, after)),
                     link=_view(params, "status"),
+                    key=source_key,
                 )
             elif waiting:
                 add(
@@ -352,8 +429,10 @@ def build(
                     f"never downloaded; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it",
                     today,
                     link=_view(params, "status"),
+                    key=source_key,
                 )
 
+    line("review", "review", "Review questions", "no questions", _view(params, "edit", "review"))
     if review is not None and len(review):
         firsts = [d for d in (_day(x) for x in review["first"]) if d]
         if firsts:
@@ -365,7 +444,15 @@ def build(
                 f"covering {_lines(lines)}, the oldest from {oldest:%B} {oldest.day}, {oldest.year}",
                 oldest + timedelta(days=STALE_DAYS),
                 link=_view(params, "edit", "review"),
+                name="Review questions",
             )
+    line(
+        "subscriptions",
+        "recurring",
+        "Recurring charges that changed price",
+        "no charge changed price lately",
+        _view(params, "budget", "recurring"),
+    )
     if changed is not None and len(changed):
         for r in changed.to_dict("records"):  # in the email for the weeks after the charge
             charged = _day(r["last"])
@@ -376,14 +463,73 @@ def build(
                 charged,
                 charged + timedelta(days=recurring.FRESH_DAYS),
                 link=_view(params, "budget", "recurring"),
+                key="recurring",
+                name="Recurring charges that changed price",
             )
+    line("budget", "budget_checks", "Budgets to check", "no budget well above usual", _view(params, "budget"))
     if checks is not None and len(checks):
         # a budget pushed up by one big line (budget_checks.py); price changes are their own group above
         for r in checks[checks["kind"] == "target_high"].to_dict("records"):
-            add("budget", r["about"], r["label"], today, link=_view(params, "budget"))
+            add(
+                "budget",
+                r["about"],
+                r["label"],
+                today,
+                link=_view(params, "budget"),
+                key="budget_checks",
+                name="Budgets to check",
+            )
+    if everything:
+        have = {r["key"] for r in rows}
+        for key, (group, name, fine, link) in quiet.items():
+            if key not in have:
+                add(group, name, fine, None, link=link, key=key, name=name)
+        for key, section, name, fine in LIVE:
+            rows.append(
+                dict.fromkeys(COLUMNS, "")
+                | {"key": key, "section": section, "name": name, "item": name, "detail": f"checked live: {fine}"}
+            )
     order = list(GROUPS.values())
     return (
         pd.DataFrame(rows, columns=COLUMNS)
-        .sort_values("group", key=lambda g: g.map(order.index), kind="stable")
+        .sort_values(
+            "group", key=lambda g: g.map(lambda x: order.index(x) if x in order else len(order)), kind="stable"
+        )
         .reset_index(drop=True)
     )
+
+
+def recipients(params):
+    """{name: address} for each alert_recipient:<name> set to a usable address."""
+    out = {}
+    for key, v in settings.household(params).items():
+        base, _, who = key.partition(":")
+        if base == "alert_recipient" and who and settings.ADDRESS.fullmatch(v):
+            out[who] = v
+    return out
+
+
+def route(table, params):
+    """The nudges with who gets each: `to`, the addresses alert_to:<key> names, and `routing`: sent, off (set to
+    none) or unassigned (not set, or naming no one with a usable address)."""
+    people = recipients(params)
+    chosen = {key.partition(":")[2]: v for key, v in settings.household(params).items() if key.startswith("alert_to:")}
+    to, routing = [], []
+    for key in table["key"].astype(str) if len(table) else []:
+        v = chosen.get(key, "").strip()
+        names = settings.recipient_names(v)
+        if v.lower() == "none":
+            to.append(""), routing.append("off")
+            continue
+        found = [people[n] for n in names if n in people]
+        to.append(", ".join(found))
+        routing.append("sent" if found else "unassigned")
+    return table.assign(to=to, routing=routing)[ROUTED]
+
+
+def unassigned(table):
+    """The line items no one gets and that are not set to none: [(key, name, section)], once each."""
+    if not len(table):
+        return []
+    left = table[table["routing"] == "unassigned"].drop_duplicates("key")
+    return list(zip(left["key"], left["name"], left["section"]))

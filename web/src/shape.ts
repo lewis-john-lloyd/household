@@ -554,6 +554,7 @@ const CHECKS: [string, string, string, string | RegExp, string][] = [
   ["mismatches", "legacy month disagrees", "legacy months disagree", "legacy check", ""],
   ["legacy_uncategorized", "legacy line has no category", "legacy lines have no category", "legacy check", ""],
   ["transfers_unmatched", "transfer has no partner", "transfers have no partner", "transfers:", "review"],
+  ["alerts_unassigned", "alert has no one to email", "alerts have no one to email", "alerts:", "alerts"],
 ];
 const UNREAD = ["error", "unrecognized", "failed"]; // inbox file statuses that leave a file in the inbox
 // who decided a line (categorize.py's decided_by), in the breakdown's words; any other is an order history

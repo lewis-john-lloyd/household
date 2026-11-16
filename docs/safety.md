@@ -28,7 +28,7 @@ Everything is in the owner's Google Drive, under the household folder, and nothi
 - The ledger and Reports: the ledger keeps every row; a correction is a new row, so an earlier value stays in the sheet. Reports is rebuilt by every compute.
 - `backups`: one zip of every ledger tab per ingest, kept for good. Each holds everything the ledger held then, so it is as sensitive as the ledger, and a value corrected since is still in the older zips.
 - Drive's trash: the Amazon and Google exports go there once their trimmed copies are filed (the originals hold addresses and more). Drive empties its trash after 30 days; until then a file can be restored. Empty the trash to remove them sooner.
-- Gmail: the receipts the exporter reads stay in Gmail as they were, and the weekly email puts the household's to-dos (balances, withholding, FSA money left) in the inbox it is sent to.
+- Gmail: the receipts the exporter reads stay in Gmail as they were, and the weekly emails put the household's to-dos (balances, withholding, FSA money left) in the inbox of each person chosen on Status, Alerts.
 
 To remove something for good, it has to go from the ledger, from `record_store` and from every backup that holds it, by hand.
 

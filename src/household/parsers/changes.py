@@ -78,7 +78,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from .common import ParseError, Result
-from .. import allocation, budget_checks, categorize, compute, giving, schema, tax
+from .. import allocation, budget_checks, categorize, compute, giving, schema, settings, tax
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -337,6 +337,8 @@ def _values(kind, e):
             out.append(f"key {e['key']!r}: use lower case letters, digits, _ and one ':'")
         elif e["key"].startswith(PATTERN_PARAMETERS) and e["value"]:
             out += _pattern(e["value"], "value")
+        elif e["key"].startswith("alert_recipient:") and e["value"] and not settings.ADDRESS.fullmatch(e["value"]):
+            out.append(f"value {e['value']!r}: an alert recipient is one email address")
     if kind == "explanation":
         if e["jurisdiction"] not in JURISDICTIONS:
             out.append(f"jurisdiction must be one of {', '.join(JURISDICTIONS)}")

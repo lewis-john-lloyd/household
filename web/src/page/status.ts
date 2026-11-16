@@ -258,6 +258,7 @@ var CARD_ICON: Record<string, string> = {
 };
 var ACTION_LABEL: Record<string, string> = {
   review: "Answer in Review",
+  alerts: "Choose who gets them",
   duplicates: "Settle duplicates",
   withholding: "Explain stubs",
   waiting: "See saved changes",
@@ -273,6 +274,8 @@ var CARD_NOTE: Record<string, string> = {
     "Download each stub from payroll into the inbox, then run. A deposit that isn't pay: open it and change its category.",
   funds_unclassified:
     "The allocation and the rebalance leave a fund out until it has a class. Set it under Accounts, in the list of funds.",
+  alerts_unassigned:
+    "Until someone is chosen, these go to the account the weekly email runs as. Choose who gets each, or Don't email.",
 };
 // the part of a view a card's button opens ("view:investments/accounts")
 var VIEW_PART: Record<string, (part: string) => void> = {

@@ -97,6 +97,10 @@ SETTINGS = {
     "anything but letters and digits as _; default: the price on the award page)",
     "equity_price_steps": "The dollars a share the Equity page moves the price up and down by, separated by commas "
     "(default 5, 10, 20)",
+    "alert_recipient": "An address the weekly emails go to, one setting per person (alert_recipient:<name>); "
+    "added and changed on Status, Alerts",
+    "alert_to": "Who is emailed an alert: names from alert_recipient separated by commas, or none for no one "
+    "(alert_to:<alert>); set on Status, Alerts",
     "receipt_sender": "The addresses a store's receipts come from, comma-separated, one setting per store "
     "(receipt_sender:<store>); the receipt exporter reads only mail from these",
     "receipt_subject": "Optional, with a store's receipt_sender: words its receipts' subjects contain, separated "
@@ -208,6 +212,23 @@ def receipt_searches(params):
     return pd.DataFrame(rows, columns=columns).sort_values("store").reset_index(drop=True)
 
 
+def household_values(latest):
+    return dict(zip(latest["key"].astype(str), latest["value"].astype(str).str.strip()))
+
+
+def household(params):
+    """{key: value} of each household setting in force (the latest row per key), values stripped."""
+    if params is None or params.empty:
+        return {}
+    rows = params[params["jurisdiction"].astype(str) == "household"].drop_duplicates("key", keep="last")
+    return dict(zip(rows["key"].astype(str), rows["value"].astype(str).str.strip()))
+
+
+def recipient_names(v):
+    """The names an alert_to value lists, lower case (none lists no one)."""
+    return [n.strip().lower() for n in str(v).split(",") if n.strip() and n.strip().lower() != "none"]
+
+
 def value(params, key, default=""):
     """A household setting's value, or default when it is not set."""
     return categorize.household_parameter(params, key, default) or default
@@ -253,10 +274,23 @@ def check(params):
         return []
     household = params[params["jurisdiction"].astype(str) == "household"]
     latest = household.drop_duplicates("key", keep="last")
+    people = {
+        k.partition(":")[2]
+        for k, v in household_values(latest).items()
+        if k.startswith("alert_recipient:") and ADDRESS.fullmatch(v)
+    }
     out = []
     for key, v in zip(latest["key"].astype(str), latest["value"].astype(str).str.strip()):
         base = key.split(":")[0]
         if not v:
+            continue
+        if base == "alert_recipient" and not ADDRESS.fullmatch(v):
+            out.append((key, v, "is not one email address"))
+            continue
+        if base == "alert_to":
+            missing = [n for n in recipient_names(v) if n not in people]
+            if missing:
+                out.append((key, v, f"names {missing[0]}, who has no alert_recipient address"))
             continue
         if base in LINKS and not v.startswith("https://"):
             out.append((key, v, "is not an https link"))

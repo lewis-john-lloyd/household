@@ -363,7 +363,25 @@ REPORTS = (
     # change sets the ledger holds, received in the last CHANGES_WRITTEN_DAYS: written by ingest, from
     # source_documents, so a later run never hides one (the views check discards against it)
     # the weekly email's to-do list, each with the dates it belongs in the email (nudges.py, nudge/Code.js)
-    Table("nudges", ("group", "item", "detail", "show_from", "show_until", "link", "run_id")),
+    # every alert, with its key, section and line item, who is emailed it (to, routing: sent, off, unassigned),
+    # and a row saying so for a line item with nothing due
+    Table(
+        "nudges",
+        (
+            "key",
+            "section",
+            "name",
+            "group",
+            "item",
+            "detail",
+            "show_from",
+            "show_until",
+            "link",
+            "to",
+            "routing",
+            "run_id",
+        ),
+    ),
     # each plan year's FSA money: elected on the pay stubs, reimbursed by deposits, left to claim (nudges.py)
     Table("fsa_balances", ("year", "account", "elected", "reimbursed", "left", "claim_deadline", "run_id")),
     # the receipt exporter's Gmail searches, from the receipt_sender and receipt_subject settings (settings.py)

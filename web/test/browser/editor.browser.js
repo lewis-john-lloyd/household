@@ -3812,3 +3812,78 @@ test("search says when the last run was before lines carried their recurring cha
   assert.deepEqual(page.errors, []);
   await page.close();
 });
+
+test("alerts: each line item is set for people or for no one, and the people are added, changed and removed", async () => {
+  const row = (key, section, name, detail, from = "", until = "") => ({
+    key,
+    section,
+    name,
+    group: "",
+    item: name,
+    detail,
+    show_from: from,
+    show_until: until,
+    link: "",
+    to: "",
+    routing: "unassigned",
+  });
+  const alerts = [
+    row("tax_federal", "Taxes and benefits", "Federal withholding", "within 500 of the target refund"),
+    row("download_paystubs_sam", "Books upkeep", "Paystubs (sam)", "has everything through October 30, 2001", "2001-02-01"), // due now: the page's clock is 2001-03-02
+    row("review", "Books upkeep", "Review questions", "no questions"),
+    row("budget_checks", "Spending", "Budgets to check", "no budget well above usual"),
+    row("email", "System", "The weekly email's own trouble", "checked live: Reports or the inbox it can't read"),
+  ];
+  const page = await open(
+    `window.__answers.getEditor.alerts = ${JSON.stringify(alerts)};` +
+      "window.__answers.getEditor.parameters.push({ key: 'alert_recipient:alex', value: 'alex@example.com', source: 'web' }," +
+      " { key: 'alert_to:review', value: 'alex', source: 'web' });",
+  );
+  await page.click("#view-status");
+  await page.click("#status-tabs button[data-tab='edit:alerts']");
+  await page.waitForSelector(".alerts .alert-section");
+  assert.deepEqual(await page.$$eval(".alert-section h3", (h) => h.map((x) => x.textContent)), [
+    "Taxes and benefits",
+    "Books upkeep",
+    "Spending",
+    "System",
+  ]);
+  const rowOf = (key) => `.alert-row[data-alert='${key}']`;
+  // what each is doing now, and who is chosen: the review goes to alex, four have no one
+  assert.match(await page.textContent(`${rowOf("download_paystubs_sam")} .alert-what`), /Due now: has everything/);
+  assert.match(await page.textContent(`${rowOf("email")} .alert-what`), /Checked when the weekly email runs/);
+  assert.equal(await page.getAttribute(`${rowOf("review")} button.person`, "aria-pressed"), "true");
+  assert.match(await page.textContent(".alerts-unchosen"), /^4 alerts have no one chosen/);
+  // a new person, then the paystubs alert set for them alone
+  await page.click(".alert-people button:text-is('Add a person')");
+  await page.fill(".person-form label:has-text('Name') input", "Sam");
+  await page.fill(".person-form label:has-text('Email') input", "not an address");
+  await page.click(".person-form button:text-is('Add')");
+  assert.equal(await page.textContent(".person-form .error"), "That is not one email address.");
+  await page.fill(".person-form label:has-text('Email') input", "sam@example.com");
+  await page.click(".person-form button:text-is('Add')");
+  await page.click(`${rowOf("download_paystubs_sam")} button.person:has-text('Sam')`);
+  // the tax alert to both, the budget checks to no one
+  await page.click(`${rowOf("tax_federal")} button.person:has-text('Alex')`);
+  await page.click(`${rowOf("tax_federal")} button.person:has-text('Sam')`);
+  await page.check(`${rowOf("budget_checks")} .alert-off input`);
+  assert.equal(await page.isDisabled(`${rowOf("budget_checks")} button.person:has-text('Alex')`), true);
+  assert.match(await page.textContent(".alerts-unchosen"), /^1 alert has no one chosen/); // the script's trouble
+  // alex leaves: their alerts lose them, the review then has no one
+  await page.click(".alert-row[data-person='alex'] button:text-is('Remove')");
+  assert.equal(await page.locator(".alert-row[data-person='alex']").count(), 0);
+  assert.equal(await page.locator(`${rowOf("review")} .tag.warn`).count(), 1);
+  await page.click("#pending-save");
+  await page.waitForSelector("#pending-msg.saved");
+  const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
+  assert.deepEqual(Object.fromEntries(sent.map((e) => [e.key, [e.value, e.was]])), {
+    "alert_recipient:sam": ["sam@example.com", null],
+    "alert_to:download_paystubs_sam": ["sam", null],
+    "alert_to:tax_federal": ["sam", null], // alex's part went with alex
+    "alert_to:budget_checks": ["none", null],
+    "alert_to:review": ["", { value: "alex" }],
+    "alert_recipient:alex": ["", { value: "alex@example.com" }],
+  });
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});

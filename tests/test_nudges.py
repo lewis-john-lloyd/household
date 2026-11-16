@@ -332,3 +332,58 @@ def test_withholding_names_the_vest_rate_and_opens_before_the_last_vest_that_can
         "refund of 4,400, as near as the rate goes"
     ]
     assert rows.iloc[0]["show_from"] == "2026-11-14"
+
+
+def test_every_alert_is_a_line_item_with_a_key_even_when_nothing_is_due():
+    coverage = pd.DataFrame(
+        [
+            {"source": "BLUE PUMP FUEL card", "newest": "2026-09-30", "waiting_lines": 0, "status": "due"},
+            {"source": "checking", "newest": "2026-11-01", "waiting_lines": 0, "status": "current"}
+            | {"due_after_days": 45},
+        ]
+    )
+    rows = nudges.build(date(2026, 11, 6), params(), coverage=coverage, everything=True)
+    by_key = rows.drop_duplicates("key").set_index("key")
+    assert set(by_key.index) == {
+        "settings",
+        "download_blue_pump_fuel_card",
+        "download_checking",
+        "review",
+        "recurring",
+        "budget_checks",
+        "inbox",
+        "compute",
+        "email",
+    }
+    # a current download is dated for when it falls due, so the views can say when it would be emailed
+    assert by_key.at["download_checking", "show_from"] == "2026-12-16"
+    assert by_key.at["download_blue_pump_fuel_card", "section"] == "Books upkeep"
+    # nothing to do: no dates, and what is right said instead
+    assert (by_key.at["review", "show_from"], by_key.at["review", "detail"]) == ("", "no questions")
+    assert by_key.at["email", "section"] == "System"
+    # without everything, only the to-do rows, as the weekly email always had them
+    assert list(nudges.build(date(2026, 11, 6), params(), coverage=coverage)["key"]) == ["download_blue_pump_fuel_card"]
+
+
+def test_each_alert_goes_to_the_people_alert_to_names_or_to_no_one():
+    p = params(
+        alert_recipient__alex="alex@example.com",
+        alert_recipient__sam="sam@example.com",
+        alert_recipient__partner="not an address",
+        alert_to__review="alex, sam",
+        alert_to__recurring="none",
+        alert_to__budget_checks="partner",
+    )
+    rows = nudges.route(nudges.build(date(2026, 11, 6), p, everything=True), p).drop_duplicates("key")
+    by_key = rows.set_index("key")
+    assert (by_key.at["review", "to"], by_key.at["review", "routing"]) == ("alex@example.com, sam@example.com", "sent")
+    assert by_key.at["recurring", "routing"] == "off"
+    # a name with no usable address leaves the alert with no one, which Status lists
+    assert (by_key.at["budget_checks", "to"], by_key.at["budget_checks", "routing"]) == ("", "unassigned")
+    left = [key for key, _, _ in nudges.unassigned(rows)]
+    assert "budget_checks" in left and "recurring" not in left and "review" not in left
+    problems = {k: why for k, _, why in settings.check(p)}
+    assert problems == {
+        "alert_recipient:partner": "is not one email address",
+        "alert_to:budget_checks": "names partner, who has no alert_recipient address",
+    }

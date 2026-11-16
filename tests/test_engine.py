@@ -242,6 +242,10 @@ def test_compute_lists_what_its_checks_found_for_the_status_page(session, monkey
     assert (result["stubs_missing"], result["pay_not_deposited"], result["funds_unclassified"]) == (1, 1, 1)
     runs = sheets.read_table(session.sheets.files[sheets.REPORTS_TITLE], schema.table(schema.REPORTS, "run_log"))
     summary = json.loads(runs.loc[runs["stage"] == "compute", "detail"].item())
+    # no one is set to get any alert yet: each line item is listed once, by name, with its section
+    unassigned = summary["things"].pop("alerts_unassigned")
+    assert {"title": "Review questions", "detail": "Books upkeep", "link": ""} in unassigned
+    assert len({t["title"] for t in unassigned}) == len(unassigned) == result["alerts_unassigned"]
     # each thing as the Status page shows it: what it is, what about it, and where it opens
     assert summary["things"] == {
         "stubs_missing": [
@@ -263,7 +267,7 @@ def test_compute_lists_what_its_checks_found_for_the_status_page(session, monkey
     # a check that found nothing lists nothing
     monkeypatch.setattr(checks, "paychecks", lambda stubs, categorized: unpaired.iloc[:0])
     monkeypatch.setattr(valuation, "unclassified", lambda values: [])
-    assert engine.compute_all(session, session.root, run_id="run-3", log=None)["things"] == {}
+    assert set(engine.compute_all(session, session.root, run_id="run-3", log=None)["things"]) == {"alerts_unassigned"}
 
 
 def test_the_lines_kept_for_the_status_page_are_exactly_the_lines_printed(session):

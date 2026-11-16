@@ -919,3 +919,16 @@ def test_an_asset_class_reads_one_way_and_a_long_run_of_spaces_cannot_stall_it()
     for text in ("A" + " " * 5_000 + "!", "A 1, A" + " " * 5_000 + "!"):
         assert not changes.CLASS_RE.match(text)
     assert time.perf_counter() - start < 0.05
+
+
+def test_an_alert_recipient_is_one_email_address_or_blank_to_remove_it():
+    def one(value):
+        return (
+            '{"format": "household_changes", "version": 1, "created_at": "2026-11-16T00:00:00Z", "base_run": "r1", '
+            '"edits": [{"kind": "parameter", "key": "alert_recipient:sam", "value": "' + value + '", "was": null}]}'
+        )
+
+    assert changes.parse(one("sam@example.com")).tables["parameters"].iloc[0]["value"] == "sam@example.com"
+    assert changes.parse(one("")).tables["parameters"].iloc[0]["value"] == ""
+    with pytest.raises(ParseError, match="one email address"):
+        changes.parse(one("sam@example.com, alex@example.com"))

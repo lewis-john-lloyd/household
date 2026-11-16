@@ -71,6 +71,7 @@ A number the engine worked out shows what it came from, and the wrong input is f
 - **Settings have a history**: every value a household setting has had, newest first, with where it came from ("from the views, Nov 13, 2026", "when the ledger was set up"), shown where it is changed (Status, Settings, and beside a number). Compute publishes it as `editor_parameter_history`; a setting saved from the views carries the day it was saved in its source (`web 2026-11-13`).
 - **Changes that wait for a run** are counted in the header on every page ("2 changes wait for a run"), a menu listing each in words with the way to the full list. A list row with a change in hand says whether it waits to be saved or for a run.
 - **A budget line's form waits behind Change** in its drawer, so the drawer leads with the line in words and its evidence; once opened it stays open while the drawer is, and a line naming no category opens with it.
+- **Alerts** (a Status part): every alert the weekly emails can send, in four sections (Taxes and benefits, Books upkeep, Spending, System), each line item saying what it is doing now (due now, emailed from a day if nothing changes, or nothing to do), with a chip per person to choose who gets it and Don't email for no one. The people are added, changed (a new name moves their alerts) and removed above, each an `alert_recipient` setting; a choice is an `alert_to` setting, staged like any other. An alert no one is chosen for is marked, and Status's Overview counts it as a card.
 - **Status**: a budget check opens its line item's drawer, and a recurring charge that changed price opens that charge's drawer on the Recurring tab, its lines there to mark (compute's "recurring charge:" notes, one item each). A charge's drawer, like a line's, stays open when the page draws again. A pay deposit with no stub opens its line's page, where its category is changed if it isn't pay; a fund with no asset class opens Investments at Accounts, where its class is set.
 - **Home**: the two settings its figures rest on, `home_value_basis` and `home_sale_cost_rate`, are changed beside them; the stored value shows once the editor's data is loaded. Improvements are added, corrected and removed in place (an `improvement` edit), each with its receipt: a link, or the transaction that paid it, which opens its page. A transaction page's "Add to a home's improvements" opens the form with the line's date, payee and amount, the line as its receipt.
 
@@ -84,7 +85,7 @@ The views change the ledger without opening it. Each change is made on the page 
 - **Budget**: categories, budget lines and recurring charges.
 - **Taxes**: withholding explanations.
 - **Jobs**: jobs and pay changes (`comp_events`).
-- **Status**: household settings, and the change sets saved but not yet read.
+- **Status**: who gets each weekly email alert and the people they go to (Alerts), household settings, and the change sets saved but not yet read.
 
 A link to `?view=edit&tab=<part>` still opens a part where it now lives.
 

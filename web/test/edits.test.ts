@@ -96,6 +96,13 @@ test("editorData gathers the editor tabs and only the stubs still unexplained", 
 
 test("an edit's shape is checked as the engine checks it", () => {
   assert.deepEqual(edits.editProblems({ kind: "payee", key: "ACME GROCER", category: "food" }), []);
+  // an alert recipient is one address, as ingest refuses otherwise; blank removes the person
+  const recipient = (value: string) => ({ kind: "parameter", key: "alert_recipient:sam", value, was: null });
+  assert.deepEqual(edits.editProblems(recipient("sam@example.com")), []);
+  assert.deepEqual(edits.editProblems(recipient("")), []);
+  assert.deepEqual(edits.editProblems(recipient("sam@example.com, alex@example.com")), [
+    'value "sam@example.com, alex@example.com": an alert recipient is one email address',
+  ]);
   const full = {
     effective: "2026-01-01",
     category: "kids",

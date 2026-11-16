@@ -33,6 +33,7 @@ interface EditorData {
   jobs: Row[]; // comp_events, newest first per person, each with what the paychecks under it say
   payCheck: Row[]; // runs of paychecks beside comp_events that disagree or have no row in force
   subscriptions: Row[]; // yours, then recurring charges not marked, then the ones you said are not
+  alerts: Row[]; // every alert the weekly emails can send (nudges.py): key, section, name, dates, who gets it
 }
 
 const CHANGE_FORMAT = "household_changes";
@@ -148,6 +149,7 @@ function editorData(tabs: Record<string, unknown[][]>): EditorData {
     jobs: drop(tab("editor_jobs")),
     payCheck: drop(tab("pay_check")).filter((r) => r.status !== "agrees"),
     subscriptions: drop(tab("editor_subscriptions")),
+    alerts: drop(tab("nudges")),
   };
 }
 
@@ -176,11 +178,22 @@ function editProblems(edit: Edit): string[] {
   // the value checks ingest makes that an editor could get wrong: caught here, they don't refuse a whole save
   if (MERCHANT_KINDS.indexOf(edit.kind) >= 0 && edit.key === "") out.push("key is empty");
   if (edit.kind === "looks_right" && edit.check === "") out.push("check is empty");
+  if (
+    edit.kind === "parameter" &&
+    typeof edit.key === "string" &&
+    edit.key.indexOf("alert_recipient:") === 0 &&
+    edit.value &&
+    !EMAIL_ADDRESS.test(String(edit.value))
+  )
+    out.push(`value ${JSON.stringify(edit.value)}: an alert recipient is one email address`);
   const yesNo = YES_NO_FIELDS[edit.kind];
   if (yesNo && edit[yesNo] !== undefined && edit[yesNo] !== "yes" && edit[yesNo] !== "no")
     out.push(`${yesNo} ${JSON.stringify(edit[yesNo])} is not yes or no`);
   return out;
 }
+
+// one email address, as settings.ADDRESS has it
+const EMAIL_ADDRESS = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 
 // kinds about a merchant key, and the fields that are yes or no, as parsers/changes.py checks them
 const MERCHANT_KINDS = [

@@ -1036,7 +1036,9 @@ def _settings_and_receipts(c: Compute, params):
 
 
 @timed
-def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan, tax_elections, changed, found):
+def _nudges(
+    c: Compute, result, params, stubs, categorized, due, editor_review, tax_plan, tax_elections, changed, found
+):
     """FSA balances and the weekly email's to-dos."""
     reports, run_id, today, log = c.reports, c.run_id, c.today, c.log
     day = date.fromisoformat(today)
@@ -1049,10 +1051,27 @@ def _nudges(c: Compute, params, stubs, categorized, due, editor_review, tax_plan
             f"reimbursed, {r['left']:,.2f} left"
             + (f", claims due {r['claim_deadline']}" if r["claim_deadline"] else ""),
         )
-    todo = nudges.build(day, params, due, editor_review, tax_plan, tax_elections, stubs, fsa, changed, found)
+    todo = nudges.route(
+        nudges.build(
+            day, params, due, editor_review, tax_plan, tax_elections, stubs, fsa, changed, found, everything=True
+        ),
+        params,
+    )
     sheets.replace_table(reports, schema.table(schema.REPORTS, "nudges"), todo.assign(run_id=run_id))
-    showing = todo[(todo["show_from"] <= today) & ((todo["show_until"] == "") | (todo["show_until"] >= today))]
-    say(log, f"nudges: {len(todo)} for the weekly email, {len(showing)} of them due in it as of today")
+    dated = todo[todo["show_from"] != ""]
+    showing = dated[(dated["show_from"] <= today) & ((dated["show_until"] == "") | (dated["show_until"] >= today))]
+    left = nudges.unassigned(todo)
+    say(
+        log,
+        f"nudges: {todo['key'].nunique()} alerts, {len(showing)} things due in the weekly emails as of today, "
+        f"{len(nudges.recipients(params))} people to email",
+    )
+    result["alerts_unassigned"] = len(left)
+    c.things["alerts_unassigned"] = [{"title": name, "detail": section, "link": ""} for _, name, section in left]
+    if left:
+        say(
+            log, f"alerts: {logs.counted(len(left), 'alert')} with no one to email: " + ", ".join(n for _, n, _ in left)
+        )
 
 
 @timed
@@ -1174,6 +1193,7 @@ def _compute(c: Compute, said: list, legacy_id: str | None, legacy_year: int | N
     _settings_and_receipts(c, params)
     _nudges(
         c,
+        result,
         params,
         stubs,
         categorized,

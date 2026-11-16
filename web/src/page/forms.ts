@@ -13,6 +13,7 @@ var EDIT_HOME: Record<string, string> = {
   withholding: "taxes",
   settings: "status",
   waiting: "status",
+  alerts: "status",
 };
 var PAGE_NAMES: Record<string, string> = { flows: "Cashflow", status: "Status", budget: "Budget", taxes: "Taxes" };
 
@@ -28,6 +29,7 @@ var PAGE_PARTS: Record<string, string[][]> = {
   ],
   status: [
     ["overview", "Overview"],
+    ["edit:alerts", "Alerts"],
     ["log", "Engine log"],
     ["edit:settings", "Settings"],
     ["edit:waiting", "Saved changes"],
@@ -134,6 +136,7 @@ function redrawEditor() {
       rules: drawRules,
       categories: drawCategories,
       settings: drawSettings,
+      alerts: drawAlerts,
       withholding: drawWithholding,
       duplicates: drawDuplicates,
     }) as Record<string, (body: HTMLElement) => void>

@@ -345,6 +345,7 @@ function getEditor(): EditorData {
     "editor_jobs",
     "pay_check",
     "editor_subscriptions",
+    "nudges",
   ];
   const data = editorData(readTabsIfAny_(names));
   console.log(`editor: run ${data.baseRun}, ${data.budgetLines.length} budget lines, ${data.review.length} review questions`);

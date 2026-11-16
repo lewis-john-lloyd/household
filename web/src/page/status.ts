@@ -205,17 +205,15 @@ function flowPeriodName(p: string) {
   return /^\d{4}(-\d{2}|-Q[1-4])?$/.test(p) ? periodName(p) : p;
 }
 
+// Sankey's and Table's period, as the date chip every page has: the arrows step a month or a year at a time.
 function fillPeriods(list: string[]) {
-  var select = byId("period") as HTMLSelectElement;
-  select.textContent = "";
-  list.forEach(function (p) {
-    var option = document.createElement("option");
-    option.value = p;
-    option.textContent = flowPeriodName(p);
-    select.appendChild(option);
+  var box = byId("period");
+  box.textContent = "";
+  if (!chosen[view] || list.indexOf(chosen[view]) < 0) chosen[view] = list[0];
+  periodChip(box, list, chosen[view], flowPeriodName, function (p) {
+    chosen[view] = p;
+    load();
   });
-  if (chosen[view] && list.indexOf(chosen[view]) >= 0) select.value = chosen[view];
-  chosen[view] = select.value;
 }
 
 function when(at: string) {

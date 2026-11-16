@@ -197,50 +197,26 @@ function budgetControls(v: BudgetView) {
   });
   c.appendChild(seg);
   var list = lensPeriods(budget.data!.book, budget.lens, today());
-  var at = list.indexOf(budget.period);
-  var move = function (n: number) {
-    budget.period = list[at + n];
-    budget.compare = defaultCompare(budget.period);
-    drawBudgetPage();
-  };
-  var picker = el("span", null, "bv-picker");
-  var earlier = button(
-    "\u2039",
-    function () {
-      move(1);
-    },
-    "icon-button",
-  );
-  earlier.setAttribute("aria-label", "The " + budget.lens + " before");
-  earlier.disabled = at < 0 || at >= list.length - 1;
-  var labels: Record<string, string> = {};
   var current = periodOf(today(), budget.lens);
   // on a phone the lens and the period share one row: months as "Nov 2026", and "so far" left to the headline
   var narrow = !!(window.matchMedia && window.matchMedia("(max-width: 600px)").matches);
-  list.forEach(function (p) {
-    var name = periodName(p);
-    if (narrow && budget.lens === "month") name = name.slice(0, 3) + name.slice(name.indexOf(" "));
-    labels[p] = name + (p === current && !narrow ? ", so far" : "");
-  });
-  var pick = choice(list, budget.period, labels);
-  pick.setAttribute("aria-label", "Period");
-  pick.onchange = function () {
-    budget.period = pick.value;
-    budget.compare = defaultCompare(pick.value);
-    drawBudgetPage();
-  };
-  var later = button(
-    "\u203a",
-    function () {
-      move(-1);
+  var picker = el("span", null, "bv-picker");
+  picker.dataset.period = budget.period;
+  periodChip(
+    picker,
+    list,
+    budget.period,
+    function (p) {
+      var name = periodName(p);
+      if (narrow && budget.lens === "month") name = name.slice(0, 3) + name.slice(name.indexOf(" "));
+      return name + (p === current && !narrow ? ", so far" : "");
     },
-    "icon-button",
+    function (p) {
+      budget.period = p;
+      budget.compare = defaultCompare(p);
+      drawBudgetPage();
+    },
   );
-  later.setAttribute("aria-label", "The " + budget.lens + " after");
-  later.disabled = at <= 0;
-  picker.appendChild(earlier);
-  picker.appendChild(pick);
-  picker.appendChild(later);
   c.appendChild(picker);
   var words = { month: "month", quarter: "quarter", year: "year" }[budget.lens] || budget.lens;
   c.appendChild(compareMenu(v, list, words));

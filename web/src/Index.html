@@ -481,6 +481,11 @@
       .search-dmenu .row.on { background: var(--secondary-container); color: var(--on-secondary-container); }
       .search-dmenu label.row.custom { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 8px; }
       .search-dmenu .row.custom input { width: 100%; max-width: 140px; }
+      .range-chip { display: contents; }
+      .search-dmenu.one { width: min(300px, calc(100vw - 32px)); }
+      .search-dmenu.one .cols { grid-template-columns: 1fr; }
+      .search-dmenu.periods .cols { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+      .search-dmenu .rows { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
       .search-dmenu .sep { height: 1px; background: var(--outline-variant); margin: 6px 10px; }
       .search-dmenu .dfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
       .search-bar { position: relative; flex: 1 1 420px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 52px; box-sizing: border-box; padding: 6px 12px 6px 16px; background: var(--surface-container); border: 1px solid var(--outline); border-radius: 26px; }
@@ -662,8 +667,8 @@
         /* the lens and the period on one row: the arrows give way to the period's own list */
         .bv-controls .segmented button { padding: 0 10px; }
         .bv-picker { flex: 1 1 0; min-width: 0; }
-        .bv-picker .icon-button { display: none; }
-        .bv-picker select { width: 100%; min-width: 0; }
+        .bv-picker button.step { display: none; }
+        .bv-picker .search-dates, .bv-picker button.search-datechip { flex: 1; min-width: 0; }
       }
       .a2-big small, .group-sum small { font-size: 14px; color: var(--on-surface-variant); }
       .a2-card .spent-bar { width: 100%; }
@@ -1101,7 +1106,7 @@
       <div id="flows-tabs" class="subtabs" role="group" aria-label="Cashflow"></div>
       <!-- the tabs first, then the chosen tab's controls, as on Budget -->
       <div id="controls" hidden>
-        <select id="period" aria-label="Period"></select>
+        <div id="period" role="group" aria-label="Period"></div>
         <span class="segmented" role="group" aria-label="Detail">
           <button id="group" aria-pressed="true">Groups</button>
           <button id="category" aria-pressed="false">Categories</button>

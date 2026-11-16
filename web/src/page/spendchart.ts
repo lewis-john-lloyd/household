@@ -6,17 +6,11 @@
 
 var SPEND_MAX = 8; // --series-1 to --series-8
 var SPEND_DEFAULT = 6;
-var SPEND_RANGES: [string, string][] = [
-  ["all", "All time"],
-  ["5", "5 years"],
-  ["2", "2 years"],
-  ["1", "1 year"],
-];
 var spend = {
   percent: false,
   by: "group" as "group" | "category",
   group: "", // with categories: the group they are drawn from, or all of them
-  range: "2",
+  range: { unit: "years", years: 2, days: 0, end: "today" } as SearchRange, // the months drawn: two years to start
   withoutOneOffs: false,
   picked: {} as Record<string, Record<string, number>>, // per level and group: key -> its color slot
 };
@@ -39,11 +33,10 @@ function loadSpendOverTime() {
   );
 }
 
-// the first month the range shows: this month and the N years of months before it
-function spendFrom(): string | undefined {
-  if (spend.range === "all") return undefined;
-  var now = today().slice(0, 7);
-  return shiftPeriod(now, -12 * Number(spend.range) + 1);
+// the months the range shows: from its first (none for all time) to its last
+function spendMonths(): { from: string | undefined; to: string } {
+  var r = searchRange(spend.range, today());
+  return { from: r.from ? r.from.slice(0, 7) : undefined, to: r.to.slice(0, 7) };
 }
 
 function drawSpendOverTime() {
@@ -51,9 +44,10 @@ function drawSpendOverTime() {
   var box = byId("flows-overtime");
   box.textContent = "";
   var book = budget.data.book;
+  var months = spendMonths();
   var data = spendingOverTime(book, spend.by, {
-    from: spendFrom(),
-    to: today().slice(0, 7),
+    from: months.from,
+    to: months.to,
     withoutOneOffs: spend.withoutOneOffs,
     group: spend.by === "category" ? spend.group || undefined : undefined,
   });
@@ -147,6 +141,10 @@ function drawSpendOverTime() {
 
 function spendToolbar(book: BudgetBook) {
   var bar = el("div", null, "r-toolbar over-bar spend-bar");
+  rangeChip(bar, spend.range, today(), { years: [1, 2, 5, 10], allTime: true }, function (r) {
+    spend.range = r;
+    drawSpendOverTime();
+  });
   var seg = function (label: string, choices: [string, string][], on: string, pick: (v: string) => void) {
     var s = el("div", null, "segmented");
     s.setAttribute("role", "group");
@@ -204,9 +202,6 @@ function spendToolbar(book: BudgetBook) {
     };
     bar.appendChild(which);
   }
-  seg("How far back", SPEND_RANGES, spend.range, function (v) {
-    spend.range = v;
-  });
   var once = el("label", null, "spend-oneoff");
   var check = el("input") as HTMLInputElement;
   check.type = "checkbox";

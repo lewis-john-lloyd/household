@@ -132,10 +132,6 @@ function setLevel(next: string) {
 
 google.charts.load("current", { packages: ["sankey"] });
 google.charts.setOnLoadCallback(function () {
-  byId("period").addEventListener("change", function (e) {
-    chosen[view] = (e.target as HTMLSelectElement).value;
-    load();
-  });
   byId("view-status").addEventListener("click", function () {
     setView("status");
   });

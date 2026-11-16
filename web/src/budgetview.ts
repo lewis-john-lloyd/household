@@ -745,12 +745,14 @@ function compileSearch(
 }
 
 /** The lines sorted by a field, newest first among equals, so the order never changes between draws. */
-// The dates a search covers: a length and the day it ends. Days count back from the end, that day included; a
-// month, quarter or year is the calendar one the end falls in, up to the end. The end is today, the end of the
-// last month, quarter or year, or a date.
+// The dates a view covers (Search's, Over time's, Investments'): a length and the day it ends. Days count back
+// from the end, that day included; a month, quarter or year is the calendar one the end falls in, up to the end;
+// years are whole months, the end's month and those before it; all is every day up to the end. The end is today,
+// the end of the last month, quarter or year, or a date.
 interface SearchRange {
-  unit: "days" | "month" | "quarter" | "year";
+  unit: "days" | "month" | "quarter" | "year" | "years" | "all";
   days: number; // with unit days
+  years?: number; // with unit years
   end: string; // "today", "month", "quarter", "year" (the end of the last one) or YYYY-MM-DD
 }
 
@@ -802,22 +804,41 @@ function rangeEnd(r: SearchRange, today: string): string {
 /** The first and last day a range covers. */
 function searchRange(r: SearchRange, today: string): { from: string; to: string } {
   var to = rangeEnd(r, today);
-  var from = r.unit === "days" ? addDays(to, -(Math.max(1, Math.round(r.days)) - 1)) : periodStart(to, r.unit);
+  var from =
+    r.unit === "all"
+      ? ""
+      : r.unit === "days"
+        ? addDays(to, -(Math.max(1, Math.round(r.days)) - 1))
+        : r.unit === "years"
+          ? shiftPeriod(to.slice(0, 7), -12 * rangeYears(r) + 1) + "-01"
+          : periodStart(to, r.unit);
   return { from: from, to: to };
+}
+
+function rangeYears(r: SearchRange): number {
+  return Math.max(1, Math.round(r.years || 1));
 }
 
 /** The range one length back (dir -1) or on (dir 1), its end a date; on stops at today. null when on would
  * pass today. */
 function stepRange(r: SearchRange, dir: number, today: string): SearchRange | null {
+  if (r.unit === "all") return null;
   var span = searchRange(r, today);
   var to: string;
   if (dir < 0) to = addDays(span.from, -1);
   else {
     if (span.to >= today) return null;
-    to = r.unit === "days" ? addDays(span.to, Math.max(1, Math.round(r.days))) : periodEnd(addDays(span.to, 1), r.unit);
+    to =
+      r.unit === "days"
+        ? addDays(span.to, Math.max(1, Math.round(r.days)))
+        : r.unit === "years"
+          ? periodEnd(shiftPeriod(span.to.slice(0, 7), 12 * rangeYears(r)) + "-01", "month")
+          : periodEnd(addDays(span.to, 1), r.unit);
     if (to > today) to = today;
   }
-  return { unit: r.unit, days: r.days, end: to === today ? "today" : to };
+  var next: SearchRange = { unit: r.unit, days: r.days, end: to === today ? "today" : to };
+  if (r.years !== undefined) next.years = r.years;
+  return next;
 }
 
 /** A day in words, "Nov 15, 2026", or "Nov 15" without its year: how every page says a day in a sentence. */
@@ -838,12 +859,10 @@ function rangeSpan(from: string, to: string): string {
 function rangeLabel(r: SearchRange, today: string): { label: string; span: string } {
   var s = searchRange(r, today);
   var label: string;
-  if (r.unit === "days")
-    label =
-      Math.round(r.days) +
-      (Math.round(r.days) === 1 ? " day" : " days") +
-      " ending " +
-      (s.to === today ? "today" : dayWords(s.to));
+  var ending = " ending " + (s.to === today ? "today" : dayWords(s.to));
+  if (r.unit === "all") return { label: "All time", span: "Every day up to " + dayWords(s.to) };
+  if (r.unit === "days") label = Math.round(r.days) + (Math.round(r.days) === 1 ? " day" : " days") + ending;
+  else if (r.unit === "years") label = rangeYears(r) + (rangeYears(r) === 1 ? " year" : " years") + ending;
   else {
     var y = s.to.slice(0, 4);
     var name =

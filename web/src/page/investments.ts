@@ -599,18 +599,12 @@ function drawInvestments() {
 // Over time: any line the model offers (totals, an owner, a tax bucket, an account), up to eight at once. Each
 // chosen line keeps its color while it stays chosen, so taking one off doesn't repaint the rest.
 var overTime: Record<string, number> | null = null, // each chosen line's series number, by key
-  overRange = "all";
+  overRange: SearchRange = { unit: "all", days: 0, end: "today" };
 var OVER_GROUPS: string[][] = [
   ["total", "Totals"],
   ["owner", "By owner"],
   ["bucket", "By tax treatment"],
   ["account", "Accounts"],
-];
-var OVER_RANGES: string[][] = [
-  ["all", "All"],
-  ["10", "10 years"],
-  ["5", "5 years"],
-  ["1", "1 year"],
 ];
 var OVER_MAX = 8;
 
@@ -660,31 +654,18 @@ function fillOverTime(body: HTMLElement, d: WealthPage) {
   var chosen = Object.keys(overTime!).sort(function (a, b) {
     return overTime![a] - overTime![b];
   });
-  var from = "";
-  if (overRange !== "all") {
-    var cut = new Date(d.asOf + "T00:00:00");
-    cut.setFullYear(cut.getFullYear() - Number(overRange));
-    from = cut.toISOString().slice(0, 10);
-  }
+  var span = searchRange(overRange, d.asOf);
   var inRange = function (l: ValueLine) {
     return l.points.filter(function (p) {
-      return p[0] >= from;
+      return p[0] >= span.from && p[0] <= span.to;
     });
   };
 
   var bar = el("div", null, "r-toolbar over-bar");
-  var seg = el("div", null, "segmented");
-  seg.setAttribute("role", "group");
-  seg.setAttribute("aria-label", "How far back");
-  OVER_RANGES.forEach(function (r) {
-    var b = button(r[1], function () {
-      overRange = r[0];
-      refreshOverTime();
-    });
-    b.setAttribute("aria-pressed", String(overRange === r[0]));
-    seg.appendChild(b);
+  rangeChip(bar, overRange, d.asOf, { years: [1, 2, 5, 10], allTime: true }, function (r) {
+    overRange = r;
+    refreshOverTime();
   });
-  bar.appendChild(seg);
   if (chosen.length)
     bar.appendChild(
       button("Clear", function () {

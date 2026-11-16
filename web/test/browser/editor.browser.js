@@ -935,10 +935,10 @@ test("the budget compares any period with another, and a line's target can come 
   await page.waitForSelector("table.bv tr.unplanned-item:has-text('media')");
   await page.click(".bv-controls button:has-text('Year')");
   const year = String(new Date().getFullYear());
-  assert.equal(await page.inputValue(".bv-picker select"), year);
+  assert.equal(await page.getAttribute(".bv-picker", "data-period"), year);
   assert.equal(await page.inputValue(".bv-compare select"), String(Number(year) - 1));
   await page.click(".bv-controls button:has-text('Quarter')");
-  assert.match(await page.inputValue(".bv-picker select"), /^\d{4}-Q[1-4]$/);
+  assert.match(await page.getAttribute(".bv-picker", "data-period"), /^\d{4}-Q[1-4]$/);
   await page.click("table.bv tr.line:has-text('food')");
   await page.waitForSelector(".drawer svg.history");
   await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
@@ -1175,9 +1175,9 @@ test("on a phone the page leads with the answer: cards, the period's judgment un
   assert.equal(await page.getAttribute(".layout-switch button:has-text('Cards')", "aria-pressed"), "true");
   // the lens and the period share one row, the month short, the comparison in a few words
   const lens = await page.locator(".bv-controls .segmented").boundingBox();
-  const period = await page.locator(".bv-picker select").boundingBox();
+  const period = await page.locator(".bv-picker .search-datechip").boundingBox();
   assert.equal(Math.round(lens.y + lens.height / 2), Math.round(period.y + period.height / 2));
-  assert.match(await page.$eval(".bv-picker select", (s) => s.selectedOptions[0].textContent), /^[A-Z][a-z]{2} \d{4}$/);
+  assert.match(await page.textContent(".bv-picker .search-datechip .dl span:first-child"), /^[A-Z][a-z]{2} \d{4}$/);
   assert.match(await page.textContent(".bv-compare-menu summary"), /^Against /);
   assert.equal(await page.isVisible(".a2-sub"), true);
   assert.equal(await page.isVisible(".a2-card .a2-small"), false);
@@ -1970,8 +1970,11 @@ test("investments: over time draws any lines chosen, each keeping its color, up 
   for (const n of [0, 1, 2, 4, 5, 6]) await page.click(`#investments-body .line-pick:has-text('acct_${n} ')`);
   assert.equal((await pressed()).length, 8);
   assert.equal(await page.$eval("#investments-body .line-pick:has-text('acct_7')", (b) => b.disabled), true);
-  await page.click("#investments-body .segmented button:has-text('1 year')");
-  assert.equal(await page.$eval("#investments-body .segmented button[aria-pressed='true']", (b) => b.textContent), "1 year");
+  assert.match(await page.textContent("#investments-body .search-datechip"), /^All time/); // where it opens
+  await page.click("#investments-body .search-datechip");
+  await page.click("#investments-body .search-dmenu button.row:has-text('1 year')");
+  await page.click("#investments-body .search-dmenu button:text-is('Apply')");
+  assert.match(await page.textContent("#investments-body .search-datechip"), /^1 year ending /);
   await page.click("#investments-body .subtabs button:has-text('Overview')");
   assert.equal(await page.$$eval("#investments-body svg.w-chart, #investments-body .line-picks", (x) => x.length), 0);
   assert.deepEqual(page.errors, []);
@@ -2437,8 +2440,8 @@ test("where money went opens its lines, from the table or the chart, each with i
 test("a year's monthly average opens the year's lines and says so", async () => {
   const page = await open(SANKEY + FLOWS);
   await page.click("#view-flows");
-  await page.waitForSelector("#period option", { state: "attached" });
-  await page.selectOption("#period", "2001 monthly average");
+  await page.click("#period .search-datechip"); // the chip, its menu a column per kind of period
+  await page.click("#period .search-dmenu button[data-period='2001 monthly average']");
   await page.click("#flows-tabs button[data-tab='table']");
   await page.click(".flow-column.went li.opens:has-text('food')");
   await page.waitForSelector(".drawer .line-list");
@@ -2636,7 +2639,9 @@ test("performance: ten years of a household's spending draws and redraws quickly
   // spending over time: ten years of months, all eight groups, and a group opened into its categories
   await page.click("#view-flows");
   await page.click("#flows-tabs button:has-text('Over time')");
-  await page.click("#flows-overtime button:has-text('All time')");
+  await page.click("#flows-overtime .search-datechip");
+  await page.click("#flows-overtime .search-dmenu button.row:has-text('All time')");
+  await page.click("#flows-overtime .search-dmenu button:text-is('Apply')");
   await page.waitForSelector("#flows-overtime .spend-bars");
   const overTime = await page.evaluate(() => {
     const t0 = performance.now();
@@ -3468,7 +3473,7 @@ test("over time: each month's spending stacked by group, as dollars or shares, o
   assert.deepEqual(await legend(), ["Living", "Car"]); // the hobby's only spending was a one-off
   // shares: every bar reaches 100%, and the axis says so
   await page.click("#flows-overtime button:has-text('Percent')");
-  assert.match(await page.textContent("#flows-overtime svg"), /100%/);
+  assert.match(await page.textContent("#flows-overtime .spend-plot svg"), /100%/);
   // a group's bar opens its categories; picking draws them, the rest folding into Other
   await foot(5);
   assert.equal(await page.inputValue("#flows-overtime .spend-bar select"), "living");

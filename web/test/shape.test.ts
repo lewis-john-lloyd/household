@@ -1343,6 +1343,17 @@ test("a search's dates are a length and the day it ends, stepped back and on by 
   assert.deepEqual(shape.stepRange(r("month", "2026-10-31"), 1, today), r("month", "today")); // November so far
   assert.deepEqual(shape.stepRange(r("month", "2024-02-29"), -1, today), r("month", "2024-01-31"));
   assert.deepEqual(shape.stepRange(r("quarter", "quarter"), 1, today), r("quarter", "today"));
+  // years are whole months, the end's and those before it; all time has no first day and no steps
+  const yrs = (end: string, years = 2): SearchRange => ({ unit: "years", days: 0, years, end });
+  assert.deepEqual(shape.searchRange(yrs("today"), today), { from: "2024-12-01", to: "2026-11-15" });
+  assert.equal(shape.rangeLabel(yrs("today", 1), today).label, "1 year ending today");
+  assert.deepEqual(shape.stepRange(yrs("today"), -1, today), yrs("2024-11-30"));
+  assert.deepEqual(shape.searchRange(yrs("2024-11-30"), today), { from: "2022-12-01", to: "2024-11-30" });
+  assert.deepEqual(shape.stepRange(yrs("2024-11-30"), 1, today), yrs("today"));
+  const all: SearchRange = { unit: "all", days: 0, end: "today" };
+  assert.deepEqual(shape.searchRange(all, today), { from: "", to: "2026-11-15" });
+  assert.equal(shape.stepRange(all, -1, today), null);
+  assert.deepEqual(shape.rangeLabel(all, today), { label: "All time", span: "Every day up to Nov 15, 2026" });
 });
 
 test("an amount typed in the search bar: exactly, at least, at most or between", () => {

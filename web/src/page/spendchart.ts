@@ -535,6 +535,7 @@ function openSpendLines(category: string, month: string, amount: number) {
       "text",
     ),
   );
+  d.appendChild(searchLink("category", category, days[0], days[1]));
   var box = el("div", "Loading…", "drawer-section support");
   box.id = "spend-lines";
   d.appendChild(box);

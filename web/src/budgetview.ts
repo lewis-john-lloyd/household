@@ -1043,16 +1043,34 @@ function searchLines(n: number, net: number) {
   );
 }
 
-/** The options for what is typed in the search bar, with the field already chosen (draft) or none; "field: text"
+/** What a query bar suggests from: its fields, the values a field holds among the rows (those holding text, the
+ * most common first, each with words on how many: [value, count, words]), the fields any text looks in, and the
+ * fields whose values are offered with nothing chosen. */
+interface Suggesting {
+  fields: SearchBarField[];
+  values: (field: string, text: string, most: number) => [string, number, string][];
+  anyIn: string;
+  valueFields: string[];
+}
+
+/** The options for what is typed in a query bar, with the field already chosen (draft) or none; "field: text"
  * typed chooses the field too. */
-function searchSuggest(text: string, draft: string, lines: SearchLine[], groups: Record<string, string>): SearchOption[] {
+function suggest(text: string, draft: string, from: Suggesting): SearchOption[] {
   var out: SearchOption[] = [];
   var typed = text.trim();
+  var fieldOf = function (name: string) {
+    var n = name.trim().toLowerCase();
+    return (
+      from.fields.filter(function (f) {
+        return f.key.toLowerCase() === n || f.label.toLowerCase() === n;
+      })[0] || null
+    );
+  };
   if (!draft) {
     var m = /^([A-Za-z][A-Za-z' ]*?)\s*:\s*(.*)$/.exec(typed);
-    if (m && searchBarField(m[1])) return searchSuggest(m[2], searchBarField(m[1])!.key, lines, groups);
+    if (m && fieldOf(m[1])) return suggest(m[2], fieldOf(m[1])!.key, from);
   }
-  var f = draft ? searchBarField(draft) : null;
+  var f = draft ? fieldOf(draft) : null;
   if (f) {
     if (f.kind === "text") {
       if (typed)
@@ -1063,13 +1081,13 @@ function searchSuggest(text: string, draft: string, lines: SearchLine[], groups:
           label: f.label + " holds " + typed,
           detail: "A pattern: any " + f.label.toLowerCase() + " with it in it",
         });
-      searchValues(lines, f.key, groups, typed, 8).forEach(function (v) {
+      from.values(f.key, typed, 8).forEach(function (v) {
         out.push({
           kind: "value",
           field: f!.key,
           value: "^" + searchEscape(v[0]) + "$",
           label: v[0],
-          detail: searchLines(v[1], v[2]),
+          detail: v[2],
         });
       });
     } else if (f.kind === "amount") {
@@ -1077,10 +1095,11 @@ function searchSuggest(text: string, draft: string, lines: SearchLine[], groups:
       if (a)
         out.push({
           kind: "amount",
-          field: "amount",
+          field: f.key,
           value: typed,
           label:
-            "Amount " +
+            f.label +
+            " " +
             (a.min !== null && a.max !== null
               ? a.min === a.max
                 ? "of " + a.min
@@ -1113,17 +1132,17 @@ function searchSuggest(text: string, draft: string, lines: SearchLine[], groups:
       field: "",
       value: typed,
       label: "Any text holds " + typed,
-      detail: "Payee, bank's text, note, items bought, category",
+      detail: from.anyIn,
     });
   var t = typed.toLowerCase();
-  SEARCH_BAR_FIELDS.forEach(function (bf) {
+  from.fields.forEach(function (bf) {
     if (!t || bf.label.toLowerCase().indexOf(t) >= 0 || bf.key.toLowerCase().indexOf(t) >= 0)
       out.push({ kind: "field", field: bf.key, value: "", label: bf.label, detail: bf.hint });
   });
   if (typed.length >= 2) {
-    var found: [string, string, number, number][] = [];
-    ["payee", "category", "key", "account", "recurring"].forEach(function (field) {
-      searchValues(lines, field, groups, typed, 5).forEach(function (v) {
+    var found: [string, string, number, string][] = [];
+    from.valueFields.forEach(function (field) {
+      from.values(field, typed, 5).forEach(function (v) {
         found.push([field, v[0], v[1], v[2]]);
       });
     });
@@ -1137,12 +1156,26 @@ function searchSuggest(text: string, draft: string, lines: SearchLine[], groups:
           kind: "value",
           field: v[0],
           value: "^" + searchEscape(v[1]) + "$",
-          label: searchBarField(v[0])!.label + " is " + v[1],
-          detail: searchLines(v[2], v[3]),
+          label: fieldOf(v[0])!.label + " is " + v[1],
+          detail: v[3],
         });
       });
   }
   return out;
+}
+
+/** Search's suggestions: its fields over the lines in its dates. */
+function searchSuggest(text: string, draft: string, lines: SearchLine[], groups: Record<string, string>): SearchOption[] {
+  return suggest(text, draft, {
+    fields: SEARCH_BAR_FIELDS,
+    values: function (field, typed, most) {
+      return searchValues(lines, field, groups, typed, most).map(function (v) {
+        return [v[0], v[1], searchLines(v[1], v[2])] as [string, number, string];
+      });
+    },
+    anyIn: "Payee, bank's text, note, items bought, category",
+    valueFields: ["payee", "category", "key", "account", "recurring"],
+  });
 }
 
 interface SearchGroup {

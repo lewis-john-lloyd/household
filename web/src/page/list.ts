@@ -45,6 +45,60 @@ interface MasterDetail<T> {
   none?: string;
   /** The chosen item's editor stays over the list on a phone as the part draws (an answer moved on to it). */
   open?: boolean;
+  /** The fields a long list is found by, as Search's bar: typed, chosen as chips, one of them to group by. */
+  fields?: ListField<T>[];
+  /** An item in words, one and many ("question", "questions"), for the bar's counts. */
+  unit?: [string, string];
+}
+
+/** A field of a list's items, for the query bar: as Search's fields, with an item's value. */
+interface ListField<T> extends SearchBarField {
+  of: (item: T) => string;
+}
+
+/** A filter in a list's bar: a pattern on a field ("" for any text), an amount's bounds, or a choice. */
+interface ListFilter {
+  field: string;
+  kind: SearchOption["kind"];
+  value: string;
+  min?: number | null | undefined;
+  max?: number | null | undefined;
+  text: string; // the chip's words
+  shown: string; // the chip's value
+}
+
+// what each part's bar holds, kept across its redraws (an answer redraws the part)
+var listQueries: Record<string, { filters: ListFilter[]; groupBy: string; draft: string; typed: string }> = {};
+
+/** Whether an item passes a list's filters. */
+function listMatches<T>(item: T, filters: ListFilter[], fields: ListField<T>[]): boolean {
+  var test = function (pattern: string, v: string) {
+    try {
+      return new RegExp(pattern, "i").test(v);
+    } catch (e) {
+      return v.toLowerCase().indexOf(pattern.toLowerCase()) >= 0; // half typed: as plain text
+    }
+  };
+  return filters.every(function (f) {
+    if (f.kind === "any")
+      return fields.some(function (lf) {
+        return lf.kind === "text" && test(f.value, lf.of(item));
+      });
+    var field = fields.filter(function (lf) {
+      return lf.key === f.field;
+    })[0];
+    if (!field) return true;
+    var v = field.of(item);
+    if (f.kind === "amount") {
+      var n = Math.abs(Number(v) || 0);
+      return (
+        (f.min === null || f.min === undefined || n >= f.min - 0.005) &&
+        (f.max === null || f.max === undefined || n <= f.max + 0.005)
+      );
+    }
+    if (f.kind === "choice") return v === f.value;
+    return test(f.value, v);
+  });
 }
 
 function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
@@ -54,9 +108,12 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
   var head = el("div", null, "md-head");
   var count = el("div", null, "md-count");
   head.appendChild(count);
+  var unit = opts.unit || ["item", "items"];
+  var fields = opts.fields || null;
+  var query = fields ? listQueries[editTab] || (listQueries[editTab] = { filters: [], groupBy: "", draft: "", typed: "" }) : null;
   var filter = textInput("", "md-filter", "Filter");
   filter.setAttribute("aria-label", "Filter the list");
-  if (opts.items.length > 8) head.appendChild(filter);
+  if (opts.items.length > 8 && !fields) head.appendChild(filter);
   side.appendChild(head);
   if (opts.add) {
     var adds = el("div", null, "actions md-adds");
@@ -78,14 +135,8 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
     side.appendChild(adds);
   }
   var list = el("ul", null, "md-items");
-  var rows: { item: T; li: HTMLElement; row: HTMLButtonElement; text: string }[] = [];
-  var lastSection: string | null = null;
+  var rows: { item: T; li: HTMLElement; row: HTMLButtonElement; text: string; section: string }[] = [];
   opts.items.forEach(function (item) {
-    var name = opts.section ? opts.section(item) : null;
-    if (name && name !== lastSection) {
-      list.appendChild(el("li", name, "md-section"));
-      lastSection = name;
-    }
     var li = el("li");
     var row = button(
       "",
@@ -102,10 +153,75 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
     var said = opts.staged ? opts.staged(item) : "";
     if (said) row.appendChild(el("span", said, "md-staged"));
     li.appendChild(row);
-    list.appendChild(li);
-    rows.push({ item: item, li: li, row: row, text: (opts.title(item) + " " + sub).toLowerCase() });
+    rows.push({
+      item: item,
+      li: li,
+      row: row,
+      text: (opts.title(item) + " " + sub).toLowerCase(),
+      section: opts.section ? opts.section(item) : "",
+    });
   });
   side.appendChild(list);
+  var amountField = fields
+    ? fields.filter(function (f) {
+        return f.kind === "amount";
+      })[0]
+    : undefined;
+  var counting = function (n: number) {
+    return n.toLocaleString() + " " + (n === 1 ? unit[0] : unit[1]);
+  };
+  // the rows in their sections (or, grouped, a section per value with its count and sum), those filtered out hidden
+  function layout() {
+    list.textContent = "";
+    var grouped = query && query.groupBy ? fieldOfList(query.groupBy) : null;
+    var order = rows;
+    var names: Record<string, string> = {};
+    if (grouped) {
+      var tally: Record<string, [number, number]> = {};
+      rows.forEach(function (r) {
+        var k = grouped!.of(r.item);
+        var t = tally[k] || (tally[k] = [0, 0]);
+        if (r.li.hidden) return;
+        t[0]++;
+        t[1] += amountField ? Number(amountField.of(r.item)) || 0 : 0;
+      });
+      Object.keys(tally).forEach(function (k) {
+        var choice = (grouped!.choices || []).filter(function (c) {
+          return c[0] === k;
+        })[0];
+        var said = k ? (choice ? choice[1] : isNamed(grouped!) ? pretty(k) : k) : "No " + grouped!.label.toLowerCase();
+        names[k] = said + ": " + counting(tally[k][0]) + (amountField ? ", " + cents.format(tally[k][1]) : "");
+      });
+      order = rows.slice().sort(function (a, b) {
+        var x = grouped!.of(a.item),
+          y = grouped!.of(b.item);
+        return tally[y][0] - tally[x][0] || (x < y ? -1 : x > y ? 1 : 0);
+      });
+    }
+    var last: string | null = null;
+    var sec: HTMLElement | null = null;
+    order.forEach(function (r) {
+      var name = grouped ? names[grouped.of(r.item)] : r.section;
+      if (name && name !== last) {
+        sec = el("li", name, "md-section");
+        sec.hidden = true;
+        list.appendChild(sec);
+        last = name;
+      }
+      if (sec && !r.li.hidden) sec.hidden = false;
+      list.appendChild(r.li);
+    });
+  }
+  function fieldOfList(key: string) {
+    return (
+      fields!.filter(function (f) {
+        return f.key === key;
+      })[0] || null
+    );
+  }
+  function isNamed(f: ListField<T>) {
+    return f.key === "guess" || f.key === "category" || f.key === "group";
+  }
   function counted() {
     var shown = rows.filter(function (r) {
       return !r.li.hidden;
@@ -113,22 +229,133 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
     count.textContent =
       (shown === rows.length ? "" : shown.toLocaleString() + " of ") + rows.length.toLocaleString() + " " + opts.noun;
   }
+  function refilter() {
+    rows.forEach(function (r) {
+      r.li.hidden = query ? !listMatches(r.item, query.filters, fields!) : false;
+    });
+    layout();
+    counted();
+  }
   filter.oninput = function () {
     var q = filter.value.trim().toLowerCase();
     rows.forEach(function (r) {
       r.li.hidden = !!q && r.text.indexOf(q) < 0;
     });
-    list.querySelectorAll<HTMLElement>(".md-section").forEach(function (s) {
-      var next = s.nextElementSibling as HTMLElement | null,
-        any = false;
-      while (next && !next.classList.contains("md-section")) {
-        if (!next.hidden) any = true;
-        next = next.nextElementSibling as HTMLElement | null;
-      }
-      s.hidden = !any;
-    });
+    layout();
     counted();
   };
+  if (fields && query && (opts.items.length > 8 || query.filters.length || query.groupBy)) {
+    var q = query;
+    var bar = queryBar(head, {
+      menuId: "list-menu",
+      ariaLabel: "Find in the list",
+      empty: "Find: a word, or a field such as " + fields[0].label.toLowerCase(),
+      fields: fields,
+      named: fields.filter(isNamed).map(function (f) {
+        return f.key;
+      }),
+      state: q,
+      suggest: function (text, draft) {
+        return suggest(text, draft, {
+          fields: fields!,
+          values: function (field, typed, most) {
+            var f = fieldOfList(field);
+            if (!f) return [];
+            var n: Record<string, number> = {};
+            var t = typed.trim().toLowerCase();
+            rows.forEach(function (r) {
+              var v = f!.of(r.item);
+              if (v && (!t || v.toLowerCase().indexOf(t) >= 0)) n[v] = (n[v] || 0) + 1;
+            });
+            return Object.keys(n)
+              .sort(function (a, b) {
+                return n[b] - n[a] || (a < b ? -1 : 1);
+              })
+              .slice(0, most)
+              .map(function (v) {
+                return [v, n[v], counting(n[v])] as [string, number, string];
+              });
+          },
+          anyIn: fields!
+            .filter(function (f) {
+              return f.kind === "text";
+            })
+            .map(function (f) {
+              return f.label;
+            })
+            .join(", "),
+          valueFields: fields!
+            .filter(function (f) {
+              return f.kind === "text";
+            })
+            .map(function (f) {
+              return f.key;
+            }),
+        });
+      },
+      chips: function () {
+        var shown: BarChip[] = q.filters.map(function (f, i) {
+          return {
+            text: f.text,
+            value: f.shown,
+            cls: "",
+            remove: function () {
+              q.filters.splice(i, 1);
+              changed();
+            },
+          };
+        });
+        if (q.groupBy)
+          shown.push({
+            text: "Grouped by " + (fieldOfList(q.groupBy) || { label: q.groupBy }).label.toLowerCase(),
+            value: "",
+            cls: "group",
+            remove: function () {
+              q.groupBy = "";
+              changed();
+            },
+          });
+        return shown;
+      },
+      choose: function (o, group) {
+        if (o.kind === "group" || (o.kind === "field" && group)) q.groupBy = o.field;
+        else {
+          var f = fieldOfList(o.field);
+          var name = o.kind === "any" ? "Any text" : f ? f.label : o.field;
+          var shown =
+            o.kind === "amount"
+              ? o.label.slice(name.length + 1)
+              : o.kind === "choice"
+                ? o.label.slice(name.length + 2)
+                : o.kind === "value"
+                  ? f && isNamed(f)
+                    ? pretty(o.label.replace(/^.* is /, ""))
+                    : o.label.replace(/^.* is /, "")
+                  : o.value;
+          q.filters = q.filters
+            .filter(function (x) {
+              return x.field !== o.field || o.kind === "any";
+            })
+            .concat([{ field: o.field, kind: o.kind, value: o.value, min: o.min, max: o.max, text: name, shown: shown }]);
+        }
+        changed();
+      },
+      dropLast: function () {
+        if (q.groupBy) q.groupBy = "";
+        else if (q.filters.length) q.filters.pop();
+        else return false;
+        changed();
+        return true;
+      },
+    });
+    var changed = function () {
+      refilter();
+      bar.drawChips();
+      bar.drawMenu();
+    };
+    bar.drawChips();
+  }
+  refilter();
   function mark() {
     rows.forEach(function (r) {
       r.row.setAttribute("aria-current", String(opts.key(r.item) === selected[editTab]));

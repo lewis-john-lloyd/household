@@ -227,6 +227,7 @@ function openFlowLines(name: string, amount: number) {
     );
     d.insertBefore(link, box);
   }
+  d.insertBefore(searchLink(byGroup ? "group" : "category", name, days[0], days[1]), box);
   cachedCall(
     "getLines",
     [days[0], days[1], byGroup ? [] : [name], byGroup ? [name] : []],

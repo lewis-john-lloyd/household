@@ -803,6 +803,55 @@ test("review: a single line is answered without the server, and lines that read 
   await page.close();
 });
 
+test("review: a long queue is found by its fields as chips, and grouped by the guess", async () => {
+  // ten made-up questions: six single lines guessed kids, four merchants guessed food
+  const rows = [];
+  for (let i = 0; i < 6; i++)
+    rows.push(
+      `{ key: 't${i}', kind: 'line', lines: '1', total: '-${10 + i}', first: '2001-02-0${i + 1}', last: '', accounts: 'checking', ` +
+        `example: 'PAY APP PAYMENT ${i}', guess: 'kids', guessed_by: 'pay app', confidence: '0.6', note: '' }`,
+    );
+  for (const m of ["ACME GROCER", "BLUE PUMP FUEL", "PAGE TURNER BOOKS", "WILLOW ST"])
+    rows.push(
+      `{ key: '${m}', kind: 'payee', lines: '2', total: '-40', first: '2001-02-01', last: '2001-02-09', accounts: 'card', ` +
+        `example: '${m} 1', guess: 'food', guessed_by: 'model', confidence: '0.9', note: '' }`,
+    );
+  const page = await open(QUESTIONS + `window.__answers.getEditor.review = [${rows.join(",")}];`);
+  await page.waitForSelector("#edit:not([hidden]) .md-list .search-bar");
+  assert.equal(await page.textContent(".md-count"), "10 questions");
+  const shown = () => page.$$eval(".md-items li:not([hidden]) .md-title", (t) => t.map((x) => x.textContent));
+  // a field and its value typed together; the guess offered as the pages name it
+  await page.fill(".md-head input.search-input", "guess: kids");
+  assert.match(await page.textContent("#list-menu"), /Guess holds kids/);
+  await page.keyboard.press("Enter");
+  assert.deepEqual(await page.$$eval(".md-head .search-chips .fchip", (c) => c.map((x) => x.textContent)), ["Guesskids"]);
+  assert.equal(await page.textContent(".md-count"), "6 of 10 questions");
+  assert.equal((await shown()).length, 6);
+  // an amount: at least 14 dollars, in or out
+  await page.fill(".md-head input.search-input", "amount: >14");
+  await page.keyboard.press("Enter");
+  assert.deepEqual(await shown(), ["PAY APP PAYMENT 4", "PAY APP PAYMENT 5"]);
+  // Backspace in the empty box drops the last chip, then the next
+  await page.keyboard.press("Backspace");
+  assert.equal(await page.textContent(".md-count"), "6 of 10 questions");
+  await page.keyboard.press("Backspace");
+  assert.equal(await page.textContent(".md-count"), "10 questions");
+  // grouped by the guess: a section per category, the biggest first, with its count and sum
+  await page.fill(".md-head input.search-input", "guess");
+  await page.keyboard.press("ArrowDown"); // past "any text holds guess" to the field
+  await page.keyboard.press("Shift+Enter");
+  assert.deepEqual(await page.$$eval(".md-items .md-section:not([hidden])", (s) => s.map((x) => x.textContent)), [
+    "Kids: 6 questions, -$75.00", // leak-guard: allow (made up)
+    "Food: 4 questions, -$160.00", // leak-guard: allow (made up)
+  ]);
+  // an answer redraws the list; what the bar holds stays
+  await page.click(".md-row:has-text('ACME GROCER')");
+  await page.click(".md-detail button:text-is('Keep')");
+  assert.equal(await page.locator(".md-head .fchip.group").count(), 1);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("review: after the last answer it says so, and on a phone the next question stays open", async () => {
   const page = await open(QUESTIONS);
   await page.setViewportSize({ width: 390, height: 800 });
@@ -2405,7 +2454,11 @@ const FLOWS =
   "  { category: 'household', group: 'home', priority: 'medium' }];";
 
 test("where money went opens its lines, from the table or the chart, each with its fixes", async () => {
-  const page = await open(SANKEY + FLOWS);
+  const page = await open(
+    SANKEY +
+      FLOWS +
+      "window.__answers.getSearch = { lines: [], groups: { food: 'food' }, categories: ['food'], charges: [], ascribed: true };",
+  );
   await page.click("#view-flows");
   await page.click("#flows-tabs button[data-tab='table']");
   await page.waitForSelector(".flow-column.went li.opens");
@@ -2433,6 +2486,11 @@ test("where money went opens its lines, from the table or the chart, each with i
   });
   await page.waitForSelector(".drawer .line-list tr[data-txn='t1']");
   assert.equal(await page.evaluate(() => window.__calls.filter((c) => c.name === "getLines").length), 1); // cached
+  // the same lines in Search, to group, total or change together: the group and the month as chips
+  await page.click(".drawer button:has-text('Find these lines in Search')");
+  await page.waitForSelector("#flows-search:not([hidden]) .search-chips .fchip");
+  assert.deepEqual(await page.$$eval("#flows-search .search-chips .fchip", (c) => c.map((x) => x.textContent)), ["Group^food$"]);
+  assert.match(await page.textContent("#flows-search .search-datechip"), /^October 2001/);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

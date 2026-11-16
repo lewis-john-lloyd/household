@@ -499,9 +499,11 @@
       .fchip.group { background: var(--success-container); border-color: transparent; }
       .fchip.group .k { color: var(--on-success-container); }
       .fchip.draft { padding: 0 12px; border: 1px dashed var(--primary); background: transparent; color: var(--on-surface-variant); }
-      .search-top button.x, .search-card button.x { display: inline-grid; place-items: center; width: 28px; height: 28px; min-height: 0; padding: 0; border-radius: 14px; background: transparent; color: inherit; }
-      .search-top button.x:hover, .search-card button.x:hover { background: var(--surface-high); }
-      .search-top button.x svg.icon, .search-card button.x svg.icon { width: 16px; height: 16px; fill: currentColor; }
+      .search-bar button.x, .search-card button.x { display: inline-grid; place-items: center; width: 28px; height: 28px; min-height: 0; padding: 0; border-radius: 14px; background: transparent; color: inherit; }
+      .fchip button.x { width: 26px; height: 26px; }
+      .md-head .search-bar { flex: none; width: 100%; min-height: 44px; margin-top: 8px; }
+      .search-bar button.x:hover, .search-card button.x:hover { background: var(--surface-high); }
+      .search-bar button.x svg.icon, .search-card button.x svg.icon { width: 16px; height: 16px; fill: currentColor; }
       input.search-input, input.search-input:focus { flex: 1 1 160px; min-width: 120px; min-height: 0; height: 36px; padding: 0; font-size: 16px; background: transparent; border: 0; outline: 0; }
       .search-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5; max-height: 60vh; overflow-y: auto; background: var(--surface-high); border-radius: 16px; box-shadow: 0 8px 24px var(--shadow); padding: 8px 0; }
       .search-menu .sec { font-size: 12px; color: var(--on-surface-variant); padding: 10px 20px 4px; }

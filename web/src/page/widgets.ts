@@ -466,6 +466,254 @@ function periodChip(
   );
 }
 
+/** A chip in a query bar: what it filters or groups by, the value, a class ("" or "group"), and what removing it
+ * and choosing it do. */
+interface BarChip {
+  text: string;
+  value: string;
+  cls: string;
+  remove: () => void;
+  focus?: () => void;
+}
+
+/** A query bar's list: its fields, how it suggests for what is typed, the chips in force, and what choosing an
+ * option or dropping the last chip does (each redraws what it filters, then the bar's chips). */
+interface QueryBarOptions {
+  menuId: string;
+  ariaLabel: string;
+  empty: string; // the box's words with nothing in force
+  fields: SearchBarField[];
+  named: string[]; // fields whose values are categories or groups, shown as the pages name them
+  state: { draft: string; typed: string }; // the field waiting for its value, and what is typed
+  suggest: (text: string, draft: string) => SearchOption[];
+  chips: () => BarChip[];
+  choose: (o: SearchOption, group: boolean) => void;
+  dropLast: () => boolean; // false when there was nothing to drop
+}
+
+// The query bar Search and the lists share: the filters in force as chips, and a box that offers fields, values
+// and grouping as you type. Choosing a field waits for its value (a draft chip); anything else is the owner's.
+function queryBar(parent: HTMLElement, o: QueryBarOptions) {
+  var bar = el("div", null, "search-bar");
+  parent.appendChild(bar);
+  bar.appendChild(icon("search"));
+  var chips = el("div", null, "search-chips");
+  bar.appendChild(chips);
+  var draftChip = el("span", null, "fchip draft");
+  var input = textInput(o.state.typed, "search-input", o.empty);
+  input.type = "search";
+  input.spellcheck = false;
+  input.autocomplete = "off";
+  input.setAttribute("aria-label", o.ariaLabel);
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-controls", o.menuId);
+  input.setAttribute("aria-expanded", "false");
+  bar.appendChild(draftChip);
+  bar.appendChild(input);
+  var menu = el("div", null, "search-menu");
+  menu.id = o.menuId;
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  bar.appendChild(menu);
+  var options: SearchOption[] = [];
+  var hi = 0;
+  // the menu shows while something is typed or a field waits for its value, or when asked for (a click, Down)
+  var wanted = false;
+  var fieldOf = function (key: string) {
+    return (
+      o.fields.filter(function (f) {
+        return f.key === key;
+      })[0] || null
+    );
+  };
+  var label = function (field: string) {
+    return field === "any" ? "Any text" : (fieldOf(field) || { label: field }).label;
+  };
+  var groups = o.fields.some(function (f) {
+    return f.group;
+  });
+
+  var drawChips = function () {
+    chips.textContent = "";
+    var shown = o.chips();
+    shown.forEach(function (c) {
+      var chip = el("span", null, "fchip " + c.cls);
+      var body = button(
+        "",
+        c.focus ||
+          function () {
+            input.focus();
+          },
+        "fchip-body",
+      );
+      body.appendChild(el("span", c.text, "k"));
+      if (c.value) body.appendChild(el("span", c.value, "v"));
+      chip.appendChild(body);
+      var x = button(
+        "",
+        function () {
+          c.remove();
+          input.focus();
+        },
+        "x",
+      );
+      x.appendChild(icon("close"));
+      x.setAttribute("aria-label", "Remove " + c.text + (c.value ? " " + c.value : ""));
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+    draftChip.hidden = !o.state.draft;
+    draftChip.textContent = o.state.draft ? label(o.state.draft) : "";
+    input.placeholder = o.state.draft
+      ? (fieldOf(o.state.draft) || { hint: "" }).hint || "a pattern"
+      : shown.length
+        ? "Add a filter" + (groups ? " or a grouping" : "")
+        : o.empty;
+  };
+
+  var drawMenu = function () {
+    options = o.suggest(input.value, o.state.draft);
+    menu.textContent = "";
+    var show = document.activeElement === input && options.length > 0 && (wanted || !!input.value || !!o.state.draft);
+    menu.hidden = !show;
+    input.setAttribute("aria-expanded", String(show));
+    if (!show) return;
+    if (hi >= options.length) hi = 0;
+    var section = "";
+    options.forEach(function (opt, i) {
+      var sec = opt.kind === "field" ? "Fields" : opt.kind === "value" && !o.state.draft ? "Values" : "";
+      if (sec && sec !== section) menu.appendChild(el("div", sec, "sec"));
+      section = sec || section;
+      var row = el("div", null, "opt" + (i === hi ? " hi" : ""));
+      row.id = o.menuId + "-opt-" + i;
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(i === hi));
+      var what = el("div", null, "what");
+      // a category or group offered by itself shows as the pages name it
+      var named = opt.kind === "value" && o.named.indexOf(opt.field) >= 0 && opt.label.indexOf(" is ") < 0;
+      what.appendChild(el("span", named ? pretty(opt.label) : opt.label));
+      if (opt.detail) what.appendChild(el("span", opt.detail));
+      row.appendChild(what);
+      row.onmousedown = function (ev) {
+        ev.preventDefault(); // keep the box focused
+      };
+      row.onclick = function () {
+        choose(opt, false);
+      };
+      var f = opt.kind === "field" ? fieldOf(opt.field) : null;
+      if (f && i === hi) {
+        if (f.kind !== "group") {
+          var filt = button(
+            "Filter",
+            function (ev) {
+              ev.stopPropagation();
+              choose(opt, false);
+            },
+            "act pri",
+          );
+          filt.onmousedown = row.onmousedown;
+          row.appendChild(filt);
+        }
+        if (f.group) {
+          var grp = button(
+            "Group by",
+            function (ev) {
+              ev.stopPropagation();
+              choose(opt, true);
+            },
+            "act",
+          );
+          grp.onmousedown = row.onmousedown;
+          row.appendChild(grp);
+        }
+      }
+      menu.appendChild(row);
+    });
+    input.setAttribute("aria-activedescendant", o.menuId + "-opt-" + hi);
+    var keys = el("div", null, "keys");
+    keys.textContent = o.state.draft
+      ? "Enter keeps the highlighted one; what is typed is a pattern found anywhere, ^ and $ anchor it; Backspace in an empty box drops " +
+        label(o.state.draft)
+      : "Up and down to move, Enter to choose, " +
+        (groups ? "Shift+Enter groups by the field, " : "") +
+        "Backspace in an empty box removes the last chip, Esc closes";
+    menu.appendChild(keys);
+  };
+
+  // a field waits for its value, unless it is grouped by; everything else is the owner's to apply
+  var choose = function (opt: SearchOption, group: boolean) {
+    var f = fieldOf(opt.field);
+    input.value = "";
+    o.state.typed = "";
+    hi = 0;
+    if (opt.kind === "field" && !group && !(f && f.kind === "group")) {
+      o.state.draft = opt.field;
+      wanted = true;
+      drawChips();
+      drawMenu();
+    } else {
+      o.state.draft = "";
+      wanted = false;
+      o.choose(opt, group || opt.kind === "field");
+    }
+    input.focus();
+  };
+
+  input.oninput = function () {
+    o.state.typed = input.value;
+    hi = 0;
+    drawMenu();
+  };
+  input.onclick = function () {
+    wanted = true;
+    drawMenu();
+  };
+  input.onblur = function () {
+    window.setTimeout(function () {
+      if (document.activeElement !== input) {
+        wanted = false;
+        menu.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+      }
+    }, 0);
+  };
+  input.onkeydown = function (ev) {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (menu.hidden) {
+        wanted = true; // Down opens the menu first
+        drawMenu();
+        return;
+      }
+      if (!options.length) return;
+      hi = (hi + (ev.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+      drawMenu();
+      var at = document.getElementById(o.menuId + "-opt-" + hi);
+      if (at) at.scrollIntoView({ block: "nearest" });
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (options[hi]) choose(options[hi], ev.shiftKey);
+    } else if (ev.key === "Escape") {
+      if (!menu.hidden) {
+        wanted = false;
+        menu.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+      } else if (o.state.draft) {
+        o.state.draft = "";
+        drawChips();
+      }
+    } else if (ev.key === "Backspace" && !input.value) {
+      if (o.state.draft) {
+        o.state.draft = "";
+        drawChips();
+        drawMenu();
+      } else o.dropLast();
+    }
+  };
+  return { input: input, drawChips: drawChips, drawMenu: drawMenu };
+}
+
 // A heading that sorts its column. dir is how it sorts now ("asc", "desc", or "" for not by this one),
 // shown by the one arrow every table uses; a click calls pick, which sorts and redraws.
 function sortHead(th: HTMLElement, label: string, dir: string, pick: () => void) {

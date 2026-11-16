@@ -170,7 +170,7 @@ function reviewLast(panel: HTMLElement, done: () => void, where: "list" | "phone
       "text",
     ),
   );
-  if (where === "list") panel.insertBefore(p, panel.querySelector(".md-filter"));
+  if (where === "list") panel.insertBefore(p, panel.querySelector(".md-filter, .search-bar"));
   else panel.appendChild(p);
 }
 
@@ -182,6 +182,63 @@ function reviewKeep(r: Row, edits: { edit: Edit; text: string }[], words: string
   reviewMoveOn(r.key, done);
 }
 
+// What a long review is found by: the merchant, the category guessed, the account, the amount, and the kind of
+// question; grouping by the guess answers a run of alike questions together.
+var REVIEW_FIELDS: ListField<Row>[] = [
+  {
+    key: "merchant",
+    label: "Merchant",
+    hint: "what the bank calls it",
+    kind: "text",
+    of: function (r) {
+      return r.kind === "line" ? r.example : r.key;
+    },
+  },
+  {
+    key: "guess",
+    label: "Guess",
+    hint: "the category guessed",
+    kind: "text",
+    group: true,
+    of: function (r) {
+      return r.guess || "";
+    },
+  },
+  {
+    key: "account",
+    label: "Account",
+    hint: "",
+    kind: "text",
+    group: true,
+    of: function (r) {
+      return r.accounts || "";
+    },
+  },
+  {
+    key: "amount",
+    label: "Amount",
+    hint: "50, >50, <20 or 20..100 dollars, in or out",
+    kind: "amount",
+    of: function (r) {
+      return r.total || "0";
+    },
+  },
+  {
+    key: "kind",
+    label: "Kind",
+    hint: "a merchant or a single line",
+    kind: "choice",
+    group: true,
+    choices: [
+      ["payee", "Merchant"],
+      ["line", "Single line"],
+    ],
+    of: function (r) {
+      return r.kind === "line" ? "line" : "payee";
+    },
+  },
+];
+
 function drawReview(body: HTMLElement) {
   var open = reviewOpen();
   var answered = open.filter(reviewAnswered).length;
@@ -189,7 +246,9 @@ function drawReview(body: HTMLElement) {
   masterDetail(body, {
     items: open,
     noun: "questions" + (answered ? ", " + answered.toLocaleString() + " answered" : ""),
+    unit: ["question", "questions"],
     open: advanced,
+    fields: REVIEW_FIELDS,
     key: function (r) {
       return r.key;
     },
@@ -644,10 +703,48 @@ function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
   );
 }
 
+// What a long list of payee rules is found by.
+var RULE_FIELDS: ListField<Row>[] = [
+  {
+    key: "pattern",
+    label: "Pattern",
+    hint: "what the rule matches",
+    kind: "text",
+    of: function (r) {
+      return r.pattern;
+    },
+  },
+  {
+    key: "category",
+    label: "Category",
+    hint: "",
+    kind: "text",
+    group: true,
+    of: function (r) {
+      return r.category || "";
+    },
+  },
+  {
+    key: "asks",
+    label: "Asks each line",
+    hint: "yes or no",
+    kind: "choice",
+    choices: [
+      ["yes", "Yes"],
+      ["no", "No"],
+    ],
+    of: function (r) {
+      return r.ask === "TRUE" ? "yes" : "no";
+    },
+  },
+];
+
 function drawRules(body: HTMLElement) {
   masterDetail(body, {
     items: editor!.payeeRules,
     noun: "payee rules",
+    unit: ["rule", "rules"],
+    fields: RULE_FIELDS,
     key: function (r) {
       return r.pattern;
     },
@@ -965,10 +1062,53 @@ function subscriptionForm(r: Row | null, done: () => void) {
   return form;
 }
 
+// What a long list of possible duplicates is found by.
+var DUPLICATE_FIELDS: ListField<Row>[] = [
+  {
+    key: "payee",
+    label: "Payee",
+    hint: "",
+    kind: "text",
+    of: function (d) {
+      return d.payee_a;
+    },
+  },
+  {
+    key: "account",
+    label: "Account",
+    hint: "",
+    kind: "text",
+    group: true,
+    of: function (d) {
+      return d.account_id;
+    },
+  },
+  {
+    key: "amount",
+    label: "Amount",
+    hint: "50, >50, <20 or 20..100 dollars, in or out",
+    kind: "amount",
+    of: function (d) {
+      return d.amount || "0";
+    },
+  },
+  {
+    key: "date",
+    label: "Date",
+    hint: "YYYY-MM-DD, or part of one",
+    kind: "text",
+    of: function (d) {
+      return d.date_a + " " + d.date_b;
+    },
+  },
+];
+
 function drawDuplicates(body: HTMLElement) {
   masterDetail(body, {
     items: editor!.duplicates,
     noun: "possible duplicates",
+    unit: ["pair", "pairs"],
+    fields: DUPLICATE_FIELDS,
     key: function (d) {
       return d.txn_a + "|" + d.txn_b;
     },

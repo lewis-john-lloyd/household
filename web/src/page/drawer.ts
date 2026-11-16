@@ -110,6 +110,8 @@ function openLine(category: string, v: BudgetView, only?: string) {
           var draw = function () {
             txns.textContent = "";
             txns.appendChild(lineList(list, draw)); // each line with its fixes (evidence.ts)
+            var days = periodDays(v.period);
+            txns.appendChild(searchLink("category", category, days[0], v.sameWeeks && v.through ? v.through : days[1]));
           };
           draw();
         },

@@ -84,11 +84,15 @@
       .segmented button[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
       .segmented button:hover { box-shadow: none; background: var(--surface-container); }
       .segmented button[aria-pressed="true"]:hover { background: var(--secondary-container); }
-      select, input[type="text"], input[type="date"], input:not([type]) { min-height: 40px; padding: 0 12px;
-        border: 1px solid var(--outline); border-radius: 4px; background: transparent; color: var(--on-surface); font: inherit; }
+      /* every box and dropdown: one rule; a page states only how it differs (a width, monospace), and .dense is
+         the 32px size for inside tables and lists */
+      select, textarea, input[type="text"], input[type="date"], input[type="search"], input[type="number"], input:not([type]) {
+        box-sizing: border-box; min-height: 40px; padding: 0 12px; border: 1px solid var(--outline); border-radius: 4px;
+        background: transparent; color: var(--on-surface); font: inherit; font-weight: 400; }
+      select.dense, input.dense, .dense select, .dense input:not([type="checkbox"]) { min-height: 32px; padding: 0 8px; }
       /* a dropdown's list is drawn by the browser: give it the page's colors, or dark mode shows light text on
          the browser's white list */
-      select { background-color: var(--surface-low) !important; }
+      select { background-color: var(--surface-low); }
       select option, select optgroup { background-color: var(--surface-low); color: var(--on-surface); }
       select option:checked { background-color: var(--secondary-container); color: var(--on-secondary-container); }
       select:focus, input:focus { outline: none; border: 2px solid var(--primary); padding: 0 11px; }
@@ -357,7 +361,7 @@
       .editor-section > .support { margin: 2px 0 4px; }
       ul.bought { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
       ul.bought li { display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center; }
-      ul.bought select { min-height: 32px; padding: 0 8px; }
+      ul.bought select { min-height: 32px; padding: 0 8px; } /* .dense, in a list */
       ul.bought li.changed select { border-color: var(--primary); color: var(--primary); }
       ul.bought .n { font-variant-numeric: tabular-nums; text-align: right; }
       .split-rows { display: grid; gap: 8px; margin: 12px 0 4px; }
@@ -476,7 +480,7 @@
       .search-dmenu button.row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-height: 40px; justify-content: center; padding: 4px 10px; border-radius: 8px; background: transparent; color: var(--on-surface); text-align: left; font-weight: 400; }
       .search-dmenu .row.on { background: var(--secondary-container); color: var(--on-secondary-container); }
       .search-dmenu label.row.custom { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 4px 10px; border-radius: 8px; }
-      .search-dmenu .row.custom input { font: inherit; box-sizing: border-box; width: 100%; max-width: 140px; min-height: 36px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
+      .search-dmenu .row.custom input { width: 100%; max-width: 140px; }
       .search-dmenu .sep { height: 1px; background: var(--outline-variant); margin: 6px 10px; }
       .search-dmenu .dfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
       .search-bar { position: relative; flex: 1 1 420px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 52px; box-sizing: border-box; padding: 6px 12px 6px 16px; background: var(--surface-container); border: 1px solid var(--outline); border-radius: 26px; }
@@ -493,7 +497,7 @@
       .search-top button.x, .search-card button.x { display: inline-grid; place-items: center; width: 28px; height: 28px; min-height: 0; padding: 0; border-radius: 14px; background: transparent; color: inherit; }
       .search-top button.x:hover, .search-card button.x:hover { background: var(--surface-high); }
       .search-top button.x svg.icon, .search-card button.x svg.icon { width: 16px; height: 16px; fill: currentColor; }
-      input.search-input { flex: 1 1 160px; min-width: 120px; font: inherit; font-size: 16px; color: var(--on-surface); background: transparent; border: 0; outline: 0; height: 36px; }
+      input.search-input, input.search-input:focus { flex: 1 1 160px; min-width: 120px; min-height: 0; height: 36px; padding: 0; font-size: 16px; background: transparent; border: 0; outline: 0; }
       .search-menu { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5; max-height: 60vh; overflow-y: auto; background: var(--surface-high); border-radius: 16px; box-shadow: 0 8px 24px var(--shadow); padding: 8px 0; }
       .search-menu .sec { font-size: 12px; color: var(--on-surface-variant); padding: 10px 20px 4px; }
       .search-menu .opt { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 12px 6px 20px; box-sizing: border-box; cursor: pointer; }
@@ -512,7 +516,7 @@
       .search-card .frow { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--outline-variant); }
       .search-card .frow .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
       .search-card .flabel { font-size: 13px; color: var(--on-surface-variant); }
-      .search-card input, .search-card select { font: inherit; box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
+      .search-card input:not([type="checkbox"]), .search-card select { width: 100%; }
       .search-card input.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
       .search-card input.bad { outline: 2px solid var(--error); }
       .search-card .pair { display: flex; align-items: center; gap: 8px; }
@@ -525,7 +529,6 @@
       .search-total { margin: 0; font-size: 22px; }
       .search-total .label { font-size: 14px; color: var(--on-surface-variant); }
       .search-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
-      .search-tools select { font: inherit; min-height: 36px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); padding: 0 8px; }
       tr.search-group { cursor: pointer; background: var(--surface-container); font-weight: 500; }
       tr.search-group:hover, tr.search-group:focus-visible { background: var(--surface-container-high); }
       tr.search-group .chev { display: inline-grid; place-items: center; width: 24px; height: 24px; margin: -2px 4px -2px -4px; vertical-align: middle; }
@@ -535,7 +538,6 @@
       tr.search-sum td { font-weight: 500; border-top: 2px solid var(--outline-variant); }
       .search-flash { margin: 0; color: var(--on-surface-variant); }
       .search-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
-      .search-bulk select { font: inherit; min-height: 36px; border-radius: 4px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); padding: 0 8px; }
       .search-table th button.sort { color: inherit; font: inherit; font-weight: 500; padding: 0; min-height: 0; }
       .search-table tr.search-row { cursor: pointer; }
       .search-table tr.search-row:hover td, .search-table tr.search-row:focus-visible td { background: var(--surface-container-high); }
@@ -552,7 +554,6 @@
       .election-detail summary { cursor: pointer; color: var(--primary); font-size: 13px; }
       .election-detail ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
       .spend-bar { margin-bottom: 12px; }
-      .spend-bar select { font: inherit; min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--outline); background: var(--surface); color: var(--on-surface); }
       .spend-oneoff { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
       .spend-plot { position: relative; }
       .spend-plot .tip .row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
@@ -573,7 +574,7 @@
       .improvement-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); gap: 8px 12px; margin: 8px 0 12px; }
       .improvement-field { display: grid; gap: 2px; }
       .improvement-field[hidden] { display: none; }
-      .improvement-form input, .improvement-form select { width: 100%; box-sizing: border-box; font: inherit; min-height: 36px; padding: 0 8px; border: 1px solid var(--outline); border-radius: 4px; background: var(--surface); color: var(--on-surface); }
+      .improvement-form input, .improvement-form select { width: 100%; }
       .improvement-form > p, .improvement-form .form-actions { grid-column: 1 / -1; margin: 0; }
       .improvement-form .form-actions { display: flex; gap: 8px; }
       .w-table .row-acts { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
@@ -607,8 +608,6 @@
         .equity-grants .equity-table th:nth-child(6) { width: 24%; }
       }
       .drawer .line-change > form + button { margin-top: 4px; }
-      .bv-controls select { min-height: 40px; padding: 0 8px; border-radius: 4px; border: 1px solid var(--outline);
-        background: var(--surface-low); color: var(--on-surface); font-weight: 400; }
       .bv-controls .check { display: inline-flex; align-items: center; gap: 6px; color: var(--on-surface-variant); }
       .bv-controls .check input { width: 18px; height: 18px; accent-color: var(--primary); }
       .bv-summary { display: flex; flex-wrap: wrap; gap: 12px 40px; padding: 14px 20px; margin-bottom: 16px;

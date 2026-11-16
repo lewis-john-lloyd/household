@@ -398,7 +398,7 @@ function improvementForm(h: Home, start: Record<string, string>, editing: boolea
   var act = el("div", null, "form-actions");
   act.appendChild(
     button(
-      editing ? "Keep changes" : "Add work",
+      editing ? "Keep" : "Add work",
       function () {
         var wrong = [] as string[];
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value.trim())) wrong.push("a date as YYYY-MM-DD");

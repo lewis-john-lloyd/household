@@ -9,7 +9,7 @@ function parameterForm(given: Row | null, done: () => void) {
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
   actions.appendChild(
-    button(isNew ? "Add setting" : "Keep this change", function () {
+    button(isNew ? "Add setting" : "Keep", function () {
       var unset = !isNew && p.source === "not set"; // a known setting not in the ledger yet: a new one
       var e = {
         kind: "parameter",

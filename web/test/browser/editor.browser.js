@@ -89,7 +89,7 @@ async function changeSetting(page, key, value) {
   await page.click("#edit-tabs button[data-tab='edit:settings']");
   await page.click(`.md-row:has-text('${key}')`);
   await page.fill(".md-detail label:has-text('Value') input", value);
-  await page.click(".md-detail button:has-text('Keep this change')");
+  await page.click(".md-detail button:text-is('Keep')");
 }
 
 // review, payee rules and duplicates live on Cashflow
@@ -617,7 +617,7 @@ test("a merchant split into its lines leaves review once every line has a catego
     await page.waitForSelector("table.split-lines");
     const picks = await page.$$("table.split-lines select");
     for (let i = 0; i < choices.length; i++) if (choices[i]) await picks[i].selectOption(choices[i]);
-    await page.click(".md-detail button:has-text('Keep answers')");
+    await page.click(".md-detail button:text-is('Keep')");
   };
   await split(["food", ""]); // one line left on (choose): the question stays for it
   assert.equal(await page.$$eval(".md-row:has-text('ACME GROCER')", (r) => r.length), 1);
@@ -670,7 +670,7 @@ test("review: a merchant's answer can be for its lines now only, leaving the mer
   await page.check(".md-detail .review-scope input[value='lines']");
   assert.equal(await page.isDisabled(".md-detail input.wide"), true); // its spelling matters only to the merchant
   await page.selectOption(".md-detail select", "household");
-  await page.click(".md-detail button:has-text('Keep answer')");
+  await page.click(".md-detail button:text-is('Keep')");
   await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
   // each line its own correction, and no answer for the merchant
   assert.deepEqual((await staged(page)).sort(), [
@@ -697,7 +697,7 @@ test("review: a merchant can be asked about line by line from now on, its lines 
   await page.waitForSelector("#edit:not([hidden]) .md-list");
   await page.click(".md-row:has-text('ACME GROCER')");
   await page.check(".md-detail .review-scope input[value='ask']");
-  await page.click(".md-detail button:has-text('Keep answer')");
+  await page.click(".md-detail button:text-is('Keep')");
   await page.waitForFunction(() => document.querySelector(".md-detail .md-heading")?.textContent === "BLUE PUMP FUEL");
   const today = await page.evaluate(() => today());
   assert.deepEqual(await staged(page), [
@@ -784,10 +784,10 @@ test("review: a single line is answered without the server, and lines that read 
   assert.equal(await page.textContent("fieldset.review-alike legend"), "2 more lines read the same");
   const ticked = () => page.$$eval(".review-alike-list input", (boxes) => boxes.map((b) => b.checked));
   assert.deepEqual(await ticked(), [false, false]); // none until asked for: an answer is never spread unseen
-  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep answer");
+  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep");
   await page.click("fieldset.review-alike button:has-text('The 1 guessed kids')");
   assert.deepEqual(await ticked(), [true, false]);
-  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep answer for 2 lines");
+  assert.equal(await page.textContent(".md-detail button[type=submit]"), "Keep for 2 lines");
   await page.click(".md-detail button[type=submit]");
   assert.deepEqual(await staged(page), ["PAY APP PAYMENT ***111 2001-02-05: kids", "PAY APP PAYMENT ***222 2001-02-08: kids"]);
   assert.equal(await heading(page), "PAY APP PAYMENT ***333"); // the one left of the three
@@ -950,7 +950,7 @@ test("the budget compares any period with another, and a line's target can come 
   await page.check(".drawer .charge-pick label:has-text('PAGE TURNER BOOKS') input");
   assert.doesNotMatch(await page.textContent(".drawer .recurring-sum"), /None picked/);
   assert.match(await page.textContent(".drawer .recurring-sum"), /Monthly target\$30\.00/); // leak-guard: allow (made up)
-  await page.click(".drawer button:has-text('Keep this change')");
+  await page.click(".drawer button:text-is('Keep')");
   const kept = await staged(page);
   assert.match(kept[0], /^budget line food: recurring 20 monthly for food from /);
   assert.equal(kept[1], "PAGE TURNER BOOKS: pays budget line food"); // already tracked: no track edit
@@ -1017,7 +1017,7 @@ test("a category with two budget lines shows each as its own row, to open and ch
   assert.match(await page.textContent(".drawer"), /Budget line: camp sam/);
   assert.doesNotMatch(await page.textContent(".drawer"), /Budget line: camp alex/);
   await page.fill(".drawer label:has-text('Amount') input", "300");
-  await page.click(".drawer button:has-text('Keep this change')");
+  await page.click(".drawer button:text-is('Keep')");
   assert.match((await staged(page))[0], /^budget line camp sam: fixed 300 annually for kids from /);
   await page.waitForSelector("table.bv tr.subline:has-text('camp sam') .tag.warn");
   assert.equal(await page.locator("table.bv tr.subline:has-text('camp alex') .tag.warn").count(), 0);
@@ -1434,7 +1434,7 @@ test("jobs: choosing a stretch of a pay line shows it, and a correction is stage
   assert.match(await page.textContent(".job-detail"), /Quill & Ink, 2020-01-15 to 2022-05-01.*\$90,000.*agree with it/s); // leak-guard: allow (made up)
   await page.click(".job-detail button:has-text('Correct this')");
   await page.fill("dialog.job-dialog label:has-text('Band') input", "L4");
-  await page.click("dialog.job-dialog button:has-text('Keep this correction')");
+  await page.click("dialog.job-dialog button:text-is('Keep')");
   assert.deepEqual(await staged(page), ["job: alex at Quill & Ink at 90000 from 2020-01-15"]);
   assert.deepEqual(page.errors, []);
   await page.close();
@@ -1790,14 +1790,14 @@ test("retirement budget: each line from the last 12 months, changed, left out or
   assert.equal(await page.inputValue("#retirement-body .budget-edit input >> nth=1"), "2031");
   await page.fill("#retirement-body .budget-edit input >> nth=2", "4");
   await page.fill("#retirement-body .budget-edit input >> nth=3", "2029");
-  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  await page.click("#retirement-body .budget-edit button:text-is('Keep')");
   assert.match(await page.textContent("#retirement-body .budget-edit .error"), /starts after/);
   await page.fill("#retirement-body .budget-edit input >> nth=3", "2040");
-  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  await page.click("#retirement-body .budget-edit button:text-is('Keep')");
   await page.click("#retirement-body button:has-text('Add a line')");
   await page.fill("#retirement-body .budget-edit input >> nth=0", "Travel Fund");
   await page.fill("#retirement-body .budget-edit input >> nth=1", "6");
-  await page.click("#retirement-body .budget-edit button:has-text('Keep this change')");
+  await page.click("#retirement-body .budget-edit button:text-is('Keep')");
   assert.deepEqual(await staged(page), [
     "retirement budget: hobby left out (0)",
     "retirement budget: kids = 0 from 2031; 4 from 2040",
@@ -3378,7 +3378,7 @@ test("home: work is added from the line that paid it, corrected and removed in p
   // corrected: the same work, as a repair now
   await page.click(`${table} tr:has-text('Deck') button:has-text('Change')`);
   await page.selectOption("#improvements-willow .improvement-form select", "repair");
-  await page.click("#improvements-willow button:has-text('Keep changes')");
+  await page.click("#improvements-willow button:text-is('Keep')");
   assert.match(await page.textContent(`${table} tr:has-text('Deck')`), /changed, not saved/);
   // removed: struck through until saved, and Undo puts it back
   await page.click(`${table} tr:has-text('Gutters') button:has-text('Remove')`);

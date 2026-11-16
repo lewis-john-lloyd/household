@@ -152,7 +152,7 @@ function showJob(box: HTMLElement, name: string, r: PayStretch, next: PayStretch
           note: r.note || "",
         },
         "Correct " + r.employer + " from " + r.at,
-        "Keep this correction",
+        "Keep",
       );
     }),
   );

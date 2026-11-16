@@ -105,7 +105,7 @@ function reviewPick(form: HTMLFormElement, label: string, value: string, skip: (
 function reviewActions(form: HTMLFormElement, r: Row, done: () => void, more: HTMLElement[]) {
   var target = reviewTarget(r);
   var actions = el("div", null, "actions");
-  var keep = el("button", "Keep answer", "filled");
+  var keep = el("button", "Keep", "filled");
   keep.type = "submit";
   actions.appendChild(keep);
   if (reviewNext(r.key))
@@ -349,7 +349,7 @@ function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
     var n = ticks.filter(function (t) {
       return t[1].checked;
     }).length;
-    keep.textContent = n ? "Keep answer for " + (n + 1) + " lines" : "Keep answer";
+    keep.textContent = n ? "Keep for " + (n + 1) + " lines" : "Keep";
   }
   if (alike.length) {
     var same = el("fieldset", null, "review-alike");
@@ -611,7 +611,7 @@ function splitIntoLines(r: Row, panel: HTMLElement, done: () => void) {
       var actions = el("div", null, "actions");
       actions.appendChild(
         button(
-          "Keep answers",
+          "Keep",
           function () {
             var chosen = picks.filter(function (p) {
               return p[1].value;
@@ -838,7 +838,7 @@ function drawWithholding(body: HTMLElement) {
       var actions = el("div", null, "actions");
       actions.appendChild(
         button(
-          "Keep explanation",
+          "Keep",
           function () {
             if (!why.value.trim()) {
               error.textContent = "Say why.";

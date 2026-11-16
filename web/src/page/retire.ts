@@ -905,7 +905,7 @@ function budgetEditor(line: string, b: BudgetLine | null, start: number, done: (
   var actions = el("div", null, "actions");
   actions.appendChild(
     button(
-      "Keep this change",
+      "Keep",
       function () {
         var a = first.value.trim().replace(/,/g, ""),
           af = firstFrom.value.trim(),

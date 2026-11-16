@@ -437,7 +437,7 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
     return isNew ? name!.value.trim() : l.line;
   }
   actions.appendChild(
-    button(isNew ? "Add line" : l.in_force === "ended" ? "Start again" : "Keep this change", function () {
+    button(isNew ? "Add line" : l.in_force === "ended" ? "Start again" : "Keep", function () {
       var e = {
         kind: "budget_line",
         line: lineName(),
@@ -575,7 +575,7 @@ function ruleForm(given: Row | null, done: () => void) {
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
   actions.appendChild(
-    button(isNew ? "Add rule" : "Keep this change", function () {
+    button(isNew ? "Add rule" : "Keep", function () {
       var text = isNew ? pattern!.value.trim() : r.pattern;
       try {
         new RegExp(text);
@@ -658,7 +658,7 @@ function categoryForm(given: Row | null, done: () => void) {
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
   actions.appendChild(
-    button(isNew ? "Add category" : "Keep this change", function () {
+    button(isNew ? "Add category" : "Keep", function () {
       var e = {
         kind: "category",
         category: isNew ? name!.value.trim() : c.category,
@@ -698,7 +698,7 @@ function aliasForm(given: Row | null, done: () => void) {
   var error = el("div", "", "error");
   var actions = el("div", null, "actions");
   actions.appendChild(
-    button(isNew ? "Add alias" : "Keep this change", function () {
+    button(isNew ? "Add alias" : "Keep", function () {
       var e = {
         kind: "alias",
         alias: isNew ? name!.value.trim() : a.alias,
@@ -743,7 +743,7 @@ function jobForm(given: Row | null, done: () => void, label?: string) {
   var actions = el("div", null, "actions");
   actions.appendChild(
     button(
-      label || "Keep this change",
+      label || "Keep",
       function () {
         var e: { kind: string; [field: string]: string } = {
           kind: "job",

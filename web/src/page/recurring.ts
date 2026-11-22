@@ -1,15 +1,17 @@
 // Recurring: the charges tracked, by line, and their price changes.
 
 // --- Recurring: the charges you track, by line ------------------------------------------------------------
+// A table like Lines: the charges grouped by the budget line each pays (its own link, else the one line in force
+// for its category, else its category), with what needs an answer first (charges not tracked yet) and what is
+// done with folded at the foot (stopped, not recurring). A price change is a status mark, as on Lines; a row
+// opens the charge's drawer, where its price change, its lines, its budget line and its merges are.
+type RecGroup = { id: string; name: string; how: string; rows: Row[]; byDefault: boolean; line: string; foot: boolean };
+
+var CADENCE_RANK: Record<string, number> = { weekly: 1, biweekly: 2, monthly: 3, quarterly: 4, yearly: 5, irregular: 6 };
+
 function drawRecurring(body: HTMLElement) {
   var tracked = budget.data!.tracked,
     rows = editor!.subscriptions;
-  var lead = el(
-    "p",
-    "Tracked charges are the fixed part of the budget: a line can take its target from its charges, " +
-      "plus an allowance for the rest of its spending.",
-    "support",
-  );
   var active = tracked.filter(function (t) {
     return t.status !== "stopped" && t.status !== "no charges";
   });
@@ -30,63 +32,70 @@ function drawRecurring(body: HTMLElement) {
     box.appendChild(d);
   });
   body.appendChild(box);
-  body.appendChild(lead);
-  tracked
-    .filter(function (t) {
-      return t.status === "price changed";
-    })
-    .forEach(function (t) {
-      body.appendChild(priceAlert(t));
-    });
+  body.appendChild(
+    el(
+      "p",
+      "Tracked charges are the fixed part of the budget: a line can take its target from its charges, " +
+        "plus an allowance for the rest of its spending.",
+      "support",
+    ),
+  );
+  var groups = recurringGroups(tracked, rows);
+  if (!groups.length) {
+    empty(body, "Nothing tracked yet. Charges that come back regularly are listed here to track once a run finds them.");
+    return;
+  }
+  body.appendChild(recurringTable(groups));
+}
+
+function recurringGroups(tracked: Row[], rows: Row[]): RecGroup[] {
   var unanswered = rows.filter(function (r) {
     return r.marked === "" && r.status !== "stopped";
   });
-  unanswered.forEach(function (r) {
-    body.appendChild(trackAlert(r));
-  });
-  var byCategory: Record<string, Row[]> = {};
+  var lines: Record<string, RecGroup> = {};
   tracked
     .filter(function (t) {
       return t.status !== "stopped";
     })
     .forEach(function (t) {
-      (byCategory[t.category || "(no charges yet)"] = byCategory[t.category || "(no charges yet)"] || []).push(t);
-    });
-  var cards = el("div", null, "rec-cards");
-  Object.keys(byCategory)
-    .sort()
-    .forEach(function (category) {
-      var card = el("section", null, "panel rec-card");
-      var h = el("h3", pretty(category));
-      if (budget.data!.book.groups[category])
-        h.appendChild(el("span", pretty(budget.data!.book.groups[category]), "tag group-tag"));
-      var lines = linesFor(category).filter(function (l) {
-        return l.in_force !== "ended";
+      var pays = chargeLine(t.key);
+      var inForce = linesFor(t.category).filter(function (l) {
+        return l.in_force === "yes";
       });
-      if (lines.length)
-        h.appendChild(
-          el(
-            "span",
-            lines
-              .map(function (l) {
-                return l.in_words;
-              })
-              .join("; ")
-              .replace(/^./, function (c) {
-                return c.toUpperCase();
-              }),
-            "tag plain",
-          ),
-        );
-      else h.appendChild(el("span", "no budget line", "tag plain"));
-      card.appendChild(h);
-      byCategory[category].forEach(function (t) {
-        card.appendChild(chargeRow(t));
-      });
-      cards.appendChild(card);
+      var line = pays || (inForce.length === 1 ? inForce[0].line : "");
+      var id = line ? "line:" + line : "category:" + (t.category || "");
+      if (!lines[id]) {
+        var bl = line
+          ? editor!.budgetLines.filter(function (l) {
+              return l.line === line;
+            })[0]
+          : null;
+        lines[id] = {
+          id: id,
+          name: line || t.category || "(no charges yet)",
+          how: bl ? shortHow(bl) : inForce.length > 1 ? countOf(inForce.length, "budget line", "budget lines") : "No budget line",
+          rows: [],
+          byDefault: true,
+          line: line,
+          foot: false,
+        };
+      }
+      lines[id].rows.push(t);
     });
-  if (!tracked.length) empty(body, "Nothing tracked yet. Charges that come back regularly are listed above to track.");
-  body.appendChild(cards);
+  var out: RecGroup[] = [];
+  if (unanswered.length)
+    out.push({
+      id: "untracked",
+      name: "Not tracked yet",
+      how: "Come back regularly: track them, or say they aren't recurring",
+      rows: unanswered,
+      byDefault: true,
+      line: "",
+      foot: false,
+    });
+  Object.keys(lines).forEach(function (id) {
+    out.push(lines[id]);
+  });
   var stopped = tracked
     .filter(function (t) {
       return t.status === "stopped";
@@ -96,32 +105,130 @@ function drawRecurring(body: HTMLElement) {
         return r.marked === "" && r.status === "stopped";
       }),
     );
-  if (stopped.length) {
-    var card = el("section", null, "panel rec-card wide");
-    card.appendChild(el("h3", "Seem to have stopped"));
-    card.appendChild(
-      el(
-        "p",
-        "No charge for over one and a half cadences. Merge one into the charge that took its place to keep one history.",
-        "support",
-      ),
-    );
-    stopped.forEach(function (t) {
-      card.appendChild(chargeRow(t));
+  if (stopped.length)
+    out.push({
+      id: "stopped",
+      name: "Seem to have stopped",
+      how: "No charge for over one and a half cadences: merge one into the charge that took its place to keep one history",
+      rows: stopped,
+      byDefault: false,
+      line: "",
+      foot: true,
     });
-    body.appendChild(card);
-  }
   var no = rows.filter(function (r) {
     return r.marked === "no";
   });
-  if (no.length) {
-    var more = el("details");
-    more.appendChild(el("summary", "Not recurring (" + no.length + ")"));
-    no.forEach(function (r) {
-      more.appendChild(chargeRow(r));
+  if (no.length)
+    out.push({ id: "no", name: "Not recurring", how: "Turned down", rows: no, byDefault: false, line: "", foot: true });
+  return out;
+}
+
+function perMonthOf(t: Row) {
+  return (Number(t.yearly) || 0) / 12;
+}
+
+function recurringTable(groups: RecGroup[]) {
+  var wrap = el("div", null, "scroll");
+  var table = el("table", null, "bv rec-table");
+  var head = el("tr");
+  var keys: (((t: Row) => string | number) | null)[] = [
+    function (t) {
+      return chargeName(t).toLowerCase();
+    },
+    function (t) {
+      return CADENCE_RANK[t.cadence] || 9;
+    },
+    function (t) {
+      return t.last || "";
+    },
+    function (t) {
+      return t.next_expected || "";
+    },
+    function (t) {
+      return Number(t.latest) || 0;
+    },
+    perMonthOf,
+    null,
+  ];
+  var sort = budget.recSort && budget.recSort.col < keys.length ? budget.recSort : { col: -1, dir: 1 };
+  ["Charge", "Every", "Last charged", "Next", "Latest", "A month", "Status"].forEach(function (h, i) {
+    var th = el("th", null, i < 4 || i === 6 ? "text" : "");
+    if (!keys[i]) {
+      th.textContent = h;
+      head.appendChild(th);
+      return;
+    }
+    sortHead(th, h, sort.col === i ? (sort.dir > 0 ? "asc" : "desc") : "", function () {
+      budget.recSort = sort.col === i ? { col: i, dir: -sort.dir } : { col: i, dir: i < 4 ? 1 : -1 };
+      drawBudgetPage();
     });
-    body.appendChild(more);
-  }
+    head.appendChild(th);
+  });
+  table.appendChild(el("thead")).appendChild(head);
+  var body = el("tbody");
+  var order = function (list: Row[]) {
+    if (sort.col < 0)
+      return list.slice().sort(function (a, b) {
+        return perMonthOf(b) - perMonthOf(a); // the dearest first
+      });
+    var k = keys[sort.col]!;
+    return list.slice().sort(function (a, b) {
+      var x = k(a),
+        y = k(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
+    });
+  };
+  var total = function (g: RecGroup) {
+    return g.rows.reduce(function (s, t) {
+      return s + perMonthOf(t);
+    }, 0);
+  };
+  // what needs an answer leads, then the lines by name (or by their total, sorted by it), then the folded foot
+  var lead = groups.filter(function (g) {
+    return g.id === "untracked";
+  });
+  var middle = groups
+    .filter(function (g) {
+      return g.id !== "untracked" && !g.foot;
+    })
+    .sort(function (a, b) {
+      if (sort.col === 5) return (total(a) - total(b)) * sort.dir;
+      var dir = sort.col === 0 ? sort.dir : 1;
+      return (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1) * dir;
+    });
+  var foot = groups.filter(function (g) {
+    return g.foot;
+  });
+  lead.concat(middle, foot).forEach(function (g) {
+    var key = "rec:" + g.id;
+    var open = g.byDefault ? !(budget.shut && budget.shut[key]) : !!(budget.opened && budget.opened[key]);
+    var gr = el("tr", null, "group fold" + (g.foot ? " foot" : ""));
+    var name = cell(gr, "");
+    foldName(name, g.id.indexOf("line:") === 0 || g.id.indexOf("category:") === 0 ? pretty(g.name) : g.name, open);
+    if (g.line && changedText("budget_line|" + g.line)) name.appendChild(el("span", "changed", "tag warn"));
+    var how = cell(gr, countOf(g.rows.length, "charge", "charges") + ". " + g.how, "text rule");
+    how.colSpan = 3; // Every, Last charged and Next
+    cell(gr, "");
+    cell(gr, g.foot ? "" : cents.format(total(g)));
+    cell(gr, "", "text status");
+    foldRow(gr, key, open, function () {
+      if (g.byDefault) {
+        budget.shut = budget.shut || {};
+        budget.shut[key] = open;
+      } else {
+        budget.opened = budget.opened || {};
+        budget.opened[key] = !open;
+      }
+    });
+    body.appendChild(gr);
+    if (!open) return;
+    order(g.rows).forEach(function (t) {
+      body.appendChild(chargeRow(t, g.id === "untracked"));
+    });
+  });
+  table.appendChild(body);
+  wrap.appendChild(table);
+  return wrap;
 }
 
 // The editor's row for a merchant key (what is tracked, found or turned down), for its forms.
@@ -147,38 +254,93 @@ function editorCharge(key: string): Row {
   );
 }
 
-function chargeRow(t: Row) {
-  var row = el("div", null, "rec-row");
+// A charge's row: its name, cadence, when it came and comes next, its price, and its status (a price change, a
+// change in hand, or for one not tracked yet the two answers). The row opens its drawer.
+function chargeRow(t: Row, asks?: boolean) {
+  var row = el("tr", null, "line nested charge" + (budget.open && budget.open.charge === t.key ? " chosen" : ""));
   row.tabIndex = 0;
-  var left = el("div");
-  left.appendChild(chargeTitle(t, drawBudgetPage, "span"));
-  if (t.status === "price changed") left.appendChild(statusTag({ text: priceWords(t), tone: "check" }));
-  var staged_ =
-    changedText("subscription|" + t.key.toUpperCase()) ||
-    changedText("recurring_merge|" + t.key.toUpperCase()) ||
-    changedText("recurring_name|" + t.key.toUpperCase()) ||
-    changedText("recurring_line|" + t.key.toUpperCase());
-  if (staged_) left.appendChild(el("span", staged_, "tag warn"));
-  var pays = chargeLine(t.key);
-  if (pays) left.appendChild(el("span", "Pays " + pretty(pays), "tag plain"));
-  var when =
-    t.status === "stopped" ? "last charged " + longDay(t.last) : t.next_expected ? "next " + longDay(t.next_expected) : "";
-  left.appendChild(
-    el("div", [t.cadence, when, t.includes ? "includes " + t.includes : ""].filter(Boolean).join(", "), "support"),
+  row.dataset.key = t.key;
+  var name = cell(row, chargeName(t));
+  if (chargeName(t) !== t.key) name.title = t.key + " on the statement";
+  if (t.includes) name.appendChild(el("div", "includes " + t.includes, "support"));
+  cell(row, t.cadence, "text");
+  cell(
+    row,
+    t.last ? shortDay(t.last) + (t.last.slice(0, 4) !== today().slice(0, 4) ? ", " + t.last.slice(0, 4) : "") : "",
+    "text",
   );
-  row.appendChild(left);
-  var perMonth = Number(t.yearly) / 12;
-  row.appendChild(el("div", t.yearly ? cents.format(perMonth) + " a month" : "", "num"));
+  cell(row, t.status === "stopped" ? "" : t.next_expected ? shortDay(t.next_expected) : "", "text");
+  cell(row, t.latest ? cents.format(Number(t.latest)) : "");
+  cell(row, t.yearly ? cents.format(perMonthOf(t)) : "");
+  var sc = cell(row, "", "text status");
   var open = function () {
     openCharge(t.key);
   };
+  var keys = ["subscription|", "recurring_merge|", "recurring_name|", "recurring_line|"].map(function (k) {
+    return k + t.key.toUpperCase();
+  });
+  var note = keys
+    .map(function (k) {
+      return changeNote(k);
+    })
+    .filter(Boolean)
+    .join(" ");
+  var pays = chargeLine(t.key);
+  if (asks && pays) sc.appendChild(el("span", "pays " + pays, "tag"));
+  if (note) {
+    sc.appendChild(el("span", note, "support"));
+    var mine = keys.filter(function (k) {
+      return staged[k];
+    });
+    if (asks && mine.length)
+      sc.appendChild(
+        button(
+          "Undo",
+          function (e) {
+            e.stopPropagation();
+            mine.forEach(unstage);
+            drawBudgetPage();
+          },
+          "text",
+        ),
+      );
+  } else if (asks) {
+    var answers = el("span", null, "actions inline");
+    answers.appendChild(
+      button(
+        "Track it",
+        function (e) {
+          e.stopPropagation();
+          stage({ kind: "subscription", key: t.key, subscription: "yes" }, t.key + ": track as recurring");
+          drawBudgetPage();
+        },
+        "small",
+      ),
+    );
+    answers.appendChild(
+      button(
+        "Not recurring",
+        function (e) {
+          e.stopPropagation();
+          stage({ kind: "subscription", key: t.key, subscription: "no" }, t.key + ": don't track");
+          drawBudgetPage();
+        },
+        "text",
+      ),
+    );
+    sc.appendChild(answers);
+  } else if (t.status === "price changed")
+    sc.appendChild(
+      statusTag({ text: priceWords(t), tone: "check" }, function (e?: Event) {
+        if (e) e.stopPropagation();
+        open();
+      }),
+    );
+  else if (t.status === "stopped") sc.appendChild(el("span", "Stopped", "muted"));
+  row.setAttribute("aria-haspopup", "dialog");
+  sc.appendChild(openHint());
   row.onclick = open;
-  row.onkeydown = function (e) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      open();
-    }
-  };
+  row.onkeydown = onEnter(open);
   return row;
 }
 
@@ -187,6 +349,14 @@ function openCharge(key: string) {
   var t = trackByKey(key);
   var d = drawer(chargeName(t || r), r.marked === "yes" ? "Tracked" : r.marked === "no" ? "Not recurring" : "Not tracked yet");
   budget.open = { charge: key }; // kept open when the page draws again (Status opens a charge this way too)
+  if (t && t.status === "price changed") d.appendChild(priceAlert(t, true));
+  var named = el("div", null, "charge-rename");
+  named.appendChild(
+    chargeTitle(t || r, function () {
+      openCharge(key);
+    }),
+  );
+  d.appendChild(named);
   facts(d, [
     ["Every", (t && t.cadence) || r.cadence],
     ["Latest", t && t.latest ? cents.format(Number(t.latest)) : r.latest ? cents.format(Number(r.latest)) : ""],
@@ -454,7 +624,7 @@ function trackByKey(key: string) {
 }
 
 // A tracked charge whose price changed: what it means for its line, and the change that follows it.
-function priceAlert(t: Row) {
+function priceAlert(t: Row, inDrawer?: boolean) {
   var box = el("div", null, "alert changed");
   var text = el("span");
   text.appendChild(el("strong", chargeName(t)));
@@ -531,89 +701,18 @@ function priceAlert(t: Row) {
       );
   } else words += pretty(line.line) + "'s target follows its spending on its own (" + line.in_words + ").";
   // the price comes from its lines: one that isn't part of the charge can be left out there
-  actions.appendChild(
-    button(
-      "See its charges",
-      function () {
-        openCharge(t.key);
-      },
-      "text",
-    ),
-  );
+  if (!inDrawer)
+    actions.appendChild(
+      button(
+        "See its charges",
+        function () {
+          openCharge(t.key);
+        },
+        "text",
+      ),
+    );
   text.appendChild(document.createTextNode(words));
   box.appendChild(text);
-  box.appendChild(actions);
-  return box;
-}
-
-// A charge that comes back but isn't tracked: track it, merge it into one that is, or turn it down.
-function trackAlert(r: Row) {
-  var box = el("div", null, "alert");
-  var text = el("span");
-  text.appendChild(chargeTitle(r, drawBudgetPage));
-  text.appendChild(
-    document.createTextNode(
-      " comes back " +
-        r.cadence +
-        " for about " +
-        cents.format(Number(r.latest)) +
-        " and isn't tracked." +
-        (r.category ? " Its lines are in " + pretty(r.category) + "." : ""),
-    ),
-  );
-  if (chargeLine(r.key)) text.appendChild(el("span", "pays " + chargeLine(r.key), "tag"));
-  box.appendChild(text);
-  var actions = el("span", null, "actions");
-  var t = "subscription|" + r.key.toUpperCase();
-  if (changeNote(t)) {
-    actions.appendChild(el("span", changeNote(t), "support"));
-    if (staged[t])
-      actions.appendChild(
-        button(
-          "Undo",
-          function () {
-            unstage(t);
-            drawBudgetPage();
-          },
-          "text",
-        ),
-      );
-  } else {
-    actions.appendChild(
-      button("Track it", function () {
-        stage({ kind: "subscription", key: r.key, subscription: "yes" }, r.key + ": track as recurring");
-        drawBudgetPage();
-      }),
-    );
-    actions.appendChild(
-      button(
-        "Pays a budget line\u2026",
-        function () {
-          openCharge(r.key);
-        },
-        "text",
-      ),
-    );
-    actions.appendChild(
-      button(
-        "Merge into\u2026",
-        function () {
-          openCharge(r.key);
-        },
-        "text",
-      ),
-    );
-    actions.appendChild(
-      button(
-        "Not recurring",
-        function () {
-          stage({ kind: "subscription", key: r.key, subscription: "no" }, r.key + ": don't track");
-          drawBudgetPage();
-        },
-        "text",
-      ),
-    );
-  }
   box.appendChild(actions);
   return box;
 }

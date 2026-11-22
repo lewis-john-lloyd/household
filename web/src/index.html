@@ -807,6 +807,10 @@
       .drawer p.year-pace { margin: 0 0 12px; color: var(--on-surface-variant); }
       .drawer p.year-pace strong { color: var(--on-surface); font-weight: 500; }
       table.bv td.status { color: var(--on-surface-variant); font-size: 13px; }
+      table.bv td.status .actions.inline { display: inline-flex; gap: 4px; margin: 0; align-items: center; }
+      table.bv td.status > .support { display: block; max-width: 280px; white-space: normal; }
+      .drawer .charge-rename { margin: 0 0 12px; }
+      table.rec-table td.rule { max-width: none; }
       table.bv td.status.link { color: var(--primary); }
       .kind { height: 24px; gap: 6px; font-size: 12px; padding: 0 8px 0 6px;
         border: 1px solid var(--outline-variant); color: var(--on-surface-variant); white-space: nowrap; }
@@ -949,15 +953,6 @@
       .alert.check.settled { background: var(--surface-container); color: var(--on-surface-variant); }
       .alert.check .tag { margin-left: 8px; }
       .alert .actions { margin: 0; }
-      .rec-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
-      .rec-card h3 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
-      .rec-card.wide { margin: 12px 0; }
-      .rec-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 4px;
-        border-top: 1px solid var(--surface-high); cursor: pointer; border-radius: 4px; }
-      .rec-row:hover { background: var(--surface-container); }
-      .rec-row:focus-visible { outline: 2px solid var(--primary); }
-      .rec-row .num { white-space: nowrap; font-variant-numeric: tabular-nums; }
-      details .rec-row { margin-left: 8px; }
 
       /* the Jobs page: a chosen stretch of a pay line, and its details under the chart */
       .pay-chart .seg-hit { stroke: transparent; stroke-width: 16; cursor: pointer; }

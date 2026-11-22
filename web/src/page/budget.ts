@@ -3,8 +3,8 @@
 // --- the Budget page -----------------------------------------------------------------------------
 // Lines: one period (a month, a quarter or a calendar year) beside any other of the same kind, shaped here
 // by budgetview.js from the book getBudgetBook sends once, so a new lens or comparison asks the server
-// nothing. A line opens a drawer with its months and its budget line. Recurring: the charges you track,
-// by the line they belong to, with what changed first.
+// nothing. A line opens a drawer with its months and its budget line. Recurring: the charges, in a table like
+// Lines, by the budget line each pays, with those to answer first.
 var budget: {
   tab: string;
   lens: string;
@@ -14,6 +14,7 @@ var budget: {
   data: Answer<"getBudgetBook"> | null;
   open: { category?: string; line?: string; charge?: string } | null; // the drawer open: a line's category, a new line, or a charge
   sort?: { col: number; dir: number }; // the lines' sort: a column, and 1 or -1
+  recSort?: { col: number; dir: number }; // the Recurring table's sort, the same way
   unplanned?: Record<string, boolean>; // the groups whose unplanned line items are shown
   shut?: Record<string, boolean>; // the groups shut ("group:<name>"); every group is open at first
   layout?: string; // the Lines tab's view: "group" (A, the default), "kind" (B) or "cards" (C)

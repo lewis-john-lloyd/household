@@ -934,11 +934,19 @@ test("recurring: a charge that comes back is offered to track, and one that stop
       JSON.stringify([row("BLUE PUMP FUEL", "stopped", "2001-01-03"), row("WILLOW ST", "active", "2001-06-03")]) +
       ";",
   );
-  await page.waitForSelector("#budget:not([hidden]) .alert");
-  assert.match(await page.textContent(".alert"), /WILLOW ST comes back monthly for about \$30.00 and isn't tracked/); // leak-guard: allow (made up)
-  assert.match(await page.textContent(".rec-card.wide"), /Seem to have stopped.*BLUE PUMP FUEL.*last charged Jan 3, 2001/s);
-  await page.click(".alert button:has-text('Track it')");
-  await page.click(".rec-row:has-text('BLUE PUMP FUEL')");
+  await page.waitForSelector("#budget:not([hidden]) table.rec-table");
+  // what needs an answer leads, open; what stopped is folded at the foot
+  assert.deepEqual(await page.$$eval("table.rec-table tr.group", (rs) => rs.map((r) => r.cells[0].textContent)), [
+    "Not tracked yet",
+    "Seem to have stopped",
+  ]);
+  assert.match(await page.textContent("tr.charge[data-key='WILLOW ST']"), /WILLOW STmonthly.*\$30\.00\$30\.00Track it/); // leak-guard: allow (made up)
+  assert.equal(await page.locator("tr.charge[data-key='BLUE PUMP FUEL']").count(), 0);
+  await page.click("tr.group:has-text('Seem to have stopped')");
+  assert.match(await page.textContent("tr.charge[data-key='BLUE PUMP FUEL']"), /Jan 3, 2001.*Stopped/);
+  await page.click("tr.charge[data-key='WILLOW ST'] button:has-text('Track it')");
+  assert.equal(await page.locator(".drawer").count(), 0); // the answer doesn't open the drawer
+  await page.click("tr.charge[data-key='BLUE PUMP FUEL']");
   await page.selectOption(".drawer label:has-text('Merge into') select", "WILLOW ST");
   await page.click(".drawer button:has-text('Merge')");
   assert.deepEqual(await staged(page), ["WILLOW ST: track as recurring", "BLUE PUMP FUEL: part of WILLOW ST"]);
@@ -950,10 +958,11 @@ test("recurring: a charge that comes back is offered to track, and one that stop
     { kind: "recurring_merge", key: "BLUE PUMP FUEL", same_as: "WILLOW ST" },
   ]);
   // saved, the page says so until a run applies it, instead of going back to how it was
-  await page.waitForSelector(".alert:has-text('Saved, applies at the next run')");
-  assert.match(await page.textContent(".alert"), /Saved, applies at the next run: WILLOW ST: track as recurring/);
-  assert.equal(await page.locator(".alert button:has-text('Undo')").count(), 0); // saved is not undone here
-  assert.equal(await page.locator(".alert button:has-text('Track it')").count(), 0);
+  const willow = "tr.charge[data-key='WILLOW ST']";
+  await page.waitForSelector(willow + ":has-text('Saved, applies at the next run')");
+  assert.match(await page.textContent(willow), /Saved, applies at the next run: WILLOW ST: track as recurring/);
+  assert.equal(await page.locator(willow + " button:has-text('Undo')").count(), 0); // saved is not undone here
+  assert.equal(await page.locator(willow + " button:has-text('Track it')").count(), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -967,7 +976,7 @@ test("a change saved earlier and not yet applied reads as saved when the page op
       "window.__answers.getWaitingEdits = [{ id: 'f9', savedAt: '2001-06-04T00:00:00Z', " +
       "edits: [{ kind: 'subscription', key: 'WILLOW ST', subscription: 'yes' }], texts: ['WILLOW ST: track as recurring'] }];",
   );
-  await page.waitForSelector(".alert:has-text('Saved, applies at the next run: WILLOW ST: track as recurring')");
+  await page.waitForSelector("tr.charge:has-text('Saved, applies at the next run: WILLOW ST: track as recurring')");
   assert.deepEqual(await staged(page), []); // nothing waits to be saved: it is saved
   // the header counts it on every page, and its menu says what it will do and leads to the full list
   assert.equal(await page.textContent("#waiting-count summary"), "1 change waits for a run");
@@ -982,7 +991,7 @@ test("a change saved earlier and not yet applied reads as saved when the page op
     forgetSaved("f9");
     setView("budget");
   });
-  await page.waitForSelector(".alert button:has-text('Track it')");
+  await page.waitForSelector("tr.charge button:has-text('Track it')");
   assert.equal(await page.locator("#waiting-count summary").count(), 0); // discarded: no count
   assert.deepEqual(page.errors, []);
   await page.close();
@@ -2159,8 +2168,8 @@ test("recurring: a charge says the budget line it pays, and paying one makes tha
       "  priority: 'high', rule: 'trailing', amount: '25', per: 'monthly', note: '', in_force: 'yes', in_words: '', this_month: '25'," +
       "  last_12_months: '0', scheduled: '', spends_from: 'family' }];",
   );
-  await page.waitForSelector("#budget:not([hidden]) .alert");
-  await page.click(".alert button:has-text('Pays a budget line')"); // not tracked yet: offered from its alert
+  await page.waitForSelector("#budget:not([hidden]) tr.charge");
+  await page.click("tr.charge[data-key='WILLOW ST']"); // not tracked yet: its drawer offers a line to pay
   await page.selectOption(".drawer label:has-text('Pays budget line') select", "lessons");
   assert.match(await page.textContent(".drawer"), /comes from its trailing rule now; keeping this also makes it Recurring/);
   await page.click(".drawer button:has-text('Keep')");
@@ -2168,7 +2177,7 @@ test("recurring: a charge says the budget line it pays, and paying one makes tha
   assert.equal(kept[0], "WILLOW ST: pays budget line lessons");
   assert.equal(kept[1], "WILLOW ST: track as recurring"); // paying a line tracks the charge
   assert.match(kept[2], /^budget line lessons: recurring for family from /);
-  assert.match(await page.textContent(".alert:has-text('WILLOW ST')"), /pays lessons.*Waiting to be saved/s);
+  assert.match(await page.textContent("tr.charge[data-key='WILLOW ST']"), /pays lessons.*Waiting to be saved/s);
   await page.click("#pending-save");
   await page.waitForSelector("#pending-msg.saved");
   const sent = await page.evaluate(() => window.__calls.filter((c) => c.name === "saveChanges")[0].args[0]);
@@ -2195,8 +2204,10 @@ test("recurring: a charge lists its lines, and one that isn't part of it is left
       "  c('t3', '2001-05-20', 4, true, ''), c('t2', '2001-05-03', 15, true, ''), c('t1', '2001-04-03', 9, false, 'marked one-off')," +
       "  { key: 'WILLOW ST', txn_id: 't0', date: '2001-04-01', spend: 5, payee: 'WILLOW ST', counts: true, why: '' }];",
   );
-  await page.waitForSelector("#budget:not([hidden]) .alert.changed");
-  await page.click(".alert.changed button:has-text('See its charges')"); // the price alert leads to the lines behind it
+  await page.waitForSelector("#budget:not([hidden]) tr.charge");
+  // a price change is a status mark, as on Lines, and leads to the lines behind it
+  await page.click("tr.charge[data-key='PAGE TURNER BOOKS'] .st-check");
+  assert.match(await page.textContent(".drawer .alert.changed"), /Books went from \$4\.00 to \$15\.00 monthly/); // leak-guard: allow (made up)
   await page.waitForSelector(".drawer table.charge-lines");
   const rows = () =>
     page.$$eval(".drawer table.charge-lines tr", (rs) =>

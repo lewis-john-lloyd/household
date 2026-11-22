@@ -101,7 +101,13 @@ function sandbox() {
   // the views: a build that copies src to dist and stamps the release, and tests that pass
   file(
     "web/package.json",
-    JSON.stringify({ scripts: { build: "node build.mjs", test: 'node -e ""', "test:server": 'node -e ""' } }),
+    JSON.stringify({
+      scripts: {
+        build: "node build.mjs",
+        test: 'node -e ""',
+        "test:server": 'node -e ""',
+      },
+    }),
   );
   file(
     "web/build.mjs",
@@ -163,7 +169,11 @@ function sandbox() {
   held("views", join("versions", "1"), before);
   const deployments = (list) => writeFileSync(join(state, "scripts", "views", "deployments.json"), JSON.stringify(list));
   deployments([{ deploymentId: "head-deployment" }, { deploymentId: "web-app", versionNumber: 1, description: "v0.1.0" }]);
-  for (const s of SCRIPTS) held(s, "head", { "code.js": `function ${s}() {}\n`, "appsscript.json": MANIFEST(["drive.file"]) });
+  for (const s of SCRIPTS)
+    held(s, "head", {
+      "code.js": `function ${s}() {}\n`,
+      "appsscript.json": MANIFEST(["drive.file"]),
+    });
   writeFileSync(join(state, "ci.json"), JSON.stringify([{ name: "ci", status: "completed", conclusion: "success" }]));
 
   return {
@@ -326,7 +336,13 @@ test("a checkout that isn't the release stops a release before anything is pushe
   s = sandbox();
   s.file(
     "web/package.json",
-    JSON.stringify({ scripts: { build: "node build.mjs", test: 'node -e "process.exit(1)"', "test:server": 'node -e ""' } }),
+    JSON.stringify({
+      scripts: {
+        build: "node build.mjs",
+        test: 'node -e "process.exit(1)"',
+        "test:server": 'node -e ""',
+      },
+    }),
   );
   s.git("commit", "-q", "-am", "A failing test");
   s.git("push", "-q", "origin", "main");
@@ -414,7 +430,10 @@ test("the web app's deployment is the one versioned deployment, or the one named
   r = s.release(["--apply", "--skip-tests", "--deployment", "web-app"]);
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(s.calls("update-deployment"), ["clasp update-deployment web-app --description v0.2.0 --json @web"]);
-  assert.deepEqual(s.served()[2], { deploymentId: "an-old-one", versionNumber: 1 });
+  assert.deepEqual(s.served()[2], {
+    deploymentId: "an-old-one",
+    versionNumber: 1,
+  });
   s.done();
 
   s = sandbox();
@@ -450,7 +469,10 @@ test("a stale file named like a new one but for its capitals stops that project'
   s.file("web/dist/Code.js", "function doGet() { return 1; }\n"); // last release's, left in dist
   const r = s.release(["--apply", "--skip-tests"]);
   assert.equal(r.status, 1);
-  assert.match(r.out, /PROBLEM: Code\.js and code\.js would be pushed as one script's two files: remove the stale one \(or the whole web\/dist folder, then build again\)/);
+  assert.match(
+    r.out,
+    /PROBLEM: Code\.js and code\.js would be pushed as one script's two files: remove the stale one \(or the whole web\/dist folder, then build again\)/,
+  );
   assert.equal(s.served()[1].versionNumber, 1); // the views were left as they were
   s.done();
 });
@@ -470,5 +492,22 @@ test("a push clasp skips is caught: the script is read back after every push", (
     r.out,
     /PROBLEM: after the push the script still differs from the checkout:\n {4}changed: appsscript\.json\n {4}Skipping push\./,
   );
+  s.done();
+});
+
+test("a file only the script has, with nothing else to push, is said plainly: clasp won't remove it", () => {
+  const s = sandbox();
+  let r = s.release(["--apply", "--skip-tests"]); // the script holds this checkout
+  const head = join(s.state, "scripts", "views", "head");
+  writeFileSync(join(head, "Old.js"), "var OLD = 1;\n"); // left by an earlier name
+  r = s.release(["--skip-tests"]);
+  assert.match(r.out, /only in the script: Old\.js/);
+  assert.match(
+    r.out,
+    /PROBLEM: clasp won't push: only the script has Old\.js\. Delete it in the script editor \(clasp open-script, in web\), then run this again/,
+  );
+  r = s.release(["--apply", "--skip-tests"]);
+  assert.equal(r.status, 1);
+  assert.doesNotMatch(r.out, /after the push the script still differs/);
   s.done();
 });

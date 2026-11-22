@@ -126,7 +126,9 @@ function scriptHolds(scriptId, version) {
 
 /** What clasp would push from a folder, {path from its root folder: text}; null when clasp couldn't say. */
 function checkoutHolds(project) {
-  const r = run("clasp", ["show-file-status", "--json"], { cwd: project.folder });
+  const r = run("clasp", ["show-file-status", "--json"], {
+    cwd: project.folder,
+  });
   const status = r.ok ? jsonOf(r.out) : null;
   if (!status || !Array.isArray(status.filesToPush)) {
     problem("clasp could not list the files it would push:");
@@ -149,8 +151,10 @@ function checkoutHolds(project) {
   const twice = Object.values(named).filter((fs) => fs.length > 1);
   if (twice.length) {
     for (const fs of twice)
-      problem(`${fs.sort().join(" and ")} would be pushed as one script's two files: remove the stale one` +
-        (project.rootDir !== "." ? ` (or the whole ${join(project.folder, project.rootDir)} folder, then build again)` : ""));
+      problem(
+        `${fs.sort().join(" and ")} would be pushed as one script's two files: remove the stale one` +
+          (project.rootDir !== "." ? ` (or the whole ${join(project.folder, project.rootDir)} folder, then build again)` : ""),
+      );
     return null;
   }
   return held;
@@ -177,7 +181,7 @@ function sayDifference(d) {
   for (const [what, files] of [
     ["changed", d.changed],
     ["new", d.added],
-    ["only in the script (a push removes it)", d.removed],
+    ["only in the script", d.removed],
   ])
     if (files.length) say(`    ${what}: ${files.join(", ")}`);
 }
@@ -338,6 +342,15 @@ for (const project of PROJECTS) {
     say("    its manifest changed, so the script may ask for its permissions again:");
     sayManifest(local[MANIFEST], held[MANIFEST]);
   }
+  // clasp pushes only when a file of the checkout differs, and a push then replaces every file; with none
+  // differing it says the script is up to date and leaves a file only the script has (an old name, say) in place
+  if (!d.changed.length && !d.added.length) {
+    problem(
+      `clasp won't push: only the script has ${d.removed.join(", ")}. Delete ${d.removed.length === 1 ? "it" : "them"} in ` +
+        `the script editor (clasp open-script, in ${project.folder}), then run this again`,
+    );
+    continue;
+  }
   if (!apply) {
     say(manifest && !permissions ? "  would push it only with --permissions" : "  would push it");
     continue;
@@ -346,7 +359,9 @@ for (const project of PROJECTS) {
     problem("its manifest changed: read the change above, then run again with --apply --permissions to push it");
     continue;
   }
-  const pushed = run("clasp", manifest ? ["push", "--force"] : ["push"], { cwd: project.folder });
+  const pushed = run("clasp", manifest ? ["push", "--force"] : ["push"], {
+    cwd: project.folder,
+  });
   if (!pushed.ok) {
     problem("the push failed:");
     say(tail(pushed));

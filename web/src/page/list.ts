@@ -67,6 +67,9 @@ interface ListFilter {
   shown: string; // the chip's value
 }
 
+// how far each part's list is scrolled, kept across its redraws, so an answer leaves the list where it was
+var listScrolls: Record<string, number> = {};
+
 // what each part's bar holds, kept across its redraws (an answer redraws the part)
 var listQueries: Record<string, { filters: ListFilter[]; groupBy: string; draft: string; typed: string }> = {};
 
@@ -135,6 +138,10 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
     side.appendChild(adds);
   }
   var list = el("ul", null, "md-items");
+  var tab = editTab;
+  list.addEventListener("scroll", function () {
+    listScrolls[tab] = list.scrollTop;
+  });
   var rows: { item: T; li: HTMLElement; row: HTMLButtonElement; text: string; section: string }[] = [];
   opts.items.forEach(function (item) {
     var li = el("li");
@@ -390,10 +397,18 @@ function masterDetail<T>(body: HTMLElement, opts: MasterDetail<T>) {
   var chosen = rows.filter(function (r) {
     return opts.key(r.item) === selected[editTab];
   })[0];
+  list.scrollTop = listScrolls[tab] || 0; // where it was before the redraw
   if (chosen) {
     mark();
     show(chosen.item);
     if (!opts.open) wrap.classList.remove("showing");
+    // the chosen row (the next question, after an answer) brought into view within the list alone, the page left
+    // where it is
+    var top = chosen.li.offsetTop - list.offsetTop,
+      bottom = top + chosen.li.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+    listScrolls[tab] = list.scrollTop;
   } else if (!rows.length) panel.appendChild(el("p", opts.none || "Nothing here.", "support"));
   else panel.appendChild(el("p", opts.empty, "support md-empty"));
 }

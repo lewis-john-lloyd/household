@@ -746,6 +746,32 @@ test("review: a merchant can be asked about line by line from now on, its lines 
   await page.close();
 });
 
+test("review: keeping an answer far down the list leaves the list where it was, the next question in view", async () => {
+  const page = await open(
+    "window.__location = { parameter: { view: 'edit', tab: 'review' } };" +
+      "window.__answers.getEditor.review = Array.from({ length: 40 }, function (_, i) {" +
+      "  return { key: 'ACME GROCER ' + i, kind: 'payee', lines: '1', total: '-20', first: '2001-02-01', last: '2001-02-01'," +
+      "    accounts: 'checking', example: 'ACME GROCER ' + i, guess: 'food', guessed_by: 'model', confidence: '0.9', note: '' }; });",
+  );
+  await page.waitForSelector("#edit:not([hidden]) .md-items");
+  await page.$eval(".md-items", (l) => (l.scrollTop = l.scrollHeight / 2));
+  const before = await page.$eval(".md-items", (l) => l.scrollTop);
+  assert.ok(before > 0);
+  await page.click(".md-row:has(.md-title:text-is('ACME GROCER 21'))");
+  await page.click(".md-detail button:has-text('Keep')");
+  assert.equal(await heading(page), "ACME GROCER 22"); // moved on
+  const inView = await page.$eval(".md-items", (l) => {
+    const row = [...l.querySelectorAll(".md-row")].find((r) => r.getAttribute("aria-current") === "true");
+    const a = l.getBoundingClientRect(),
+      b = row.getBoundingClientRect();
+    return [l.scrollTop, b.top >= a.top && b.bottom <= a.bottom];
+  });
+  assert.ok(Math.abs(inView[0] - before) < 200, "the list stayed near where it was: " + inView[0] + " against " + before);
+  assert.equal(inView[1], true);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("review: Enter keeps the answer and opens the next question, and the answer just kept can be undone there", async () => {
   const page = await open(QUESTIONS);
   await page.waitForSelector("#edit:not([hidden]) .md-list");

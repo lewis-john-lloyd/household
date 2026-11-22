@@ -84,6 +84,7 @@ def read_books(ledger: Spreadsheet) -> dict[str, Any]:
     )
     if len(assumed):
         paired = pd.concat([paired, assumed], ignore_index=True)
+    waiting = transfers.waiting_for(lonely, effective, accounts, payees)  # their other side isn't downloaded yet
     effective = compute.mark_transfers(effective, transfers.paired_ids(paired))
     aliases = compute.latest(read_ledger(ledger, "category_aliases"), ["alias"])
     effective = compute.apply_aliases(effective, aliases)
@@ -93,6 +94,7 @@ def read_books(ledger: Spreadsheet) -> dict[str, Any]:
         "accounts": accounts,
         "paired": paired,
         "lonely": lonely,
+        "waiting_transfers": waiting,
         "rules": read_ledger(ledger, "payee_rules"),
         "decisions": read_ledger(ledger, "proposal_decisions"),
         "categories": compute.latest(read_ledger(ledger, "categories"), ["category"]),
@@ -136,6 +138,7 @@ def categorize_books(books):
         books["rules"],
         books["decisions"],
         unpaired=books["lonely"]["txn_id"],
+        unpaired_waiting=books.get("waiting_transfers") or {},
         unpaired_guess=guess,
         explanations=explained,
         categories=books["categories"]["category"],

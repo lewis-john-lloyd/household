@@ -440,6 +440,7 @@ def categorize(
     decisions=None,
     unpaired=(),
     unpaired_guess="",
+    unpaired_waiting=None,
     explanations=None,
     review_from=REVIEW_FROM,
     categories=None,
@@ -448,7 +449,8 @@ def categorize(
 
     transactions are effective (corrections applied), transfer pairs marked and
     old category names aliased. unpaired: txn_ids of transfer lines with no
-    partner; unpaired_guess: the category guessed for one that sends money out.
+    partner; unpaired_guess: the category guessed for one that sends money out; unpaired_waiting:
+    {txn_id: account} for the ones whose other side isn't downloaded yet, which wait instead of being asked.
     explanations: what explain.explain matched (a payee named by PayPal, an
     Amazon split, each service's coverage). status is decided, open (asked in
     review) or waiting (for an explanation download); category is the decision
@@ -525,6 +527,8 @@ def categorize(
             out.append({"category": rule["category"], "decided_by": "rule", "status": "decided"})
         elif rule:  # guess from the rule, ask about this line
             out.append({"guess": rule["category"], "decided_by": "rule, asks each time", "ask": "line"})
+        elif r.txn_id in (unpaired_waiting or {}):  # its other side isn't downloaded yet (transfers.waiting_for)
+            out.append({"decided_by": f"waiting for {unpaired_waiting[r.txn_id]}", "status": "waiting", "ask": "wait"})
         elif r.txn_id in unpaired:
             guess = unpaired_guess if float(r.amount) < 0 else "transfer"
             out.append({"guess": guess, "decided_by": "transfer with no partner", "ask": "line"})

@@ -97,3 +97,29 @@ def test_a_transfer_from_before_the_other_accounts_history_is_taken_as_with_that
     assert (marked.loc[[0, 1, 2], "category"] == compute.TRANSFER).all()
     none, same = transfers.assume_before_history(lonely, ACCOUNTS, starts, "no_such_account")
     assert none.empty and same.equals(lonely)
+
+
+def test_a_payment_whose_other_side_is_not_downloaded_yet_waits_for_that_account():
+    accounts = pd.DataFrame(
+        [
+            {"account_id": a, "type": t, "institution": i, "closed": "", "expected_docs": "monthly_statement"}
+            for a, t, i in [
+                ("chk", "checking", "Willow St Bank"),
+                ("quill", "credit_card", "Quill & Ink"),
+                ("blue", "credit_card", "Blue Pump"),
+            ]
+        ]
+    )
+    lines = txns(
+        [
+            ("2001-03-10", "chk", -90.0, "QUILL & INK MOBILE PMT", ""),  # the Quill card's data ends March 1
+            ("2001-02-10", "chk", -80.0, "QUILL & INK MOBILE PMT", ""),  # inside its data and still alone: asked
+            ("2001-03-01", "quill", -5.0, "PAGE TURNER BOOKS", ""),
+            ("2001-03-20", "blue", -5.0, "BLUE PUMP FUEL", ""),
+            ("2001-03-12", "chk", -70.0, "ONLINE TRANSFER TO 1234", ""),  # names no one: any account behind
+        ]
+    )
+    lonely = lines[lines["account_id"] == "chk"]
+    assert transfers.waiting_for(lonely, lines, accounts) == {"t0": "quill", "t4": "quill"}
+    # a transfer_payee pattern names the account outright
+    assert transfers.waiting_for(lonely.iloc[[2]], lines, accounts, {"blue": "TRANSFER TO 1234"}) == {}

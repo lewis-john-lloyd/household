@@ -25,6 +25,12 @@ household's main account, named in the parameter transfer_account. Within an
 account's history a transfer still has to pair, so a missing statement shows.
 Payments to people and services (NOT_OWN: Venmo, PayPal, Zelle, a mortgage,
 taxes) are not reported; categorization handles them.
+
+A line with no partner whose other side may simply not be downloaded yet waits (waiting_for), as a line
+waiting for a service's email does, instead of being asked about: the other account is the one its
+transfer_payee pattern names, else a card whose institution its payee names (a CAPITAL ONE payment, a Capital
+One card), else any account sent monthly statements; it waits while that account's data doesn't reach
+WINDOW_DAYS past the line. Once the download covers the date and still has no partner, it is asked about.
 """
 
 import re
@@ -154,6 +160,35 @@ def assume_before_history(lonely, accounts, starts, main="", payees=None):
         )
         took.append(r.txn_id)
     return pd.DataFrame(rows, columns=COLUMNS), lonely[~lonely["txn_id"].isin(took)].reset_index(drop=True)
+
+
+def waiting_for(lonely, transactions, accounts, payees=None):
+    """{txn_id: the account whose download would hold its other side} for each line with no partner that
+    the other account's data doesn't yet reach (WINDOW_DAYS past its date). See the module's doc."""
+    if lonely is None or lonely.empty or accounts is None or accounts.empty:
+        return {}
+    df = transactions if "era" not in transactions else transactions[transactions["era"] != "legacy"]
+    newest = df.assign(day=df["date"].astype(str).str[:10]).groupby("account_id")["day"].max().to_dict()
+    live = accounts[
+        (accounts["closed"].astype(str).str.strip() == "")
+        & (accounts["expected_docs"].astype(str).str.strip() == "monthly_statement")
+    ]
+    payees = {a: re.compile(p, re.I) for a, p in (payees or {}).items() if p}
+    cards = {
+        a: str(name).strip().upper()
+        for a, name, kind in zip(live["account_id"], live["institution"], live["type"])
+        if kind == "credit_card" and len(str(name).strip()) >= 4
+    }
+    out = {}
+    for r in lonely.itertuples(index=False):
+        text = str(r.payee_raw).upper()
+        named = [a for a, p in payees.items() if p.search(text)] or [a for a, name in cards.items() if name in text]
+        others = [a for a in (named or list(live["account_id"])) if a != r.account_id]
+        reach = (pd.Timestamp(str(r.date)[:10]) + pd.Timedelta(days=WINDOW_DAYS)).strftime("%Y-%m-%d")
+        behind = [a for a in others if newest.get(a, "") < reach]
+        if behind:
+            out[r.txn_id] = behind[0]
+    return out
 
 
 def paired_ids(paired):

@@ -829,12 +829,13 @@
       .drawer table.charge-lines td { vertical-align: middle; font-variant-numeric: tabular-nums; }
       /* the lines behind a number and their fixes, and a setting edited where it is used (evidence.ts) */
       .drawer table.line-list td { vertical-align: middle; font-variant-numeric: tabular-nums; }
-      table.line-list { width: 100%; table-layout: fixed; }
-      table.line-list td.day { width: 76px; white-space: nowrap; }
-      table.line-list td.spend { width: 80px; text-align: right; white-space: nowrap; }
-      table.line-list td.about { overflow-wrap: anywhere; }
-      table.line-list td.acts { width: 156px; text-align: right; }
+      table.line-list { width: 100%; }
+      table.line-list td.day { white-space: nowrap; }
+      table.line-list td.spend { text-align: right; white-space: nowrap; }
+      table.line-list td.about { width: 100%; white-space: normal; overflow-wrap: anywhere; }
+      table.line-list td.acts { white-space: nowrap; }
       table.line-list td.acts button { padding-left: 6px; padding-right: 6px; }
+      table.line-list .acts-row { display: flex; justify-content: flex-end; column-gap: 2px; }
       table.line-list td.acts select { max-width: 150px; }
       table.line-list tr.left-out td:not(.acts) { color: var(--on-surface-variant); }
       table.line-list tr.left-out td.spend { text-decoration: line-through; }

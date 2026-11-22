@@ -1274,6 +1274,38 @@ test("the Lines tab's three views: by group, by kind and a card per group, each 
   await page.close();
 });
 
+test("a line's transactions over a year are by date, as its chart reads, and the fixes stay in their cell", async () => {
+  const page = await open(
+    "(function () { var y = new Date().toISOString().slice(0, 4);" +
+      "  window.__location = { parameter: { view: 'budget', period: y } };" +
+      "  var t = function (id, date, amount, payee) { return { id: id, date: y + date, account: 'card', payee: payee," +
+      "    category: 'food', amount: amount, split: '', items: [], key: payee, note: '', one_off: false }; };" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living' }, recurring: []," +
+      "    days: [[y + '-01-05', 'food', 90]], targets: [{ month: y + '-01', category: 'food', priority: 'high', target: 60 }] } };" +
+      "  window.__answers.getTransactions = [t('a', '-01-20', -90, 'ACME GROCER'), t('b', '-01-03', -40, 'WILLOW ST')," +
+      "    t('c', '-01-11', -20, 'QUILL & INK ' + 'LONGWORDWITHOUTANYBREAKSATALL'.repeat(3))];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line");
+  await page.click("table.bv tr.line:has-text('food')");
+  await page.click(".drawer button:has-text('Show its transactions')");
+  await page.waitForSelector(".drawer table.line-list");
+  const ids = () => page.$$eval(".drawer table.line-list tr[data-txn]", (rs) => rs.map((r) => r.dataset.txn));
+  assert.deepEqual(await ids(), ["b", "c", "a"]); // the year: by date
+  // a long payee wraps in its own cell, and the fixes keep theirs: neither runs over the other
+  const overlap = await page.$$eval(".drawer table.line-list tr[data-txn]", (rs) =>
+    rs.some((r) => {
+      const about = r.querySelector("td.about"),
+        acts = r.querySelector("td.acts").getBoundingClientRect();
+      const buttons = [...r.querySelectorAll("td.acts button")].map((b) => b.getBoundingClientRect());
+      return about.scrollWidth > about.clientWidth || buttons.some((b) => b.left < acts.left || b.top !== buttons[0].top);
+    }),
+  );
+  assert.equal(overlap, false);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("the comparison is one button saying what it is, opening its choices, and closing like a menu", async () => {
   const page = await open(
     "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +

@@ -109,7 +109,15 @@ function openLine(category: string, v: BudgetView, only?: string) {
         function (list) {
           var draw = function () {
             txns.textContent = "";
-            txns.appendChild(lineList(list, draw)); // each line with its fixes (evidence.ts)
+            // a month's lines biggest first (as the server sends them); a quarter's or a year's by date, as its
+            // chart reads
+            var shown =
+              lensOf(v.period) === "month"
+                ? list
+                : list.slice().sort(function (x, y) {
+                    return x.date < y.date ? -1 : x.date > y.date ? 1 : 0;
+                  });
+            txns.appendChild(lineList(shown, draw)); // each line with its fixes (evidence.ts)
             var days = periodDays(v.period);
             txns.appendChild(searchLink("category", category, days[0], v.sameWeeks && v.through ? v.through : days[1]));
           };

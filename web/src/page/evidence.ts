@@ -93,7 +93,9 @@ function lineList(lines: Txn[], redraw: () => void): HTMLElement {
       about.appendChild(el("div", o.now ? "Left out after the next run" : "Counts again after the next run", "support"));
     else if (o.now) about.appendChild(el("div", "Marked one-off", "support"));
     if (t.items && t.items.length) about.appendChild(itemList(t.items));
-    var act = cell(row, "", "text acts");
+    // the fixes keep their width on one line, and the payee wraps in what is left (a long one never runs under them)
+    var act = el("div", null, "acts-row");
+    cell(row, "", "text acts").appendChild(act);
     var said = pretty(t.category) + ": the " + cents.format(-t.amount) + " line of " + t.date;
     if (!t.split)
       act.appendChild(

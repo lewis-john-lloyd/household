@@ -101,7 +101,7 @@ function loadSavedEdits() {
     },
   );
 }
-var RULES = ["fixed", "billed", "recurring", "trailing", "lookback", "seasonal", "sinking_fund", "loan"];
+var RULES = ["fixed", "billed", "billed_average", "recurring", "trailing", "lookback", "seasonal", "sinking_fund", "loan"];
 var PERS = ["monthly", "biweekly", "weekly", "semi_monthly", "quarterly", "semi_annually", "annually"];
 var PRIORITIES = ["", "high", "medium", "low"];
 

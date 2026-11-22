@@ -116,6 +116,7 @@ LEDGER = (
             "rule": (
                 "fixed",
                 "billed",
+                "billed_average",
                 "seasonal",
                 "trailing",
                 "lookback",

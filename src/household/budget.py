@@ -167,12 +167,33 @@ def targets(rules, actuals, through, recurring=None, by_line=None, loan=None, no
 BILL_MONTHS = {"monthly": 1, "quarterly": 3, "semi_annually": 6, "annually": 12}
 
 
-def _billed(state, month, spend=None):
+BILLS_AVERAGED = 3  # a billed_average line's bills, when it names no number
+
+
+def _billed_average(state, month, spend=None):
+    """A bill whose amount is the average of its last N bills (amount is N, BILLS_AVERAGED when blank): the
+    category's months with spending before this one, the latest N. It comes in the months a billed line's
+    would; with no bill yet it budgets nothing."""
+    n = _amount(state)
+    n = BILLS_AVERAGED if np.isnan(n) or n < 1 else int(n)
+    category = str(state["category"]).strip()
+    paid = sorted((m, v) for (c, m), v in (spend or {}).items() if c == category and m < month and (v or 0) > 0)
+    last = [v for _, v in paid[-n:]]
+    if not last:
+        return 0.0, f"billed average: no bill before {month} to average"
+    average = round(float(sum(last)) / len(last), 2)
+    value, why = _billed(state, month, spend, average)
+    first, final = paid[-len(last)][0], paid[-1][0]
+    return value, f"{why}; the average of its last {len(last)} bills ({first} to {final})"
+
+
+def _billed(state, month, spend=None, amount=None):
     """A billed line's target in month: the whole amount in a bill's month, else nothing. The bills' months
     follow the category's own spending: the latest month on or before this one that the category spent in is
-    a bill's month, and so is every period after it. With no spending yet, `effective` is the first bill's."""
+    a bill's month, and so is every period after it. With no spending yet, `effective` is the first bill's.
+    amount, when given, is the bill's amount instead of the line's own (a billed_average line's)."""
     per = str(state.get("per", "")).strip()
-    amount = _amount(state)
+    amount = _amount(state) if amount is None else amount
     if np.isnan(amount):
         return None, "billed: no amount"
     if per not in BILL_MONTHS:
@@ -215,6 +236,8 @@ def _rule_target(state, month, spend, recurring=None, by_line=None, loan=None):
         return amount, f"loan: scheduled {part} {amount:.2f}"
     if rule == "billed":
         return _billed(state, month, spend)
+    if rule == "billed_average":
+        return _billed_average(state, month, spend)
     if rule == "recurring":
         line = str(state.get("line", "")).strip()
         if line in (by_line or {}):

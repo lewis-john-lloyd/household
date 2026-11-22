@@ -1085,6 +1085,10 @@ test("a budget line is renamed, or merged into another with the two amounts adde
     "budget line camp sam: merged into camp alex from 2001-01-01",
     "QUILL & INK: pays budget line camp alex", // the charge it paid follows it
   ]);
+  // a bill can be budgeted at the average of its last bills: the amount is then how many
+  await page.click(".drawer .line-change button:text-is('Change')");
+  await page.selectOption(".drawer label:has-text('Target from') select", "billed_average");
+  assert.equal(await page.locator(".drawer label:has-text('Bills averaged') input").count(), 1);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

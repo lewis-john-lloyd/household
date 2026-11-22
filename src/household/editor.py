@@ -51,6 +51,9 @@ def in_words(row):
             if amount
             else "billed, but no amount"
         )
+    if rule == "billed_average":
+        n = int(float(amount)) if amount.replace(".", "", 1).isdigit() and float(amount) >= 1 else budget.BILLS_AVERAGED
+        return f"a bill {PER_WORDS.get(per, per)} in the months it comes, the average of its last {n} bills"
     if rule == "sinking_fund":
         return f"set aside {each}, spent from a running balance" if each else "sinking fund, but no amount"
     if rule in HISTORY_WORDS:

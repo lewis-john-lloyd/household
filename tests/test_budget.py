@@ -362,3 +362,22 @@ def test_the_months_ahead_of_now_are_budgeted_the_averaging_lines_at_this_month_
     # a fixed line and a scheduled amount are worked out for their own months, so the year adds up whole
     assert out.xs("gifts", level="line")["target"].sum() == 1200
     assert out.loc[("2026-12", "tuition"), "target"] == 90
+
+
+def test_a_bill_can_be_budgeted_at_the_average_of_its_last_bills():
+    history = actuals(
+        [["2026-01", "water", 60.0], ["2026-04", "water", 90.0], ["2026-07", "water", 30.0], ["2026-10", "water", 0]]
+    )
+    out = by(
+        budget.targets(
+            rules(["water", "2026-01-01", "water", "bills", "high", "billed_average", "", "quarterly", ""]),
+            history,
+            "2026-11",
+        ),
+        "month",
+    )["target"]
+    # due in the bills' months (every third from the last one, July), at the average of the three before it
+    assert out["2026-10"] == 60.0
+    assert out["2026-11"] == 0.0
+    assert out["2026-07"] == 75.0  # January and April: only two bills came before it
+    assert out["2026-01"] == 0.0  # nothing to average yet

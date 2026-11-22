@@ -346,7 +346,14 @@ function budgetForm(given: Row | null, done: () => void, preset?: string) {
   var picked: Record<string, boolean> = Object.assign({}, paid);
   var showCharges = function () {
     var recurring = rule.value === "recurring";
-    amount.parentNode!.firstChild!.textContent = recurring ? "Allowance for the rest (blank for none)" : "Amount";
+    // an averaged bill's amount is how many of its bills to average
+    var averaged = rule.value === "billed_average";
+    amount.parentNode!.firstChild!.textContent = recurring
+      ? "Allowance for the rest (blank for none)"
+      : averaged
+        ? "Bills averaged"
+        : "Amount";
+    amount.placeholder = averaged ? "3" : "";
     charges.textContent = "";
     charges.hidden = !recurring;
     if (!recurring) return;

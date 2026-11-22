@@ -35,6 +35,8 @@ function shortHow(bl: Row) {
       return n ? plainAmount(Math.round(n * 12 * (PER_MONTH[String(bl.per || "")] || 1))) + " a year, set aside" : "Set aside";
     case "billed":
       return n ? plainAmount(n) + " " + per + ", when the bill comes" : "When the bill comes";
+    case "billed_average":
+      return "Its last " + (n >= 1 ? Math.floor(n) : 3) + " bills averaged, " + per;
     case "recurring":
       return "Its recurring charges" + (n ? ", plus " + plainAmount(n) + " " + per : "");
     case "trailing":
@@ -82,6 +84,7 @@ function trackedByKey(): Record<string, Row> {
 var KIND_OF_RULE: Record<string, string> = {
   recurring: "Recurring",
   billed: "Recurring",
+  billed_average: "Recurring",
   loan: "Recurring",
   sinking_fund: "Annual",
   lookback: "Floating",

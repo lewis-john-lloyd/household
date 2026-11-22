@@ -32,6 +32,7 @@ var RULE_NAMES: Record<string, string> = {
   seasonal: "What the same months last year spent",
   sinking_fund: "Set aside, spent from a balance",
   billed: "A bill in the months it comes (quarterly, say)",
+  billed_average: "A bill in the months it comes, at the average of its last bills",
   loan: "Its part of the loan payment (the amortization schedule)",
 };
 

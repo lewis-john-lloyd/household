@@ -337,3 +337,28 @@ def test_the_floating_formula_matches_the_fixture_the_views_preview_checks_too()
         _, mean, spread, value = budget.history("x", months, dict(zip([("x", m) for m in months], case["values"])))
         assert case["sigma"] == budget.LOOKBACK_SIGMA, case["why"]
         assert (mean, spread, value) == pytest.approx((case["mean"], case["spread"], case["value"])), case["why"]
+
+
+def test_the_months_ahead_of_now_are_budgeted_the_averaging_lines_at_this_month_s_target():
+    history = actuals([["2026-07", "petrol", 40.0], ["2026-08", "petrol", 60.0], ["2026-09", "petrol", 50.0]])
+    out = by(
+        budget.targets(
+            rules(
+                ["petrol", "2026-09-01", "petrol", "bills", "high", "trailing", "", "monthly", ""],
+                ["gifts", "2026-01-01", "gifts", "yearly", "low", "fixed", "1200", "annually", ""],
+                ["tuition", "2026-12-01", "kids", "school", "high", "scheduled", "90", "", ""],
+            ),
+            history,
+            "2026-12",
+            now="2026-10",
+        ),
+        "month",
+        "line",
+    )
+    # a trailing line's months ahead keep October's target: November's average would count a month not over
+    assert out.loc[("2026-11", "petrol"), "target"] == out.loc[("2026-12", "petrol"), "target"]
+    assert out.loc[("2026-11", "petrol"), "target"] == out.loc[("2026-10", "petrol"), "target"]
+    assert "as 2026-10" in out.loc[("2026-12", "petrol"), "basis"]
+    # a fixed line and a scheduled amount are worked out for their own months, so the year adds up whole
+    assert out.xs("gifts", level="line")["target"].sum() == 1200
+    assert out.loc[("2026-12", "tuition"), "target"] == 90

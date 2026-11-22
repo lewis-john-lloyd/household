@@ -100,8 +100,14 @@ def _spend_lookup(actuals):
     return a.groupby(["category", "month"])["spend"].sum().to_dict()
 
 
-def targets(rules, actuals, through, recurring=None, by_line=None, loan=None):
+CARRIED = FLOATING[:2] + ("recurring",)  # rules whose month ahead is the month now's: nothing new to average
+
+
+def targets(rules, actuals, through, recurring=None, by_line=None, loan=None, now=None):
     """One row per line per month, from each line's first effective month through `through` (YYYY-MM).
+    With now (YYYY-MM) before through, the months after now are ahead: a trailing, lookback or recurring line
+    keeps its target for now (its months to average, or its charges' prices, aren't known yet), while a
+    fixed, billed, scheduled, annual, seasonal or loan line is worked out for the month as usual.
     recurring: {(category, month): (expected, charges)} from recurring.monthly_expected, for `recurring` lines;
     by_line: {line: {month: (expected, charges)}} from recurring.line_expected, for the lines charges are
     linked to, which count those charges alone; loan: {(category, month): (amount, part)} from loan_parts, for
@@ -117,6 +123,7 @@ def targets(rules, actuals, through, recurring=None, by_line=None, loan=None):
     out = []
     for line, rows in r.groupby("line"):
         rows = rows.sort_values("effective", kind="stable")  # within a month, the later row in the sheet wins
+        kept = None  # (state's index, target, basis) of this line at now, for the months ahead
         states = rows[rows["rule"] != "scheduled"]
         scheduled = rows[rows["rule"] == "scheduled"].drop_duplicates("day", keep="last")
         for month in _months(rows["effective"].min(), through):
@@ -132,7 +139,13 @@ def targets(rules, actuals, through, recurring=None, by_line=None, loan=None):
                 target += float(sum(a for a in amounts if not np.isnan(a)))
                 basis.append("scheduled")
             if active:
-                value, why = _rule_target(state, month, spend, recurring or {}, by_line or {}, loan or {})
+                ahead = now is not None and month > now
+                if ahead and state["rule"] in CARRIED and kept is not None and kept[0] == state.name:
+                    value, why = kept[1], f"{kept[2]} (as {now}: the month ahead isn't known yet)"
+                else:
+                    value, why = _rule_target(state, month, spend, recurring or {}, by_line or {}, loan or {})
+                if month == now:
+                    kept = (state.name, value, why)
                 target += value or 0.0
                 basis.append(why)
             src = state if active else due.iloc[-1]

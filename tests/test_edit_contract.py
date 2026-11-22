@@ -50,6 +50,7 @@ SAMPLES = {
     "recurring_merge": [{"key": "PAGE TURNER BOOKS", "same_as": "QUILL & INK"}],
     "recurring_name": [{"key": "PAGE TURNER BOOKS", "name": "books"}],
     "recurring_line": [{"key": "PAGE TURNER BOOKS", "line": "books"}],
+    "budget_line_name": [{"line": "camp", "name": "summer"}, {"line": "camp", "name": "day camp"}],
     "recipient": [{"key": "WILLOW ST", "deductible": "yes"}, {"key": "willow st", "deductible": "no"}],
     "recipient_merge": [{"key": "WILLOW ST", "same_as": "QUILL & INK"}, {"key": "willow st", "same_as": ""}],
     "looks_right": [

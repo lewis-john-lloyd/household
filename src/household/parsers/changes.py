@@ -40,6 +40,9 @@ row a person would otherwise have typed:
   recurring_line   the budget line a merchant key's    -> proposal_decisions (kind
                    recurring charge pays, or blank to     subscription_line)
                    unlink it
+  budget_line_name a budget line's new name: its rows,  -> proposal_decisions (kind
+                   scheduled amounts and charges are      budget_line_name)
+                   read under it from then on
   security         a fund's asset class: one code or   -> securities (its other fields
                    a blend ("SDT 60, BT 40"), each        carried from the row it
                    code a node of the allocation          replaces)
@@ -79,6 +82,7 @@ import pandas as pd
 
 from .common import ParseError, Result
 from .. import allocation, budget_checks, categorize, compute, giving, schema, settings, tax
+from .. import decisions
 
 NAME = "changes"
 FORMAT = "household_changes"
@@ -118,6 +122,7 @@ KINDS = {
     "recurring_merge": ({"key", "same_as"}, set()),
     "recurring_name": ({"key", "name"}, set()),
     "recurring_line": ({"key", "line"}, set()),
+    "budget_line_name": ({"line", "name"}, set()),
     "recipient": ({"key", "deductible"}, set()),
     "recipient_merge": ({"key", "same_as"}, set()),
     "looks_right": ({"check", "looks_right"}, set()),
@@ -291,6 +296,12 @@ def _values(kind, e):
         out.append("same_as must be another key")
     if kind == "recurring_name" and (len(e["name"]) > 60 or any(ord(c) < 32 for c in e["name"])):
         out.append("name must be at most 60 characters on one line")
+    if kind == "budget_line_name":
+        name = e["name"].strip()
+        if not name or len(name) > 60 or any(ord(c) < 32 for c in name):
+            out.append("name must be 1 to 60 characters on one line")
+        elif name == e["line"].strip():
+            out.append("name must be a new one")
     if kind == "line":
         if e["field"] not in LINE_FIELDS:
             out.append(f"field must be one of {', '.join(LINE_FIELDS)}")
@@ -416,6 +427,7 @@ def _target(e):
         "item": "item_id",
         "looks_right": "check",
         "security": "symbol",
+        "budget_line_name": "line",
     }[kind]
     extra = (e["jurisdiction"],) if kind == "explanation" else ()
     return (kind, e[key]) + extra
@@ -508,6 +520,8 @@ def _describe(e):
         return f"recipient {e['key']}: " + (f"the same as {e['same_as']}" if e["same_as"].strip() else "on its own")
     if kind == "recurring_line":
         return f"recurring {e['key']}: " + (f"pays budget line {e['line']}" if e["line"].strip() else "pays no line")
+    if kind == "budget_line_name":
+        return f"budget line {e['line']}: renamed {e['name'].strip()}"
     if kind == "looks_right":
         return f"check {e['check']}: " + ("looks right" if e["looks_right"] == "yes" else "check again")
     if kind == "security":
@@ -607,6 +621,17 @@ def _rows(edits, at):
                     "decided_at": at,
                     "decision": "approve" if into else "reject",
                     "note": into,
+                },
+            )
+        elif kind == "budget_line_name":
+            add(
+                "proposal_decisions",
+                {
+                    "proposal_key": f"{decisions.LINE_NAME}:{e['line'].strip()}",
+                    "kind": decisions.LINE_NAME,
+                    "decided_at": at,
+                    "decision": "approve",
+                    "note": e["name"].strip(),
                 },
             )
         elif kind == "recurring_name":
@@ -805,7 +830,7 @@ def _current(e, read):
     """The row an edit that carries `was` replaces, or None when there is none."""
     kind = e["kind"]
     if kind == "budget_line":
-        rules = read("budget_rules")
+        rules = decisions.renamed_lines(read("budget_rules"), read("proposal_decisions"))  # as compute reads them
         if rules.empty:
             return None
         is_scheduled = rules["rule"].astype(str).str.strip() == "scheduled"
@@ -907,12 +932,14 @@ def check(edits, read):
             wrong.append("no such pay stub")
         elif kind == "not_duplicate":
             wrong += [f"no such transaction {t}" for t in (e["txn_a"], e["txn_b"]) if t not in amounts]
-        elif kind == "recurring_line" and e["line"].strip():
-            rules = read("budget_rules")
+        elif kind in ("recurring_line", "budget_line_name") and e["line"].strip():
+            rules = decisions.renamed_lines(read("budget_rules"), read("proposal_decisions"))
             lines = set(rules["line"].astype(str).str.strip()) if len(rules) else set()
             lines |= {x["line"].strip() for x in edits if x["kind"] == "budget_line"}  # added by this change set
             if e["line"].strip() not in lines:
                 wrong.append(f"no budget line {e['line'].strip()}")
+            elif kind == "budget_line_name" and e["name"].strip() in lines:
+                wrong.append(f"a budget line is already named {e['name'].strip()}: merge the two instead")
         if kind in REPLACES:
             why = _conflict(e, read)
             if why:

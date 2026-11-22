@@ -73,7 +73,7 @@ def test_coverage_lists_what_is_due():
     assert list(out.index) == ["checking", "card", "new", "spare", "paypal", "amazon", "venmo", "apple", "google"]
     assert out.loc["spare", "status"] == "download when used"
     assert out.loc["checking", "status"] == "ok"
-    assert (out.loc["card", "newest"], out.loc["card", "status"]) == ("2026-08-15", "due")  # 72 days > 45
+    assert (out.loc["card", "newest"], out.loc["card", "status"]) == ("2026-08-15", "due")  # August isn't all there
     assert out.loc["new", "status"] == "never downloaded"
     assert out.loc["paypal", "status"] == "ok"
     assert (out.loc["venmo", "waiting_lines"], out.loc["venmo", "status"]) == (1, "never downloaded")
@@ -216,3 +216,10 @@ def test_paychecks_flag_pay_that_never_arrived_but_not_history_before_the_ledger
 def test_net_pays_use_the_stub_line_or_compute_it():
     stubs = pd.DataFrame(_stub("2026-01-02", "1", 1000.0))
     assert checks.net_pays(stubs)["net"].tolist() == [1000.0]
+
+
+def test_a_download_falls_due_once_a_month_its_data_does_not_finish_is_over():
+    assert str(checks.falls_due("2026-10-20")) == "2026-11-01"  # October 21 to 31 are missing
+    assert str(checks.falls_due("2026-10-31")) == "2026-12-01"  # October is whole: due once November is over
+    assert str(checks.falls_due("2026-10-31", 100)) == "2027-02-09"  # a quarterly statement's own gap
+    assert str(checks.falls_due("2026-10-31", 45)) == "2026-12-01"  # a monthly statement's gap is the month rule

@@ -354,6 +354,24 @@ test("after a save whose file was discarded since, Save says so and keeps every 
   await page.close();
 });
 
+test("the budget opens on the last month that is over, and a link can open any period", async () => {
+  const last = (() => {
+    const d = new Date();
+    d.setDate(0); // the last day of last month
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  })();
+  let page = await open("window.__location = { parameter: { view: 'budget' } };");
+  await page.waitForSelector(".bv-picker");
+  assert.equal(await page.getAttribute(".bv-picker", "data-period"), last);
+  assert.doesNotMatch(await page.textContent(".bv-picker .search-datechip"), /so far/);
+  await page.close();
+  page = await open("window.__location = { parameter: { view: 'budget', period: '2001-Q3' } };");
+  await page.waitForSelector(".bv-picker");
+  assert.equal(await page.getAttribute(".bv-picker", "data-period"), "2001-Q3");
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("a scheduled amount on a date that has one says what it replaces, so ingest can tell if it moved", async () => {
   const line = {
     line: "camp",
@@ -373,7 +391,8 @@ test("a scheduled amount on a date that has one says what it replaces, so ingest
     spends_from: "kids",
   };
   const page = await open(
-    "window.__answers.getEditor.budgetLines = [" +
+    "window.__location = { parameter: { period: new Date().toISOString().slice(0, 7) } };" + // this month, so far
+      "window.__answers.getEditor.budgetLines = [" +
       JSON.stringify(line) +
       "];" +
       "window.__answers.getEditor.scheduled = [" +
@@ -403,7 +422,7 @@ test("a scheduled amount on a date that has one says what it replaces, so ingest
   });
   await page.click("#view-budget");
   await page.click("table.bv tr.line:has-text('camp')"); // kids' one budget line, shown by its name
-  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
+  await page.click(".drawer .line-change button:text-is('Change')"); // the form waits behind Change
   for (const [date, amount] of [
     ["2001-06-01", "100"],
     ["2001-07-01", "40"],
@@ -952,7 +971,7 @@ test("a change saved earlier and not yet applied reads as saved when the page op
 test("the budget compares any period with another, and a line's target can come from its recurring charges", async () => {
   // made-up spending: today, and the same day a year earlier; food budgeted at 60 this month
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var t = (function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })(new Date()), y = (Number(t.slice(0, 4)) - 1) + t.slice(4);" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living', media: 'fun' }, recurring: []," +
       "    targets: [{ month: t.slice(0, 7), category: 'food', priority: 'high', target: 60 }]," +
@@ -990,7 +1009,7 @@ test("the budget compares any period with another, and a line's target can come 
   assert.match(await page.getAttribute(".bv-picker", "data-period"), /^\d{4}-Q[1-4]$/);
   await page.click("table.bv tr.line:has-text('food')");
   await page.waitForSelector(".drawer svg.history");
-  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
+  await page.click(".drawer .line-change button:text-is('Change')"); // the form waits behind Change
   await page.selectOption(".drawer label:has-text('Target from') select", "recurring");
   await page.fill(".drawer label:has-text('Allowance') input", "20");
   // none picked: the tracked charges in its category count
@@ -1005,6 +1024,67 @@ test("the budget compares any period with another, and a line's target can come 
   assert.equal(kept[1], "PAGE TURNER BOOKS: pays budget line food"); // already tracked: no track edit
   await page.keyboard.press("Escape");
   assert.equal(await page.$$eval(".drawer", (d) => d.length), 0);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("a budget line is renamed, or merged into another with the two amounts added up", async () => {
+  const bl = (line, amount) => ({
+    line,
+    effective: "2001-01-01",
+    category: "kids",
+    account: "",
+    priority: "high",
+    rule: "fixed",
+    amount: String(amount),
+    per: "annually",
+    note: "",
+    in_force: "yes",
+    in_words: amount + ".00 a year",
+    this_month: "",
+    last_12_months: "0",
+    scheduled: "",
+    spends_from: "kids",
+  });
+  const page = await open(
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
+      "(function () { var m = new Date().toISOString().slice(0, 7);" +
+      "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family' }, recurring: [], days: []," +
+      "    targets: [{ month: m, category: 'kids', priority: 'high', target: 50 }]," +
+      "    lineTargets: [{ month: m, line: 'camp alex', category: 'kids', target: 30 }, { month: m, line: 'camp sam', category: 'kids', target: 20 }] } };" +
+      "  window.__answers.getEditor.budgetLines = " +
+      JSON.stringify([bl("camp alex", 60), bl("camp sam", 40)]) +
+      ";" +
+      "  window.__answers.getEditor.subscriptions = [{ key: 'QUILL & INK', marked: 'yes', line: 'camp sam' }];" +
+      "})();",
+  );
+  await page.waitForSelector("table.bv tr.line:has-text('kids')");
+  await page.click("table.bv tr.line:has-text('kids') button.chev");
+  await page.click("table.bv tr.subline:has-text('camp sam')");
+  await page.waitForSelector(".drawer h2:has-text('camp sam')");
+  // a name another line has is a merge, not a rename
+  await page.click(".drawer .line-change button:text-is('Rename')");
+  await page.fill(".drawer label:has-text('New name') input", "camp alex");
+  await page.click(".drawer button:text-is('Keep')");
+  assert.match(await page.textContent(".drawer .error"), /already called camp alex: merge the two instead/);
+  await page.fill(".drawer label:has-text('New name') input", "day camp");
+  await page.click(".drawer button:text-is('Keep')");
+  assert.deepEqual(await staged(page), ["budget line camp sam: renamed day camp"]);
+  // the drawer stays open on the line, now saying the rename waits for a run
+  assert.match(await page.textContent(".drawer .line-change"), /renamed day camp/);
+  await page.waitForSelector(".drawer .line-change button:text-is('Merge into…')");
+  await page.click(".drawer .line-change button:text-is('Merge into…')");
+  // the two budget the same way, so the merged line carries both
+  assert.equal(await page.inputValue(".drawer label:has-text('Amount') input"), "100");
+  await page.fill(".drawer label:has-text('From') input", "2001-01-01"); // the two were one all along
+  await page.fill(".drawer label:has-text('Amount') input", "60");
+  await page.click(".drawer button:text-is('Merge')");
+  assert.deepEqual(await staged(page), [
+    "budget line camp sam: renamed day camp",
+    "budget line camp alex: camp sam merged in, 60 annually from 2001-01-01",
+    "budget line camp sam: merged into camp alex from 2001-01-01",
+    "QUILL & INK: pays budget line camp alex", // the charge it paid follows it
+  ]);
   assert.deepEqual(page.errors, []);
   await page.close();
 });
@@ -1028,7 +1108,7 @@ test("a category with two budget lines shows each as its own row, to open and ch
     spends_from: "kids",
   });
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7);" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family', gifts: 'family' }, recurring: [], days: []," +
       "    targets: [{ month: m, category: 'kids', priority: 'high', target: 50 }, { month: m, category: 'gifts', priority: 'low', target: 10 }]," +
@@ -1062,7 +1142,7 @@ test("a category with two budget lines shows each as its own row, to open and ch
   await page.waitForSelector(".drawer h2:has-text('camp sam')");
   assert.equal(await page.locator(".drawer .line-change").count(), 1); // only this line's
   assert.equal(await page.locator(".drawer form.edit").count(), 0); // its form behind Change
-  await page.click(".drawer .line-change > button:has-text('Change')"); // the form waits behind Change
+  await page.click(".drawer .line-change button:text-is('Change')"); // the form waits behind Change
   assert.match(await page.textContent(".drawer"), /Budget line: camp sam/);
   assert.doesNotMatch(await page.textContent(".drawer"), /Budget line: camp alex/);
   await page.fill(".drawer label:has-text('Amount') input", "300");
@@ -1073,10 +1153,10 @@ test("a category with two budget lines shows each as its own row, to open and ch
   assert.equal(await page.locator(".drawer form.edit").count(), 1); // kept: still open, for another change
   await page.click(".drawer .line-change button:has-text('Cancel')");
   assert.equal(await page.locator(".drawer form.edit").count(), 0);
-  await page.click(".drawer .line-change > button:has-text('Change')");
+  await page.click(".drawer .line-change button:text-is('Change')");
   await page.keyboard.press("Escape"); // a drawer opened again leads with the line, not its form
   await page.click("table.bv tr.subline:has-text('camp sam')");
-  await page.waitForSelector(".drawer .line-change > button:has-text('Change')");
+  await page.waitForSelector(".drawer .line-change button:text-is('Change')");
   assert.equal(await page.locator(".drawer form.edit").count(), 0);
   assert.deepEqual(page.errors, []);
   await page.close();
@@ -1085,7 +1165,7 @@ test("a category with two budget lines shows each as its own row, to open and ch
 test("groups open and shut, a loan's parts roll up into one row, and neither click moves the page", async () => {
   const cats = ["interest", "principal", "pmi", "household"];
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01', groups = { food: 'living' }, targets = [];" +
       JSON.stringify(cats) +
       ".forEach(function (c) { groups[c] = 'home'; targets.push({ month: m, category: c, priority: 'high', target: 20 }); });" +
@@ -1127,7 +1207,7 @@ test("groups open and shut, a loan's parts roll up into one row, and neither cli
 
 test("the Lines tab's three views: by group, by kind and a card per group, each opening the same drawer", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living', hobby: 'living', media: 'fun' }, recurring: []," +
       "    days: [[d, 'food', 40], [d, 'hobby', 5], [d, 'media', 9]], funds: [{ month: m, line: 'hobby', category: 'hobby', balance: -15 }]," +
@@ -1163,7 +1243,7 @@ test("the Lines tab's three views: by group, by kind and a card per group, each 
 
 test("the comparison is one button saying what it is, opening its choices, and closing like a menu", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { food: 'living' }, recurring: []," +
       "    days: [[d, 'food', 40]], targets: [{ month: m, category: 'food', priority: 'high', target: 60 }] } };" +
@@ -1205,7 +1285,7 @@ test("on a phone the page leads with the answer: cards, the period's judgment un
       contentType: "text/javascript",
       body:
         FAKE +
-        "window.__location = { parameter: { view: 'budget' } };" +
+        "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
         "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
         "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family', family: 'family' }, recurring: []," +
         "    days: [[d, 'kids', 1200], [d, 'family', 5]], targets: [{ month: m, category: 'kids', priority: 'high', target: 100 }," +
@@ -1242,7 +1322,7 @@ test("on a phone the page leads with the answer: cards, the period's judgment un
 
 test("an annual fund's balance shows its working: from zero each year, set aside, spent, and a line moved out", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-02', y = m.slice(0, 4), k = Number(m.slice(5, 7));" +
       "  var funds = [{ month: (Number(y) - 1) + '-12', line: 'media', category: 'media', set_aside: 10, spent: 0, balance: 30 }];" +
       "  for (var i = 1; i <= k; i++) { var mm = y + '-' + String(i).padStart(2, '0');" +
@@ -1290,7 +1370,7 @@ test("an annual fund's balance shows its working: from zero each year, set aside
 
 test("a line set per year is judged on its year: a month a payment lands in isn't over", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { kids: 'family', family: 'family', hobby: 'fun', media: 'fun' }," +
       "    recurring: [], days: [[d, 'kids', 1200], [d, 'family', 150], [d, 'hobby', 50], [d, 'media', 9]]," +
@@ -1341,7 +1421,7 @@ test("a line set per year is judged on its year: a month a payment lands in isn'
 
 test("giving: each recipient under its line item, marked deductible here, and the year's deductible gifts", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { gifts: 'giving', food: 'living' }, recurring: []," +
       "    days: [[d, 'gifts', 70], [d, 'food', 20]]," +
@@ -1384,7 +1464,7 @@ test("giving: each recipient under its line item, marked deductible here, and th
 
 test("giving: a recipient opens to its gifts, each with the fixes a line takes", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__day = d;" +
       "  window.__answers.getBudgetBook = { tracked: [], book: { groups: { gifts: 'giving' }, recurring: []," +
@@ -2140,7 +2220,7 @@ test("recurring: a charge lists its lines, and one that isn't part of it is left
 
 test("a line whose charge changed price says Check, and the check opens the charge's lines", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  var sub = { key: 'PAGE TURNER BOOKS', marked: 'yes', status: 'price changed', cadence: 'monthly', charges: '3'," +
       "    last: d, latest: '24', previous: '4', yearly: '288', category: 'media', example: 'PAGE TURNER BOOKS'," +
@@ -2179,7 +2259,7 @@ test("a line whose charge changed price says Check, and the check opens the char
 
 test("ending a budget line asks once in place, and a line naming no category says so", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], charges: [], book: { groups: { hobby: 'fun' }, recurring: []," +
       "    days: [[d, 'hobby', 20]], targets: [{ month: m, category: 'hobby', priority: 'low', target: 40 }] } };" +
@@ -2216,7 +2296,7 @@ test("with no flows yet, coming back to Cashflow says so again and asks for no p
 
 test("a check compute published: its words on the row, its evidence a click away, and Looks right settles it here", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  window.__answers.getBudgetBook = { tracked: [], charges: [], checks: [{ check: 'target_high|hobby|t9', kind: 'target_high'," +
       "    about: 'hobby', category: 'hobby', label: 'Budget $55.00, usually $20.00'," + // leak-guard: allow (made up)
@@ -2361,7 +2441,7 @@ test("a charge that changed price, on the Status page, opens that charge's drawe
 
 test("a floating line shows its working, a month's lines, and what marking one off will do", async () => {
   const page = await open(
-    "window.__location = { parameter: { view: 'budget' } };" +
+    "window.__location = { parameter: { view: 'budget', period: new Date().toISOString().slice(0, 7) } };" +
       "(function () { var m = new Date().toISOString().slice(0, 7), d = m + '-01';" +
       "  var back = function (n) { var t = new Date(m + '-15'); t.setMonth(t.getMonth() - n); return t.toISOString().slice(0, 7); };" +
       "  var spends = [40, 90, 50, 0], inputs = [4, 3, 2, 1].map(function (n, i) {" +

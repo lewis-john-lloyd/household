@@ -4,7 +4,11 @@ coverage       one row per bank or card account that sends monthly statements
                (accounts.expected_docs = monthly_statement, not closed, of type
                checking, savings or credit_card): the newest date the ledger has
                for it, from a transaction, a balance or a download's covers_to,
-               and "due" once that is more than max_gap_days old (45 when blank).
+               and "due" once a month it doesn't reach the end of is over (data
+               through October 20 is due on November 1; through October 31, on
+               December 1). An account with a slower max_gap_days (more than a
+               month and a half, a quarterly statement's) is due once its newest date is
+               that many days old instead.
                An account whose expected_docs is when_used (open but unused)
                is listed and never due.
                Then one row per explanation download (PayPal, Amazon, Venmo,
@@ -31,7 +35,7 @@ from datetime import date
 import pandas as pd
 
 SPENDING_TYPES = ("checking", "savings", "credit_card")
-DEFAULT_GAP = 45
+MONTHLY = 45  # a max_gap_days at most this (a statement month and its lag), or blank, is the month-end rule
 WHEN_USED = "when_used"  # an open card kept unused: listed, never due
 SERVICES = ("paypal", "amazon", "venmo", "apple", "google")
 TOLERANCE = 0.005
@@ -41,7 +45,16 @@ PAYCHECK_COLUMNS = ["date", "person", "employer", "amount", "txn_id", "account_i
 
 def _gap(value):
     text = str(value).strip()
-    return int(float(text)) if text else DEFAULT_GAP
+    return int(float(text)) if text else None
+
+
+def falls_due(newest, gap=None):
+    """The first day a download whose data runs through newest is due: the day after the month it doesn't
+    reach the end of ends, or, with a gap of more than a month, the day newest is more than gap days old."""
+    newest = pd.Timestamp(newest)
+    if gap is not None and gap > MONTHLY:
+        return (newest + pd.Timedelta(days=gap + 1)).date()
+    return ((newest + pd.Timedelta(days=1)).to_period("M") + 1).start_time.date()
 
 
 def coverage(accounts, transactions, balances, documents, categorized, explained_coverage, today):
@@ -66,7 +79,7 @@ def coverage(accounts, transactions, balances, documents, categorized, explained
         newest = max(dates) if dates else ""
         gap = _gap(a.get("max_gap_days", ""))
         age = (today - pd.Timestamp(newest)).days if newest else None
-        status = "never downloaded" if not newest else "due" if age > gap else "ok"
+        status = "never downloaded" if not newest else "due" if today.date() >= falls_due(newest, gap) else "ok"
         if a["expected_docs"] == WHEN_USED and status != "ok":
             status = "download when used"
         rows.append(
@@ -75,7 +88,7 @@ def coverage(accounts, transactions, balances, documents, categorized, explained
                 "kind": "account",
                 "newest": newest,
                 "age_days": "" if age is None else age,
-                "due_after_days": gap,
+                "due_after_days": "" if gap is None else gap,
                 "waiting_lines": "",
                 "status": status,
             }

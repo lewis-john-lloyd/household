@@ -125,9 +125,13 @@ function defaultCompare(p: string) {
   return q[q.length - 1];
 }
 
+// The page opens on the last month that is over, its spending all in; a quarter or year chosen from there is
+// the one that month falls in, so far. A period chosen earlier is kept as the lens changes.
 function setLens(lens: string) {
   var day = today();
-  if (budget.period && budget.period !== periodOf(today(), lensOf(budget.period))) day = periodDays(budget.period)[0];
+  if (!budget.period)
+    day = addDays(today().slice(0, 8) + "01", -1); // the last day of last month
+  else if (budget.period !== periodOf(today(), lensOf(budget.period))) day = periodDays(budget.period)[0];
   budget.lens = lens;
   budget.period = periodOf(day, lens);
   budget.compare = defaultCompare(budget.period);

@@ -44,3 +44,38 @@ def approved_notes(decisions, kind, prefix=None, upper=False):
         if approved and note:
             out[key] = note
     return out
+
+
+LINE_NAME = "budget_line_name"
+
+
+def line_names(decisions):
+    """{a budget line's name in the ledger: its name now} from proposal_decisions' "budget_line_name" answers
+    (a rename from the views, the new name in its note), applied in the order they were made, so a line renamed
+    twice takes the second name and renaming it back undoes the first. Rows written after a rename carry the
+    new name already; only names that changed are listed."""
+    if decisions is None or decisions.empty:
+        return {}
+    head = LINE_NAME + ":"
+    d = decisions[(decisions["kind"] == LINE_NAME) & decisions["proposal_key"].astype(str).str.startswith(head)]
+    d = d[d["decision"] == "approve"].sort_values("decided_at", kind="stable")
+    now = {}  # each name ever seen: its name now
+    for key, note in zip(d["proposal_key"], d["note"] if "note" in d else [""] * len(d)):
+        old, new = str(key)[len(head) :].strip(), str(note or "").strip()
+        if not new or new == old:
+            continue
+        now.setdefault(old, old)
+        now.setdefault(new, new)
+        for name, current in list(now.items()):
+            if current == old:
+                now[name] = new
+    return {name: current for name, current in now.items() if name != current}
+
+
+def renamed_lines(rules, decisions):
+    """Budget rules with each line under its name now (line_names)."""
+    names = line_names(decisions)
+    if rules is None or rules.empty or not names:
+        return rules
+    line = rules["line"].astype(str).str.strip()
+    return rules.assign(line=line.map(lambda n: names.get(n, n)))

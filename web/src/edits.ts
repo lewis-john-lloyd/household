@@ -71,6 +71,7 @@ const EDIT_KINDS: Record<string, [string[], string[]]> = {
   recurring_merge: [["key", "same_as"], []],
   recurring_name: [["key", "name"], []],
   recurring_line: [["key", "line"], []],
+  budget_line_name: [["line", "name"], []],
   recipient: [["key", "deductible"], []],
   recipient_merge: [["key", "same_as"], []],
   looks_right: [["check", "looks_right"], []],
@@ -245,6 +246,8 @@ function editTarget(edit: Edit): string {
       return `recurring_name|${f("key").toUpperCase()}`;
     case "recurring_line":
       return `recurring_line|${f("key").toUpperCase()}`;
+    case "budget_line_name":
+      return `budget_line_name|${f("line")}`;
     case "recipient":
       return `recipient|${f("key").toUpperCase()}`;
     case "recipient_merge":

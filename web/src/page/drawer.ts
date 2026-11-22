@@ -191,7 +191,32 @@ function lineChange(bl: Row, redraw: () => void, category: string) {
       "small",
     );
     change.setAttribute("aria-label", "Change budget line " + bl.line);
-    box.appendChild(change);
+    var acts = el("div", null, "actions");
+    acts.appendChild(change);
+    if (bl.in_force !== "scheduled only") {
+      acts.appendChild(
+        button(
+          "Rename",
+          function () {
+            box.replaceWith(renameForm(bl, redraw, category));
+          },
+          "text",
+        ),
+      );
+      if (mergeTargets(bl).length)
+        acts.appendChild(
+          button(
+            "Merge into…",
+            function () {
+              box.replaceWith(lineMergeForm(bl, redraw, category));
+            },
+            "text",
+          ),
+        );
+    }
+    box.appendChild(acts);
+    var renamed = changeNote("budget_line_name|" + bl.line);
+    if (renamed) box.appendChild(el("p", renamed, "staged-note"));
     return box;
   }
   box.appendChild(budgetForm(bl, redraw, category));
@@ -411,4 +436,181 @@ function lineChecks(d: HTMLElement, l: ViewLine, v: BudgetView) {
     box.appendChild(actions);
     d.appendChild(box);
   });
+}
+
+// The names budget lines have or are about to have (a rename waiting for a run counts), so a new name is new.
+function lineNamesTaken(): string[] {
+  var names = (editor!.budgetLines || []).map(function (l) {
+    return l.line;
+  });
+  Object.keys(staged)
+    .concat(Object.keys(savedEdits))
+    .forEach(function (t) {
+      var s = staged[t] || savedEdits[t];
+      if (s && s.edit.kind === "budget_line_name") names.push(String(s.edit.name));
+    });
+  return names;
+}
+
+// A line's new name: its history, scheduled amounts and the charges it pays go with it (decisions.line_names).
+function renameForm(bl: Row, redraw: () => void, category: string) {
+  var form = el("form", null, "edit line-change");
+  form.appendChild(el("p", "Its history, scheduled amounts and the charges it pays keep the new name.", "support"));
+  var name = field(form, "New name", textInput(bl.line, "wide"));
+  var error = el("div", "", "error");
+  var actions = el("div", null, "actions");
+  actions.appendChild(
+    button("Keep", function () {
+      var next = name.value.trim();
+      var why = !next
+        ? "Name the line."
+        : next.length > 60
+          ? "A name is at most 60 characters."
+          : next === bl.line
+            ? "That is its name now."
+            : lineNamesTaken().indexOf(next) >= 0
+              ? "A line is already called " + next + ": merge the two instead."
+              : "";
+      if (why) {
+        error.textContent = why;
+        return;
+      }
+      stage({ kind: "budget_line_name", line: bl.line, name: next }, "budget line " + bl.line + ": renamed " + next);
+      redraw();
+    }),
+  );
+  actions.appendChild(
+    button(
+      "Cancel",
+      function () {
+        form.replaceWith(lineChange(bl, redraw, category));
+      },
+      "text",
+    ),
+  );
+  form.appendChild(actions);
+  form.appendChild(error);
+  return form;
+}
+
+// The lines one could be merged into: the others in force, its own category's first.
+function mergeTargets(bl: Row): Row[] {
+  var own = bl.category || bl.spends_from;
+  return (editor!.budgetLines || [])
+    .filter(function (l) {
+      return l.line !== bl.line && l.in_force === "yes";
+    })
+    .sort(function (a, b) {
+      var x = (a.category || a.spends_from) === own ? 0 : 1,
+        y = (b.category || b.spends_from) === own ? 0 : 1;
+      return x - y || a.line.localeCompare(b.line);
+    });
+}
+
+// Two lines become one: this one ends on a date and the line it joins carries the amount both should have from
+// then (the two added up when they budget the same way, else the other's own), and the charges this one pays
+// pay the other. Before the date each keeps its own; a date at the lines' start makes them one all along.
+function lineMergeForm(bl: Row, redraw: () => void, category: string) {
+  var form = el("form", null, "edit line-change");
+  var targets = mergeTargets(bl);
+  var labels: Record<string, string> = {};
+  targets.forEach(function (t) {
+    labels[t.line] = t.line + " (" + t.in_words + ")";
+  });
+  var into = field(
+    form,
+    "Merge into",
+    choice(
+      targets.map(function (t) {
+        return t.line;
+      }),
+      targets[0].line,
+      labels,
+    ),
+  );
+  var from = field(form, "From", dateInput(firstOfMonth()));
+  var amount = field(form, "Amount", textInput("", "amount"));
+  var said = el("p", "", "support");
+  form.appendChild(said);
+  var target = function (): Row {
+    return targets.filter(function (t) {
+      return t.line === into.value;
+    })[0];
+  };
+  var fill = function () {
+    var t = target();
+    var same = t.rule === bl.rule && t.per === bl.per && isAmount(t.amount) && isAmount(bl.amount);
+    amount.value = same ? String(Math.round((Number(t.amount) + Number(bl.amount)) * 100) / 100) : t.amount;
+    said.textContent =
+      bl.line +
+      " ends on the date; " +
+      t.line +
+      " budgets this amount " +
+      (t.per || "") +
+      " from then" +
+      (same ? ", the two added up" : ", its own way (" + t.in_words + ")") +
+      ", and the charges " +
+      bl.line +
+      " pays pay it. If the two were always one, pick the day they started and the amount of one.";
+  };
+  into.onchange = fill;
+  fill();
+  var error = el("div", "", "error");
+  var actions = el("div", null, "actions");
+  actions.appendChild(
+    button("Merge", function () {
+      var t = target();
+      var much = amount.value.trim().replace(/,/g, "");
+      if (!isDate(from.value)) error.textContent = "Pick the date they become one.";
+      else if (much && !isAmount(much)) error.textContent = "The amount is not a number.";
+      else if (!much && (t.rule === "fixed" || t.rule === "billed" || t.rule === "sinking_fund"))
+        error.textContent = "A " + t.rule + " line needs an amount.";
+      else {
+        stage(
+          {
+            kind: "budget_line",
+            line: t.line,
+            effective: from.value,
+            rule: t.rule,
+            category: t.category,
+            account: t.account,
+            priority: t.priority,
+            amount: much,
+            per: t.per,
+            note: t.note,
+            was: budgetWas(t),
+          },
+          "budget line " +
+            t.line +
+            ": " +
+            bl.line +
+            " merged in, " +
+            (much ? much + " " + t.per + " " : "") +
+            "from " +
+            from.value,
+        );
+        stage(
+          { kind: "budget_line", line: bl.line, effective: from.value, rule: "end", was: budgetWas(bl) },
+          "budget line " + bl.line + ": merged into " + t.line + " from " + from.value,
+        );
+        (editor!.subscriptions || []).forEach(function (r) {
+          if (chargeLine(r.key) === bl.line) linkCharge(r, t.line);
+        });
+        redraw();
+        return;
+      }
+    }),
+  );
+  actions.appendChild(
+    button(
+      "Cancel",
+      function () {
+        form.replaceWith(lineChange(bl, redraw, category));
+      },
+      "text",
+    ),
+  );
+  form.appendChild(actions);
+  form.appendChild(error);
+  return form;
 }

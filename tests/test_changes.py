@@ -5,7 +5,7 @@ import json
 import pandas as pd
 import pytest
 
-from household import budget, categorize, compute, engine, inbox, schema, sheets, tax
+from household import budget, categorize, compute, decisions, engine, inbox, schema, sheets, tax
 from household.parsers import ParseError, changes, identify
 from test_inbox import FakeDrive, rows
 from test_sheets import FakeSpreadsheet
@@ -932,3 +932,47 @@ def test_an_alert_recipient_is_one_email_address_or_blank_to_remove_it():
     assert changes.parse(one("")).tables["parameters"].iloc[0]["value"] == ""
     with pytest.raises(ParseError, match="one email address"):
         changes.parse(one("sam@example.com, alex@example.com"))
+
+
+def test_a_budget_line_is_renamed_by_a_dated_answer_and_read_under_its_new_name_from_then_on():
+    rename = {"kind": "budget_line_name", "line": "groceries", "name": "food shop"}
+    result = changes.parse(doc(rename))
+    result.check(ledger_reader(**LEDGER))
+    assert result.tables["proposal_decisions"][["proposal_key", "kind", "decision", "note"]].values.tolist() == [
+        ["budget_line_name:groceries", "budget_line_name", "approve", "food shop"]
+    ]
+    renamed = dict(LEDGER, proposal_decisions=result.tables["proposal_decisions"])
+    # a change on the old view of the line, under its new name, is held against the line's own rows
+    change = {
+        "kind": "budget_line",
+        "line": "food shop",
+        "effective": "2026-02-01",
+        "rule": "fixed",
+        "category": "food",
+        "amount": "600",
+        "was": GROCERIES_WAS,
+    }
+    changes.parse(doc(change)).check(ledger_reader(**renamed))
+    # a name another line has is a merge, not a rename; a line that isn't there can't be renamed
+    camp = table("budget_rules", {"line": "camp", "effective": "2026-01-01", "category": "kids", "rule": "fixed"})
+    two = dict(renamed, budget_rules=pd.concat([LEDGER["budget_rules"], camp]))
+    assert "a budget line is already named food shop: merge the two instead" in refused(
+        doc({"kind": "budget_line_name", "line": "camp", "name": "food shop"}), ledger_reader(**two)
+    )
+    assert "no budget line groceries" in refused(doc(rename), ledger_reader(**renamed))
+    assert "name must be a new one" in refused(doc({"kind": "budget_line_name", "line": "camp", "name": "camp"}))
+
+
+def test_renames_apply_in_order_so_a_second_takes_over_and_renaming_back_undoes_one():
+    def answer(at, old, new):
+        return {"proposal_key": f"budget_line_name:{old}", "kind": "budget_line_name", "decided_at": at}, new
+
+    rows = [
+        answer("2026-01-01T00:00:00Z", "groceries", "food shop")[0] | {"decision": "approve", "note": "food shop"},
+        answer("2026-02-01T00:00:00Z", "food shop", "market")[0] | {"decision": "approve", "note": "market"},
+        answer("2026-03-01T00:00:00Z", "camp", "summer")[0] | {"decision": "approve", "note": "summer"},
+        answer("2026-04-01T00:00:00Z", "summer", "camp")[0] | {"decision": "approve", "note": "camp"},
+    ]
+    names = decisions.line_names(table("proposal_decisions", *rows))
+    # camp went to summer and back: its rows read as camp, and any written as summer meanwhile do too
+    assert names == {"groceries": "market", "food shop": "market", "summer": "camp"}

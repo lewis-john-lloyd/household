@@ -273,8 +273,8 @@ def links(decisions):
     "recurring_line" edit, the line in its note; a reject, or a blank line, unlinks it). A key merged into
     another links its group."""
     raw = decisions_.approved_notes(decisions, "subscription_line")
-    merged = merges(decisions)
-    return {merged.get(k, k): line for k, line in raw.items()}
+    merged, names = merges(decisions), decisions_.line_names(decisions)
+    return {merged.get(k, k): names.get(line, line) for k, line in raw.items()}
 
 
 def merges(decisions):

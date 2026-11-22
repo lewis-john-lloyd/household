@@ -226,6 +226,12 @@ function openFrom(location: PageLocation | null) {
     return;
   }
   if (p.view === "budget" && p.tab === "recurring") budget.tab = "recurring";
+  // ?view=budget&period=2026-11 (or 2026-Q4, 2026) opens that period, its lens with it, when Budget opens
+  if (/^\d{4}(-\d\d|-Q[1-4])?$/.test(p.period || "")) {
+    budget.lens = lensOf(p.period);
+    budget.period = p.period;
+    budget.compare = defaultCompare(p.period);
+  }
   if (!p.view && p.tab === "log") setStatusTab("log");
   // an editor part opens where it lives now: ?view=edit&tab=settings opens Status's Settings
   if (p.tab && EDIT_HOME[p.tab] && p.tab !== "transaction" && (!p.view || p.view === "edit" || p.view === EDIT_HOME[p.tab])) {

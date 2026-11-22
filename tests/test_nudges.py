@@ -270,7 +270,9 @@ def test_downloads_and_review_are_due_once_stale_for_30_days():
         date(2026, 11, 6), params(views_url="https://views.example/exec"), coverage=coverage, review=review
     ).set_index("item")
     assert list(rows.index) == ["BLUE PUMP FUEL card", "PAGE TURNER BOOKS orders", "2 questions"]
-    assert rows.at["BLUE PUMP FUEL card", "show_from"] == "2026-10-30"
+    assert (
+        rows.at["BLUE PUMP FUEL card", "show_from"] == "2026-11-01"
+    )  # September is all there: due once October is over
     assert rows.at["PAGE TURNER BOOKS orders", "show_from"] == "2026-11-06"
     assert rows.at["PAGE TURNER BOOKS orders", "detail"] == "never downloaded; 12 lines wait for it"
     one = nudges.build(
@@ -339,7 +341,7 @@ def test_every_alert_is_a_line_item_with_a_key_even_when_nothing_is_due():
         [
             {"source": "BLUE PUMP FUEL card", "newest": "2026-09-30", "waiting_lines": 0, "status": "due"},
             {"source": "checking", "newest": "2026-11-01", "waiting_lines": 0, "status": "current"}
-            | {"due_after_days": 45},
+            | {"due_after_days": ""},
         ]
     )
     rows = nudges.build(date(2026, 11, 6), params(), coverage=coverage, everything=True)
@@ -356,7 +358,7 @@ def test_every_alert_is_a_line_item_with_a_key_even_when_nothing_is_due():
         "email",
     }
     # a current download is dated for when it falls due, so the views can say when it would be emailed
-    assert by_key.at["download_checking", "show_from"] == "2026-12-16"
+    assert by_key.at["download_checking", "show_from"] == "2026-12-01"
     assert by_key.at["download_blue_pump_fuel_card", "section"] == "Books upkeep"
     # nothing to do: no dates, and what is right said instead
     assert (by_key.at["review", "show_from"], by_key.at["review", "detail"]) == ("", "no questions")

@@ -45,6 +45,7 @@ from . import (
     wisconsin,
     withholding,
 )
+from . import decisions as decisions_
 from .books import read_and_categorize
 from .clock import Clock
 from .kinds import Log, Session, Spreadsheet, StageResult
@@ -507,21 +508,25 @@ def _say_links(log, rules, decisions):
 def _budget(c: Compute, books, categorized, actuals):
     """Budget targets, budget against actual and the sinking funds (budget.py). Returns the rules and the targets."""
     ledger, reports, run_id, today, log = c.ledger, c.reports, c.run_id, c.today, c.log
-    rules = read_ledger(ledger, "budget_rules")
+    rules = decisions_.renamed_lines(read_ledger(ledger, "budget_rules"), books["decisions"])  # renames applied
     planned = pd.DataFrame(columns=budget.TARGET_COLUMNS)
     if not rules.empty:
         expected = recurring.monthly_expected(categorized, books["decisions"], today[:7], today)
         by_line = recurring.line_expected(categorized, books["decisions"], today[:7])
         loans, splits = books.get("loans"), mortgage.split_settings(books["parameters"])
         loan = {}
+        # the targets run to December, so a year or quarter not over is budgeted whole (budget.targets)
+        year_end = today[:4] + "-12"
         if splits and loans is not None and not loans.empty:
-            sched, _ = mortgage.schedule(loans, books.get("loan_events"), None, today[:7])
+            sched, _ = mortgage.schedule(loans, books.get("loan_events"), None, year_end)
             loan = budget.loan_parts(sched, splits)
         # the averaging rules learn from the months without the lines marked one-off; actual spending keeps them
         usual = compute.monthly_actuals(categorize.actual_rows(categorized[~recurring.one_off(categorized)]))
-        planned = budget.targets(rules, usual, today[:7], expected, by_line, loan)
+        whole = budget.targets(rules, usual, year_end, expected, by_line, loan, now=today[:7])
         _say_links(log, rules, books["decisions"])
-        sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), planned.assign(run_id=run_id))
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "budget_targets"), whole.assign(run_id=run_id))
+        # everything else (budget against actual, the funds, the checks, the editors) is through this month
+        planned = whole[whole["month"] <= today[:7]].reset_index(drop=True)
         # the working behind the floating targets of the last two years, so the views can show it
         inputs = budget.target_inputs(planned, usual, actuals, budget.shift_month(today[:7], -INPUT_MONTHS + 1))
         sheets.replace_table(reports, schema.table(schema.REPORTS, "target_inputs"), inputs.assign(run_id=run_id))

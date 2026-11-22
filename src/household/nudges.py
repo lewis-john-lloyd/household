@@ -13,7 +13,8 @@ row's addresses in `to`, and `routing` says sent, off, or unassigned (the weekly
 alert to its owner and marks it so; Status says how many there are).
 
 The rules, as the household set them: an email is for things that need doing. A thing that has gone stale
-is worth one once it has been stale STALE_DAYS; a thing with a deadline, once the deadline is LEAD_DAYS away.
+is worth one once it has been stale STALE_DAYS (a download, once a month its data doesn't finish is over); a
+thing with a deadline, once the deadline is LEAD_DAYS away.
 FSA money left from last year is worth one every week from January 1 until it is claimed or its deadline
 passes.
 
@@ -29,6 +30,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from . import checks as coverage_checks
 from . import projection, recurring, settings
 
 STALE_DAYS = 30
@@ -409,16 +411,15 @@ def build(
             if r["status"] not in ("due", "never downloaded") and not (everything and newest):
                 continue
             if newest:
-                # a current download is said from when it falls due (its own interval), if that is later
-                after = (
-                    int(float(r.get("due_after_days") or 0)) if r["status"] not in ("due", "never downloaded") else 0
-                )
+                # said from the day it falls due: once a month its data doesn't reach the end of is over
+                gap = str(r.get("due_after_days") or "").strip()
+                gap = "" if gap.lower() == "nan" else gap
                 add(
                     "download",
                     r["source"],
                     f"has everything through {newest:%B} {newest.day}, {newest.year}"
                     + (f"; {_lines(waiting)} {'waits' if waiting == 1 else 'wait'} for it" if waiting else ""),
-                    newest + timedelta(days=max(STALE_DAYS, after)),
+                    coverage_checks.falls_due(newest, int(float(gap)) if gap else None),
                     link=_view(params, "status"),
                     key=source_key,
                 )

@@ -59,7 +59,117 @@ function categoryChoice(value?: string | null, blank?: string) {
     names.push(value);
     labels[value] = value + " (not a category)";
   }
-  return choice([""].concat(names), value, labels);
+  var select = choice([""].concat(names), value, labels);
+  // once it is on the page, a box to type part of a name into stands over it (typeToChoose)
+  setTimeout(function () {
+    if (select.isConnected) typeToChoose(select);
+  }, 0);
+  return select;
+}
+
+// A dropdown that can be searched: a box over it shows the choice, and typing any part of a name lists the
+// choices holding it; Up and Down move, Enter or a click chooses, Escape puts it back. The dropdown stays
+// underneath, keeps the value and fires its change, so whatever listens to it works as before; Enter with
+// nothing listed goes to the dropdown's own keys (Review keeps its answer on Enter).
+function typeToChoose(select: HTMLSelectElement) {
+  if (select.dataset.typed) return;
+  select.dataset.typed = "1";
+  var box = el("span", null, "pick-box");
+  select.parentNode!.insertBefore(box, select);
+  var input = textInput("", "pick-input");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  var label = select.closest("label");
+  input.setAttribute("aria-label", label && label.firstChild ? String(label.firstChild.textContent).trim() : "Category");
+  var menu = el("div", null, "pick-menu");
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  box.appendChild(input);
+  box.appendChild(select);
+  box.appendChild(menu);
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+  var shown: HTMLOptionElement[] = [];
+  var hi = 0;
+  var said = function () {
+    var o = select.options[select.selectedIndex];
+    input.value = o && o.value ? o.textContent || "" : "";
+    input.placeholder = select.options[0] ? select.options[0].textContent || "" : "";
+  };
+  var close = function () {
+    menu.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+  };
+  var draw = function (typed: string) {
+    var t = typed.trim().toLowerCase();
+    shown = Array.prototype.slice.call(select.options).filter(function (o: HTMLOptionElement) {
+      return o.value && (!t || (o.textContent || "").toLowerCase().indexOf(t) >= 0 || o.value.indexOf(t) >= 0);
+    });
+    if (hi >= shown.length) hi = 0;
+    menu.textContent = "";
+    shown.forEach(function (o, i) {
+      var row = el("div", o.textContent || "", "opt" + (i === hi ? " hi" : ""));
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", String(i === hi));
+      row.onmousedown = function (e) {
+        e.preventDefault();
+        choose(o);
+      };
+      menu.appendChild(row);
+    });
+    menu.hidden = !shown.length;
+    input.setAttribute("aria-expanded", String(!menu.hidden));
+    var at = menu.children[hi] as HTMLElement | undefined;
+    if (at) at.scrollIntoView({ block: "nearest" });
+  };
+  var choose = function (o: HTMLOptionElement) {
+    select.value = o.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    said();
+    close();
+  };
+  input.onfocus = function () {
+    input.select();
+  };
+  input.oninput = function () {
+    hi = 0;
+    draw(input.value);
+  };
+  input.onblur = function () {
+    close();
+    said();
+  };
+  input.onkeydown = function (e) {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !e.altKey) {
+      e.preventDefault();
+      if (menu.hidden) {
+        hi = Math.max(0, shown.indexOf(select.options[select.selectedIndex]));
+        draw("");
+        return;
+      }
+      hi = (hi + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % Math.max(1, shown.length);
+      draw(input.value === (select.options[select.selectedIndex] || {}).textContent ? "" : input.value);
+    } else if (e.key === "Enter" && !menu.hidden && shown[hi]) {
+      e.preventDefault();
+      e.stopPropagation();
+      choose(shown[hi]);
+    } else if (e.key === "Escape" && !menu.hidden) {
+      e.stopPropagation();
+      close();
+      said();
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        select.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: e.shiftKey, bubbles: true }));
+      }
+    }
+  };
+  select.addEventListener("change", said); // a value set from elsewhere (or by a test) shows too
+  select.addEventListener("focus", function () {
+    input.focus();
+  });
+  said();
 }
 
 function button(text: string, onclick: ((this: HTMLButtonElement, e: MouseEvent) => void) | null, cls?: string) {

@@ -400,6 +400,15 @@ function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
   var pick = reviewPick(form, "Category", now ? (now.value as string) : r.guess, function () {
     reviewMoveOn(r.key, done);
   });
+  // what the money was for, kept on the line itself (its note), for this line alone
+  var noted = edited("line|" + r.key + "|note");
+  var note = field(form, "Note (what it was for)", textInput(noted ? String(noted.edit.value) : "", "wide"));
+  note.onkeydown = function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  };
   var alike = reviewAlike(r);
   var ticks: [Row, HTMLInputElement][] = [];
   var error = el("div", "", "error");
@@ -498,6 +507,11 @@ function reviewLine(r: Row, panel: HTMLElement, done: () => void) {
         text: reviewText(q) + " " + q.first + ": " + pretty(pick.value),
       };
     });
+    if (note.value.trim())
+      edits.push({
+        edit: { kind: "line", txn_id: r.key, field: "note", value: note.value.trim() } as Edit,
+        text: reviewText(r) + " " + r.first + ": note " + note.value.trim(),
+      });
     var words =
       rows.length > 1
         ? rows.length + " lines reading " + reviewText(r) + ": " + pretty(pick.value)

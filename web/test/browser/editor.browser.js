@@ -757,9 +757,11 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   assert.deepEqual(await staged(page), ["every ACME GROCER line: Food"]);
   assert.equal(await heading(page), "BLUE PUMP FUEL"); // moved on
   // with the cursor on its answer (put there once the question is drawn)
-  await page.waitForFunction(() => document.activeElement && document.activeElement.tagName === "SELECT", null, {
-    timeout: 2000,
-  });
+  await page.waitForFunction(
+    () => document.activeElement && document.activeElement.classList.contains("pick-input"), // the box to type in
+    null,
+    { timeout: 2000 },
+  );
   assert.equal(await page.textContent(".md-count"), "5 questions, 1 answered");
   assert.match(await page.textContent(".review-kept"), /^Kept: every ACME GROCER line: Food\. Undo$/);
   // beside the count, not in the question now open; on a phone, where the list is hidden, at the question's top
@@ -786,6 +788,24 @@ test("review: Enter keeps the answer and opens the next question, and the answer
   assert.equal(await heading(page), "ACME GROCER");
   assert.equal(await page.locator(".review-kept").count(), 0);
   assert.equal(await page.inputValue(".md-detail select"), "food"); // its guess again, ready to keep
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
+test("review: a category is found by typing part of its name, and a line's answer can carry a note", async () => {
+  const page = await open(QUESTIONS);
+  await page.waitForSelector("#edit:not([hidden]) .md-list");
+  await page.click(".md-row:has-text('***111')");
+  await page.waitForSelector(".md-detail .pick-input");
+  await page.fill(".md-detail .pick-input", "ki"); // any part of a name, not only its first letters
+  assert.deepEqual(await page.$$eval(".pick-menu .opt", (o) => o.map((x) => x.textContent)), ["Kids"]);
+  await page.keyboard.press("Enter"); // chooses it
+  assert.equal(await page.inputValue(".md-detail select"), "kids");
+  await page.fill(".md-detail label:has-text('Note') input", "school trip");
+  await page.keyboard.press("Enter"); // keeps the answer, the note with it
+  const kept = await staged(page);
+  assert.equal(kept.length, 2);
+  assert.match(kept[1], /: note school trip$/);
   assert.deepEqual(page.errors, []);
   await page.close();
 });

@@ -676,6 +676,7 @@ function getHome(): HomePage {
     "home_improvements",
     "home_taxes",
     "mortgage",
+    "mortgage_parts",
     "loan_details",
     "run_log",
     "run_notes",

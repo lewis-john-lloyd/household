@@ -21,6 +21,7 @@ function drawHome() {
       ["overview", "Overview"],
       ["taxes", "Property tax"],
       ["mortgage", "Mortgage"],
+      ["terms", "Loan terms"],
       ["improvements", "Improvements"],
     ],
     homeView,
@@ -82,6 +83,10 @@ function drawOneHome(body: HTMLElement, d: HomePage, h: Home, line: Record<strin
   }
   if (homeView === "mortgage") {
     drawMortgage(body, d, loans);
+    return;
+  }
+  if (homeView === "terms") {
+    drawLoanTerms(body, d, loans);
     return;
   }
   if (homeView === "improvements") {
@@ -206,10 +211,12 @@ function loanValue(x: LoanDetail) {
   return x.value;
 }
 
-function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
+// Loan terms: each loan's facts, from its loans row, its loan_facts and its schedule.
+function drawLoanTerms(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
   var ids = loans.map(function (l) {
     return l.key.slice(5);
   });
+  var any = false;
   ids.forEach(function (id) {
     var facts = (d.loans || []).filter(function (x) {
       return x.loan === id;
@@ -244,6 +251,15 @@ function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
     });
     box.appendChild(grid);
     body.appendChild(box);
+    any = true;
+  });
+  if (!any) empty(body, "No loan on this home.");
+}
+
+// Mortgage: where the schedule stands, each month's payment in its parts to payoff, and the years.
+function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
+  var ids = loans.map(function (l) {
+    return l.key.slice(5);
   });
   var sched = d.schedule.filter(function (p) {
     return ids.indexOf(p.loan) >= 0;
@@ -286,29 +302,25 @@ function drawMortgage(body: HTMLElement, d: HomePage, loans: HomeLine[]) {
         "support",
       ),
     );
-    lineChart(
-      am,
-      ids.map(function (id, i) {
-        return {
-          name: "Balance" + (ids.length > 1 ? " " + id : ""),
-          color: "var(--series-" + (i + 1) + ")",
-          points: sched
-            .filter(function (p) {
-              return p.loan === id;
-            })
-            .map(function (p) {
-              return [p.month, p.balance] as [string, number];
-            }),
-        };
-      }),
-      {
-        label: "Loan balance each month to payoff",
-        now: d.month,
-        dateName: function (m) {
-          return MONTH_SHORT[Number(m.slice(5)) - 1] + " " + m.slice(0, 4);
-        },
-      },
-    );
+    ids.forEach(function (id) {
+      if (ids.length > 1) am.appendChild(el("h4", id));
+      mortgageChart(am, d, id, drawHome);
+      var last = (d.loans || []).filter(function (x) {
+        return x.loan === id && x.key === "mortgage_insurance_last";
+      })[0];
+      if (last && last.value)
+        am.appendChild(
+          el(
+            "p",
+            "Mortgage insurance is paid through " +
+              loanValue(last) +
+              (last.note ? ", by " + last.note : "") +
+              "; the payment drops by it after. Asking the servicer to end it at 80% of the original value, " +
+              "or sooner after extra principal, is a step of your own.",
+            "support",
+          ),
+        );
+    });
     var years = el("details");
     years.appendChild(el("summary", "By year"));
     var yt = wTable(

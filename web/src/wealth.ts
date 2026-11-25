@@ -173,6 +173,16 @@ interface Payment {
   extra: number;
   balance: number;
 }
+// a month's loan payment in one of its parts (mortgage_parts): principal or interest (kind loan), or an escrow
+// part (kind escrow) by the loan's loan_split setting, the mortgage insurance ending by rule
+interface PaymentPart {
+  month: string;
+  loan: string;
+  part: string;
+  kind: string;
+  label: string;
+  amount: number;
+}
 interface LoanYear {
   year: string;
   loan: string;
@@ -213,6 +223,7 @@ interface HomePage {
   estimates: Estimate[];
   improvements: Improvement[];
   schedule: Payment[];
+  parts: PaymentPart[];
   years: LoanYear[];
   taxes: HomeTax[];
   month: string;
@@ -516,6 +527,21 @@ function homePage(tabs: Record<string, unknown[][]>, month: string): HomePage {
       balance: num(r.balance),
     }))
     .sort((a, b) => a.loan.localeCompare(b.loan) || a.month.localeCompare(b.month));
+  const parts = wealthRows(tabs.mortgage_parts || [])
+    .map((r) => ({
+      month: r.month,
+      loan: r.loan_id,
+      part: r.part,
+      kind: r.kind,
+      label: r.label || r.part,
+      amount: num(r.amount),
+    }))
+    .sort((a, b) => a.loan.localeCompare(b.loan) || a.month.localeCompare(b.month));
+  // a month's escrow as its parts have it (mortgage insurance stopping by rule), where the parts are published
+  const escrowOf = new Map<string, number>();
+  for (const p of parts)
+    if (p.kind === "escrow")
+      escrowOf.set(p.loan + "\u0000" + p.month, (escrowOf.get(p.loan + "\u0000" + p.month) || 0) + p.amount);
   const years = new Map<string, LoanYear>();
   for (const p of schedule) {
     const key = p.loan + "\u0000" + p.month.slice(0, 4);
@@ -534,7 +560,8 @@ function homePage(tabs: Record<string, unknown[][]>, month: string): HomePage {
     y.interest += p.interest;
     y.principal += p.principal;
     y.extra += p.extra;
-    y.escrow += p.escrow;
+    const parted = escrowOf.get(p.loan + "\u0000" + p.month);
+    y.escrow += parted === undefined ? p.escrow : parted;
     y.endBalance = p.balance;
     y.projected = y.projected || p.month > month;
     years.set(key, y);
@@ -569,6 +596,7 @@ function homePage(tabs: Record<string, unknown[][]>, month: string): HomePage {
     estimates,
     improvements,
     schedule,
+    parts,
     years: Array.from(years.values()),
     taxes,
     month,

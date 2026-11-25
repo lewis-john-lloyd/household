@@ -3215,6 +3215,83 @@ test("investments: a fund with no asset class is flagged, and its class is set w
   await page.close();
 });
 
+test("home: the mortgage stacks each month's payment by its parts, loan and escrow shown or hidden; its terms have a tab", async () => {
+  const line = (key, label, value) => ({ key, label, value, asOf: "2001-01-01", note: "" });
+  const months = ["2001-05", "2001-06", "2001-07", "2001-08"];
+  const parts = [];
+  const schedule = [];
+  months.forEach((m, i) => {
+    schedule.push({
+      month: m,
+      loan: "acme",
+      payment: 90,
+      interest: 40 - 5 * i,
+      principal: 30 + 5 * i,
+      escrow: 20,
+      extra: 0,
+      balance: 900 - 30 * i,
+    });
+    parts.push({ month: m, loan: "acme", part: "principal", kind: "loan", label: "Principal", amount: 30 + 5 * i });
+    parts.push({ month: m, loan: "acme", part: "interest", kind: "loan", label: "Interest", amount: 40 - 5 * i });
+    parts.push({ month: m, loan: "acme", part: "pmi", kind: "escrow", label: "Mortgage insurance", amount: i < 3 ? 5 : 0 });
+    parts.push({ month: m, loan: "acme", part: "tax", kind: "escrow", label: "Tax", amount: 15 });
+  });
+  const home = {
+    loans: [
+      { loan: "acme", key: "lender", label: "Lender", value: "Acme Widgets", kind: "text", asOf: "", note: "" },
+      {
+        loan: "acme",
+        key: "mortgage_insurance_last",
+        label: "Mortgage insurance's last month",
+        value: "2001-07",
+        kind: "month",
+        asOf: "",
+        note: "the rule",
+      },
+    ],
+    estimates: [],
+    improvements: [],
+    schedule,
+    parts,
+    years: [],
+    taxes: [],
+    month: "2001-06",
+    notes: [],
+    homes: [{ id: "willow", lines: [line("status", "Status", "owned"), line("loan:acme", "Owed", 840)] }],
+  };
+  const page = await open(`window.__answers.getHome = ${JSON.stringify(home)};`);
+  await page.click("#view-home");
+  await page.click("#home-body button:has-text('Mortgage')");
+  await page.waitForSelector(".mortgage-areas");
+  assert.equal(await page.locator("#home-body .loan-facts").count(), 0); // the terms are a tab of their own
+  const bands = () => page.$$eval(".mortgage-areas path.band", (ps) => ps.map((p) => p.dataset.part));
+  assert.deepEqual(await bands(), ["principal", "interest", "pmi", "tax"]); // loan below, escrow above
+  assert.match(await page.textContent("#home-body"), /Mortgage insurance is paid through Jul 2001, by the rule/);
+  assert.match(
+    await page.textContent("#home-body"),
+    /From July 2001 \(ahead\), more of each payment pays principal than interest/,
+  );
+  // a group's name hides all of it, a part's name itself
+  await page.click(".mortgage-picks button:text-is('Escrow')");
+  assert.deepEqual(await bands(), ["principal", "interest"]);
+  await page.click(".mortgage-picks button:has-text('Tax')");
+  assert.deepEqual(await bands(), ["principal", "interest", "tax"]);
+  await page.click(".mortgage-picks button:has-text('Interest')");
+  assert.deepEqual(await bands(), ["principal", "tax"]);
+  assert.equal(await page.getAttribute(".mortgage-picks button:text-is('Loan')", "aria-pressed"), "false");
+  // the pointer reads a month: its parts shown and what is owed after it
+  const box = await page.locator(".mortgage-areas").boundingBox();
+  await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+  assert.match(
+    await page.textContent(".mortgage-plot .tip"),
+    /August 2001 \(ahead\): \$60\.00Owed after it: \$810.*Tax\$15\.00.*Principal\$45\.00/, // leak-guard: allow (made up)
+  );
+  await page.click("#home-body button:has-text('Loan terms')");
+  assert.match(await page.textContent("#home-body .loan-facts"), /LenderAcme Widgets/);
+  assert.deepEqual(page.errors, []);
+  await page.close();
+});
+
 test("home: the settings its figures rest on are changed beside them, the stored value shown once loaded", async () => {
   const line = (key, label, value, note = "") => ({ key, label, value, asOf: "2001-01-01", note });
   const home = {

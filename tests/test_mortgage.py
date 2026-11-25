@@ -169,3 +169,63 @@ def test_a_payment_short_of_principal_and_interest_is_left_whole():
 
 def _params(value):
     return pd.DataFrame([{"jurisdiction": "household", "key": "loan_split:home", "value": value}])
+
+
+def facts(*rows):
+    return pd.DataFrame(
+        [{"loan_id": "home", "key": k, "value": v, "as_of": "2019-12-15", "note": ""} for k, v in rows],
+        columns=["loan_id", "key", "value", "as_of", "note"],
+    )
+
+
+HOMES = pd.DataFrame([{"property_id": "willow", "purchase_price": "250000", "loan_ids": "home"}])
+
+
+def test_mortgage_insurance_ends_when_the_original_schedule_reaches_78_percent_of_the_price():
+    sched = run()
+    reached = sched[sched["balance"] <= 0.78 * 250000].index[0]
+    assert mortgage.insurance_end(LOAN, facts(("mortgage_insurance", "40")), HOMES) == (
+        40.0,
+        reached,
+        "the original schedule reaching 78% of the purchase price",
+    )
+    # without a price, the middle of the term: the 180th of 360 payments
+    assert mortgage.insurance_end(LOAN, facts(("mortgage_insurance", "40")), None)[1:] == (
+        sched.index[179],
+        "the middle of the term (no purchase price for the 78% rule)",
+    )
+    # a month on file wins; no insurance on file, no end
+    given = facts(("mortgage_insurance", "40"), ("mortgage_insurance_ends", "2031-06"))
+    assert mortgage.insurance_end(LOAN, given, HOMES) == (40.0, "2031-06", "the loan's mortgage_insurance_ends")
+    assert mortgage.insurance_end(LOAN, facts(("mortgage_insurance_ends", "after year 11")), HOMES) is None
+
+
+def test_a_payment_in_its_parts_the_escrow_by_the_split_and_the_insurance_stopping():
+    loan = dict(LOAN, escrow="50")
+    sched, _ = mortgage.amortize(loan, None, "2020-04")
+    splits = {"home": mortgage.split_parts("interest_c=interest, principal_c=principal, pmi=10, tax=30, cover=10")}
+    parts = mortgage.payment_parts(sched, splits, {"home": (10.0, "2020-03")})
+    feb = parts[parts["month"] == "2020-02"].set_index("part")["amount"].to_dict()
+    assert feb == {"principal": 199.1, "interest": 1000.0, "pmi": 10.0, "tax": 30.0, "cover": 10.0}
+    assert set(parts[parts["kind"] == "loan"]["part"]) == {"principal", "interest"}
+    apr = parts[parts["month"] == "2020-04"].set_index("part")["amount"].to_dict()
+    assert apr["pmi"] == 0.0 and apr["tax"] == 30.0 and apr["cover"] == 10.0  # the insurance ended in March
+    named = parts[parts["month"] == "2020-02"].set_index("part")["label"].to_dict()
+    assert named == {
+        "principal": "Principal",
+        "interest": "Interest",
+        "pmi": "Mortgage insurance",
+        "tax": "Tax",
+        "cover": "Cover",
+    }
+    # without a split, the escrow is one part
+    plain = mortgage.payment_parts(sched)
+    assert plain[plain["month"] == "2020-02"].set_index("part")["amount"].to_dict()["escrow"] == 50.0
+
+
+def test_the_details_give_the_last_month_of_mortgage_insurance():
+    loans = pd.DataFrame([LOAN])
+    sched, _ = mortgage.amortize(LOAN, None, "2020-12")
+    d = mortgage.details(loans, facts(), sched, "2020-06", {"home": (40.0, "2031-06", "the rule")})
+    row = d[d["key"] == "mortgage_insurance_last"].iloc[0]
+    assert (row["value"], row["kind"], row["note"]) == ("2031-06", "month", "the rule")

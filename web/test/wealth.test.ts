@@ -143,9 +143,20 @@ test("the home page groups each home's lines and sums the amortization by year, 
         ["2001-12", "acme", 5, 2, 1, 2, 0, 98, "", "r"],
         ["2002-01", "acme", 5, 2, 1, 2, 0, 97, "", "r"],
       ],
+      mortgage_parts: [
+        ["month", "loan_id", "part", "kind", "label", "amount", "run_id"],
+        ["2001-11", "acme", "principal", "loan", "Principal", 1, "r"],
+        ["2001-11", "acme", "interest", "loan", "Interest", 2, "r"],
+        ["2001-11", "acme", "pmi", "escrow", "Mortgage insurance", 1, "r"],
+        ["2001-11", "acme", "tax", "escrow", "Tax", 1, "r"],
+        ["2001-12", "acme", "pmi", "escrow", "Mortgage insurance", 0, "r"], // ended: the year's escrow drops by it
+        ["2001-12", "acme", "tax", "escrow", "Tax", 1, "r"],
+      ],
     },
     "2001-12",
   );
+  assert.equal(page.parts.length, 6);
+  assert.equal(page.parts[2].label, "Mortgage insurance");
   assert.deepEqual(
     page.homes[0].lines.map((l) => l.key),
     ["purchase_price", "equity"],
@@ -156,6 +167,11 @@ test("the home page groups each home's lines and sums the amortization by year, 
       ["2001", 2, 4, 98, false],
       ["2002", 1, 2, 97, true],
     ],
+  );
+  // escrow as the parts have it where they are published, else the schedule's
+  assert.deepEqual(
+    page.years.map((y) => y.escrow),
+    [3, 2],
   );
 });
 

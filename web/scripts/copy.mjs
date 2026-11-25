@@ -30,6 +30,7 @@ export const PAGE = [
   "edittabs",
   "investments",
   "home",
+  "mortgagechart",
   "equity",
   "taxes",
   "status",

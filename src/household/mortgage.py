@@ -274,6 +274,102 @@ def summary(sched):
     return lines
 
 
+PART_COLUMNS = ["month", "loan_id", "part", "kind", "label", "amount"]
+INSURANCE_LTV = 0.78  # mortgage insurance ends by law when the original schedule reaches 78% of the original value
+INSURANCE_NOTE = "mortgage insurance"
+
+
+def _latest_fact(facts, loan_id, key):
+    """The latest value of a loan's fact, or ""."""
+    if facts is None or not len(facts):
+        return ""
+    mine = facts[(facts["loan_id"].astype(str).str.strip() == loan_id) & (facts["key"].astype(str).str.strip() == key)]
+    if not len(mine):
+        return ""
+    return str(mine.assign(_at=mine["as_of"].astype(str)).sort_values("_at", kind="stable")["value"].iloc[-1]).strip()
+
+
+def _original_value(properties, loan_id):
+    """The purchase price of the home whose loan_ids lists the loan (its original value, as near as the ledger
+    knows it: the lesser of the price and the appraisal, the appraisal not kept), or None."""
+    if properties is None or not len(properties):
+        return None
+    for row in properties.to_dict("records"):
+        ids = [x.strip() for x in re.split(r"[,;\s]+", str(row.get("loan_ids", ""))) if x.strip()]
+        if loan_id in ids:
+            try:
+                value = _money(row.get("purchase_price", ""))
+            except ValueError:
+                return None
+            return value if value > 0 else None
+    return None
+
+
+def insurance_end(loan, facts=None, properties=None):
+    """(the monthly mortgage insurance, the last month it is paid, how that month was found) for a loans row, or
+    None when no insurance is on file. A mortgage_insurance_ends fact that is a month (or a date) gives the month;
+    otherwise the Homeowners Protection Act's automatic end: the payment that brings the original schedule (no
+    prepayments) to 78% of the original value, or the one at the middle of the term, whichever comes first."""
+    loan_id = str(loan.get("loan_id", "")).strip()
+    try:
+        amount = _money(_latest_fact(facts, loan_id, "mortgage_insurance"))
+    except ValueError:
+        return None
+    if amount <= 0:
+        return None
+    given = _latest_fact(facts, loan_id, "mortgage_insurance_ends")
+    if re.fullmatch(r"\d{4}-\d{2}(-\d{2})?", given):
+        return amount, given[:7], "the loan's mortgage_insurance_ends"
+    original, _ = amortize(loan, None, "9999-12")
+    if original.empty:
+        return None
+    middle = original["month"].iloc[min((len(original) - 1) // 2, len(original) - 1)]
+    value = _original_value(properties, loan_id)
+    if value is None:
+        return amount, middle, "the middle of the term (no purchase price for the 78% rule)"
+    reached = original[original["balance"] <= round(INSURANCE_LTV * value, 2)]
+    if len(reached) and reached["month"].iloc[0] < middle:
+        return amount, reached["month"].iloc[0], "the original schedule reaching 78% of the purchase price"
+    return amount, middle, "the middle of the term"
+
+
+def payment_parts(sched, splits=None, ends=None):
+    """Each month's payment in its parts (PART_COLUMNS): principal (extra principal with it) and interest, kind
+    loan, and the escrow, kind escrow, shared across the escrow parts a loan's loan_split setting names by their
+    amounts (one part, escrow, without one). ends is {loan_id: (insurance, last month)} from insurance_end: the
+    escrow part whose amount is the insurance stops after that month, the others keeping their shares, so the
+    payment drops by it."""
+    rows = []
+    if sched is None or sched.empty:
+        return pd.DataFrame(columns=PART_COLUMNS)
+    for loan_id, g in sched.groupby("loan_id", sort=True):
+        weights = [(c, p) for c, p in (splits or {}).get(str(loan_id), []) if not isinstance(p, str)]
+        total = sum(p for _, p in weights)
+        insurance, last = (ends or {}).get(str(loan_id), (None, None))
+        stops = next((c for c, p in weights if insurance is not None and abs(p - insurance) < 0.005), None)
+
+        def label(c, stops=stops):
+            return "Mortgage insurance" if c == stops else c.replace("_", " ").capitalize()
+
+        for r in g.to_dict("records"):
+            month, escrow = r["month"], float(r["escrow"] or 0)
+            principal = round(float(r["principal"]) + float(r["extra_principal"] or 0), 2)
+            rows.append([month, loan_id, "principal", "loan", "Principal", principal])
+            rows.append([month, loan_id, "interest", "loan", "Interest", round(float(r["interest"]), 2)])
+            if not weights or not total:
+                if escrow:
+                    rows.append([month, loan_id, "escrow", "escrow", "Escrow", round(escrow, 2)])
+                continue
+            given = 0.0
+            for n, (c, p) in enumerate(weights):
+                share = round(escrow - given, 2) if n == len(weights) - 1 else round(escrow * p / total, 2)
+                given = round(given + share, 2)
+                if c == stops and last is not None and month > last:
+                    share = 0.0
+                rows.append([month, loan_id, c, "escrow", label(c), share])
+    return pd.DataFrame(rows, columns=PART_COLUMNS)
+
+
 # a loan's details, in the order the Home page lists them: (key, label, kind). kind says how to show a value:
 # money, percent (an annual rate in percent), date, month, months, or text. Keys not listed here show after
 # these, under their own name, as text.
@@ -293,6 +389,7 @@ DETAILS = [
     ("monthly_pi", "Principal and interest a month", "money"),
     ("mortgage_insurance", "Mortgage insurance a month", "money"),
     ("mortgage_insurance_ends", "Mortgage insurance ends", "text"),
+    ("mortgage_insurance_last", "Mortgage insurance's last month", "month"),
     ("escrow", "Escrow a month", "money"),
     ("points", "Points paid", "money"),
     ("closing_costs", "Closing costs", "money"),
@@ -311,10 +408,11 @@ DETAILS = [
 DETAIL_COLUMNS = ["loan_id", "order", "key", "label", "value", "kind", "as_of", "note"]
 
 
-def details(loans, facts, sched, month):
+def details(loans, facts, sched, month, ends=None):
     """Each loan's details (DETAIL_COLUMNS): its loans row, its facts (the latest row per key on or before
-    month wins), and from its schedule the first and last payments, the balance now and what has been and is
-    still to be paid."""
+    month wins), from its schedule the first and last payments, the balance now and what has been and is
+    still to be paid, and with ends ({loan_id: (insurance, last month, how)}, insurance_end) the last month of
+    its mortgage insurance."""
     known = {k: (i, label, kind) for i, (k, label, kind) in enumerate(DETAILS)}
     rows = []
     for loan in loans.to_dict("records") if loans is not None and len(loans) else []:
@@ -346,6 +444,8 @@ def details(loans, facts, sched, month):
                 )
                 got["paid_interest"] = (round(float(pd.to_numeric(paid["interest"]).sum()), 2), "", "")
             got["interest_left"] = (round(float(pd.to_numeric(ahead["interest"]).sum()), 2), "", "")
+        if ends and lid in ends:
+            got["mortgage_insurance_last"] = (ends[lid][1], "", ends[lid][2])
         for k, (value, at, note) in got.items():
             order, label, kind = known.get(k, (len(DETAILS), k.replace("_", " ").capitalize(), "text"))
             rows.append(

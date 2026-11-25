@@ -836,6 +836,9 @@ REPORTS = (
             "run_id",
         ),
     ),
+    # each month's loan payment in its parts (mortgage.payment_parts): principal and interest, and the escrow
+    # by the loan_split setting's parts, the mortgage insurance ending by rule
+    Table("mortgage_parts", ("month", "loan_id", "part", "kind", "label", "amount", "run_id")),
     # each month's gifts by recipient (giving.py): what was given, and whether the recipient is deductible
     Table("giving", ("month", "key", "name", "category", "given", "gifts", "deductible", "run_id")),
     # each gift line's recipient (giving.gift_lines), for the views to list a recipient's gifts

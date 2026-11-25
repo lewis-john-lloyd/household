@@ -661,7 +661,17 @@ def _mortgage(c: Compute, categorized):
         sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage"), sched.assign(run_id=run_id))
         for line in notes + mortgage.summary(sched[sched["month"] <= today[:7]]):
             say(log, line)
-        detail = mortgage.details(loans, read_ledger(ledger, "loan_facts"), sched, today[:7])
+        facts, homes = read_ledger(ledger, "loan_facts"), read_ledger(ledger, "properties")
+        ends = {}
+        for loan in loans.to_dict("records"):
+            if end := mortgage.insurance_end(loan, facts, homes):
+                ends[str(loan["loan_id"]).strip()] = end
+                say(log, f"mortgage: {loan['loan_id']} pays mortgage insurance through {end[1]} ({end[2]})")
+        parts = mortgage.payment_parts(
+            sched, mortgage.split_settings(read_ledger(ledger, "parameters")), {k: v[:2] for k, v in ends.items()}
+        )
+        sheets.replace_table(reports, schema.table(schema.REPORTS, "mortgage_parts"), parts.assign(run_id=run_id))
+        detail = mortgage.details(loans, facts, sched, today[:7], ends)
         sheets.replace_table(reports, schema.table(schema.REPORTS, "loan_details"), detail.assign(run_id=run_id))
         ahead = sched[sched["month"] > today[:7]]
         for loan_id, g in ahead.groupby("loan_id"):
